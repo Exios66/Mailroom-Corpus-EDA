@@ -197,14 +197,16 @@ def build_manifest(
         )
 
     if intent_stats:
+        corr_rows = intent_stats.get("correspondence_rows") or intent_stats.get("rows_total", 0)
+        llm_n = intent_stats.get("llm_zero_shot_total") or intent_stats.get("llm_zero_shot", 0)
         intent_segment = (
             f"intent_backfill : v7 correspondence intent hydration (issue #5): "
-            f"{intent_stats.get('correspondence_rows', 0)} rows, "
+            f"{corr_rows} rows, "
             f"{intent_stats.get('coverage_pct', 0)}% non-null intent;\n"
             f"                   aeslc_join {intent_stats.get('aeslc_joined', 0)} (sha256 "
             f"exact-body match vs\n                   snoop2head/enron_aeslc_emails + "
             f"Yale-LILY/aeslc), llm_zero_shot "
-            f"{intent_stats.get('llm_zero_shot', 0)},\n"
+            f"{llm_n},\n"
             f"                   flagged_review {intent_stats.get('flagged_review', 0)}; "
             f"columns intent_source / intent_confidence /\n"
             f"                   intent_status ride the ground_truth config "

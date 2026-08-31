@@ -257,7 +257,7 @@ def render_card_v7(
     corr_rows = sum(1 for r in rows if r["expected"] == "correspondence")
     coverage = (intent_stats or {}).get("coverage_pct", 100.0)
     aeslc_n = (intent_stats or {}).get("aeslc_joined", 0)
-    llm_n = (intent_stats or {}).get("llm_zero_shot", 0)
+    llm_n = (intent_stats or {}).get("llm_zero_shot_total") or (intent_stats or {}).get("llm_zero_shot", 0)
     flagged_n = (intent_stats or {}).get("flagged_review", 0)
     other_n = (intent_stats or {}).get("other_fallback", 0)
 

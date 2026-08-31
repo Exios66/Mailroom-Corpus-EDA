@@ -4,10 +4,10 @@ policy_number,1.0,1.0,1.0,1.0
 insurer,1.0,1.0,1.0,1.0
 insured_party,1.0,1.0,1.0,1.0
 claim_type,1.0,1.0,1.0,1.0
-date_of_loss,1.0,1.0,0.9866666666666667,1.0
-date_filed,1.0,1.0,0.9866666666666667,1.0
-claimed_amount,0.9866666666666667,1.0,1.0,1.0
-adjuster,0.5666666666666667,0.5933333333333334,0.5866666666666667,0.6133333333333333
+date_of_loss,1.0,1.0,1.0,1.0
+date_filed,1.0,1.0,1.0,1.0
+claimed_amount,1.0,1.0,1.0,1.0
+adjuster,1.0,1.0,1.0,1.0
 damages_description,1.0,1.0,1.0,1.0
 coverage_determination,1.0,1.0,1.0,1.0
 denial_reasons,1.0,1.0,1.0,1.0

@@ -34,7 +34,7 @@
     }
   },
   "jsonl_parity": {
-    "jsonl_rows": 700,
+    "jsonl_rows": 1650,
     "jsonl_columns": [
       "filename",
       "doc_text",
@@ -42,17 +42,14 @@
       "expected",
       "expected_subclass",
       "split",
-      "metadata"
+      "metadata",
+      "gt_fields"
     ],
-    "jsonl_rows_in_blind": 700,
+    "jsonl_rows_in_blind": 1650,
     "jsonl_rows_not_in_blind": 0,
     "doc_text_byte_equal_rate": 1.0,
-    "metadata_equal_after_null_normalization": 0.0,
-    "metadata_field_diff_counts": {
-      "original_file": 700,
-      "expected_doc_type": 191,
-      "expected_subclass": 191
-    },
+    "metadata_equal_after_null_normalization": 1.0,
+    "metadata_field_diff_counts": {},
     "expected_label_equal_rate": 1.0
   },
   "schema": {
@@ -67,6 +64,7 @@
       "filename",
       "expected",
       "expected_subclass",
+      "split",
       "label_evidence",
       "content_topic",
       "topic_evidence",
@@ -91,34 +89,11 @@
       "intent",
       "subject_matter",
       "keywords",
-      "split"
+      "intent_source",
+      "intent_confidence",
+      "intent_status"
     ],
-    "gt_nonuniform_null_columns": {
-      "keywords": 569,
-      "subject_matter": 569,
-      "intent": 569,
-      "adjuster": 569,
-      "maud_clause_labels": 552,
-      "cuad_clause_labels": 515,
-      "date_of_loss": 325,
-      "claimed_amount": 325,
-      "date_filed": 325,
-      "insured_party": 323,
-      "claim_type": 323,
-      "insurer": 323,
-      "policy_number": 323,
-      "claim_number": 323,
-      "damages_description": 323,
-      "coverage_determination": 323,
-      "denial_reasons": 323,
-      "supporting_documents": 323,
-      "content_topic": 318,
-      "sentiment_evidence": 318,
-      "sentiment_label": 318,
-      "sentiment_score": 318,
-      "topic_evidence": 318,
-      "label_evidence": 318
-    },
+    "gt_nonuniform_null_columns": {},
     "prompt_all_empty": true,
     "doc_text_nulls": 0,
     "metadata_key_union_n": 43,

@@ -460,11 +460,14 @@ def backfill_correspondence(
     gt = gt.copy()
     # Only correspondence rows are re-labeled by the backfill; every other
     # doc_type keeps its existing intent / provenance columns untouched.
+    corr_lookup = {fn: idx for fn, idx in zip(corr["filename"], corr.index)}
     vals = {fn: _row_values(fn, gt.loc[idx]) for fn, idx in corr_lookup.items()}
     for k in ("intent", "intent_source", "intent_confidence", "intent_status"):
         if k in gt.columns:
             gt = gt.drop(columns=k)
-        gt[f"__{k}"] = gt["filename"].map(vals).map(lambda v: (v or {}).get(k, ""))
+        gt[f"__{k}"] = gt["filename"].map(vals).map(
+            lambda v: v.get(k, "") if isinstance(v, dict) else ""
+        )
     gt["intent"] = gt["__intent"].fillna("")
     gt["intent_source"] = gt["__intent_source"].fillna("")
     gt["intent_confidence"] = gt["__intent_confidence"].fillna("")
@@ -473,6 +476,20 @@ def backfill_correspondence(
 
     stats["coverage_pct"] = round(
         float(100 * gt.loc[corr_mask, "intent"].fillna("").str.strip().ne("").sum() / corr_mask.sum()), 2
+    )
+    # Merge totals (sidecar-resumed rows count as labeled too) so the manifest
+    # reflects the final corpus state, not just this run's new calls.
+    stats["llm_zero_shot_total"] = int(
+        (gt.loc[corr_mask, "intent_source"] == "llm_zero_shot").sum()
+    )
+    stats["manual_total"] = int(
+        (gt.loc[corr_mask, "intent_source"] == "manual").sum()
+    )
+    stats["flagged_review"] = int(
+        (gt.loc[corr_mask, "intent_status"] == "flagged_review").sum()
+    )
+    stats["other_fallback"] = int(
+        (gt.loc[corr_mask, "intent"] == "other").sum()
     )
     return gt, stats
 
@@ -513,6 +530,7 @@ def test_split_intent_coverage(gt: pd.DataFrame) -> dict:
         "test_intents": sorted(i for i in test_intents if i),
         "missing_from_test": sorted(set(CANONICAL_INTENTS) - set(i for i in test_intents if i)),
     }
+    return report
 
 
 GT_PUBLISH_KEYS = [
