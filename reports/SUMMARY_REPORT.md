@@ -1,6 +1,6 @@
 # Docclass Merged Corpus — EDA Summary Report
 
-Generated: 2026-08-31 · Pipeline: `run_all.py` (P0–P5) · Data: `Lucius-Morningstar/docclass-merged` (v6 rev2)
+Generated: 2026-08-31 · Pipeline: `run_all.py` (P0–P6) · Data: `Lucius-Morningstar/docclass-merged` (v7)
 
 ## Executive Summary
 
@@ -54,11 +54,14 @@ annotation offsets validate (CUAD 13,753/13,753 span matches = 100%).
   `18_claim_dates_timeline.png`.
 
 ### 5. Correspondence (350 rows)
-- Enron source: subclass (8), content-topic (11), intent (10), sentiment
-  (neutral 178 / positive 97 / negative 75) — the only sentiment-labeled
-  subset.
-- 251 rows lack intent (the incremental purpose-GT labeler pass is pending);
-  all 350 rows carry sentiment labels.
+- Enron source: subclass (8), content-topic (11), intent (8, canonical closed
+  set), sentiment (neutral 178 / positive 97 / negative 75) — the only
+  sentiment-labeled subset.
+- **Intent is 100% hydrated** (issue #5 / v7): all 350 rows carry a canonical
+  intent — 96 manual + 254 llm_zero_shot (deepseek-chat via OpenRouter, closed
+  8-class vocabulary, confidence threshold 0.85), 162 rows sha256 exact-body
+  joined against the Enron/AESLC mirrors for provenance, 1 flagged_review.
+  Every canonical intent class appears in the 10% test split.
 
 ### 6. Split integrity
 - 90/10 train/test: 1,474/176. Per-stratum test shares deviate from 10%
@@ -80,6 +83,8 @@ annotation offsets validate (CUAD 13,753/13,753 span matches = 100%).
 | 26–28 | temporal, source proportions, date spans | provenance & time |
 | 29–30 | metadata correlation/cardinality | field structure |
 
+> Static figure counts are nominal; regenerate with `run_all.py --phases P3`.
+
 ### Interactive figures — `reports/figures_interactive/` (18 HTML)
 Plotly versions with hover/zoom: lengths, budgets, CUAD, MAUD, claims,
 treemap, strata, timeline, sources, metadata.
@@ -97,9 +102,13 @@ treemap, strata, timeline, sources, metadata.
 - `src/mailroom_eda/hf_interface.py` — Hub client: upload, sha verify, repo mgmt
 - `src/mailroom_eda/dataset_export.py` — KANBAN-076 cast-safe metadata,
   KANBAN-088 JSONL safety, parquet staging, manifests, splits
-- `src/mailroom_eda/docclass_uploader.py` — v6 publish, surgical card render,
+- `src/mailroom_eda/docclass_uploader.py` — v7 publish, surgical card render,
   blind-label strip, leak guard
-- `scripts/publish_docclass.py` / `export_docclass.py` / `verify_hf.py` — CLIs
+- `src/mailroom_eda/intent_backfill.py` — correspondence intent hydration
+  (issue #5): cross-walk, Enron/AESLC sha256 join, constrained LLM pass,
+  provenance columns
+- `scripts/publish_docclass.py` / `backfill_intent.py` / `export_docclass.py` /
+  `verify_hf.py` — CLIs
 
 ## ML-readiness recommendations
 
@@ -110,8 +119,9 @@ treemap, strata, timeline, sources, metadata.
    rollup) for training stability.
 3. **Zero-test strata** (14 strata): add a per-stratum test floor for the
    next corpus revision.
-4. **Sentiment labels** cover all correspondence (350 rows); intent labels
-   exist on only 99 correspondence rows (incremental purpose-GT labeler pass
-   pending) — a useful multi-task head target once complete.
+4. **Sentiment labels** cover all correspondence (350 rows); intent is fully
+   hydrated (350/350, canonical 8-class set with `intent_source` /
+   `intent_confidence` / `intent_status` provenance, issue #5 / v7) — a
+   ready multi-task head target (intent + sentiment + topic).
 5. **Claims block** is near-uniform in length/subtype — synthetic-data
    caveats apply (PAID only, health LOB).

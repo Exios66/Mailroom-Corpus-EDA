@@ -1,6 +1,6 @@
 # Mailroom-Corpus-EDA
 
-Full HF LLM-Mailroom Corpus Exploratory Data Analysis (DocClass Merged, v6).
+Full HF LLM-Mailroom Corpus Exploratory Data Analysis (DocClass Merged, v7).
 
 Standalone mirror of the `Exios66/Mailroom-Corpus-EDA` repo; inside the
 [mailroom-dev](https://github.com/Exios66/mailroom-dev) monorepo it lives at
@@ -11,7 +11,7 @@ Develop here, sync via `scripts/sync_packages.py` in mailroom-dev.
 
 ```bash
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python run_all.py                 # P0-P5 full pipeline
+.venv/bin/python run_all.py                 # P0-P6 full pipeline
 .venv/bin/python run_all.py --phases P3 P4  # figures only
 ```
 
@@ -22,17 +22,18 @@ Develop here, sync via `scripts/sync_packages.py` in mailroom-dev.
 | P0 | corpus download + manifest validation | `data/parquet/**` |
 | P1 | structural integrity & provenance audit | `reports/tables/integrity_report.json` |
 | P2 | composition: strata, imbalance, provenance | `strata_counts.csv`, `imbalance_metrics.json` |
-| P3 | 27 static PNG figures + EDA tables | `reports/figures/`, `reports/tables/` |
-| P4 | 18 interactive Plotly HTML figures | `reports/figures_interactive/` |
+| P3 | static PNG figures + EDA tables | `reports/figures/`, `reports/tables/` |
+| P4 | interactive Plotly HTML figures | `reports/figures_interactive/` |
 | P5 | cast-safe JSONL + parquet staging helpers | `data/staging/` |
+| P6 | correspondence intent coverage & provenance audit (issue #5) | `reports/SUMMARY_REPORT.json` |
 
 ## Reports
 
 - `reports/SUMMARY_REPORT.md` — narrative summary of all findings
-- `reports/figures/` — 30 static PNGs (text/token, CUAD, MAUD, claims,
+- `reports/figures/` — static PNGs (text/token, CUAD, MAUD, claims,
   correspondence, imbalance, temporal, metadata)
-- `reports/figures_interactive/` — 18 Plotly HTML figures
-- `reports/tables/` — 17 CSV/JSON tables
+- `reports/figures_interactive/` — Plotly HTML figures
+- `reports/tables/` — CSV/JSON tables
 
 ## HF Hub Interface (centralized from llm-entity-extraction)
 
@@ -43,20 +44,30 @@ centralized here (see the `huggingface` opencode skill for full docs):
 - `src/mailroom_eda/hf_interface.py` — Hub client (upload, sha256 verify, repo mgmt)
 - `src/mailroom_eda/dataset_export.py` — cast-safe metadata (KANBAN-076),
   JSONL line-boundary safety (KANBAN-088), parquet staging, manifests, splits
-- `src/mailroom_eda/docclass_uploader.py` — docclass v6 publish, surgical card
-  rendering, blind-label strip, GT leak guard
+- `src/mailroom_eda/docclass_uploader.py` — docclass v7 publish, surgical card
+  rendering (render_card_v7), blind-label strip, GT leak guard
+- `src/mailroom_eda/intent_backfill.py` — correspondence intent hydration
+  (issue #5): cross-walk, Enron/AESLC sha256 join, constrained LLM pass,
+  provenance columns
 - `src/mailroom_eda/token_budget.py` — token estimation & budget coverage
 
 ### CLIs
 
 ```bash
-# stage a v6 dump into the Hub tree (no upload)
-.venv/bin/python scripts/export_docclass.py --v6 data/datasets/docclass_merged_v6.jsonl --out /tmp/stage
+# correspondence intent backfill (issue #5; needs OPENROUTER_API_KEY for the LLM pass)
+.venv/bin/python scripts/backfill_intent.py --check
+.venv/bin/python scripts/backfill_intent.py --join-only
+.venv/bin/python scripts/backfill_intent.py            # full Phases 1-5
+
+# stage the v7 dump into the Hub tree (no upload)
+.venv/bin/python scripts/publish_docclass.py --rows data/v7_rows.jsonl \
+    --stage /tmp/stage --intent-stats data/v7_intent_stats.json
 
 # publish to https://huggingface.co/datasets/Lucius-Morningstar/docclass-merged
 HF_TOKEN=hf_... .venv/bin/python scripts/publish_docclass.py \
-    --v6 data/datasets/docclass_merged_v6.jsonl --stage /tmp/stage \
-    --commit-message "KANBAN-105: schema v6 revN" --publish
+    --rows data/v7_rows.jsonl --stage /tmp/stage \
+    --intent-stats data/v7_intent_stats.json \
+    --commit-message "issue #5: v7 intent hydration" --publish
 
 # byte-verify a local export against the Hub
 .venv/bin/python scripts/verify_hf.py --repo Lucius-Morningstar/docclass-merged \
