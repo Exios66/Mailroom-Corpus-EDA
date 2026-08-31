@@ -91,7 +91,7 @@ def fig_type_distribution(gt: pd.DataFrame) -> None:
     counts = gt["expected"].value_counts().reindex(DOC_TYPES)
     fig, axes = plt.subplots(1, 2, figsize=(11, 4))
     sns.barplot(x=counts.values, y=counts.index, hue=counts.index, palette=TYPE_COLORS, legend=False, ax=axes[0])
-    axes[0].set_title("Documents per doc_type (n=1,210)")
+    axes[0].set_title(f"Documents per doc_type (n={counts.sum()})")
     axes[0].set_xlabel("rows")
     for i, v in enumerate(counts.values):
         axes[0].text(v + 4, i, str(v), va="center", fontsize=9)

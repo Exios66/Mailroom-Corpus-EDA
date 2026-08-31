@@ -2,8 +2,8 @@
 
 Exploratory data analysis (and the centralized HF upload helpers) for the
 [`Lucius-Morningstar/docclass-merged`](https://huggingface.co/datasets/Lucius-Morningstar/docclass-merged)
-corpus — 1,210 legal documents across 5 doc_types (contract, insurance_claim,
-merger_agreement, correspondence, corporate_record), 48 strata.
+corpus — 1,650 legal documents across 5 doc_types (insurance_claim,
+merger_agreement, contract, correspondence, corporate_record), 48 strata.
 
 Mirror of the standalone `Exios66/Mailroom-Corpus-EDA` repo; in the monorepo
 it lives at `packages/mailroom-corpus-eda` as a virtual uv member (no build).
@@ -51,11 +51,13 @@ Never edit it from both places in one session — develop here, sync via
 - **Determinism**: `RANDOM_STATE = 42`; rebuilds of JSONL/parquet must be
   byte-identical (sorted rows, deterministic order).
 
-## HF facts (verified 2026-08)
+## HF facts (verified 2026-08-31)
 
-- Repo: `Lucius-Morningstar/docclass-merged` (v6, 1,210 rows).
+- Repo: `Lucius-Morningstar/docclass-merged` (v6 rev2, 1,650 rows).
+- Composition: insurance_claim 600, contract 509, correspondence 350,
+  merger_agreement 152, corporate_record 39.
 - Configs: `default` (blind, 4 cols) + `ground_truth` (28 cols incl. labels).
-- Split: train 1,081 / test 129 on both configs; filename sets equal.
+- Split: train 1,474 / test 176 on both configs; filename sets equal.
 - Related: `enron-correspondence-dedup`, `mailroom-cuad-contracts-full`,
   `mailroom-s1-corporate-records`, `mailroom-maud-contracts`.
 

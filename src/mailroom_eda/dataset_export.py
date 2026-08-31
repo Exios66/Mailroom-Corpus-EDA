@@ -189,10 +189,9 @@ def build_manifest(
         )
     else:
         ins_segment = (
-            "                   +0 insurance_claim rows THIS REVISION — the +200 "
-            "boost is\n                   deferred to a follow-up v6 revision "
-            "(claims-data-eda staging\n                   lost to tmp cleanup; card "
-            "residue).\n"
+            f"                   +{ins_n} insurance_claim rows this revision — no "
+            f"new claims beyond the parent 400 (v6 rev2 published 600; "
+            f"composition derives from the fused dump, never hand-typed).\n"
         )
 
     built = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

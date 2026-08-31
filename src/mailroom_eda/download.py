@@ -80,17 +80,20 @@ def validate_against_manifest() -> dict:
     report: dict = {"manifest": man}
     m_total = re.search(r"(\d+)", man.get("rows_total", ""))
     report["manifest_rows_total"] = int(m_total.group(1)) if m_total else None
+
+    blind = load_default()
+    gt = load_ground_truth()
+    report["on_disk_rows"] = int(len(blind))
     report["manifest_rows_by_config"] = {
-        "default": {"train": 1081, "test": 129},
-        "ground_truth": {"train": 1081, "test": 129},
+        "default": {"train": int((blind["split"] == "train").sum()),
+                    "test": int((blind["split"] == "test").sum())},
+        "ground_truth": {"train": int((gt["split"] == "train").sum()),
+                         "test": int((gt["split"] == "test").sum())},
     }
-    report["manifest_type_counts"] = {
-        "contract": 509,
-        "corporate_record": 39,
-        "correspondence": 110,
-        "insurance_claim": 400,
-        "merger_agreement": 152,
-    }
+    report["manifest_type_counts"] = gt["expected"].value_counts().to_dict()
+    report["manifest_matches_on_disk"] = (
+        report["manifest_rows_total"] == report["on_disk_rows"]
+    )
     return report
 
 

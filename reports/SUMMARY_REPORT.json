@@ -16,23 +16,25 @@
       "builder": "scripts/datasets/build_docclass_v6.py @ Exios66/llm-entity-extraction"
     },
     "manifest_rows_total": 1650,
+    "on_disk_rows": 1650,
     "manifest_rows_by_config": {
       "default": {
-        "train": 1081,
-        "test": 129
+        "train": 1474,
+        "test": 176
       },
       "ground_truth": {
-        "train": 1081,
-        "test": 129
+        "train": 1474,
+        "test": 176
       }
     },
     "manifest_type_counts": {
+      "insurance_claim": 600,
       "contract": 509,
-      "corporate_record": 39,
-      "correspondence": 110,
-      "insurance_claim": 400,
-      "merger_agreement": 152
-    }
+      "correspondence": 350,
+      "merger_agreement": 152,
+      "corporate_record": 39
+    },
+    "manifest_matches_on_disk": true
   },
   "P1": {
     "config_join": {

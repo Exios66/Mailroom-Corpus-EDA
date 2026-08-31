@@ -109,6 +109,7 @@ def render_card_v6(rows: list[dict], append_stats: dict, file_stats: dict) -> st
     card = r.stdout
     if not card.startswith("---"):
         # If no live card, use a minimal template
+        _total = len(rows)
         card = """---
 license: cc-by-4.0
 task_categories:
@@ -121,16 +122,16 @@ tags:
 - correspondence
 - insurance
 - classification
-pretty_name: "Docclass Merged Corpus v5 (1210 rows)"
+pretty_name: "Docclass Merged Corpus v6 ({total} rows)"
 size_categories:
 - 1K<n<10K
 ---
 
-# Docclass Merged Corpus v5
+# Docclass Merged Corpus v6
 
-Single flat document-classification surface: **1,210 legal documents** across
-five corpora, one row per document (schema v5):
-"""
+Single flat document-classification surface: **{total:,} legal documents** across
+five corpora, one row per document (schema v6):
+""".format(total=_total)
 
     # 1) pretty_name -> v6
     card, n = re.subn(

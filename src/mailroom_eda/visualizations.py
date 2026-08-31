@@ -508,7 +508,7 @@ def fig_claim_subtype_fields(gt: pd.DataFrame) -> None:
     fig, ax = plt.subplots(figsize=(8, 6.5))
     sns.heatmap(fill, annot=True, fmt=".2f", cmap="viridis", vmin=0, vmax=1,
                 cbar_kws={"label": "fill rate"}, ax=ax)
-    ax.set_title("Claim field fill rate by subtype (n=400)")
+    ax.set_title(f"Claim field fill rate by subtype (n={len(claims)})")
     fig.tight_layout()
     fig.savefig(FIG_DIR / "19_claim_subtype_fields.png")
     plt.close(fig)
