@@ -86,7 +86,7 @@ def p5_export() -> dict:
             "split": r["split"],
             "metadata": b["metadata"],
         })
-    staged = dataset_export.stage_parquet(rows, Path("data/staging"))
+    staged = dataset_export.stage_parquet(rows, ROOT / "data" / "staging")
     staged_serializable = {f"{a}/{b}": n for (a, b), n in staged.items()}
     print(f"  staged parquet: {staged_serializable}")
     return {"staged": staged_serializable}
@@ -129,7 +129,7 @@ def main() -> int:
             results[phase] = {"error": str(exc)}
 
     # Summary
-    summary_path = Path("reports/SUMMARY_REPORT.json")
+    summary_path = ROOT / "reports" / "SUMMARY_REPORT.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     with open(summary_path, "w") as fh:
         json.dump(results, fh, indent=2, default=str)
