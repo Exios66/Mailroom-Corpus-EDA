@@ -14,6 +14,8 @@ import sys
 import time
 from pathlib import Path
 
+import pandas as pd
+
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -74,6 +76,17 @@ def p5_export() -> dict:
 
     blind = load_default()
     gt = load_ground_truth()
+    gt_keys = (
+        "label_evidence", "content_topic", "topic_evidence",
+        "sentiment_score", "sentiment_label", "sentiment_evidence",
+        "claim_number", "policy_number", "insurer", "insured_party",
+        "claim_type", "date_of_loss", "date_filed", "claimed_amount",
+        "adjuster", "damages_description", "coverage_determination",
+        "denial_reasons", "supporting_documents",
+        "cuad_clause_labels", "maud_clause_labels",
+        "intent", "subject_matter", "keywords",
+        "intent_source", "intent_confidence", "intent_status",
+    )
     rows = []
     for _, r in gt.iterrows():
         b = blind[blind["filename"] == r["filename"]].iloc[0]
@@ -85,11 +98,36 @@ def p5_export() -> dict:
             "expected_subclass": r["expected_subclass"],
             "split": r["split"],
             "metadata": b["metadata"],
+            "gt_fields": {k: ("" if pd.isna(r.get(k)) else r.get(k)) for k in gt_keys},
         })
     staged = dataset_export.stage_parquet(rows, ROOT / "data" / "staging")
     staged_serializable = {f"{a}/{b}": n for (a, b), n in staged.items()}
     print(f"  staged parquet: {staged_serializable}")
     return {"staged": staged_serializable}
+
+
+@phase_timer
+def p6_intent_coverage() -> dict:
+    print("P6: correspondence intent coverage & provenance audit (issue #5)")
+    from mailroom_eda import intent_backfill as ib
+    from mailroom_eda.download import load_ground_truth
+
+    gt = load_ground_truth()
+    if "intent_source" not in gt.columns:
+        report = {
+            "status": "pre-backfill",
+            "note": "ground_truth carries no intent provenance columns yet — "
+                    "run scripts/backfill_intent.py and publish v7, then re-run.",
+            "intent_covered": int(gt.loc[gt["expected"] == "correspondence",
+                                         "intent"].fillna("").str.strip().ne("").sum()),
+        }
+        print(f"  {report}")
+        return report
+    report = ib.validate_intent_coverage(gt)
+    test_report = ib.test_split_intent_coverage(gt)
+    print(f"  coverage: {report}")
+    print(f"  test split: {test_report}")
+    return {"coverage": report, "test_split": test_report}
 
 
 PHASES = {
@@ -99,12 +137,13 @@ PHASES = {
     "P3": p3_visualizations,
     "P4": p4_interactive,
     "P5": p5_export,
+    "P6": p6_intent_coverage,
 }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--phases", default="P0,P1,P2,P3,P4,P5",
+    parser.add_argument("--phases", default="P0,P1,P2,P3,P4,P5,P6",
                         help="comma-separated phases to run (default: all)")
     parser.add_argument("--no-interactive", action="store_true",
                         help="skip P4 interactive HTML figures")

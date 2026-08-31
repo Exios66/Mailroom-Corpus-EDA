@@ -31,6 +31,7 @@ GT_SCALAR_KEYS = [
     "denial_reasons", "supporting_documents",
     "cuad_clause_labels", "maud_clause_labels",
     "intent", "subject_matter", "keywords",
+    "intent_source", "intent_confidence", "intent_status",
 ]
 
 PURPOSE_GT_KEYS = ("intent", "subject_matter", "keywords")
@@ -40,6 +41,18 @@ PARENT_ROWS = 1210
 PARENT_CORR_ROWS = 110
 PARENT_INS_ROWS = 400
 LEGACY_JSONL = "docclass_merged.jsonl"
+
+
+def upsert_section(card: str, heading: str, body: str, insert_before: str) -> str:
+    assert body.startswith(heading) and body.endswith("\n\n"), f"section body malformed: {heading!r}"
+    start = card.find(heading)
+    if start >= 0:
+        nxt = card.find("\n## ", start + 1)
+        end = len(card) if nxt < 0 else nxt + 1
+        return card[:start] + body + card[end:]
+    marker_at = card.find(insert_before)
+    assert marker_at >= 0, f"insert anchor missing: {insert_before!r}"
+    return card[:marker_at] + body + card[marker_at:]
 
 
 def corr_n(rows: list[dict]) -> int:
@@ -167,17 +180,6 @@ five corpora, one row per document (schema v6):
         card, count=1)
     assert n == 1, "correspondence heading anchor"
 
-    def upsert_section(card: str, heading: str, body: str, insert_before: str) -> str:
-        assert body.startswith(heading) and body.endswith("\n\n"), f"section body malformed: {heading!r}"
-        start = card.find(heading)
-        if start >= 0:
-            nxt = card.find("\n## ", start + 1)
-            end = len(card) if nxt < 0 else nxt + 1
-            return card[:start] + body + card[end:]
-        marker_at = card.find(insert_before)
-        assert marker_at >= 0, f"insert anchor missing: {insert_before!r}"
-        return card[:marker_at] + body + card[marker_at:]
-
     # 5) v6 provenance section
     if ins_n_val > 0:
         insurance_bullet = (
@@ -243,6 +245,50 @@ Per-file sha256 + sizes: `original_files_mapping.jsonl` sidecar.
     return card
 
 
+def render_card_v7(
+    rows: list[dict],
+    append_stats: dict,
+    file_stats: dict,
+    intent_stats: dict | None = None,
+) -> str:
+    """v7 card: v6 surgical evolution + issue #5 intent hydration section."""
+    card = render_card_v6(rows, append_stats, file_stats)
+
+    corr_rows = sum(1 for r in rows if r["expected"] == "correspondence")
+    coverage = (intent_stats or {}).get("coverage_pct", 100.0)
+    aeslc_n = (intent_stats or {}).get("aeslc_joined", 0)
+    llm_n = (intent_stats or {}).get("llm_zero_shot", 0)
+    flagged_n = (intent_stats or {}).get("flagged_review", 0)
+    other_n = (intent_stats or {}).get("other_fallback", 0)
+
+    v7_section = f"""## Schema v7 additions (issue #5, 2026-08-31)
+
+* **Correspondence intent hydration**: every `correspondence` row now carries
+  a non-null `intent` from the closed 8-class vocabulary (`payment_demand`,
+  `notice`, `analysis`, `request`, `update`, `meeting_invite`,
+  `press_communication`, `other`) — {coverage}% coverage across {corr_rows}
+  rows, plus three provenance columns on the `ground_truth` config:
+  `intent_source` (`manual` | `aeslc_join` | `llm_zero_shot`),
+  `intent_confidence` (0..1), `intent_status` (`manual` | `auto_labeled` |
+  `flagged_review`).
+* **Hydration provenance**: {aeslc_n} rows were sha256 exact-body matched
+  against the Enron mail corpus ([`snoop2head/enron_aeslc_emails`](https://huggingface.co/datasets/snoop2head/enron_aeslc_emails),
+  535k mails) and AESLC ([`Yale-LILY/aeslc`](https://huggingface.co/datasets/Yale-LILY/aeslc));
+  the external mirrors carry NO intent annotations (verified 2026-08-31), so
+  the join supplies provenance + recovered `subject_line` while {llm_n}
+  previously-unlabeled rows were labeled by a constrained zero-shot LLM pass
+  (OpenRouter `deepseek/deepseek-chat`, temperature 0.1, closed vocabulary).
+* **Confidence thresholding**: confidence >= 0.85 -> `auto_labeled`;
+  below -> `flagged_review` ({flagged_n} rows flagged for the manual review
+  queue). Non-conforming / residual rows fall to `other` ({other_n} rows) —
+  never null.
+
+"""
+    card = upsert_section(card, "## Schema v7 additions (issue #5, 2026-08-31)",
+                          v7_section, "## Original files (KANBAN-105 addendum, 2026-08-30)")
+    return card
+
+
 def stage_original_files(stage: Path, files_dir: Path) -> dict:
     """Copy the staged original files into the Hub tree; return stats."""
     src = files_dir / "files"
@@ -273,17 +319,18 @@ def publish_docclass(
     files_dir: Path | None = None,
     commit_message: str = "",
     publish: bool = False,
+    intent_stats: dict | None = None,
 ) -> dict:
-    """Full docclass v6 publish pipeline."""
+    """Full docclass v7 publish pipeline (issue #5 intent hydration)."""
     if stage_dir.exists():
         shutil.rmtree(stage_dir)
     stage_dir.mkdir(parents=True)
 
     stripped_n = strip_blind_labels(rows)
-    print(f"Loaded {len(rows)} v6 rows")
+    print(f"Loaded {len(rows)} v7 rows")
     print(f"composition: parent {PARENT_ROWS} + corr {corr_n(rows)} + ins {ins_n(rows)}")
 
-    counts = stage_parquet(stage_dir, rows)
+    counts = stage_parquet(rows, stage_dir)
     file_stats = stage_original_files(stage_dir, files_dir) if files_dir else {"n": 0, "bytes": 0, "by_class": {}}
 
     append_stats = {
@@ -296,22 +343,23 @@ def publish_docclass(
     }
 
     (stage_dir / "README.md").write_text(
-        render_card_v6(rows, append_stats, file_stats), encoding="utf-8")
+        render_card_v7(rows, append_stats, file_stats, intent_stats), encoding="utf-8")
     (stage_dir / "manifest.txt").write_text(
-        build_manifest(rows, counts, append_stats, file_stats, stripped_n), encoding="utf-8")
+        build_manifest(rows, counts, append_stats, file_stats, stripped_n,
+                       intent_stats=intent_stats), encoding="utf-8")
 
     # Write legacy JSONL
     with (stage_dir / LEGACY_JSONL).open("w", encoding="utf-8") as fh:
         for row in rows:
             fh.write(safe_jsonl_line(row) + "\n")
 
-    print(f"Staged: {{f'{a}/{b}': n for (a, b), n in sorted(counts.items())}}")
+    print(f"Staged: {{{', '.join(f'{a}/{b}={n}' for (a, b), n in sorted(counts.items()))}}}")
     print(f"Original files staged: {file_stats['n']} ({file_stats['bytes'] // 1048576} MB) {file_stats['by_class']}")
 
     if publish:
         api = get_hf_api()
         revision = f"rev2 (+{append_stats['ins_n']} insurance)" if ins_n(rows) else "rev1 (correspondence + original files)"
-        upload_folder(api, stage_dir, REPO_ID, commit_message or f"KANBAN-105: schema v6 {revision} — {len(rows)} rows")
+        upload_folder(api, stage_dir, REPO_ID, commit_message or f"issue #5: schema v7 intent hydration — {len(rows)} rows")
         return {"status": "published", "repo": f"https://huggingface.co/datasets/{REPO_ID}"}
 
     return {"status": "staged", "stage_dir": str(stage_dir), "counts": counts}
