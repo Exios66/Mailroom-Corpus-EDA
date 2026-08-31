@@ -2,7 +2,7 @@
 name = "mailroom-corpus-eda"
 version = "0.1.0"
 description = "Full exploratory data analysis of the HF docclass-merged corpus (1,650 docs, 5 doc_types) — P0-P5 pipeline: integrity audit, composition, static/interactive visualizations, and the centralized HuggingFace upload helpers (hf_interface, dataset_export, docclass_uploader)."
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "pandas>=2.3",
     "pyarrow>=25.0",
