@@ -29,6 +29,11 @@ Never edit it from both places in one session — develop here, sync via
   `export_docclass.py`, `verify_hf.py`
 - `run_all.py` — 7-phase pipeline (P0 download → P6 intent coverage audit)
 - `reports/` — generated artifacts (figures/, figures_interactive/, tables/, SUMMARY_REPORT.md)
+  - ALL of `reports/` is tracked in full per human directive (HUB-008) — never
+    prune it and never commit regenerated variants of `figures_interactive/`:
+    each Plotly HTML embeds a random per-render div UUID, so regenerated
+    figures can never be byte-identical. The committed files are the canonical
+    upstream bytes; treat local regeneration as scratch output only.
 
 ## Commands
 
@@ -38,6 +43,12 @@ Never edit it from both places in one session — develop here, sync via
 .venv/bin/python scripts/backfill_intent.py --check
 .venv/bin/python scripts/publish_docclass.py --help
 ```
+
+**Summary writes**: `reports/SUMMARY_REPORT.json` is written only by a
+full-pipeline run (all seven phases). `--phases` subset runs — and
+`--no-interactive`, whose summary would be missing the P4 section — leave the
+summary untouched; per-phase results print to stdout only. (HUB-009: subset
+runs used to clobber the full-corpus summary with phase-partial stats.)
 
 ## Conventions
 
