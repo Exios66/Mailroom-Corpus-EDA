@@ -1,0 +1,62 @@
+# AGENTS.md — Mailroom-Corpus-EDA
+
+Exploratory data analysis (and the centralized HF upload helpers) for the
+[`Lucius-Morningstar/docclass-merged`](https://huggingface.co/datasets/Lucius-Morningstar/docclass-merged)
+corpus — 1,210 legal documents across 5 doc_types (contract, insurance_claim,
+merger_agreement, correspondence, corporate_record), 48 strata.
+
+Mirror of the standalone `Exios66/Mailroom-Corpus-EDA` repo; in the monorepo
+it lives at `packages/mailroom-corpus-eda` as a virtual uv member (no build).
+Never edit it from both places in one session — develop here, sync via
+`scripts/sync_packages.py` in mailroom-dev.
+
+## Layout
+
+- `src/mailroom_eda/` — the EDA + HF library (imports as `mailroom_eda`)
+  - `config.py` — paths, doc types, colors, token budgets, matplotlib setup
+  - `download.py` — corpus acquisition (HF snapshot) + manifest parsing
+  - `integrity.py` — P1 structural integrity & provenance audit
+  - `composition.py` — P2 strata / imbalance / provenance / metadata coverage
+  - `visualizations.py` — P3 static PNG figures (30) + EDA tables
+  - `visualizations_interactive.py` — P4 Plotly HTML figures (18)
+  - `hf_interface.py` — centralized Hub client (upload, sha256 verify)
+  - `dataset_export.py` — cast-safe JSONL (KANBAN-076/088), parquet staging, manifests
+  - `docclass_uploader.py` — docclass v6 publish, surgical card render, leak guard
+  - `token_budget.py` — token estimation & budget coverage
+- `scripts/` — CLI wrappers: `publish_docclass.py`, `export_docclass.py`, `verify_hf.py`
+- `run_all.py` — 6-phase pipeline (P0 download → P5 export staging)
+- `reports/` — generated artifacts (figures/, figures_interactive/, tables/, SUMMARY_REPORT.md)
+
+## Commands
+
+```bash
+.venv/bin/python run_all.py                      # full pipeline P0-P5
+.venv/bin/python run_all.py --phases P3 P4       # figures only
+.venv/bin/python scripts/export_docclass.py --help
+```
+
+## Conventions
+
+- **Data never commits**: `data/` and `.venv/` are gitignored; `data/parquet`
+  is re-fetched from the Hub by `download.py`.
+- **HF uploads** use the centralized modules in `mailroom_eda.hf_interface`
+  / `dataset_export` / `docclass_uploader` — never ad-hoc upload code.
+  Metadata must be cast-safe (uniform keys, string-typed), JSONL must be
+  line-boundary-safe (U+2028/U+2029/NEL), and labels NEVER ride in the blind
+  `default` config.
+- **Interactive HTML figures** (~4MB each, Plotly-inlined) are REGENERABLE via
+  `run_all.py --phases P4` — they are pruned from the monorepo mirror (heavy
+  assets stay in the standalone repo; see mailroom-dev AGENTS.md).
+- **Split rule**: md5(filename) % 10 == 0 → test (90/10), stable across rebuilds.
+- **Determinism**: `RANDOM_STATE = 42`; rebuilds of JSONL/parquet must be
+  byte-identical (sorted rows, deterministic order).
+
+## HF facts (verified 2026-08)
+
+- Repo: `Lucius-Morningstar/docclass-merged` (v6, 1,210 rows).
+- Configs: `default` (blind, 4 cols) + `ground_truth` (28 cols incl. labels).
+- Split: train 1,081 / test 129 on both configs; filename sets equal.
+- Related: `enron-correspondence-dedup`, `mailroom-cuad-contracts-full`,
+  `mailroom-s1-corporate-records`, `mailroom-maud-contracts`.
+
+See the `huggingface` opencode skill for the full Hub-interfacing workflow.

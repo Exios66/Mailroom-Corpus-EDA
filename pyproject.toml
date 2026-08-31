@@ -1,0 +1,39 @@
+[project]
+name = "mailroom-corpus-eda"
+version = "0.1.0"
+description = "Full exploratory data analysis of the HF docclass-merged corpus (1,210 docs, 5 doc_types) — P0-P5 pipeline: integrity audit, composition, static/interactive visualizations, and the centralized HuggingFace upload helpers (hf_interface, dataset_export, docclass_uploader)."
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.3",
+    "pyarrow>=25.0",
+    "numpy>=2.3",
+    "scipy>=1.18",
+    "matplotlib>=3.10",
+    "seaborn>=0.13",
+    "plotly>=7.0",
+    "squarify>=0.4",
+    "huggingface_hub>=1.29",
+    "tiktoken>=0.14",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "jupyter>=1.1",
+    "ipykernel>=7.3",
+    "nbconvert>=7.17",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+# Monorepo: EDA + scripts + reports, no distribution — resolve deps in the
+# shared workspace venv without building/installing a package. Mirror of the
+# standalone Exios66/Mailroom-Corpus-EDA repo; see mailroom-dev AGENTS.md.
+[tool.uv]
+package = false
