@@ -53,11 +53,17 @@ Never edit it from both places in one session — develop here, sync via
 
 ## HF facts (verified 2026-08-31)
 
-- Repo: `Lucius-Morningstar/docclass-merged` (v6 rev2, 1,650 rows).
+- Repo: `Lucius-Morningstar/docclass-merged` (v7, 1,650 rows, rev `1acd2600`).
 - Composition: insurance_claim 600, contract 509, correspondence 350,
   merger_agreement 152, corporate_record 39.
-- Configs: `default` (blind, 4 cols) + `ground_truth` (28 cols incl. labels).
+- Configs: `default` (blind, 4 cols) + `ground_truth` (31 cols incl. labels +
+  intent provenance `intent_source`/`intent_confidence`/`intent_status`).
 - Split: train 1,474 / test 176 on both configs; filename sets equal.
+- v7 intent hydration (issue #5): 350/350 correspondence rows carry a
+  canonical 8-class intent (payment_demand, notice, analysis, request, update,
+  meeting_invite, press_communication, other); 96 manual + 254 llm_zero_shot
+  (deepseek-chat, OpenRouter), 162 sha256-exact-body AESLC/Enron joins,
+  1 flagged_review. All 8 classes present in the test split.
 - Related: `enron-correspondence-dedup`, `mailroom-cuad-contracts-full`,
   `mailroom-s1-corporate-records`, `mailroom-maud-contracts`.
 
