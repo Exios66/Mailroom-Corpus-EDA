@@ -53,7 +53,8 @@ Never edit it from both places in one session — develop here, sync via
 
 ## HF facts (verified 2026-08-31)
 
-- Repo: `Lucius-Morningstar/docclass-merged` (v7, 1,650 rows, rev `1acd2600`).
+- Repo: `Lucius-Morningstar/docclass-merged` (v7, 1,650 rows, rev `fc1f211c`;
+  data tip `1acd2600` + card-only pretty_name bump).
 - Composition: insurance_claim 600, contract 509, correspondence 350,
   merger_agreement 152, corporate_record 39.
 - Configs: `default` (blind, 4 cols) + `ground_truth` (31 cols incl. labels +

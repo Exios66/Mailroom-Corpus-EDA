@@ -254,6 +254,13 @@ def render_card_v7(
     """v7 card: v6 surgical evolution + issue #5 intent hydration section."""
     card = render_card_v6(rows, append_stats, file_stats)
 
+    # pretty_name -> v7
+    card, n = re.subn(
+        r'pretty_name: "Docclass Merged Corpus v[567] \(([^)]+)\)"',
+        f'pretty_name: "Docclass Merged Corpus v7 (\\1)"',
+        card, count=1)
+    assert n == 1, "pretty_name v7 anchor"
+
     corr_rows = sum(1 for r in rows if r["expected"] == "correspondence")
     coverage = (intent_stats or {}).get("coverage_pct", 100.0)
     aeslc_n = (intent_stats or {}).get("aeslc_joined", 0)
