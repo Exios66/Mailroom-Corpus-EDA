@@ -1,0 +1,380 @@
+{
+  "P0": {
+    "manifest": {
+      "built_utc": "2026-08-24T03:33:14Z",
+      "schema_version": "5",
+      "rows_total": "1210 ({'contract': 509, 'corporate_record': 39, 'correspondence': 110, 'insurance_claim': 400, 'merger_agreement': 152})",
+      "rows_by_config": "default train=1081 test=129; ground_truth train=1081 test=129",
+      "strata": "48 (expected x expected_subclass)",
+      "v4_base_revision": "407bf55c993a006689aa1b6e03e57c428c852e98",
+      "v5_additions": "insurance_claim class (+400 rows, 4 subtypes) from Lucius-Morningstar/cms-desynpuf-insurance-claims; clause-level GT columns (cuad_clause_labels / maud_clause_labels) in the ground_truth config only.",
+      "claims_split_note": "source placement keyed md5(record_id)%10; fused under the family rule md5(filename)%10 (moved 65/400 rows).",
+      "clause_gt_joins": "CUAD 509/509 contracts (official annotation JSON = masterlabels.csv source; 13753/13753 answers verified at exact char offsets vs stored text); MAUD 152/152 mergers (22-task gold labels w/ categories + valid classes).",
+      "legacy_files": "docclass_merged.jsonl retained UNTOUCHED (describes v4; kept for pinned consumers). Parquet shards supersede it.",
+      "builder": "scripts/datasets/build_docclass_v5.py @ Exios66/llm-entity-extraction"
+    },
+    "manifest_rows_total": 1210,
+    "manifest_rows_by_config": {
+      "default": {
+        "train": 1081,
+        "test": 129
+      },
+      "ground_truth": {
+        "train": 1081,
+        "test": 129
+      }
+    },
+    "manifest_type_counts": {
+      "contract": 509,
+      "corporate_record": 39,
+      "correspondence": 110,
+      "insurance_claim": 400,
+      "merger_agreement": 152
+    }
+  },
+  "P1": {
+    "config_join": {
+      "blind_rows": 1210,
+      "gt_rows": 1210,
+      "blind_unique_filenames": true,
+      "gt_unique_filenames": true,
+      "filename_sets_equal": true,
+      "blind_split_counts": {
+        "train": 1081,
+        "test": 129
+      },
+      "gt_split_counts": {
+        "train": 1081,
+        "test": 129
+      },
+      "split_agreement": true
+    },
+    "split_rule": {
+      "default": {
+        "rule": "md5(filename utf-8) % 10 == 0 -> test",
+        "mismatches": 0,
+        "mismatch_examples": []
+      },
+      "ground_truth": {
+        "rule": "md5(filename utf-8) % 10 == 0 -> test",
+        "mismatches": 0,
+        "mismatch_examples": []
+      },
+      "claims_source_rule": {
+        "rule": "md5(record_id) % 10 (source placement)",
+        "checked": 400,
+        "rows_moved_by_family_rule": 65,
+        "manifest_claim": "65/400 moved"
+      }
+    },
+    "jsonl_parity": {
+      "jsonl_rows": 700,
+      "jsonl_columns": [
+        "filename",
+        "doc_text",
+        "prompt",
+        "expected",
+        "expected_subclass",
+        "split",
+        "metadata"
+      ],
+      "jsonl_rows_in_blind": 700,
+      "jsonl_rows_not_in_blind": 0,
+      "doc_text_byte_equal_rate": 1.0,
+      "metadata_equal_after_null_normalization": 1.0,
+      "metadata_field_diff_counts": {},
+      "expected_label_equal_rate": 1.0
+    },
+    "schema": {
+      "blind_columns": [
+        "filename",
+        "doc_text",
+        "prompt",
+        "metadata",
+        "split"
+      ],
+      "gt_columns": [
+        "filename",
+        "expected",
+        "expected_subclass",
+        "label_evidence",
+        "content_topic",
+        "topic_evidence",
+        "sentiment_score",
+        "sentiment_label",
+        "sentiment_evidence",
+        "claim_number",
+        "policy_number",
+        "insurer",
+        "insured_party",
+        "claim_type",
+        "date_of_loss",
+        "date_filed",
+        "claimed_amount",
+        "adjuster",
+        "damages_description",
+        "coverage_determination",
+        "denial_reasons",
+        "supporting_documents",
+        "cuad_clause_labels",
+        "maud_clause_labels",
+        "split",
+        "intent",
+        "subject_matter",
+        "keywords"
+      ],
+      "gt_nonuniform_null_columns": {
+        "keywords": 129,
+        "subject_matter": 129,
+        "intent": 129,
+        "adjuster": 129,
+        "content_topic": 118,
+        "label_evidence": 118,
+        "topic_evidence": 118,
+        "sentiment_score": 118,
+        "sentiment_evidence": 118,
+        "sentiment_label": 118,
+        "maud_clause_labels": 112,
+        "claimed_amount": 85,
+        "claim_number": 83,
+        "coverage_determination": 83,
+        "supporting_documents": 83,
+        "denial_reasons": 83,
+        "damages_description": 83,
+        "policy_number": 83,
+        "date_of_loss": 83,
+        "claim_type": 83,
+        "insured_party": 83,
+        "insurer": 83,
+        "date_filed": 83,
+        "cuad_clause_labels": 75
+      },
+      "prompt_all_empty": true,
+      "doc_text_nulls": 0,
+      "metadata_key_union_n": 43,
+      "metadata_all_string_like": true
+    },
+    "cuad_offsets": {
+      "rows_with_labels": 509,
+      "total_spans": 13753,
+      "exact_offset_matches": 13753,
+      "match_rate": 1.0,
+      "spans_per_contract_mean": 27.019646365422396,
+      "fail_examples": []
+    },
+    "maud_labels": {
+      "rows_with_labels": 152,
+      "distinct_tasks": 22,
+      "labels_per_row_mean": 16.375,
+      "labels_per_row_min_max": [
+        11,
+        20
+      ],
+      "task_frequency_top10": {
+        "Accuracy of Target R&W Closing Condition": 152,
+        "MAE Definition": 152,
+        "Tail Period & Acquisition Proposal Details": 152,
+        "Ordinary course covenant": 151,
+        "Fiduciary exception to COR covenant": 149,
+        "Negative interim operating covenant": 145,
+        "Agreement provides for matching rights in connection with COR": 139,
+        "Superior Offer Definition": 139,
+        "Knowledge Definition": 139,
+        "No-Shop": 134
+      },
+      "metadata_count_semantics": "maud_label_count == sum(maud_categories) == upstream annotation count; >= per-task GT column size",
+      "metadata_count_consistency_ok": 152,
+      "metadata_count_checked": 152
+    },
+    "metadata_label_consistency": {
+      "available": true,
+      "rows_with_expected_doc_type": 191,
+      "agree_rate_on_filled": 1.0
+    }
+  },
+  "P2": {
+    "imbalance": {
+      "type_counts": {
+        "contract": 509,
+        "insurance_claim": 400,
+        "merger_agreement": 152,
+        "correspondence": 110,
+        "corporate_record": 39
+      },
+      "type_entropy_bits": 1.9036075861874246,
+      "max_min_imbalance_ratio_type": 13.051282051282051,
+      "n_strata": 48,
+      "max_min_imbalance_ratio_strata": 100.0,
+      "min_stratum": {
+        "stratum": [
+          "corporate_record",
+          "other"
+        ],
+        "count": 1
+      },
+      "split_homogeneity_chi2": 3.0756757748237393,
+      "split_homogeneity_p": 0.5452420828052831,
+      "split_homogeneity_dof": 4,
+      "subclass_counts": {
+        "contract|Maintenance": 34,
+        "contract|License_Agreements": 33,
+        "contract|Distributor": 32,
+        "contract|Strategic Alliance": 32,
+        "contract|Sponsorship": 31,
+        "contract|Development": 28,
+        "contract|Service": 28,
+        "contract|Collaboration": 26,
+        "contract|Endorsement": 24,
+        "contract|Co_Branding": 22,
+        "contract|Hosting": 20,
+        "contract|Outsourcing": 18,
+        "contract|Supply": 18,
+        "contract|IP": 17,
+        "contract|Manufacturing": 17,
+        "contract|Marketing": 17,
+        "contract|Franchise": 15,
+        "contract|Joint Venture _ Filing": 14,
+        "contract|Agency Agreements": 13,
+        "contract|Transportation": 13,
+        "contract|Promotion": 12,
+        "contract|Reseller": 12,
+        "contract|Consulting Agreements": 11,
+        "contract|Affiliate_Agreements": 10,
+        "contract|Joint Venture": 9,
+        "contract|Non_Compete_Non_Solicit": 3,
+        "corporate_record|articles_of_incorporation": 20,
+        "corporate_record|rights_instrument": 14,
+        "corporate_record|bylaws": 2,
+        "corporate_record|powers_of_attorney": 2,
+        "corporate_record|other": 1,
+        "correspondence|demand": 16,
+        "correspondence|notice": 16,
+        "correspondence|email": 15,
+        "correspondence|letter": 15,
+        "correspondence|meeting_request": 15,
+        "correspondence|memo": 15,
+        "correspondence|press_release": 15,
+        "correspondence|attorney_demand": 3,
+        "insurance_claim|carrier": 100,
+        "insurance_claim|inpatient": 100,
+        "insurance_claim|outpatient": 100,
+        "insurance_claim|pde": 100,
+        "merger_agreement|all_cash": 57,
+        "merger_agreement|other": 57,
+        "merger_agreement|all_stock": 24,
+        "merger_agreement|mixed_cash_stock": 13,
+        "merger_agreement|mixed_cash_stock_election": 1
+      }
+    },
+    "provenance": [
+      {
+        "doc_type": "contract",
+        "rows": 509,
+        "source_values": "cuad_v1",
+        "source_dataset_values": "mailroom-cuad-contracts-full",
+        "n_unique_cik": 0,
+        "n_unique_custodian": 0,
+        "n_unique_sender": 0,
+        "pdf_path_filled": 509
+      },
+      {
+        "doc_type": "merger_agreement",
+        "rows": 152,
+        "source_values": "maud_v1",
+        "source_dataset_values": "data/maud/contracts.jsonl",
+        "n_unique_cik": 0,
+        "n_unique_custodian": 0,
+        "n_unique_sender": 0,
+        "pdf_path_filled": 0
+      },
+      {
+        "doc_type": "corporate_record",
+        "rows": 39,
+        "source_values": "edgar_s1",
+        "source_dataset_values": "data/s1_corporate_records/corporate-records.jsonl",
+        "n_unique_cik": 11,
+        "n_unique_custodian": 0,
+        "n_unique_sender": 0,
+        "pdf_path_filled": 0
+      },
+      {
+        "doc_type": "correspondence",
+        "rows": 110,
+        "source_values": "cmu_enron_maildir",
+        "source_dataset_values": "Lucius-Morningstar/enron-correspondence-dedup",
+        "n_unique_cik": 0,
+        "n_unique_custodian": 56,
+        "n_unique_sender": 93,
+        "pdf_path_filled": 0
+      },
+      {
+        "doc_type": "insurance_claim",
+        "rows": 400,
+        "source_values": "",
+        "source_dataset_values": "cms-de-synpuf-2008-2010-sample1",
+        "n_unique_cik": 0,
+        "n_unique_custodian": 0,
+        "n_unique_sender": 0,
+        "pdf_path_filled": 0
+      }
+    ],
+    "date_span": {
+      "date": {
+        "filled": 110,
+        "min": 2000.0,
+        "max": 2002.0
+      },
+      "filing_date": {
+        "filled": 39,
+        "min": 2008.0,
+        "max": 2019.0
+      },
+      "year": {
+        "filled": 399,
+        "min": 2008.0,
+        "max": 2010.0
+      }
+    }
+  },
+  "P3": {
+    "figures": 27,
+    "tables": {
+      "text_stats": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/tables/text_length_stats_by_type.csv",
+      "budget": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/tables/token_budget_coverage.csv",
+      "cuad": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/tables/cuad_clause_stats.csv",
+      "maud": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/tables/maud_task_stats.csv",
+      "claims": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/tables/claim_amount_stats.csv",
+      "corr": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/tables/correspondence_topic_intent.csv"
+    }
+  },
+  "P4": {
+    "figures": {
+      "04_text_length_violin": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/04_text_length_violin.html",
+      "05_token_budget_coverage": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/05_token_budget_coverage.html",
+      "06_text_length_ecdf": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/06_text_length_ecdf.html",
+      "08_cuad_presence": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/08_cuad_clause_presence.html",
+      "09_cuad_span_counts": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/09_cuad_span_counts.html",
+      "10_cuad_top_clauses": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/10_cuad_top_clauses.html",
+      "11_cuad_cooccurrence": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/11_cuad_cooccurrence.html",
+      "13_maud_frequency": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/13_maud_task_frequency.html",
+      "14_maud_answers": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/14_maud_answer_distribution.html",
+      "16_claim_amount": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/16_claim_amount.html",
+      "17_coverage": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/17_coverage_determination.html",
+      "18_claim_dates": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/18_claim_dates.html",
+      "20_corr_topic_intent": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/20_corr_topic_intent.html",
+      "23_treemap": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/23_imbalance_treemap.html",
+      "24_strata_ratio": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/24_strata_ratio.html",
+      "26_filing_timeline": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/26_filing_timeline.html",
+      "27_source_proportions": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/27_source_proportions.html",
+      "30_metadata_heatmap": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/30_metadata_heatmap.html"
+    }
+  },
+  "P5": {
+    "staged": {
+      "default/train": 1081,
+      "ground_truth/train": 1081,
+      "default/test": 129,
+      "ground_truth/test": 129
+    }
+  }
+}

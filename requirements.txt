@@ -12,6 +12,7 @@ nltk==3.10.3
 wordcloud==1.9.6
 datasketch==2.0.0
 tiktoken==0.14.0
+squarify==0.4.4
 datasets==5.0.1
 polars==1.44.1
 huggingface_hub==1.29.0
