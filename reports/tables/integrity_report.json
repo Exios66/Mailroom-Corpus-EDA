@@ -50,8 +50,8 @@
     "metadata_equal_after_null_normalization": 0.0,
     "metadata_field_diff_counts": {
       "original_file": 700,
-      "expected_subclass": 191,
-      "expected_doc_type": 191
+      "expected_doc_type": 191,
+      "expected_subclass": 191
     },
     "expected_label_equal_rate": 1.0
   },

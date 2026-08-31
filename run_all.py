@@ -130,6 +130,27 @@ def main() -> int:
 
     # Summary
     summary_path = ROOT / "reports" / "SUMMARY_REPORT.json"
+
+    def _rel(p):
+        if isinstance(p, Path):
+            try:
+                return str(p.relative_to(ROOT))
+            except ValueError:
+                return str(p)
+        return p
+
+    results = json.loads(json.dumps(results, default=str))
+
+    def _walk(d):
+        if isinstance(d, dict):
+            return {k: _walk(v) for k, v in d.items()}
+        if isinstance(d, list):
+            return [_walk(v) for v in d]
+        if isinstance(d, str) and d.startswith(str(ROOT)):
+            return _rel(Path(d))
+        return d
+
+    results = _walk(results)
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     with open(summary_path, "w") as fh:
         json.dump(results, fh, indent=2, default=str)

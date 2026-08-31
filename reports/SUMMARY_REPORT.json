@@ -86,8 +86,8 @@
       "metadata_equal_after_null_normalization": 0.0,
       "metadata_field_diff_counts": {
         "original_file": 700,
-        "expected_subclass": 191,
-        "expected_doc_type": 191
+        "expected_doc_type": 191,
+        "expected_subclass": 191
       },
       "expected_label_equal_rate": 1.0
     },
@@ -343,34 +343,34 @@
   "P3": {
     "figures": 27,
     "tables": {
-      "text_stats": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/tables/text_length_stats_by_type.csv",
-      "budget": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/tables/token_budget_coverage.csv",
-      "cuad": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/tables/cuad_clause_stats.csv",
-      "maud": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/tables/maud_task_stats.csv",
-      "claims": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/tables/claim_amount_stats.csv",
-      "corr": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/tables/correspondence_topic_intent.csv"
+      "text_stats": "reports/tables/text_length_stats_by_type.csv",
+      "budget": "reports/tables/token_budget_coverage.csv",
+      "cuad": "reports/tables/cuad_clause_stats.csv",
+      "maud": "reports/tables/maud_task_stats.csv",
+      "claims": "reports/tables/claim_amount_stats.csv",
+      "corr": "reports/tables/correspondence_topic_intent.csv"
     }
   },
   "P4": {
     "figures": {
-      "04_text_length_violin": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/04_text_length_violin.html",
-      "05_token_budget_coverage": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/05_token_budget_coverage.html",
-      "06_text_length_ecdf": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/06_text_length_ecdf.html",
-      "08_cuad_presence": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/08_cuad_clause_presence.html",
-      "09_cuad_span_counts": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/09_cuad_span_counts.html",
-      "10_cuad_top_clauses": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/10_cuad_top_clauses.html",
-      "11_cuad_cooccurrence": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/11_cuad_cooccurrence.html",
-      "13_maud_frequency": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/13_maud_task_frequency.html",
-      "14_maud_answers": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/14_maud_answer_distribution.html",
-      "16_claim_amount": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/16_claim_amount.html",
-      "17_coverage": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/17_coverage_determination.html",
-      "18_claim_dates": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/18_claim_dates.html",
-      "20_corr_topic_intent": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/20_corr_topic_intent.html",
-      "23_treemap": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/23_imbalance_treemap.html",
-      "24_strata_ratio": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/24_strata_ratio.html",
-      "26_filing_timeline": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/26_filing_timeline.html",
-      "27_source_proportions": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/27_source_proportions.html",
-      "30_metadata_heatmap": "/Users/luciusjmorningstar/Downloads/Mailroom-Corpus-EDA/reports/figures_interactive/30_metadata_heatmap.html"
+      "04_text_length_violin": "reports/figures_interactive/04_text_length_violin.html",
+      "05_token_budget_coverage": "reports/figures_interactive/05_token_budget_coverage.html",
+      "06_text_length_ecdf": "reports/figures_interactive/06_text_length_ecdf.html",
+      "08_cuad_presence": "reports/figures_interactive/08_cuad_clause_presence.html",
+      "09_cuad_span_counts": "reports/figures_interactive/09_cuad_span_counts.html",
+      "10_cuad_top_clauses": "reports/figures_interactive/10_cuad_top_clauses.html",
+      "11_cuad_cooccurrence": "reports/figures_interactive/11_cuad_cooccurrence.html",
+      "13_maud_frequency": "reports/figures_interactive/13_maud_task_frequency.html",
+      "14_maud_answers": "reports/figures_interactive/14_maud_answer_distribution.html",
+      "16_claim_amount": "reports/figures_interactive/16_claim_amount.html",
+      "17_coverage": "reports/figures_interactive/17_coverage_determination.html",
+      "18_claim_dates": "reports/figures_interactive/18_claim_dates.html",
+      "20_corr_topic_intent": "reports/figures_interactive/20_corr_topic_intent.html",
+      "23_treemap": "reports/figures_interactive/23_imbalance_treemap.html",
+      "24_strata_ratio": "reports/figures_interactive/24_strata_ratio.html",
+      "26_filing_timeline": "reports/figures_interactive/26_filing_timeline.html",
+      "27_source_proportions": "reports/figures_interactive/27_source_proportions.html",
+      "30_metadata_heatmap": "reports/figures_interactive/30_metadata_heatmap.html"
     }
   },
   "P5": {

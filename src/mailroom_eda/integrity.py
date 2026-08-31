@@ -87,7 +87,7 @@ def audit_jsonl_parity(blind: pd.DataFrame, gt: pd.DataFrame) -> dict:
         diffs = Counter()
         for i in common:
             a, c = _norm_md(joined.loc[i, "metadata"]), _norm_md(b.loc[i, "metadata"])
-            for k in set(a) | set(c):
+            for k in sorted(set(a) | set(c)):
                 if a.get(k) != c.get(k):
                     diffs[k] += 1
         out["metadata_field_diff_counts"] = dict(diffs.most_common(10))
