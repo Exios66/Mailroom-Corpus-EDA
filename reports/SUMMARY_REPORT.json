@@ -1,19 +1,21 @@
 {
   "P0": {
     "manifest": {
-      "built_utc": "2026-08-24T03:33:14Z",
-      "schema_version": "5",
-      "rows_total": "1210 ({'contract': 509, 'corporate_record': 39, 'correspondence': 110, 'insurance_claim': 400, 'merger_agreement': 152})",
-      "rows_by_config": "default train=1081 test=129; ground_truth train=1081 test=129",
+      "built_utc": "2026-08-31T05:22:49Z",
+      "schema_version": "6",
+      "rows_total": "1650 ({'contract': 509, 'corporate_record': 39, 'correspondence': 350, 'insurance_claim': 600, 'merger_agreement': 152})",
+      "rows_by_config": "default train=1474 test=176; ground_truth train=1474 test=176",
       "strata": "48 (expected x expected_subclass)",
-      "v4_base_revision": "407bf55c993a006689aa1b6e03e57c428c852e98",
-      "v5_additions": "insurance_claim class (+400 rows, 4 subtypes) from Lucius-Morningstar/cms-desynpuf-insurance-claims; clause-level GT columns (cuad_clause_labels / maud_clause_labels) in the ground_truth config only.",
-      "claims_split_note": "source placement keyed md5(record_id)%10; fused under the family rule md5(filename)%10 (moved 65/400 rows).",
-      "clause_gt_joins": "CUAD 509/509 contracts (official annotation JSON = masterlabels.csv source; 13753/13753 answers verified at exact char offsets vs stored text); MAUD 152/152 mergers (22-task gold labels w/ categories + valid classes).",
+      "v5_base_revision": "1d4753578d91aae09033b359bc32dc1b431e4c20",
+      "v6_additions": "+240 correspondence rows (stratified sha256-filename draw of 240 from 247,413 dedup GT rows after excluding the 110 existing; 3-labeler verification pass GREEN \u2014 subclass/topic/ sentiment reproduce the Hub GT on every row; KANBAN-103 overrides honored, 0 override hits) from Lucius-Morningstar/enron-correspondence-dedup; +200 insurance_claim rows (DE-SynPUF Sample-1 re-render via Exios66/claims-data-eda, verbatim GT contract, existing 400 record_ids excluded) \u2014 subtypes carrier, inpatient, outpatient, pde.",
+      "original_files": "1650 upstream originals under files/ (153 MB) \u2014 FILE-COMPLETE CORPUS: every row carries its original (contract 509 CUAD source PDFs, merger_agreement 152 MAUD contract_N.txt, corporate_record 39 EDGAR exhibit originals, correspondence 350 CMU maildir raw RFC822 messages via Enron-Evaluation-Environment, insurance_claim 600 rendered EOB documents via Exios66/claims-data-eda \u2014 the render IS the original). metadata.original_file carries the Hub-relative path on EVERY row. Sha256 per file: original_files_mapping.jsonl sidecar.",
+      "purpose_gt": "intent/subject_matter/keywords on 488 rows (the llm-mailroom purpose-GT push of 2026-08-30 covers the v5 train purpose-class rows); new append rows are EMPTY until the incremental labeler pass fills them in a follow-up revision.",
+      "blind_repair": "v6 strips the label equivalents (expected_doc_type / expected_subclass) that the v4-era flat dump rode inside blind metadata and v5 carried onto the default config verbatim \u2014 the default config is now truly agent-blind per the card contract (\"NO label columns\"); labels live ONLY in the ground_truth config. No repo consumer read the blind metadata labels (mirrors take labels from the GT config / top-level fields); 1650 rows repaired.",
+      "family_split": "md5(filename) % 10 == 0 -> test; recomputed and asserted for every append row at fusion.",
       "legacy_files": "docclass_merged.jsonl retained UNTOUCHED (describes v4; kept for pinned consumers). Parquet shards supersede it.",
-      "builder": "scripts/datasets/build_docclass_v5.py @ Exios66/llm-entity-extraction"
+      "builder": "scripts/datasets/build_docclass_v6.py @ Exios66/llm-entity-extraction"
     },
-    "manifest_rows_total": 1210,
+    "manifest_rows_total": 1650,
     "manifest_rows_by_config": {
       "default": {
         "train": 1081,
@@ -34,18 +36,18 @@
   },
   "P1": {
     "config_join": {
-      "blind_rows": 1210,
-      "gt_rows": 1210,
+      "blind_rows": 1650,
+      "gt_rows": 1650,
       "blind_unique_filenames": true,
       "gt_unique_filenames": true,
       "filename_sets_equal": true,
       "blind_split_counts": {
-        "train": 1081,
-        "test": 129
+        "train": 1474,
+        "test": 176
       },
       "gt_split_counts": {
-        "train": 1081,
-        "test": 129
+        "train": 1474,
+        "test": 176
       },
       "split_agreement": true
     },
@@ -62,8 +64,8 @@
       },
       "claims_source_rule": {
         "rule": "md5(record_id) % 10 (source placement)",
-        "checked": 400,
-        "rows_moved_by_family_rule": 65,
+        "checked": 600,
+        "rows_moved_by_family_rule": 96,
         "manifest_claim": "65/400 moved"
       }
     },
@@ -81,8 +83,12 @@
       "jsonl_rows_in_blind": 700,
       "jsonl_rows_not_in_blind": 0,
       "doc_text_byte_equal_rate": 1.0,
-      "metadata_equal_after_null_normalization": 1.0,
-      "metadata_field_diff_counts": {},
+      "metadata_equal_after_null_normalization": 0.0,
+      "metadata_field_diff_counts": {
+        "original_file": 700,
+        "expected_doc_type": 191,
+        "expected_subclass": 191
+      },
       "expected_label_equal_rate": 1.0
     },
     "schema": {
@@ -118,36 +124,36 @@
         "supporting_documents",
         "cuad_clause_labels",
         "maud_clause_labels",
-        "split",
         "intent",
         "subject_matter",
-        "keywords"
+        "keywords",
+        "split"
       ],
       "gt_nonuniform_null_columns": {
-        "keywords": 129,
-        "subject_matter": 129,
-        "intent": 129,
-        "adjuster": 129,
-        "content_topic": 118,
-        "label_evidence": 118,
-        "topic_evidence": 118,
-        "sentiment_score": 118,
-        "sentiment_evidence": 118,
-        "sentiment_label": 118,
-        "maud_clause_labels": 112,
-        "claimed_amount": 85,
-        "claim_number": 83,
-        "coverage_determination": 83,
-        "supporting_documents": 83,
-        "denial_reasons": 83,
-        "damages_description": 83,
-        "policy_number": 83,
-        "date_of_loss": 83,
-        "claim_type": 83,
-        "insured_party": 83,
-        "insurer": 83,
-        "date_filed": 83,
-        "cuad_clause_labels": 75
+        "keywords": 569,
+        "subject_matter": 569,
+        "intent": 569,
+        "adjuster": 569,
+        "maud_clause_labels": 552,
+        "cuad_clause_labels": 515,
+        "date_of_loss": 325,
+        "claimed_amount": 325,
+        "date_filed": 325,
+        "insured_party": 323,
+        "claim_type": 323,
+        "insurer": 323,
+        "policy_number": 323,
+        "claim_number": 323,
+        "damages_description": 323,
+        "coverage_determination": 323,
+        "denial_reasons": 323,
+        "supporting_documents": 323,
+        "content_topic": 318,
+        "sentiment_evidence": 318,
+        "sentiment_label": 318,
+        "sentiment_score": 318,
+        "topic_evidence": 318,
+        "label_evidence": 318
       },
       "prompt_all_empty": true,
       "doc_text_nulls": 0,
@@ -187,24 +193,22 @@
       "metadata_count_checked": 152
     },
     "metadata_label_consistency": {
-      "available": true,
-      "rows_with_expected_doc_type": 191,
-      "agree_rate_on_filled": 1.0
+      "available": false
     }
   },
   "P2": {
     "imbalance": {
       "type_counts": {
+        "insurance_claim": 600,
         "contract": 509,
-        "insurance_claim": 400,
+        "correspondence": 350,
         "merger_agreement": 152,
-        "correspondence": 110,
         "corporate_record": 39
       },
-      "type_entropy_bits": 1.9036075861874246,
-      "max_min_imbalance_ratio_type": 13.051282051282051,
+      "type_entropy_bits": 1.973271283878375,
+      "max_min_imbalance_ratio_type": 15.384615384615385,
       "n_strata": 48,
-      "max_min_imbalance_ratio_strata": 100.0,
+      "max_min_imbalance_ratio_strata": 150.0,
       "min_stratum": {
         "stratum": [
           "corporate_record",
@@ -212,8 +216,8 @@
         ],
         "count": 1
       },
-      "split_homogeneity_chi2": 3.0756757748237393,
-      "split_homogeneity_p": 0.5452420828052831,
+      "split_homogeneity_chi2": 2.9447176928962704,
+      "split_homogeneity_p": 0.5671189817188721,
       "split_homogeneity_dof": 4,
       "subclass_counts": {
         "contract|Maintenance": 34,
@@ -247,18 +251,18 @@
         "corporate_record|bylaws": 2,
         "corporate_record|powers_of_attorney": 2,
         "corporate_record|other": 1,
-        "correspondence|demand": 16,
-        "correspondence|notice": 16,
-        "correspondence|email": 15,
-        "correspondence|letter": 15,
-        "correspondence|meeting_request": 15,
-        "correspondence|memo": 15,
-        "correspondence|press_release": 15,
+        "correspondence|demand": 51,
+        "correspondence|email": 50,
+        "correspondence|notice": 50,
+        "correspondence|letter": 49,
+        "correspondence|meeting_request": 49,
+        "correspondence|memo": 49,
+        "correspondence|press_release": 49,
         "correspondence|attorney_demand": 3,
-        "insurance_claim|carrier": 100,
-        "insurance_claim|inpatient": 100,
-        "insurance_claim|outpatient": 100,
-        "insurance_claim|pde": 100,
+        "insurance_claim|carrier": 150,
+        "insurance_claim|inpatient": 150,
+        "insurance_claim|outpatient": 150,
+        "insurance_claim|pde": 150,
         "merger_agreement|all_cash": 57,
         "merger_agreement|other": 57,
         "merger_agreement|all_stock": 24,
@@ -299,17 +303,17 @@
       },
       {
         "doc_type": "correspondence",
-        "rows": 110,
+        "rows": 350,
         "source_values": "cmu_enron_maildir",
         "source_dataset_values": "Lucius-Morningstar/enron-correspondence-dedup",
         "n_unique_cik": 0,
-        "n_unique_custodian": 56,
-        "n_unique_sender": 93,
+        "n_unique_custodian": 94,
+        "n_unique_sender": 252,
         "pdf_path_filled": 0
       },
       {
         "doc_type": "insurance_claim",
-        "rows": 400,
+        "rows": 600,
         "source_values": "",
         "source_dataset_values": "cms-de-synpuf-2008-2010-sample1",
         "n_unique_cik": 0,
@@ -320,8 +324,8 @@
     ],
     "date_span": {
       "date": {
-        "filled": 110,
-        "min": 2000.0,
+        "filled": 350,
+        "min": 1999.0,
         "max": 2002.0
       },
       "filing_date": {
@@ -330,7 +334,7 @@
         "max": 2019.0
       },
       "year": {
-        "filled": 399,
+        "filled": 597,
         "min": 2008.0,
         "max": 2010.0
       }
@@ -371,10 +375,10 @@
   },
   "P5": {
     "staged": {
-      "default/train": 1081,
-      "ground_truth/train": 1081,
-      "default/test": 129,
-      "ground_truth/test": 129
+      "default/train": 1474,
+      "ground_truth/train": 1474,
+      "default/test": 176,
+      "ground_truth/test": 176
     }
   }
 }

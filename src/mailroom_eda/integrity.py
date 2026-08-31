@@ -117,10 +117,9 @@ def audit_schema(blind: pd.DataFrame, gt: pd.DataFrame) -> dict:
 
 def metadata_coverage(blind: pd.DataFrame, gt: pd.DataFrame) -> pd.DataFrame:
     meta = _meta_series(blind)
-    cov = pd.DataFrame({"doc_type": gt["expected"].values}, index=blind.index)
-    cov = pd.concat([cov, meta], axis=1)
-    tbl = cov.groupby("doc_type").apply(
-        lambda g: g.drop(columns=["doc_type"]).notna().mean().T
+    cov = pd.concat([gt["expected"].rename("doc_type"), meta], axis=1)
+    tbl = cov.set_index("doc_type").groupby(level=0).apply(
+        lambda g: g.notna().mean().T
     )
     return tbl
 

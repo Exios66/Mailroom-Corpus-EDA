@@ -1,17 +1,17 @@
 {
   "config_join": {
-    "blind_rows": 1210,
-    "gt_rows": 1210,
+    "blind_rows": 1650,
+    "gt_rows": 1650,
     "blind_unique_filenames": true,
     "gt_unique_filenames": true,
     "filename_sets_equal": true,
     "blind_split_counts": {
-      "train": 1081,
-      "test": 129
+      "train": 1474,
+      "test": 176
     },
     "gt_split_counts": {
-      "train": 1081,
-      "test": 129
+      "train": 1474,
+      "test": 176
     },
     "split_agreement": true
   },
@@ -28,8 +28,8 @@
     },
     "claims_source_rule": {
       "rule": "md5(record_id) % 10 (source placement)",
-      "checked": 400,
-      "rows_moved_by_family_rule": 65,
+      "checked": 600,
+      "rows_moved_by_family_rule": 96,
       "manifest_claim": "65/400 moved"
     }
   },
@@ -47,8 +47,12 @@
     "jsonl_rows_in_blind": 700,
     "jsonl_rows_not_in_blind": 0,
     "doc_text_byte_equal_rate": 1.0,
-    "metadata_equal_after_null_normalization": 1.0,
-    "metadata_field_diff_counts": {},
+    "metadata_equal_after_null_normalization": 0.0,
+    "metadata_field_diff_counts": {
+      "original_file": 700,
+      "expected_doc_type": 191,
+      "expected_subclass": 191
+    },
     "expected_label_equal_rate": 1.0
   },
   "schema": {
@@ -84,36 +88,36 @@
       "supporting_documents",
       "cuad_clause_labels",
       "maud_clause_labels",
-      "split",
       "intent",
       "subject_matter",
-      "keywords"
+      "keywords",
+      "split"
     ],
     "gt_nonuniform_null_columns": {
-      "keywords": 129,
-      "subject_matter": 129,
-      "intent": 129,
-      "adjuster": 129,
-      "content_topic": 118,
-      "label_evidence": 118,
-      "topic_evidence": 118,
-      "sentiment_score": 118,
-      "sentiment_evidence": 118,
-      "sentiment_label": 118,
-      "maud_clause_labels": 112,
-      "claimed_amount": 85,
-      "claim_number": 83,
-      "coverage_determination": 83,
-      "supporting_documents": 83,
-      "denial_reasons": 83,
-      "damages_description": 83,
-      "policy_number": 83,
-      "date_of_loss": 83,
-      "claim_type": 83,
-      "insured_party": 83,
-      "insurer": 83,
-      "date_filed": 83,
-      "cuad_clause_labels": 75
+      "keywords": 569,
+      "subject_matter": 569,
+      "intent": 569,
+      "adjuster": 569,
+      "maud_clause_labels": 552,
+      "cuad_clause_labels": 515,
+      "date_of_loss": 325,
+      "claimed_amount": 325,
+      "date_filed": 325,
+      "insured_party": 323,
+      "claim_type": 323,
+      "insurer": 323,
+      "policy_number": 323,
+      "claim_number": 323,
+      "damages_description": 323,
+      "coverage_determination": 323,
+      "denial_reasons": 323,
+      "supporting_documents": 323,
+      "content_topic": 318,
+      "sentiment_evidence": 318,
+      "sentiment_label": 318,
+      "sentiment_score": 318,
+      "topic_evidence": 318,
+      "label_evidence": 318
     },
     "prompt_all_empty": true,
     "doc_text_nulls": 0,
@@ -153,8 +157,6 @@
     "metadata_count_checked": 152
   },
   "metadata_label_consistency": {
-    "available": true,
-    "rows_with_expected_doc_type": 191,
-    "agree_rate_on_filled": 1.0
+    "available": false
   }
 }

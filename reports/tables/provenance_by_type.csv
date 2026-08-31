@@ -2,5 +2,5 @@ doc_type,rows,source_values,source_dataset_values,n_unique_cik,n_unique_custodia
 contract,509,cuad_v1,mailroom-cuad-contracts-full,0,0,0,509
 merger_agreement,152,maud_v1,data/maud/contracts.jsonl,0,0,0,0
 corporate_record,39,edgar_s1,data/s1_corporate_records/corporate-records.jsonl,11,0,0,0
-correspondence,110,cmu_enron_maildir,Lucius-Morningstar/enron-correspondence-dedup,0,56,93,0
-insurance_claim,400,,cms-de-synpuf-2008-2010-sample1,0,0,0,0
+correspondence,350,cmu_enron_maildir,Lucius-Morningstar/enron-correspondence-dedup,0,94,252,0
+insurance_claim,600,,cms-de-synpuf-2008-2010-sample1,0,0,0,0

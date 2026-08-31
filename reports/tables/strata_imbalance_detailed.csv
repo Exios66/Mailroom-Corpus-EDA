@@ -1,6 +1,6 @@
 expected,expected_subclass,test,train,total,test_share_pct
-merger_agreement,mixed_cash_stock_election,0,1,1,0.0
 corporate_record,other,0,1,1,0.0
+merger_agreement,mixed_cash_stock_election,0,1,1,0.0
 corporate_record,bylaws,0,2,2,0.0
 corporate_record,powers_of_attorney,0,2,2,0.0
 contract,Non_Compete_Non_Solicit,0,3,3,0.0
@@ -8,31 +8,24 @@ correspondence,attorney_demand,0,3,3,0.0
 contract,Joint Venture,2,7,9,22.22222222222222
 contract,Affiliate_Agreements,2,8,10,20.0
 contract,Consulting Agreements,0,11,11,0.0
-contract,Promotion,0,12,12,0.0
 contract,Reseller,0,12,12,0.0
-contract,Transportation,2,11,13,15.384615384615385
+contract,Promotion,0,12,12,0.0
 contract,Agency Agreements,0,13,13,0.0
+contract,Transportation,2,11,13,15.384615384615385
 merger_agreement,mixed_cash_stock,1,12,13,7.6923076923076925
 corporate_record,rights_instrument,0,14,14,0.0
 contract,Joint Venture _ Filing,0,14,14,0.0
 contract,Franchise,1,14,15,6.666666666666667
-correspondence,email,0,15,15,0.0
-correspondence,press_release,1,14,15,6.666666666666667
-correspondence,letter,4,11,15,26.666666666666668
-correspondence,meeting_request,2,13,15,13.333333333333334
-correspondence,memo,0,15,15,0.0
-correspondence,demand,1,15,16,6.25
-correspondence,notice,3,13,16,18.75
 contract,Marketing,2,15,17,11.764705882352942
-contract,Manufacturing,2,15,17,11.764705882352942
 contract,IP,2,15,17,11.764705882352942
-contract,Supply,3,15,18,16.666666666666668
+contract,Manufacturing,2,15,17,11.764705882352942
 contract,Outsourcing,0,18,18,0.0
-corporate_record,articles_of_incorporation,1,19,20,5.0
+contract,Supply,3,15,18,16.666666666666668
 contract,Hosting,2,18,20,10.0
+corporate_record,articles_of_incorporation,1,19,20,5.0
 contract,Co_Branding,5,17,22,22.727272727272727
-merger_agreement,all_stock,2,22,24,8.333333333333334
 contract,Endorsement,0,24,24,0.0
+merger_agreement,all_stock,2,22,24,8.333333333333334
 contract,Collaboration,2,24,26,7.6923076923076925
 contract,Service,7,21,28,25.0
 contract,Development,4,24,28,14.285714285714286
@@ -41,9 +34,16 @@ contract,Strategic Alliance,4,28,32,12.5
 contract,Distributor,5,27,32,15.625
 contract,License_Agreements,2,31,33,6.0606060606060606
 contract,Maintenance,4,30,34,11.764705882352942
+correspondence,letter,11,38,49,22.448979591836736
+correspondence,meeting_request,5,44,49,10.204081632653061
+correspondence,memo,4,45,49,8.16326530612245
+correspondence,press_release,5,44,49,10.204081632653061
+correspondence,email,5,45,50,10.0
+correspondence,notice,4,46,50,8.0
+correspondence,demand,6,45,51,11.764705882352942
 merger_agreement,all_cash,6,51,57,10.526315789473685
 merger_agreement,other,8,49,57,14.035087719298245
-insurance_claim,carrier,15,85,100,15.0
-insurance_claim,inpatient,11,89,100,11.0
-insurance_claim,outpatient,12,88,100,12.0
-insurance_claim,pde,8,92,100,8.0
+insurance_claim,carrier,20,130,150,13.333333333333334
+insurance_claim,inpatient,15,135,150,10.0
+insurance_claim,outpatient,15,135,150,10.0
+insurance_claim,pde,14,136,150,9.333333333333334
