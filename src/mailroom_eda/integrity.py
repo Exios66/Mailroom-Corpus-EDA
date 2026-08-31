@@ -120,7 +120,7 @@ def metadata_coverage(blind: pd.DataFrame, gt: pd.DataFrame) -> pd.DataFrame:
     cov = pd.DataFrame({"doc_type": gt["expected"].values}, index=blind.index)
     cov = pd.concat([cov, meta], axis=1)
     tbl = cov.groupby("doc_type").apply(
-        lambda g: g.drop(columns=["doc_type"]).notna().mean().T, include_groups=True
+        lambda g: g.drop(columns=["doc_type"]).notna().mean().T
     )
     return tbl
 

@@ -2,6 +2,11 @@
 
 Full HF LLM-Mailroom Corpus Exploratory Data Analysis (DocClass Merged, v6).
 
+Standalone mirror of the `Exios66/Mailroom-Corpus-EDA` repo; inside the
+[mailroom-dev](https://github.com/Exios66/mailroom-dev) monorepo it lives at
+`packages/mailroom-corpus-eda` as a virtual uv workspace member (no build).
+Develop here, sync via `scripts/sync_packages.py` in mailroom-dev.
+
 ## Quick Start
 
 ```bash

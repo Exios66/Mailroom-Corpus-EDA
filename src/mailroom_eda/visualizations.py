@@ -156,7 +156,7 @@ def fig_length_by_subclass(blind: pd.DataFrame, gt: pd.DataFrame) -> None:
     fig, ax = plt.subplots(figsize=(10, 6.5))
     bp = ax.boxplot(
         [subset.loc[subset["subclass"] == s, "tokens"].values for s in order],
-        vert=False, labels=order, patch_artist=True, showfliers=False,
+        vert=False, tick_labels=order, patch_artist=True, showfliers=False,
     )
     for patch, s in zip(bp["boxes"], order):
         dt = subset.loc[subset["subclass"] == s, "doc_type"].mode()[0]
