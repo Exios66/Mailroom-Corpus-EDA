@@ -319,7 +319,7 @@
     }
   },
   "P3": {
-    "figures": 27,
+    "figures": 30,
     "tables": {
       "text_stats": "reports/tables/text_length_stats_by_type.csv",
       "budget": "reports/tables/token_budget_coverage.csv",

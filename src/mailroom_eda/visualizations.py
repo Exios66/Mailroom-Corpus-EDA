@@ -974,7 +974,7 @@ def run(save: bool = True) -> dict:
     fig_metadata_cardinality(meta)
 
     tables = save_eda_tables(blind, gt, meta) if save else {}
-    return {"figures": 27, "tables": tables}
+    return {"figures": 30, "tables": tables}
 
 
 if __name__ == "__main__":
