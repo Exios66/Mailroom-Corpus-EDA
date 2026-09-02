@@ -35,6 +35,19 @@ Develop here, sync via `scripts/sync_packages.py` in mailroom-dev.
 - `reports/figures_interactive/` — Plotly HTML figures
 - `reports/tables/` — CSV/JSON tables
 
+## Dataset cards
+
+Per-source documentation for the five corpora integrated into
+[docclass-merged](https://huggingface.co/datasets/Lucius-Morningstar/docclass-merged)
+— full context, source material, attribution, and purpose of each — lives in
+[`docs/`](docs/README.md) (`docs/dataset-cards/`):
+
+- [CUAD contracts](docs/dataset-cards/cuad-contracts.md) (`contract`, 509)
+- [MAUD merger agreements](docs/dataset-cards/maud-merger-agreements.md) (`merger_agreement`, 152)
+- [S-1 corporate records](docs/dataset-cards/s1-corporate-records.md) (`corporate_record`, 39)
+- [Enron correspondence](docs/dataset-cards/enron-correspondence.md) (`correspondence`, 350)
+- [CMS DE-SynPUF insurance claims](docs/dataset-cards/cms-desynpuf-insurance-claims.md) (`insurance_claim`, 600)
+
 ## HF Hub Interface (centralized from llm-entity-extraction)
 
 The upload/publish helpers previously living in
