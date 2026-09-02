@@ -116,20 +116,28 @@ consumer use of the correspondence subset.
 
 All 350 rows carry a non-null canonical intent — **100.0% coverage** — with
 three provenance columns on the `ground_truth` config
-(`intent_source` / `intent_confidence` / `intent_status`):
+(`intent_source` / `intent_confidence` / `intent_status`).
+`intent_source` records the **hydration path**; the three values are
+disjoint and sum to 350:
 
-| Component | Rows | Mechanism |
+| `intent_source` | Rows | Mechanism |
 |---|---:|---|
 | `manual` | 96 | purpose-GT labeling push (llm-mailroom, 2026-08-30) |
-| `llm_zero_shot` | 254 | constrained zero-shot pass, OpenRouter `deepseek/deepseek-chat`, temperature 0.1, closed 8-class vocabulary |
-| sha256 provenance join | 162 | exact normalized-body match against the Enron/AESLC mirrors — supplies provenance + recovered `subject_line` only; the mirrors carry **no** intent annotations (verified 2026-08-31), so `intent_source` never takes the reserved `aeslc_join` value in v7; the join flags live in the intent-backfill sidecar / `manifest.txt` |
-| `flagged_review` (`intent_status`) | 1 | confidence < 0.85 threshold → manual review queue |
-| `other` fallback | 22 | non-conforming residuals — explicit fallback, never null |
+| `aeslc_join` | 162 | join-assisted hydration: a sha256 exact normalized-body match against the Enron/AESLC mirrors routes the row through the assisted pass — the join supplies row provenance + the recovered `subject_line` used as constrained context |
+| `llm_zero_shot` | 92 | constrained zero-shot pass without a join hit, OpenRouter `deepseek/deepseek-chat`, temperature 0.1, closed 8-class vocabulary |
+
+The mirrors carry **no** intent annotations (verified 2026-08-31): every
+label is assigned under the closed vocabulary during the labeling pass, so
+`aeslc_join` marks the path a row's label came through — not a mirror-side
+label origin. Statuses (`intent_status`): `manual` 96, `auto_labeled` 253,
+`flagged_review` 1 (confidence < 0.85 threshold → manual review queue).
+The `other` class is the explicit fallback (22 rows), never null.
 
 Intent distribution (v7 EDA): notice 74, request 73, meeting_invite 57,
 press_communication 51, update 51, other 22, analysis 12, payment_demand
-10. Every canonical class appears in the 10% test split. The checkpointed
-backfill is reproducible via `scripts/backfill_intent.py` (never hand-edit
+10. Every canonical class appears in the 10% test split (test sources:
+aeslc_join 26, llm_zero_shot 14). The checkpointed backfill is reproducible
+via `scripts/backfill_intent.py` (never hand-edit
 `data/backfill/intent_labels.jsonl`).
 
 ## Subset statistics (v7 EDA)

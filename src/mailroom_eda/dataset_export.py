@@ -198,18 +198,24 @@ def build_manifest(
 
     if intent_stats:
         corr_rows = intent_stats.get("correspondence_rows") or intent_stats.get("rows_total", 0)
+        manual_n = intent_stats.get("manual_total", 0)
+        aeslc_n = intent_stats.get("aeslc_join_total", intent_stats.get("aeslc_joined", 0))
         llm_n = intent_stats.get("llm_zero_shot_total") or intent_stats.get("llm_zero_shot", 0)
         intent_segment = (
             f"intent_backfill : v7 correspondence intent hydration (issue #5): "
             f"{corr_rows} rows, "
             f"{intent_stats.get('coverage_pct', 0)}% non-null intent;\n"
-            f"                   aeslc_join {intent_stats.get('aeslc_joined', 0)} (sha256 "
-            f"exact-body match vs\n                   snoop2head/enron_aeslc_emails + "
-            f"Yale-LILY/aeslc), llm_zero_shot "
-            f"{llm_n},\n"
-            f"                   flagged_review {intent_stats.get('flagged_review', 0)}; "
-            f"columns intent_source / intent_confidence /\n"
-            f"                   intent_status ride the ground_truth config "
+            f"                   intent_source = hydration PATH (disjoint values "
+            f"summing to {corr_rows}):\n"
+            f"                   manual {manual_n} (purpose-GT push), aeslc_join {aeslc_n} "
+            f"(sha256 exact-body\n                   join-assisted pass vs "
+            f"snoop2head/enron_aeslc_emails +\n                   Yale-LILY/aeslc — the "
+            f"mirrors carry NO intent annotations; the\n                   join supplies "
+            f"provenance + recovered subject_line as constrained context),\n"
+            f"                   llm_zero_shot {llm_n}; flagged_review "
+            f"{intent_stats.get('flagged_review', 0)};\n"
+            f"                   columns intent_source / intent_confidence / "
+            f"intent_status ride the\n                   ground_truth config "
             f"(KANBAN issue #5 Phase 4).\n"
         )
     else:

@@ -58,10 +58,13 @@ annotation offsets validate (CUAD 13,753/13,753 span matches = 100%).
   set), sentiment (neutral 178 / positive 97 / negative 75) — the only
   sentiment-labeled subset.
 - **Intent is 100% hydrated** (issue #5 / v7): all 350 rows carry a canonical
-  intent — 96 manual + 254 llm_zero_shot (deepseek-chat via OpenRouter, closed
-  8-class vocabulary, confidence threshold 0.85), 162 rows sha256 exact-body
-  joined against the Enron/AESLC mirrors for provenance, 1 flagged_review.
-  Every canonical intent class appears in the 10% test split.
+  intent — `intent_source` records the hydration path (disjoint, sums to 350):
+  96 manual + 162 aeslc_join (sha256 exact-body join-assisted pass vs the
+  Enron/AESLC mirrors; the mirrors carry no intent annotations — the join
+  supplies provenance + recovered subject as context) + 92 llm_zero_shot
+  (deepseek-chat via OpenRouter, closed 8-class vocabulary, confidence
+  threshold 0.85), 1 flagged_review. Every canonical intent class appears in
+  the 10% test split.
 
 ### 6. Split integrity
 - 90/10 train/test: 1,474/176. Per-stratum test shares deviate from 10%

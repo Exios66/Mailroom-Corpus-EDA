@@ -12,8 +12,13 @@ Phase 1 — Taxonomy cross-walk: the canonical Enron intent vocabulary is
 Phase 2 — Exact-match join: the 251 unlabeled Enron correspondence rows are
     hydrated by sha256(normalized_header_stripped_body) against the full Enron
     mail corpus (``snoop2head/enron_aeslc_emails``, 535k mails) and AESLC
-    (``Yale-LILY/aeslc``). A body match sets provenance ``aeslc_join`` and, for
-    Yale-LILY, also recovers the AESLC ``subject_line``.
+    (``Yale-LILY/aeslc``). A body match routes the row through the
+    join-assisted hydration path: it sets ``intent_source = aeslc_join`` and,
+    for Yale-LILY, also recovers the AESLC ``subject_line`` (used as
+    constrained context for the labeling pass). The mirrors carry NO intent
+    annotations — the label itself is always assigned under the closed
+    vocabulary; ``aeslc_join`` records the hydration PATH, not a mirror-side
+    label origin.
 
 Phase 3 — Zero-shot LLM pass for residuals: rows without an exact body match
     (or without any match) are labeled by a constrained LLM call (OpenRouter)
@@ -23,7 +28,8 @@ Phase 3 — Zero-shot LLM pass for residuals: rows without an exact body match
     the vocabulary's ``other`` is the explicit fallback, never null).
 
 Phase 4 — Provenance columns: every correspondence row gains ``intent``,
-    ``intent_source`` (manual | aeslc_join | llm_zero_shot),
+    ``intent_source`` (manual | aeslc_join | llm_zero_shot — the hydration
+    path; sources are disjoint and sum to the correspondence row count),
     ``intent_confidence`` (0..1), ``intent_status`` (manual | auto_labeled |
     flagged_review). Downstream (dataset_export / docclass_uploader) carry the
     three new provenance keys into the ground_truth config.
@@ -315,14 +321,25 @@ def llm_label_one(text: str, model: str, api_key: str, base_url: str, subject_li
 # Orchestration
 # ---------------------------------------------------------------------------
 
+INTENT_SOURCES = ("manual", "aeslc_join", "llm_zero_shot")
+
+
 def load_existing_labels() -> dict[str, dict]:
-    """Sidecar labels keyed by filename (checkpointing / resume)."""
+    """Sidecar labels keyed by filename (checkpointing / resume).
+
+    Sidecar entries that came through the exact-body join are normalized to
+    ``intent_source = aeslc_join`` on load (issue #5 design: the join marks
+    the hydration path). Pre-fix sidecars carrying ``llm_zero_shot`` on
+    joined rows are upgraded here — code-driven, never hand-edited.
+    """
     out: dict[str, dict] = {}
     if not LABEL_SIDECAR.exists():
         return out
     for line in LABEL_SIDECAR.read_text(encoding="utf-8").splitlines():
         if line.strip():
             row = json.loads(line)
+            if row.get("aeslc_joined") and row.get("intent_source") == "llm_zero_shot":
+                row["intent_source"] = "aeslc_join"
             out[row["filename"]] = row
     return out
 
@@ -340,9 +357,10 @@ def backfill_correspondence(
     """Backfill intent for every correspondence row lacking a non-empty intent.
 
     - Phase 1 vocabulary + cross-walk baked in via CANONICAL_INTENTS.
-    - Phase 2 join over the Enron body index (provenance aeslc_join).
-    - Phase 3 LLM pass for rows without existing intent (provenance
-      llm_zero_shot, confidence thresholding, ``other`` fallback).
+    - Phase 2 join over the Enron body index (join-assisted rows carry
+      provenance aeslc_join).
+    - Phase 3 LLM pass for rows without existing intent (residual rows carry
+      provenance llm_zero_shot; confidence thresholding, ``other`` fallback).
     - Rows that already carry a non-empty intent keep it (manual).
 
     Returns (enriched ground_truth frame, stats dict).
@@ -379,8 +397,10 @@ def backfill_correspondence(
     # Phase 3: LLM pass (checkpointed; skips rows already in the sidecar).
     # Note: the AESLC/Enron mirrors carry NO intent annotations (verified
     # 2026-08-31) — the exact-body join provides provenance + subject context;
-    # intent itself is assigned under the closed vocabulary by the constrained
-    # LLM pass for every previously-unlabeled row.
+    # intent itself is assigned under the closed vocabulary for every
+    # previously-unlabeled row. intent_source records the hydration PATH:
+    # join-assisted rows (sha256 body match) carry aeslc_join, the rest
+    # llm_zero_shot.
     existing_labels = load_existing_labels()
     llm_rows = list(existing_labels.values())
     n_llm = 0
@@ -411,7 +431,7 @@ def backfill_correspondence(
         entry = {
             "filename": fn,
             "intent": label["intent"],
-            "intent_source": "llm_zero_shot",
+            "intent_source": "aeslc_join" if fn in join_hits else "llm_zero_shot",
             "intent_confidence": label["confidence"],
             "intent_status": "auto_labeled" if label["confidence"] >= CONFIDENCE_AUTO else "flagged_review",
         }
@@ -478,18 +498,31 @@ def backfill_correspondence(
         float(100 * gt.loc[corr_mask, "intent"].fillna("").str.strip().ne("").sum() / corr_mask.sum()), 2
     )
     # Merge totals (sidecar-resumed rows count as labeled too) so the manifest
-    # reflects the final corpus state, not just this run's new calls.
-    stats["llm_zero_shot_total"] = int(
-        (gt.loc[corr_mask, "intent_source"] == "llm_zero_shot").sum()
-    )
+    # reflects the final corpus state, not just this run's new calls. The
+    # three intent_source values are DISJOINT and sum to the correspondence
+    # row count; aeslc_joined counts the rows hydrated through the exact-body
+    # join (== aeslc_join_total).
     stats["manual_total"] = int(
         (gt.loc[corr_mask, "intent_source"] == "manual").sum()
     )
+    stats["aeslc_join_total"] = int(
+        (gt.loc[corr_mask, "intent_source"] == "aeslc_join").sum()
+    )
+    stats["llm_zero_shot_total"] = int(
+        (gt.loc[corr_mask, "intent_source"] == "llm_zero_shot").sum()
+    )
+    stats["aeslc_joined"] = stats["aeslc_join_total"]
     stats["flagged_review"] = int(
         (gt.loc[corr_mask, "intent_status"] == "flagged_review").sum()
     )
     stats["other_fallback"] = int(
         (gt.loc[corr_mask, "intent"] == "other").sum()
+    )
+    total_sources = stats["manual_total"] + stats["aeslc_join_total"] + stats["llm_zero_shot_total"]
+    assert total_sources == int(corr_mask.sum()), (
+        f"intent_source totals do not sum to correspondence rows: "
+        f"{stats['manual_total']} manual + {stats['aeslc_join_total']} aeslc_join + "
+        f"{stats['llm_zero_shot_total']} llm_zero_shot != {int(corr_mask.sum())}"
     )
     return gt, stats
 
@@ -515,6 +548,9 @@ def validate_intent_coverage(gt: pd.DataFrame, strict: bool = True) -> dict:
     if strict:
         assert report["null_intent_rows"] == 0, f"null intent on {report['null_intent_rows']} correspondence rows"
     assert not report["unknown_intents"], f"intents outside canonical vocabulary: {report['unknown_intents']}"
+    assert set(report["sources"]) <= set(INTENT_SOURCES), (
+        f"intent_source values outside the enum: {sorted(set(report['sources']) - set(INTENT_SOURCES))}"
+    )
     for col in ("intent_source", "intent_confidence", "intent_status"):
         assert col in corr.columns, f"missing provenance column: {col}"
     return report

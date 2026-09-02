@@ -146,9 +146,10 @@ Single flat document-classification surface: **{total:,} legal documents** acros
 five corpora, one row per document (schema v6):
 """.format(total=_total)
 
-    # 1) pretty_name -> v6
+    # 1) pretty_name -> v6 (accepts the live v7 pretty_name bump; render_card_v7
+    #    rewrites the result to v7, so the net effect is unchanged)
     card, n = re.subn(
-        r'pretty_name: "Docclass Merged Corpus v[56] \(([^)]+)\)"',
+        r'pretty_name: "Docclass Merged Corpus v[567] \(([^)]+)\)"',
         f'pretty_name: "Docclass Merged Corpus v6 (\\1)"',
         card, count=1)
     assert n == 1, "pretty_name anchor"
@@ -263,7 +264,9 @@ def render_card_v7(
 
     corr_rows = sum(1 for r in rows if r["expected"] == "correspondence")
     coverage = (intent_stats or {}).get("coverage_pct", 100.0)
-    aeslc_n = (intent_stats or {}).get("aeslc_joined", 0)
+    manual_n = (intent_stats or {}).get("manual_total", 0)
+    aeslc_n = (intent_stats or {}).get("aeslc_join_total",
+                                       (intent_stats or {}).get("aeslc_joined", 0))
     llm_n = (intent_stats or {}).get("llm_zero_shot_total") or (intent_stats or {}).get("llm_zero_shot", 0)
     flagged_n = (intent_stats or {}).get("flagged_review", 0)
     other_n = (intent_stats or {}).get("other_fallback", 0)
@@ -278,13 +281,18 @@ def render_card_v7(
   `intent_source` (`manual` | `aeslc_join` | `llm_zero_shot`),
   `intent_confidence` (0..1), `intent_status` (`manual` | `auto_labeled` |
   `flagged_review`).
-* **Hydration provenance**: {aeslc_n} rows were sha256 exact-body matched
-  against the Enron mail corpus ([`snoop2head/enron_aeslc_emails`](https://huggingface.co/datasets/snoop2head/enron_aeslc_emails),
-  535k mails) and AESLC ([`Yale-LILY/aeslc`](https://huggingface.co/datasets/Yale-LILY/aeslc));
-  the external mirrors carry NO intent annotations (verified 2026-08-31), so
-  the join supplies provenance + recovered `subject_line` while {llm_n}
-  previously-unlabeled rows were labeled by a constrained zero-shot LLM pass
-  (OpenRouter `deepseek/deepseek-chat`, temperature 0.1, closed vocabulary).
+* **Hydration provenance**: `intent_source` records the hydration PATH
+  (disjoint values summing to {corr_rows}): {manual_n} rows `manual`
+  (purpose-GT push), {aeslc_n} rows `aeslc_join` — hydrated through the
+  sha256 exact-body join against the Enron mail corpus
+  ([`snoop2head/enron_aeslc_emails`](https://huggingface.co/datasets/snoop2head/enron_aeslc_emails),
+  535k mails) and AESLC
+  ([`Yale-LILY/aeslc`](https://huggingface.co/datasets/Yale-LILY/aeslc));
+  the mirrors carry NO intent annotations (verified 2026-08-31), so the
+  join supplies provenance + the recovered `subject_line` used as
+  constrained context — and {llm_n} rows `llm_zero_shot` (constrained
+  zero-shot LLM pass, OpenRouter `deepseek/deepseek-chat`, temperature
+  0.1, closed vocabulary).
 * **Confidence thresholding**: confidence >= 0.85 -> `auto_labeled`;
   below -> `flagged_review` ({flagged_n} rows flagged for the manual review
   queue). Non-conforming / residual rows fall to `other` ({other_n} rows) —

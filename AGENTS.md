@@ -72,10 +72,11 @@ runs used to clobber the full-corpus summary with phase-partial stats.)
 - **Determinism**: `RANDOM_STATE = 42`; rebuilds of JSONL/parquet must be
   byte-identical (sorted rows, deterministic order).
 
-## HF facts (verified 2026-08-31)
+## HF facts (verified 2026-09-01)
 
-- Repo: `Lucius-Morningstar/docclass-merged` (v7, 1,650 rows, rev `fc1f211c`;
-  data tip `1acd2600` + card-only pretty_name bump).
+- Repo: `Lucius-Morningstar/docclass-merged` (v7, 1,650 rows; provenance-fix
+  data tip `bb57c5ad` — intent_source corrected to the issue #5 hydration
+  paths, labels/confidences byte-identical to `1acd2600`).
 - Composition: insurance_claim 600, contract 509, correspondence 350,
   merger_agreement 152, corporate_record 39.
 - Configs: `default` (blind, 4 cols) + `ground_truth` (31 cols incl. labels +
@@ -83,9 +84,11 @@ runs used to clobber the full-corpus summary with phase-partial stats.)
 - Split: train 1,474 / test 176 on both configs; filename sets equal.
 - v7 intent hydration (issue #5): 350/350 correspondence rows carry a
   canonical 8-class intent (payment_demand, notice, analysis, request, update,
-  meeting_invite, press_communication, other); 96 manual + 254 llm_zero_shot
-  (deepseek-chat, OpenRouter), 162 sha256-exact-body AESLC/Enron joins,
-  1 flagged_review. All 8 classes present in the test split.
+  meeting_invite, press_communication, other); `intent_source` = hydration
+  path, disjoint and summing to 350: 96 manual + 162 aeslc_join (sha256
+  exact-body join-assisted pass vs the AESLC/Enron mirrors — the mirrors
+  carry no intent annotations) + 92 llm_zero_shot (deepseek-chat,
+  OpenRouter), 1 flagged_review. All 8 classes present in the test split.
 - Related: `enron-correspondence-dedup`, `mailroom-cuad-contracts-full`,
   `mailroom-s1-corporate-records`, `mailroom-maud-contracts`.
 
