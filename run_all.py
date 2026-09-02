@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the complete Mailroom docclass EDA pipeline (P0-P5).
+"""Run the complete Mailroom docclass EDA pipeline (P0-P6).
 
 Usage:
     python run_all.py                 # everything
@@ -56,7 +56,7 @@ def p2_composition() -> dict:
 
 @phase_timer
 def p3_visualizations() -> dict:
-    print("P3: static visualizations (27 figures + tables)")
+    print("P3: static visualizations (30 figures + tables)")
     from mailroom_eda import visualizations
     return visualizations.run()
 
@@ -140,6 +140,10 @@ PHASES = {
     "P6": p6_intent_coverage,
 }
 
+# Canonical full-pipeline phase set — the summary-write gate compares against
+# this fixed snapshot, never against a (potentially patched) PHASES mapping.
+FULL_PIPELINE = tuple(sorted(PHASES))
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -190,12 +194,26 @@ def main() -> int:
         return d
 
     results = _walk(results)
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(summary_path, "w") as fh:
-        json.dump(results, fh, indent=2, default=str)
-    print(f"\nSummary written -> {summary_path}")
 
+    # Summary — HUB-009: SUMMARY_REPORT.json is written ONLY by a complete,
+    # error-free full-pipeline run (all seven phases). Subset runs — and
+    # --no-interactive, whose summary would be missing the P4 section — leave
+    # the existing full-corpus summary untouched; per-phase results print to
+    # stdout only.
     failed = [p for p, r in results.items() if "error" in r]
+    full_run = tuple(sorted(results)) == FULL_PIPELINE and not failed
+    if full_run:
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(summary_path, "w") as fh:
+            json.dump(results, fh, indent=2, default=str)
+        print(f"\nSummary written -> {summary_path}")
+    elif failed:
+        print(f"\nSummary NOT written — phase errors: {failed} "
+              f"(existing summary left untouched)")
+    else:
+        print(f"\nSummary NOT written — subset run ({', '.join(sorted(results))}); "
+              f"only full-pipeline runs (P0-P6) write the summary")
+
     if failed:
         print(f"FAILED phases: {failed}")
         return 1
