@@ -1,9 +1,9 @@
-# Enron Correspondence — docclass-merged source card
+# Enron Correspondence — mailroom-corpus source card
 
 > `correspondence` · 350 rows (21.2% of the corpus) · 8 strata · train 310 / test 40
 > · license **research use (inherited from the CMU Enron Email Dataset)** ·
 > one of the five source corpora of
-> [`Lucius-Morningstar/docclass-merged`](https://huggingface.co/datasets/Lucius-Morningstar/docclass-merged)
+> [`Lucius-Morningstar/mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
 
 ## Identity
 
@@ -52,7 +52,7 @@ rows.
 | Family derivative | [`Lucius-Morningstar/enron-correspondence-dedup`](https://huggingface.co/datasets/Lucius-Morningstar/enron-correspondence-dedup) — sha256-verified parquet shards the draw was made from |
 | Provenance-join mirrors (v7) | [`snoop2head/enron_aeslc_emails`](https://huggingface.co/datasets/snoop2head/enron_aeslc_emails) (535k mails) and [`Yale-LILY/aeslc`](https://huggingface.co/datasets/Yale-LILY/aeslc) — used **only** for sha256 exact-body provenance joins and recovered subject lines; they carry no intent annotations |
 | Labelers | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) — `correspondence_subclasses.py`, `content_topics.py`, `sentiment_scorer.py`, `dedupe.py` |
-| Form in docclass-merged | maildir text in `doc_text` (the maildir path is the filename); no separate original file — the mail text is the original |
+| Form in mailroom-corpus | maildir text in `doc_text` (the maildir path is the filename); no separate original file — the mail text is the original |
 
 ## Attribution
 
@@ -92,7 +92,7 @@ flagged per-row in `metadata.license` and `metadata.source_dataset`. No
 redistribution of raw PII outside research contexts; no production or
 consumer use of the correspondence subset.
 
-## Purpose in docclass-merged
+## Purpose in mailroom-corpus
 
 1. **doc_type supervision** — 350 gold `correspondence` labels across 8
    mail subtypes, including the hard minority `attorney_demand` (3 rows, an

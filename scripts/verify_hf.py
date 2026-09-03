@@ -3,7 +3,7 @@
 
 Usage:
     python scripts/verify_hf.py --jsonl data/hf_export/mailroom-cuad-contracts-full.jsonl --repo Lucius-Morningstar/mailroom-cuad-contracts-full
-    python scripts/verify_hf.py --repo Lucius-Morningstar/docclass-merged            # list files
+    python scripts/verify_hf.py --repo Lucius-Morningstar/mailroom-corpus            # list files
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from mailroom_eda.hf_interface import (  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True,
-                        help="HF dataset repo id (e.g. Lucius-Morningstar/docclass-merged)")
+                        help="HF dataset repo id (e.g. Lucius-Morningstar/mailroom-corpus)")
     parser.add_argument("--jsonl", type=Path, default=None,
                         help="local jsonl to byte-verify against the Hub copy")
     parser.add_argument("--in-repo", default=None,

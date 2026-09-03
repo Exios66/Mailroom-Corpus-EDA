@@ -222,7 +222,7 @@ def build_manifest(
         intent_segment = ""
 
     built = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return f"""docclass-merged manifest — schema v7 (issue #5 intent hydration)
+    return f"""mailroom-corpus manifest — schema v7 (issue #5 intent hydration)
 =================================================
 built_utc        : {built}
 schema_version   : 7

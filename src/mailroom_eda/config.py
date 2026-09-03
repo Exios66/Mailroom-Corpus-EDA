@@ -7,7 +7,7 @@ from pathlib import Path
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-REPO_ID = "Lucius-Morningstar/docclass-merged"
+REPO_ID = "Lucius-Morningstar/mailroom-corpus"
 REPO_URL = f"https://huggingface.co/datasets/{REPO_ID}"
 HF_USERNAME = "Lucius-Morningstar"
 

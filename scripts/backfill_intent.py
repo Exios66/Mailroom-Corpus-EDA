@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI: correspondence intent backfill for docclass-merged v7 (issue #5).
+"""CLI: correspondence intent backfill for mailroom-corpus v7 (issue #5).
 
 Phases implemented (mirrors https://github.com/Exios66/mailroom-dev/issues/5):
   Phase 1  taxonomy cross-walk (canonical 8-class vocabulary + external map)

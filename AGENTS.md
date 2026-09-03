@@ -1,7 +1,7 @@
 # AGENTS.md — Mailroom-Corpus-EDA
 
 Exploratory data analysis (and the centralized HF upload helpers) for the
-[`Lucius-Morningstar/docclass-merged`](https://huggingface.co/datasets/Lucius-Morningstar/docclass-merged)
+[`Lucius-Morningstar/mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
 corpus — 1,650 legal documents across 5 doc_types (insurance_claim,
 merger_agreement, contract, correspondence, corporate_record), 48 strata.
 
@@ -25,8 +25,21 @@ Never edit it from both places in one session — develop here, sync via
   - `intent_backfill.py` — correspondence intent hydration (issue #5):
     cross-walk, Enron/AESLC sha256 join, constrained LLM pass, provenance
   - `token_budget.py` — token estimation & budget coverage
+  - `identity.py` — P0 document identity (document_id, content hashes,
+    source provenance — cast-safe, absence is '')
+  - `eval_contract.py` — P1 evaluation-contract derivations (§59 routing,
+    §57–58 stage, §31 review/retry, §43 provenance) + closed vocabularies
+    (fixture kinds, calibration quartet, matter/group, failure stages)
+  - `matter.py` — P2 grouping derivations (§14A: header threads — verified
+    absent here; subject+custodian+window reconstruction; never-mix guard)
+  - `bundles.py` — P2 §14 synthetic bundle-family generator (flagged
+    scaffold over real anchors; publish rides §84)
+  - `fixtures.py` — §68–§72A fixture content (calibration quartet at live
+    bands, arbiter scenarios, failure-stage matrix; publish rides §84)
 - `scripts/` — CLI wrappers: `publish_docclass.py`, `backfill_intent.py`,
-  `export_docclass.py`, `verify_hf.py`
+  `export_docclass.py`, `verify_hf.py`, `coverage_matrix.py` (→
+  `docs/reports/audits/docclass_coverage_matrix.*`), `expansion_priorities.py`
+  (→ `docs/reports/audits/docclass_expansion_priorities.*`)
 - `run_all.py` — 7-phase pipeline (P0 download → P6 intent coverage audit)
 - `reports/` — generated artifacts (figures/, figures_interactive/, tables/, SUMMARY_REPORT.md)
   - ALL of `reports/` is tracked in full per human directive (HUB-008) — never
@@ -72,24 +85,50 @@ runs used to clobber the full-corpus summary with phase-partial stats.)
 - **Determinism**: `RANDOM_STATE = 42`; rebuilds of JSONL/parquet must be
   byte-identical (sorted rows, deterministic order).
 
-## HF facts (verified 2026-09-01)
+## HF facts (verified 2026-09-02, schema v8)
 
-- Repo: `Lucius-Morningstar/docclass-merged` (v7, 1,650 rows; provenance-fix
-  data tip `bb57c5ad` — intent_source corrected to the issue #5 hydration
-  paths, labels/confidences byte-identical to `1acd2600`).
-- Composition: insurance_claim 600, contract 509, correspondence 350,
-  merger_agreement 152, corporate_record 39.
-- Configs: `default` (blind, 4 cols) + `ground_truth` (31 cols incl. labels +
-  intent provenance `intent_source`/`intent_confidence`/`intent_status`).
-- Split: train 1,474 / test 176 on both configs; filename sets equal.
+- Repo: `Lucius-Morningstar/mailroom-corpus` (v8, 2,000 rows; data tip
+  `bba2f750`; hardened release rebuilt on v8 at `eafe1ab4`).
+- Composition: insurance_claim 950 (carrier/inpatient/outpatient/pde 600 CMS
+  DE-SynPUF + property 200 GNOTHEIA + auto 150 BDR motor),
+  contract 509, correspondence 350, merger_agreement 152,
+  corporate_record 39.
+- Configs: `default` (blind, 4 cols) + `ground_truth` (60 cols incl. labels,
+  intent provenance `intent_source`/`intent_confidence`/`intent_status`, AND
+  the §84 hardened columns — identity/hashes, evaluation contract,
+  matter/group) + `bundles` (38 cols, 50 rows) + `streams` (39 cols, 62 rows
+  — §27–§29/§48 STREAM tier: `RUN-SIM-001` interleaved ingress stream over
+  the bundle matters, 12 no-matter distractors) + `fixtures` (30 cols, 32
+  rows). Built via `scripts/publish_hardened.py` (HUB-022) on the v8 base:
+  v7 `document_id`s unchanged (0 drift), v8 LOB rows carry their own
+  `source_corpus`/`annotation_source` (GNOTHEIA/BDR) + pinned
+  `source_revision` via `metadata.source_dataset` / `.source_revision`
+  (identity / eval_contract precedence: class map stays authoritative except
+  the insurance LOB override — never churn published document_ids).
+- Split: train 1,792 / test 208 on both configs; filename sets equal.
+- v8 insurance LOB expansion (HUB-028): property rows from
+  `gratex/GNOTHEIA-synthetic-insurance-dataset` (Apache-2.0) — FNOL bundles
+  stratified by loss event, determination `pending` (no adjudication in
+  source); auto rows from
+  `bdr-ai-org/insurance-motor-claims-decision-v1` (MIT) — decision letters
+  stratified by accident type × APPROVE/REVIEW/REJECT (all reject rows
+  included), feature-grounded denial reasons, adjuster pseudonyms. Full GT
+  conformance: all 950 insurance rows carry intent/subject/keywords +
+  provenance (CMS template-derived backfill); claimed_amount recovered from
+  doc text on 10 v7 gap rows; 3 train-only outpatient `:2` date gaps
+  documented as source-N/A; test-split nullification enforced (zero empty
+  class-relevant keys).
 - v7 intent hydration (issue #5): 350/350 correspondence rows carry a
   canonical 8-class intent (payment_demand, notice, analysis, request, update,
-  meeting_invite, press_communication, other); `intent_source` = hydration
-  path, disjoint and summing to 350: 96 manual + 162 aeslc_join (sha256
-  exact-body join-assisted pass vs the AESLC/Enron mirrors — the mirrors
-  carry no intent annotations) + 92 llm_zero_shot (deepseek-chat,
-  OpenRouter), 1 flagged_review. All 8 classes present in the test split.
+  meeting_invite, press_communication, other); 96 manual + 254 llm_zero_shot
+  (deepseek-chat, OpenRouter), 162 sha256-exact-body AESLC/Enron joins,
+  1 flagged_review. All 8 classes present in the test split.
 - Related: `enron-correspondence-dedup`, `mailroom-cuad-contracts-full`,
   `mailroom-s1-corporate-records`, `mailroom-maud-contracts`.
+
+License note: the corpus card is CC-BY-4.0; v8 additions are Apache-2.0
+(GNOTHEIA) + MIT (BDR). XpertSystems ins001/ins007/hlt015 samples are
+CC-BY-NC-4.0 and were excluded; INSURBIAS (CC-BY-4.0) is deferred to v9
+(narratives only, no decision GT).
 
 See the `huggingface` opencode skill for the full Hub-interfacing workflow.

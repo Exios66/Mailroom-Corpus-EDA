@@ -1,7 +1,7 @@
 # Docclass-Merged — Source Dataset Cards
 
 Documentation for the five source corpora integrated into
-[`Lucius-Morningstar/docclass-merged`](https://huggingface.co/datasets/Lucius-Morningstar/docclass-merged)
+[`Lucius-Morningstar/mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
 (schema v7, 1,650 rows, published 2026-08-31). Each card records the full
 context, source material, attribution, and the purpose the corpus serves
 inside the merged classification surface. All numbers are reproducible from
@@ -74,7 +74,7 @@ correspondence 310/40, insurance_claim 536/64).
 `default` (blind) carries no label columns; all gold labels —
 `expected`, `expected_subclass`, clause GT, sentiment/topic/intent — live in
 the `ground_truth` config, keyed 1:1 on `filename`. See the
-[live dataset card](https://huggingface.co/datasets/Lucius-Morningstar/docclass-merged)
+[live dataset card](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
 for the full row shape and config contract.
 
 ## Related family repos

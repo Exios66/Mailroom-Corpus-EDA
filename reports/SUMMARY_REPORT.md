@@ -1,6 +1,20 @@
 # Docclass Merged Corpus — EDA Summary Report
 
-Generated: 2026-08-31 · Pipeline: `run_all.py` (P0–P6) · Data: `Lucius-Morningstar/docclass-merged` (v7)
+Generated: 2026-08-31 · Pipeline: `run_all.py` (P0–P6) · Data: `Lucius-Morningstar/mailroom-corpus` (v7; **v8 supersedes — see note below**)
+
+> **v8 note (HUB-028, 2026-09-02)**: this report's figures describe the v7
+> snapshot (1,650 rows). The published v8 corpus is **2,000 rows**:
+> insurance_claim 950 (carrier/inpatient/outpatient/pde 600 CMS DE-SynPUF +
+> property 200 GNOTHEIA + auto 150 BDR motor), contract 509, correspondence
+> 350, merger_agreement 152, corporate_record 39 — 50 strata. The EDA
+> pipeline's P0–P6 run against v8 has not been re-executed; figure
+> regeneration is a follow-up (data: `Lucius-Morningstar/mailroom-corpus` v8,
+> tip `bba2f750`). Double-hardened since: the §84 release (HUB-022/HUB-032)
+> adds the 60-col evaluation-contract `ground_truth`, the `bundles`
+> (50 rows), `streams` (62 rows — §27–§29/§48 STREAM tier) and `fixtures`
+> (32 rows) configs at `eafe1ab4` — the §40–41 coverage matrix
+> (`docs/reports/audits/docclass_coverage_matrix.md`) and the P5 surface
+> ledger (`docclass_p5_surfaces.md`) are the current-coverage instruments.
 
 ## Executive Summary
 

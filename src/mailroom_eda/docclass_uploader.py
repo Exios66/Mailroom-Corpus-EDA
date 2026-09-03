@@ -235,7 +235,7 @@ convenience layer, not load-bearing:
 `metadata.original_file` carries the Hub-relative path on every row that has
 one (cast-safe `""` elsewhere: correspondence rows are maildir text and
 insurance_claim rows are synthetic renders — the render IS the original).
-Fetch one: `hf_hub_download("Lucius-Morningstar/docclass-merged",
+Fetch one: `hf_hub_download("Lucius-Morningstar/mailroom-corpus",
 "files/contract/Part_I/License_Agreements/<file>.pdf", repo_type="dataset")`.
 Per-file sha256 + sizes: `original_files_mapping.jsonl` sidecar.
 

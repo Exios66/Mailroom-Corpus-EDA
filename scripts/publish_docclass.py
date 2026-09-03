@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI: publish the docclass-merged corpus to the HuggingFace Hub.
+"""CLI: publish the mailroom-corpus corpus to the HuggingFace Hub.
 
 Centralized replacement for llm-entity-extraction's publish_docclass_v6.py —
 stage parquet configs (default/ground_truth), render the README card, write

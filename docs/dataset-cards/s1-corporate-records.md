@@ -1,9 +1,9 @@
-# S-1 Corporate Records — docclass-merged source card
+# S-1 Corporate Records — mailroom-corpus source card
 
 > `corporate_record` · 39 rows (2.4% of the corpus) · 5 strata · train 38 / test 1
 > · license **public domain (US government works)** · one of the five source
 > corpora of
-> [`Lucius-Morningstar/docclass-merged`](https://huggingface.co/datasets/Lucius-Morningstar/docclass-merged)
+> [`Lucius-Morningstar/mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
 
 ## Identity
 
@@ -30,7 +30,7 @@ retained: 39 rows across **11 unique CIKs**, each carrying
 document. Every row's `metadata.original_file` points at the upstream .htm
 exhibit original.
 
-In docclass-merged this is the **minority-class / governance-document
+In mailroom-corpus this is the **minority-class / governance-document
 block**: it deliberately introduces a heavily imbalanced class so that
 classification systems are evaluated under realistic mailroom conditions —
 rare but high-stakes document types that must not be confused with the
@@ -42,7 +42,7 @@ dominant contracts and correspondence.
 |---|---|
 | Original download | SEC EDGAR — <https://www.sec.gov/edgar.shtml> (public filings; exhibit URLs preserved per row in `metadata.exhibit_url`) |
 | Family mirror | [`Lucius-Morningstar/mailroom-s1-corporate-records`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-s1-corporate-records) |
-| Form in docclass-merged | exhibit text in `doc_text`; upstream .htm exhibit path in `metadata.original_file`; filer/accession metadata retained |
+| Form in mailroom-corpus | exhibit text in `doc_text`; upstream .htm exhibit path in `metadata.original_file`; filer/accession metadata retained |
 
 ## Attribution
 
@@ -52,9 +52,9 @@ dominant contracts and correspondence.
   presented as official SEC records. Re-verify filings against EDGAR before
   any commercial redistribution.
 - No formal academic publication accompanies this block; cite the
-  docclass-merged dataset and reference EDGAR as the upstream source.
+  mailroom-corpus dataset and reference EDGAR as the upstream source.
 
-## Purpose in docclass-merged
+## Purpose in mailroom-corpus
 
 1. **doc_type supervision under extreme imbalance** — 39 gold
    `corporate_record` labels (2.4%): the corpus's imbalance stress test

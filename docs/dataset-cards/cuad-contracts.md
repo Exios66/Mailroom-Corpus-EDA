@@ -1,8 +1,8 @@
-# CUAD Contracts — docclass-merged source card
+# CUAD Contracts — mailroom-corpus source card
 
 > `contract` · 509 rows (30.8% of the corpus) · 26 strata · train 455 / test 54
 > · license **CC BY 4.0** · one of the five source corpora of
-> [`Lucius-Morningstar/docclass-merged`](https://huggingface.co/datasets/Lucius-Morningstar/docclass-merged)
+> [`Lucius-Morningstar/mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
 
 ## Identity
 
@@ -15,7 +15,7 @@
 | Largest strata | Maintenance 34, License_Agreements 33, Distributor 32, Strategic Alliance 32, Sponsorship 31 |
 | Smallest strata | Non_Compete_Non_Solicit 3, Joint Venture 9, Affiliate_Agreements 10 |
 | Provenance keys | `metadata.source = cuad_v1`, `metadata.source_dataset = mailroom-cuad-contracts-full` |
-| Entered at | v1–v3 (legacy rows) — the founding corpus of docclass-merged |
+| Entered at | v1–v3 (legacy rows) — the founding corpus of mailroom-corpus |
 | License | CC BY 4.0 (The Atticus Project, Inc.) |
 
 ## Full context
@@ -28,7 +28,7 @@ over 25,000 answer spans total, to support legal contract review by NLP
 models. It is the standard benchmark for contract-understanding tasks and
 was published at NeurIPS 2021 (Datasets & Benchmarks).
 
-In docclass-merged the corpus is the **contract backbone**: every row keeps
+In mailroom-corpus the corpus is the **contract backbone**: every row keeps
 CUAD's own commercial-contract grouping as the second-level gold label
 (`expected_subclass` — e.g. `Co_Branding`, `Distributor`, `License_Agreements`),
 plus the full official clause annotation set on the `ground_truth` config as
@@ -53,7 +53,7 @@ points at its upstream CUAD PDF path (source PDFs ride along under
 | Mirror repo | <https://github.com/TheAtticusProject/cuad> |
 | HF mirror of the original | [`theatticusproject/cuad`](https://huggingface.co/datasets/theatticusproject/cuad) (CC BY 4.0) |
 | Family ingestion mirror | [`Lucius-Morningstar/mailroom-cuad-contracts-full`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts-full) (byte-verified export used for the merge) |
-| Form in docclass-merged | full contract text in `doc_text`; PDF basename in `filename`; upstream PDF path in `metadata.original_file` / `metadata.pdf_path` |
+| Form in mailroom-corpus | full contract text in `doc_text`; PDF basename in `filename`; upstream PDF path in `metadata.original_file` / `metadata.pdf_path` |
 
 ## Attribution
 
@@ -73,7 +73,7 @@ attribution is required when redistributing or building on these rows:
 }
 ```
 
-## Purpose in docclass-merged
+## Purpose in mailroom-corpus
 
 1. **doc_type supervision** — 509 gold `contract` labels (30.8% of the
    corpus), the second-largest class after insurance_claim.

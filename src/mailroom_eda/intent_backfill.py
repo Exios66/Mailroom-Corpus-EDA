@@ -1,4 +1,4 @@
-"""Correspondence intent backfill for docclass-merged v7 (KANBAN issue #5).
+"""Correspondence intent backfill for mailroom-corpus v7 (KANBAN issue #5).
 
 Implements the four-phase plan from
 https://github.com/Exios66/mailroom-dev/issues/5:
