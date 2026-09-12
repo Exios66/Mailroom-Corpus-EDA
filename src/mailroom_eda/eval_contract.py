@@ -95,6 +95,7 @@ INTENT_SOURCE_METHOD = {
     "aeslc_join": "verified_join",
     "manual": "human_annotated",
     "llm_zero_shot": "llm_zero_shot",
+    "heuristic": "heuristic",
 }
 
 #: The LLM that produced llm_zero_shot labels (v7 intent hydration, issue #5).

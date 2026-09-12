@@ -73,13 +73,24 @@ def source_corpus(row: dict[str, Any]) -> str:
     not collapse into the class-level CMS mapping; those rows carry their
     exact HF dataset id in ``metadata.source_dataset`` and override the map
     (the CMS rows keep ``cms_desynpuf`` so their published IDs are stable).
+    The v9 expansion (issue #3) adds SEC EDGAR EX-10 contracts the same way:
+    rows whose ``metadata.source_dataset`` names a real feeder that differs
+    from the class map value override the map (CUAD rows keep
+    ``theatticusproject/cuad`` so their published IDs are stable).
     """
     md = row.get("metadata") or {}
     doc_class = str(row.get("expected") or "")
-    if doc_class == "insurance_claim":
-        source_dataset = md.get("source_dataset")
-        if source_dataset and "cms-de-synpuf" not in str(source_dataset):
-            return str(source_dataset)
+    source_dataset = md.get("source_dataset")
+    if source_dataset:
+        source_dataset = str(source_dataset)
+        if doc_class == "insurance_claim":
+            if "cms-de-synpuf" not in source_dataset:
+                return source_dataset
+        elif doc_class == "contract" and source_dataset == "sec_edgar":
+            # v9 expansion: EDGAR EX-10 contracts (issue #3) — CUAD rows
+            # keep theatticusproject/cuad so published IDs are stable; legacy
+            # corporate local-path source_dataset values are NOT overrides.
+            return source_dataset
     return SOURCE_CORPUS_BY_CLASS.get(doc_class, "unknown")
 
 
