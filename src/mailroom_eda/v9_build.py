@@ -263,8 +263,9 @@ def load_draw_rows() -> list[dict]:
         return []
     rows: list[dict] = []
     errors: list[str] = []
+    sidecar_names = {f"{cls}.jsonl" for cls in EXPECTED_SUBCLASS_BY_CLASS}
     for sidecar in sorted(DRAW_DIR.glob("*.jsonl")):
-        if sidecar.name.endswith("_manifest.json"):
+        if sidecar.name not in sidecar_names:  # ignore scratch (checkpoints etc.)
             continue
         n = 0
         for line in sidecar.read_text(encoding="utf-8").splitlines():
@@ -397,11 +398,21 @@ def render_card_v1(
     draw_counts: dict[str, int],
 ) -> str:
     """v1 dataset card for the standalone mailroom-dataset (lineage pointers)."""
+    #: Frozen v8 baseline composition (verified against the published v8 GT).
+    V8_COMP = {
+        "insurance_claim": 950,
+        "contract": 509,
+        "correspondence": 350,
+        "merger_agreement": 152,
+        "corporate_record": 39,
+    }
     total = len(rows)
     comp = Counter(r["expected"] for r in rows)
     share = {c: f"{n / total:.1%}" for c, n in comp.items()}
+    delta = {c: n - V8_COMP.get(c, 0) for c, n in comp.items()}
     rows_md = "\n".join(
-        f"| `{c}` | {n:,} | {share[c]} |" for c, n in sorted(comp.items()))
+        f"| `{c}` | {n:,} | {share[c]} | {d:+,} |"
+        for c, n in sorted(comp.items()) for d in [delta[c]])
     draw_md = "\n".join(
         f"| {c} | +{n:,} |" for c, n in sorted(draw_counts.items()))
     gt_n = counts[("ground_truth", "train")] + counts[("ground_truth", "test")]
@@ -430,11 +441,13 @@ size_categories:
 
 > **Lineage**: this is the **standalone successor** of
 > [`Lucius-Morningstar/mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
-> (frozen v8 baseline, 2,000 rows — never destroyed, plan §4). It is
-> canonically referred to as **v9** of the mailroom corpus family; within
-> this repository's own lineage it is versioned **v1** (dataset_version,
-> plan §62). The original corpus remains available and pinned; evaluation
-> traces that target the successor should record this repo + revision.
+> (frozen v8 baseline, 2,000 rows — never destroyed, plan §4; hardened
+> release pinned at revision `eafe1ab4c0d330d8f9c7a5fb254155e75d290828`).
+> It is canonically referred to as **v9** of the mailroom corpus family;
+> within this repository's own lineage it is versioned **v1**
+> (dataset_version, plan §62). The original corpus remains available and
+> pinned; evaluation traces that target the successor should record this
+> repo + the parent revision above.
 
 ## What this is (and is not)
 
@@ -454,6 +467,14 @@ carries exactly 4 columns — `filename`, `doc_text`, `prompt`, `metadata` —
 and **never** contains a label column. All ground truth lives in the
 `ground_truth` config, joined on `filename`. An LLM processing the blind
 config cannot see labels, intent, expected classes, or clause annotations.
+
+> **v8-inherited metadata aggregates**: 509 v8 contract rows carry a
+> `clause_count` and 152 v8 merger rows a `maud_label_count` integer inside
+> their `metadata` blob (inherited verbatim from `mailroom-corpus` v8 to
+> preserve zero identity drift). These are label-*derived aggregate counts*,
+> not labels, and are not present in any v9 expansion row. Consumers that
+> require strict label-free metadata may treat them as weak indirect signals;
+> they cannot be stripped without violating the zero-drift mandate.
 
 ## Composition (v1 = v8 + expansions)
 
