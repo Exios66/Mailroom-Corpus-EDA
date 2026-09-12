@@ -191,7 +191,12 @@ def build_fixture_rows() -> list[dict]:
 
 
 def _scalar(v: object) -> str:
-    return "" if v is None else str(v)
+    if v is None:
+        return ""
+    if isinstance(v, (dict, list, tuple)):
+        # JSON, not str() — gt_fields is a dict and must remain json.loads-able
+        return json.dumps(v, ensure_ascii=False, sort_keys=True)
+    return str(v)
 
 
 def stage_configs(rows: list[dict], bundle_rows: list[dict], fixture_rows: list[dict],

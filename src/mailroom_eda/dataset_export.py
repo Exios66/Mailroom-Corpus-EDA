@@ -22,8 +22,11 @@ def sanitize_line_boundary_chars(s: str) -> str:
 
 
 def safe_jsonl_line(row: dict) -> str:
-    """Write a JSONL line with line-boundary safety."""
-    return sanitize_line_boundary_chars(json.dumps(row, default=str, ensure_ascii=False))
+    """Write a JSONL line with line-boundary safety and deterministic
+    key ordering (sort_keys) so rebuilds are byte-identical regardless of
+    dict insertion order (e.g. set-derived matter/group keys)."""
+    return sanitize_line_boundary_chars(
+        json.dumps(row, default=str, ensure_ascii=False, sort_keys=True))
 
 
 def normalize_metadata_rows(rows: list[dict]) -> list[dict]:

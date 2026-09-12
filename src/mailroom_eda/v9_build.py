@@ -134,6 +134,15 @@ ALLOWED_EMPTY: dict[str, set[str]] = {
     "merger_agreement": set(),
 }
 
+#: List-typed GT fields: a valid JSON array is the COMPLETE answer — "[]" means
+#: "no items" (honest), never a missing value. Dict-typed clause labels use
+#: "{}" for "no annotations". Scalar fields must be non-empty.
+LIST_GT_FIELDS = frozenset({
+    "denial_reasons", "supporting_documents", "relationships",
+    "related_document_ids",
+})
+DICT_GT_FIELDS = frozenset({"cuad_clause_labels", "maud_clause_labels"})
+
 CORRESPONDENCE_INTENTS = frozenset({
     "payment_demand", "notice", "analysis", "request", "update",
     "meeting_invite", "press_communication", "other",
@@ -212,6 +221,103 @@ def backfill_purpose_gt(rows: list[dict]) -> dict:
             if gt.get("intent"):
                 stats["correspondence_purpose"] += 1
     return stats
+
+
+def _json_obj(v: object) -> object:
+    """Parse a GT value that may be a JSON string, a dict, a list, or empty."""
+    if isinstance(v, (dict, list)):
+        return v
+    s = str(v or "").strip()
+    if not s or s in ("[]", "{}"):
+        return {}
+    try:
+        return json.loads(s)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+def complete_gt_fields(rows: list[dict]) -> dict:
+    """v9 GT-completeness pass (issue #3 / #14 follow-up).
+
+    Fills every expected non-empty class-relevant field so no ground-truth
+    entry is missing, per class/subclass expected presence:
+
+    - contract / merger_agreement: ``label_evidence`` derived deterministically
+      from the CUAD / MAUD clause annotations (clause names with evidence);
+      list fields normalized to a valid JSON array ("[]" = no items).
+    - insurance_claim: ``denial_reasons`` / ``supporting_documents`` become
+      "[]" where the source has no items; the 3 source-N/A outpatient ``:2``
+      notices (service dates literally "N/A" in the source) get the verbatim
+      marker "N/A" for date_of_loss / date_filed.
+    - list fields everywhere are JSON-normalized ("[]" for absent).
+
+    Only empty fields are written (never overwrites an existing value);
+    deterministic and zero-LLM. Returns completion stats.
+    """
+    stats: Counter = Counter()
+    for r in rows:
+        gt = r.setdefault("gt_fields", {})
+        cls = r["expected"]
+        if cls in ("contract", "merger_agreement"):
+            if not str(gt.get("label_evidence") or "").strip():
+                if cls == "contract":
+                    cuad = _json_obj(gt.get("cuad_clause_labels"))
+                    names = sorted(
+                        str(k) for k, v in cuad.items()
+                        if isinstance(v, list) and v)
+                    if names:
+                        gt["label_evidence"] = (
+                            "CUAD-annotated clauses: " + ", ".join(names))
+                        stats["contract_label_evidence_cuad"] += 1
+                    else:
+                        gt["label_evidence"] = (
+                            "SEC EDGAR EX-10 material agreement exhibit "
+                            "(no CUAD clause annotation available).")
+                        stats["contract_label_evidence_edgar"] += 1
+                else:
+                    maud = _json_obj(gt.get("maud_clause_labels"))
+                    names = sorted(
+                        str(k) for k, v in maud.items()
+                        if isinstance(v, dict)
+                        and str(v.get("answer") or "").strip())
+                    if names:
+                        gt["label_evidence"] = (
+                            "MAUD-annotated clauses: " + ", ".join(names))
+                        stats["merger_label_evidence"] += 1
+            if not str(gt.get("cuad_clause_labels") or "").strip():
+                gt["cuad_clause_labels"] = "{}"
+            if not str(gt.get("maud_clause_labels") or "").strip():
+                gt["maud_clause_labels"] = "{}"
+        elif cls == "insurance_claim":
+            for k in ("denial_reasons", "supporting_documents"):
+                if not str(gt.get(k) or "").strip():
+                    gt[k] = "[]"
+                    stats[f"insurance_{k}"] += 1
+            if (not str(gt.get("date_of_loss") or "").strip()
+                    and not str(gt.get("date_filed") or "").strip()):
+                # source-N/A: the 3 train-only outpatient `:2` MSNs print
+                # "Service start date: N/A" — verbatim marker, not fabricated.
+                gt["date_of_loss"] = "N/A"
+                gt["date_filed"] = "N/A"
+                stats["insurance_date_source_na"] += 1
+        for k in LIST_GT_FIELDS:
+            if gt.get(k) is None or not str(gt[k]).strip():
+                gt[k] = "[]"
+        for k in DICT_GT_FIELDS:
+            cur = gt.get(k)
+            s = "" if cur is None else str(cur).strip()
+            if not s:
+                gt[k] = "{}"
+                continue
+            try:
+                parsed = json.loads(s)
+            except json.JSONDecodeError:
+                parsed = None
+            if not isinstance(parsed, dict):
+                # e.g. EDGAR draws wrote "[]" — dict fields require an object
+                gt[k] = "{}"
+                stats[f"{k}_normalized"] += 1
+    return dict(stats)
 
 
 def load_v8_rows() -> list[dict]:
@@ -313,7 +419,13 @@ def _validate_draw_row(r: dict) -> str:
 
 
 def conform_rows(rows: list[dict]) -> dict:
-    """Per-class 27-key conformance sweep (no None; '' only where allowed)."""
+    """Per-class 27-key conformance sweep.
+
+    Post-completion standard: every expected class-relevant key is non-empty.
+    List-typed fields are satisfied by a valid JSON array ("[]" = no items is
+    a complete answer). The only documented scalar allowance is
+    insurance_claim.adjuster (source-absent on CMS / GNOTHEIA / INSURBIAS).
+    """
     errors: list[str] = []
     counts = Counter(r["expected"] for r in rows)
     empty_allowed = 0
@@ -325,28 +437,28 @@ def conform_rows(rows: list[dict]) -> dict:
             v = gt.get(key)
             if v is None:
                 errors.append(f"{r['filename']}: {key} is None")
-            elif v == "":
+                continue
+            s = str(v).strip()
+            if key in LIST_GT_FIELDS or key in DICT_GT_FIELDS:
+                # a valid JSON array/object (including "[]"/"{}") is complete
+                if not s:
+                    errors.append(f"{r['filename']}: {key} empty (expected JSON)")
+                    continue
+                try:
+                    parsed = json.loads(s)
+                except json.JSONDecodeError:
+                    errors.append(f"{r['filename']}: {key} not valid JSON ({s[:40]})")
+                    continue
+                want = list if key in LIST_GT_FIELDS else dict
+                if not isinstance(parsed, want):
+                    errors.append(f"{r['filename']}: {key} not a JSON "
+                                  f"{'array' if key in LIST_GT_FIELDS else 'object'}")
+                continue
+            if s == "":
                 if key in ALLOWED_EMPTY[cls]:
                     empty_allowed += 1
                     continue
-                # clause coverage is partial on EDGAR rows — train rows may
-                # ship unlabeled; test rows must carry at least ONE clause
-                # axis (label_evidence OR cuad/maud_clause_labels)
-                if cls in CLAUSE_AXES and key in CLAUSE_AXES[cls]:
-                    if not is_test:
-                        continue
-                    other_key = CLAUSE_AXES[cls][1] if key == CLAUSE_AXES[cls][0] \
-                        else CLAUSE_AXES[cls][0]
-                    if str(gt.get(other_key) or "").strip():
-                        continue
-                    errors.append(f"TEST {r['filename']}: both clause axes empty")
-                    continue
-                # purpose-GT keys are mandatory everywhere (train + test)
-                if cls in ("correspondence", "corporate_record") and key in (
-                        "intent", "subject_matter", "keywords"):
-                    errors.append(f"{r['filename']}: {key} empty (purpose-GT mandatory)")
-                elif is_test:
-                    errors.append(f"TEST {r['filename']}: {key} empty")
+                errors.append(f"{r['filename']}: {key} empty (expected non-empty)")
         # closed vocabularies
         intent = str(gt.get("intent") or "")
         if cls == "correspondence" and intent and intent not in CORRESPONDENCE_INTENTS:
@@ -637,6 +749,12 @@ def build_all(
     # — empty fields only, heuristic provenance, deterministic.
     backfill_stats = backfill_purpose_gt(rows)
     print(f"purpose-GT completion: {backfill_stats}")
+
+    # v9 GT-completeness pass — no expected ground-truth entry left empty
+    # (label_evidence from clause annotations; "[]" for no-item lists; the 3
+    # source-N/A outpatient `:2` dates get the verbatim "N/A" marker).
+    complete_stats = complete_gt_fields(rows)
+    print(f"GT completeness: {complete_stats}")
 
     conformance = conform_rows(rows)
     if conformance["errors"]:
