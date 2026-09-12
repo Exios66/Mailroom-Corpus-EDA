@@ -435,6 +435,37 @@ tags:
 pretty_name: "Mailroom Dataset v1 (canonical successor of mailroom-corpus v8)"
 size_categories:
 - 1K<n<10K
+configs:
+- config_name: default
+  data_files:
+  - split: train
+    path: parquet/default/train/*
+  - split: test
+    path: parquet/default/test/*
+- config_name: ground_truth
+  data_files:
+  - split: train
+    path: parquet/ground_truth/train/*
+  - split: test
+    path: parquet/ground_truth/test/*
+- config_name: bundles
+  data_files:
+  - split: train
+    path: parquet/bundles/train/*
+  - split: test
+    path: parquet/bundles/test/*
+- config_name: streams
+  data_files:
+  - split: train
+    path: parquet/streams/train/*
+  - split: test
+    path: parquet/streams/test/*
+- config_name: fixtures
+  data_files:
+  - split: train
+    path: parquet/fixtures/train/*
+  - split: test
+    path: parquet/fixtures/test/*
 ---
 
 # Mailroom Dataset v1
