@@ -619,6 +619,18 @@ config cannot see labels, intent, expected classes, or clause annotations.
 > require strict label-free metadata may treat them as weak indirect signals;
 > they cannot be stripped without violating the zero-drift mandate.
 
+> **GT completeness**: every expected ground-truth field is populated for all
+> 3,302 rows — `label_evidence` is derived from the CUAD/MAUD clause
+> annotations on the 509 contract / 152 merger rows; list-typed fields
+> (`denial_reasons`, `supporting_documents`, `relationships`,
+> `related_document_ids`) carry a valid JSON array (`[]` = no items); clause
+> labels are JSON objects (`{{}}` = no annotations on the 91 SEC EDGAR EX-10
+> contracts). The single documented allowance is `adjuster`: the CMS
+> DE-SynPUF, GNOTHEIA property, and INSURBIAS subclasses have no adjuster in
+> their sources, so those 950 rows leave `adjuster` empty (BDR auto rows
+> carry their pseudonyms). Three outpatient `:2` notices with service dates
+> literally "N/A" in the source carry the verbatim `N/A` marker.
+
 ## Composition (v1 = v8 + expansions)
 
 | Document class | Rows | Share | Δ vs v8 |
