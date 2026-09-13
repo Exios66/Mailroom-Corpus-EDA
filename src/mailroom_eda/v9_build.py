@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import sys
 from collections import Counter
@@ -44,8 +45,6 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
-if str(ROOT / "scripts") not in sys.path:
-    sys.path.insert(0, str(ROOT / "scripts"))
 
 from mailroom_eda import identity  # noqa: E402
 from mailroom_eda import eval_contract as ec  # noqa: E402
@@ -56,7 +55,7 @@ from mailroom_eda.dataset_export import (  # noqa: E402
     safe_jsonl_line,
     stage_parquet,
 )
-from publish_hardened import (  # noqa: E402
+from mailroom_eda.hardened import (  # noqa: E402
     CONTRACT_FIELDS,
     IDENTITY_FIELDS,
     MATTER_LISTS,
@@ -236,6 +235,86 @@ def _json_obj(v: object) -> object:
         return {}
 
 
+#: INSURBIAS supporting-document completion (issue #29, epic #27).
+#:
+#: The v9 insurance_claim draw (``feihuangfh/INSURBIAS``, CC-BY-4.0) ships
+#: claim narratives only — no document inventory. ``supporting_documents`` is
+#: therefore derived deterministically from each narrative's referenced
+#: features, mirroring the v8 BDR auto precedent (``v8_build.py _auto_row``:
+#: ``supporting = ["repair estimate"]`` unconditionally, ``+ ["police
+#: report"]`` when a police report is on file). Document-type vocabulary is
+#: the v8/v9 lowercase doc-type names; the list is sorted + deduped.
+INSURBIAS_SOURCE = "feihuangfh/INSURBIAS"
+
+#: Narrative features that ground a ``repair estimate`` (the auto-claim
+#: standard supporting document): explicit vehicle damage / repair need.
+_INSURBIAS_DAMAGE_RE = re.compile(
+    r"\bdamag\w*\b|\bdent(s|ed)?\b|\bscratch(es|ed)?\b|\brepair(s|ed)?\b|\brepair costs?\b"
+    r"|\bbroke down\b|\bbreakdown\b|\bflat tire\b|\bstalled\b|\bflood(ed|ing)?\b"
+    r"|\bsubmerg(ed)?\b|\bbumper\b|\bwindshield\b|\bengine mount\b|\bhail(stones?)?\b"
+    r"|\bcaught fire\b|\btire\b"
+)
+
+
+def _insurbias_injury(narrative: str) -> bool:
+    """True when the narrative asserts claimant injury (negation-aware)."""
+    low = narrative.lower()
+    if re.search(r"\b(no one|nobody) was (seriously )?injured\b", low):
+        return False
+    if re.search(r"\bwasn'?t injured\b|\bweren'?t injured\b", low):
+        return False
+    if re.search(r"\bnot (seriously )?injured\b|\bunharmed\b|\bno (serious )?injuries\b", low):
+        return False
+    return bool(re.search(r"\binjur(y|ed)\b|\bpain\b|\bmedical\b|\bhospital\b|\bdoctor\b|\btreatment\b", low))
+
+
+def _insurbias_supporting_documents(doc_text: str) -> list[str]:
+    """Deterministic supporting-document derivation for INSURBIAS auto rows.
+
+    Grounded in the narrative's referenced features (issue #29): repair
+    estimate where the narrative asserts vehicle damage / a repair need;
+    police report where the authorities/police are referenced; damage photos
+    where the narrative references an image; medical records where an injury
+    is asserted (negation-aware); fire report where the fire department was
+    called. Returns a sorted, deduped list of lowercase doc-type names.
+    """
+    narrative = doc_text.split("CLAIM NARRATIVE (source text)")[-1]
+    low = narrative.lower()
+    docs: list[str] = []
+    if _INSURBIAS_DAMAGE_RE.search(low):
+        docs.append("repair estimate")
+    if re.search(r"\bauthorities\b|\bpolice\b", low):
+        docs.append("police report")
+    if re.search(r"\bimage\b", low):
+        docs.append("damage photos")
+    if _insurbias_injury(narrative):
+        docs.append("medical records")
+    if re.search(r"\btow(ed|ing| truck)?\b", low):
+        docs.append("towing invoice")
+    if re.search(r"\bwitness(es)?\b", low):
+        docs.append("witness statement")
+    if re.search(r"\bfire department\b", low):
+        docs.append("fire report")
+    return sorted(set(docs))
+
+
+def _insurbias_supporting_doc_absent(doc_text: str) -> bool:
+    """Documented-absence predicate (issue #29): True when the INSURBIAS
+    narrative references NO supporting-document feature.
+
+    A narrow class of bare accident reports (6/150 on the v9 draw): the
+    narrative asserts a collision/accident event but no vehicle damage, no
+    repair need, no police/authorities, no image, no injury, no towing, no
+    witness, no fire department — there is no feature to ground any
+    supporting document on. Such rows keep ``"[]"``, a complete no-items
+    answer per LIST_GT_FIELDS ("a valid JSON array is the COMPLETE answer —
+    '[]' means no items (honest), never a missing value"). The predicate is
+    mirrored by scripts/coverage_matrix.py ABSENCE_RULES so the matrix
+    reports these cells as ``schema_documented_absence``, never as gaps.
+    """
+    return not _insurbias_supporting_documents(doc_text)
+
+
 def complete_gt_fields(rows: list[dict]) -> dict:
     """v9 GT-completeness pass (issue #3 / #14 follow-up).
 
@@ -289,6 +368,20 @@ def complete_gt_fields(rows: list[dict]) -> dict:
             if not str(gt.get("maud_clause_labels") or "").strip():
                 gt["maud_clause_labels"] = "{}"
         elif cls == "insurance_claim":
+            # issue #29 (epic #27): the INSURBIAS draw rows ship claim
+            # narratives only — derive supporting_documents from each
+            # narrative's referenced features (see _insurbias_supporting_
+            # documents above; mirrors the v8 BDR auto rule). Rows whose
+            # narrative grounds NO supporting-document feature (bare accident
+            # reports — _insurbias_supporting_doc_absent, 6/150 on the v9
+            # draw) keep "[]": a documented absence, complete per
+            # LIST_GT_FIELDS.
+            if str((r.get("metadata") or {}).get("source_dataset") or "") == INSURBIAS_SOURCE:
+                if not str(gt.get("supporting_documents") or "").strip():
+                    docs = _insurbias_supporting_documents(str(r.get("doc_text") or ""))
+                    if docs:
+                        gt["supporting_documents"] = json.dumps(docs, ensure_ascii=False)
+                        stats["insurance_insurbias_supporting_docs"] += 1
             for k in ("denial_reasons", "supporting_documents"):
                 if not str(gt.get(k) or "").strip():
                     gt[k] = "[]"
@@ -629,7 +722,14 @@ config cannot see labels, intent, expected classes, or clause annotations.
 > DE-SynPUF, GNOTHEIA property, and INSURBIAS subclasses have no adjuster in
 > their sources, so those 950 rows leave `adjuster` empty (BDR auto rows
 > carry their pseudonyms). Three outpatient `:2` notices with service dates
-> literally "N/A" in the source carry the verbatim `N/A` marker.
+> literally "N/A" in the source carry the verbatim `N/A` marker. The 150
+> INSURBIAS auto rows (issue #29) ship claim narratives only, so their
+> `supporting_documents` are derived deterministically from each narrative's
+> referenced features — repair estimate on any vehicle-damage / repair
+> assertion (the v8 BDR auto precedent), plus police report / damage photos
+> / medical records / fire report on explicit feature matches; the 6 rows
+> whose narrative references no supporting-document feature carry `[]` as a
+> documented absence (see `v9_build._insurbias_supporting_doc_absent`).
 
 ## Composition (v1 = v8 + expansions)
 
