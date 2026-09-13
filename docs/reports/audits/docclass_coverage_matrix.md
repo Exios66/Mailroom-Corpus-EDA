@@ -14,56 +14,65 @@ Generated from the local pinned snapshot — 3302 rows, 5 classes, 55 class × s
 
 ## Field coverage per specialist (§41)
 
+Coverage is reported over **eligible rows only** (populated / eligible). Unpopulated cells are classified `schema_documented_absence` — the v8_build/v9 conformance law says the field is empty on this row (e.g. `adjuster` on CMS/GNOTHEIA/INSURBIAS rows, `denial_reasons` on non-denied claims) — or `genuine_gap` — the field should be populated but is not (e.g. `cuad_clause_labels` on the 91 EDGAR EX-10 contracts, the 150 INSURBIAS rows shipping no `supporting_documents`). Documented absences are tallied but never counted as gaps (issue #28).
+
 ### `contract` (600 rows, `contracts_specialist`)
 
-| field | populated | coverage |
-|---|---|---|
-| `cuad_clause_labels` | 509 | 85% |
+| field | populated | eligible | documented-absent | genuine gap | coverage |
+|---|---|---|---|---|---|
+| `cuad_clause_labels` | 509 | 600 | 0 | 91 | 85% |
 
 ### `corporate_record` (450 rows, `corporate_records_specialist`)
 
-| field | populated | coverage |
-|---|---|---|
-| `intent` | 450 | 100% |
-| `keywords` | 450 | 100% |
-| `subject_matter` | 450 | 100% |
+| field | populated | eligible | documented-absent | genuine gap | coverage |
+|---|---|---|---|---|---|
+| `intent` | 450 | 450 | 0 | 0 | 100% |
+| `keywords` | 450 | 450 | 0 | 0 | 100% |
+| `subject_matter` | 450 | 450 | 0 | 0 | 100% |
 
 ### `correspondence` (1000 rows, `correspondence_specialist`)
 
-| field | populated | coverage |
-|---|---|---|
-| `content_topic` | 1000 | 100% |
-| `intent` | 1000 | 100% |
-| `keywords` | 1000 | 100% |
-| `sentiment_label` | 1000 | 100% |
-| `subject_matter` | 1000 | 100% |
+| field | populated | eligible | documented-absent | genuine gap | coverage |
+|---|---|---|---|---|---|
+| `content_topic` | 1000 | 1000 | 0 | 0 | 100% |
+| `intent` | 1000 | 1000 | 0 | 0 | 100% |
+| `keywords` | 1000 | 1000 | 0 | 0 | 100% |
+| `sentiment_label` | 1000 | 1000 | 0 | 0 | 100% |
+| `subject_matter` | 1000 | 1000 | 0 | 0 | 100% |
 
 ### `insurance_claim` (1100 rows, `insurance_claims_specialist`)
 
-| field | populated | coverage |
-|---|---|---|
-| `adjuster` | 150 | 14% |
-| `claim_number` | 1100 | 100% |
-| `claim_type` | 1100 | 100% |
-| `claimed_amount` | 1100 | 100% |
-| `coverage_determination` | 1100 | 100% |
-| `damages_description` | 1100 | 100% |
-| `date_filed` | 1100 | 100% |
-| `date_of_loss` | 1100 | 100% |
-| `denial_reasons` | 36 | 3% |
-| `insured_party` | 1100 | 100% |
-| `insurer` | 1100 | 100% |
-| `intent` | 1100 | 100% |
-| `keywords` | 1100 | 100% |
-| `policy_number` | 1100 | 100% |
-| `subject_matter` | 1100 | 100% |
-| `supporting_documents` | 950 | 86% |
+| field | populated | eligible | documented-absent | genuine gap | coverage |
+|---|---|---|---|---|---|
+| `adjuster` | 150 | 150 | 950 | 0 | 100% |
+| `claim_number` | 1100 | 1100 | 0 | 0 | 100% |
+| `claim_type` | 1100 | 1100 | 0 | 0 | 100% |
+| `claimed_amount` | 1100 | 1100 | 0 | 0 | 100% |
+| `coverage_determination` | 1100 | 1100 | 0 | 0 | 100% |
+| `damages_description` | 1100 | 1100 | 0 | 0 | 100% |
+| `date_filed` | 1100 | 1100 | 0 | 0 | 100% |
+| `date_of_loss` | 1100 | 1100 | 0 | 0 | 100% |
+| `denial_reasons` | 36 | 36 | 1064 | 0 | 100% |
+| `insured_party` | 1100 | 1100 | 0 | 0 | 100% |
+| `insurer` | 1100 | 1100 | 0 | 0 | 100% |
+| `intent` | 1100 | 1100 | 0 | 0 | 100% |
+| `keywords` | 1100 | 1100 | 0 | 0 | 100% |
+| `policy_number` | 1100 | 1100 | 0 | 0 | 100% |
+| `subject_matter` | 1100 | 1100 | 0 | 0 | 100% |
+| `supporting_documents` | 950 | 1100 | 0 | 150 | 86% |
 
 ### `merger_agreement` (152 rows, `contracts_specialist`)
 
-| field | populated | coverage |
-|---|---|---|
-| `maud_clause_labels` | 152 | 100% |
+| field | populated | eligible | documented-absent | genuine gap | coverage |
+|---|---|---|---|---|---|
+| `maud_clause_labels` | 152 | 152 | 0 | 0 | 100% |
+
+## Documented absences (§v8_build/v9 conformance law)
+
+Rows classified `schema_documented_absence` are **not coverage gaps**: the conformance law documents the field empty on them. Rules (with code citations; full text in the JSON):
+
+- **`insurance_claim.adjuster`** — 950 rows classified documented-absence; 0 populated rows match the absence predicate (0 = conformance-clean). v8_build.py ALLOWED_EMPTY = {'adjuster'} + module docstring ('' only where the schema documents absence, e.g. adjuster on property/CMS rows); v9_build.py ALLOWED_EMPTY['insurance_claim'] = {'adjuster'}; conform_rows: 'the only documented scalar allowance is insurance_claim.adjuster (source-absent on CMS / GNOTHEIA / INSURBIAS)' — only the BDR auto rows carry adjuster pseudonyms (v8_build.py _auto_row: _pseudo_adjuster(claim_id)).
+- **`insurance_claim.denial_reasons`** — 1064 rows classified documented-absence; 0 populated rows match the absence predicate (0 = conformance-clean). v8_build.py _auto_row: reasons = _auto_denial_reasons(r) if determination == 'denied' else [] — denial reasons exist only on denied claims; non-denied rows ship '[]' (a complete no-items answer per v9_build.py LIST_GT_FIELDS: 'a valid JSON array is the COMPLETE answer — [] means no items (honest), never a missing value').
 
 ## Scenario columns (§40)
 

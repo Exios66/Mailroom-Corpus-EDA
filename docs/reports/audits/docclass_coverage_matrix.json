@@ -12,6 +12,15 @@
       "field_coverage": {
         "cuad_clause_labels": 509
       },
+      "absence_classification": {
+        "cuad_clause_labels": {
+          "populated": 509,
+          "eligible": 600,
+          "documented_absence": 0,
+          "genuine_gap": 91,
+          "coverage_pct": 85
+        }
+      },
       "tested": 0,
       "regression": 0,
       "challenge": 0,
@@ -26,6 +35,29 @@
         "intent": 450,
         "subject_matter": 450,
         "keywords": 450
+      },
+      "absence_classification": {
+        "intent": {
+          "populated": 450,
+          "eligible": 450,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "subject_matter": {
+          "populated": 450,
+          "eligible": 450,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "keywords": {
+          "populated": 450,
+          "eligible": 450,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        }
       },
       "tested": 0,
       "regression": 0,
@@ -43,6 +75,43 @@
         "keywords": 1000,
         "sentiment_label": 1000,
         "content_topic": 1000
+      },
+      "absence_classification": {
+        "intent": {
+          "populated": 1000,
+          "eligible": 1000,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "subject_matter": {
+          "populated": 1000,
+          "eligible": 1000,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "keywords": {
+          "populated": 1000,
+          "eligible": 1000,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "sentiment_label": {
+          "populated": 1000,
+          "eligible": 1000,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "content_topic": {
+          "populated": 1000,
+          "eligible": 1000,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        }
       },
       "tested": 0,
       "regression": 0,
@@ -72,6 +141,120 @@
         "subject_matter": 1100,
         "keywords": 1100
       },
+      "absence_classification": {
+        "claim_number": {
+          "populated": 1100,
+          "eligible": 1100,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "policy_number": {
+          "populated": 1100,
+          "eligible": 1100,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "insurer": {
+          "populated": 1100,
+          "eligible": 1100,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "insured_party": {
+          "populated": 1100,
+          "eligible": 1100,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "claim_type": {
+          "populated": 1100,
+          "eligible": 1100,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "date_of_loss": {
+          "populated": 1100,
+          "eligible": 1100,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "date_filed": {
+          "populated": 1100,
+          "eligible": 1100,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "claimed_amount": {
+          "populated": 1100,
+          "eligible": 1100,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "adjuster": {
+          "populated": 150,
+          "eligible": 150,
+          "documented_absence": 950,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "damages_description": {
+          "populated": 1100,
+          "eligible": 1100,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "coverage_determination": {
+          "populated": 1100,
+          "eligible": 1100,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "denial_reasons": {
+          "populated": 36,
+          "eligible": 36,
+          "documented_absence": 1064,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "supporting_documents": {
+          "populated": 950,
+          "eligible": 1100,
+          "documented_absence": 0,
+          "genuine_gap": 150,
+          "coverage_pct": 86
+        },
+        "intent": {
+          "populated": 1100,
+          "eligible": 1100,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "subject_matter": {
+          "populated": 1100,
+          "eligible": 1100,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        },
+        "keywords": {
+          "populated": 1100,
+          "eligible": 1100,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        }
+      },
       "tested": 0,
       "regression": 0,
       "challenge": 0,
@@ -84,6 +267,15 @@
       "specialist": "contracts_specialist",
       "field_coverage": {
         "maud_clause_labels": 152
+      },
+      "absence_classification": {
+        "maud_clause_labels": {
+          "populated": 152,
+          "eligible": 152,
+          "documented_absence": 0,
+          "genuine_gap": 0,
+          "coverage_pct": 100
+        }
       },
       "tested": 0,
       "regression": 0,
@@ -368,5 +560,18 @@
       "rows": 57
     }
   ],
+  "absence_rules": {
+    "insurance_claim.adjuster": {
+      "rule": "v8_build.py ALLOWED_EMPTY = {'adjuster'} + module docstring ('' only where the schema documents absence, e.g. adjuster on property/CMS rows); v9_build.py ALLOWED_EMPTY['insurance_claim'] = {'adjuster'}; conform_rows: 'the only documented scalar allowance is insurance_claim.adjuster (source-absent on CMS / GNOTHEIA / INSURBIAS)' \u2014 only the BDR auto rows carry adjuster pseudonyms (v8_build.py _auto_row: _pseudo_adjuster(claim_id)).",
+      "documented_absence": 950,
+      "populated_matching_absence_predicate": 0
+    },
+    "insurance_claim.denial_reasons": {
+      "rule": "v8_build.py _auto_row: reasons = _auto_denial_reasons(r) if determination == 'denied' else [] \u2014 denial reasons exist only on denied claims; non-denied rows ship '[]' (a complete no-items answer per v9_build.py LIST_GT_FIELDS: 'a valid JSON array is the COMPLETE answer \u2014 [] means no items (honest), never a missing value').",
+      "documented_absence": 1064,
+      "populated_matching_absence_predicate": 0
+    }
+  },
+  "coverage_basis_note": "\u00a741 coverage is reported over ELIGIBLE rows only (populated / eligible). Unpopulated cells are classified schema_documented_absence \u2014 the v8_build/v9 conformance law says the field is empty on this row (e.g. adjuster on CMS/GNOTHEIA/INSURBIAS rows, denial_reasons on non-denied claims) \u2014 or genuine_gap \u2014 the field should be populated but is not (e.g. cuad_clause_labels on the 91 EDGAR EX-10 contracts, the 150 INSURBIAS rows shipping no supporting_documents). Documented absences are tallied in absence_classification / absence_rules but never counted as gaps (issue #28, epic #27).",
   "scenario_columns_note": "tested/regression/challenge/multi-document are \u00a740 template columns at zero: the sandbox/pilot fixtures (P1) and the matter/grouping (P2) + recovery (P3) families fill them at their phases \u2014 the corpus does not overstate coverage (\u00a714A/\u00a753)."
 }

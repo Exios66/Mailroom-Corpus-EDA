@@ -31,9 +31,9 @@ Evidence: partial fields: contract.cuad_clause_labels 509/600 — zero scenario 
 
 ## [MEDIUM] Insurance workflow documents (§89: insurance workflow)
 
-Largest class (1,100 rows) with adjuster at 14% (150/1,100) and denial_reasons at 3% (36/1,100), supporting_documents at 86% (950/1,100) — the workflow fields that distinguish a claim decision from a claim intake.
+Largest class (1,100 rows). Issue #28 absence classification closed the by-design rows: adjuster is 100% over eligible (150/150 — the only rows that should carry an adjuster are the 150 BDR auto rows; CMS/GNOTHEIA/INSURBIAS absence is schema-documented) and denial_reasons is 100% over eligible (36/36 denied claims; non-denied absence is schema-documented). The open surface is supporting_documents at 86% (950/1,100) — the 150 INSURBIAS narrative rows ship no supporting docs (genuine gap, covered by no documented rule) — the workflow field that distinguishes a claim decision from a claim intake.
 
-Evidence: partial fields: insurance_claim.adjuster 150/1100, insurance_claim.denial_reasons 36/1100, insurance_claim.supporting_documents 950/1100 — zero scenario axes: insurance_claim.tested, insurance_claim.regression, insurance_claim.challenge, insurance_claim.multi_document.
+Evidence: partial fields: insurance_claim.supporting_documents 950/1100 — zero scenario axes: insurance_claim.tested, insurance_claim.regression, insurance_claim.challenge, insurance_claim.multi_document.
 
 ## [MEDIUM] Legal document families (§89: legal document families)
 

@@ -8,8 +8,10 @@ instrument) and emits the PRIORITIZED expansion backlog at
 §89's discipline is explicit: **do not optimize for raw row count**. Each
 expansion family is therefore scored by evaluation value, not volume:
 
-- ``field_gaps`` — GT fields at zero or partial coverage (from the matrix's
-  class_view.field_coverage vs. eval_contract.expected_gt_fields).
+- ``field_gaps`` — GT fields at zero or partial coverage over ELIGIBLE rows
+  (from the matrix's class_view.absence_classification vs.
+  eval_contract.expected_gt_fields; schema-documented absences are not gaps —
+  issue #28).
 - ``scenario_zero`` — the §40 scenario columns (tested/regression/challenge/
   multi_document) that are still zero for the class.
 - ``scarcity`` — classes far below the corpus median row count (a 39-row
@@ -111,10 +113,16 @@ EXPANSION_FAMILIES: tuple[dict[str, Any], ...] = (
         "title": "Insurance workflow documents (§89: insurance workflow)",
         "classes": ("insurance_claim",),
         "rationale": (
-            "Largest class (1,100 rows) with adjuster at 14% (150/1,100) and "
-            "denial_reasons at 3% (36/1,100), supporting_documents at 86% "
-            "(950/1,100) — the workflow fields that distinguish a claim "
-            "decision from a claim intake."
+            "Largest class (1,100 rows). Issue #28 absence classification "
+            "closed the by-design rows: adjuster is 100% over eligible "
+            "(150/150 — the only rows that should carry an adjuster are the "
+            "150 BDR auto rows; CMS/GNOTHEIA/INSURBIAS absence is "
+            "schema-documented) and denial_reasons is 100% over eligible "
+            "(36/36 denied claims; non-denied absence is schema-documented). "
+            "The open surface is supporting_documents at 86% (950/1,100) — "
+            "the 150 INSURBIAS narrative rows ship no supporting docs "
+            "(genuine gap, covered by no documented rule) — the workflow "
+            "field that distinguishes a claim decision from a claim intake."
         ),
     },
     {
@@ -170,16 +178,25 @@ EXPANSION_FAMILIES: tuple[dict[str, Any], ...] = (
 
 
 def _field_gaps(class_view: dict[str, Any], doc_class: str) -> dict[str, Any]:
-    """Zero/partial GT fields for a class from the matrix's coverage facts."""
-    covered = class_view.get("field_coverage") or {}
-    rows = int(class_view.get("rows") or 0)
+    """Zero/partial GT fields for a class from the matrix's eligibility facts.
+
+    Issue #28 basis: reads ``absence_classification`` (populated / eligible),
+    so schema-documented absences (adjuster on CMS/GNOTHEIA/INSURBIAS rows,
+    denial_reasons on non-denied claims) are never counted as gaps — only
+    rows where the field should be populated but is not (genuine_gap).
+    """
+    ac = class_view.get("absence_classification") or {}
     zero, partial = [], []
     for field in expected_gt_fields(doc_class):
-        count = int(covered.get(field, 0))
-        if count == 0:
+        entry = ac.get(field)
+        if not entry:
+            continue
+        populated = int(entry.get("populated", 0))
+        eligible = int(entry.get("eligible", 0))
+        if populated == 0:
             zero.append(field)
-        elif count < rows:
-            partial.append(f"{field} {count}/{rows}")
+        elif populated < eligible:
+            partial.append(f"{field} {populated}/{eligible}")
     return {"zero": zero, "partial": partial}
 
 
