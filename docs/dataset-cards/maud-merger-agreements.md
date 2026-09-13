@@ -1,15 +1,15 @@
-# MAUD Merger Agreements — mailroom-corpus source card
+# MAUD Merger Agreements — mailroom-dataset source card
 
-> `merger_agreement` · 152 rows (9.2% of the corpus) · 5 strata · train 135 / test 17
+> `merger_agreement` · 152 rows (4.6% of the corpus) · 5 strata · train 135 / test 17
 > · license **CC BY 4.0** · one of the five source corpora of
-> [`Lucius-Morningstar/mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
+> [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
 
 ## Identity
 
 | Field | Value |
 |---|---|
 | doc_type | `merger_agreement` |
-| Rows | 152 (9.2% of 1,650) |
+| Rows | 152 (4.6% of 3,302) |
 | Splits | train 135 / test 17 (`md5(filename) % 10 == 0 → test`) |
 | Strata | 5 `expected_subclass` values by consideration type: all_cash 57, other 57, all_stock 24, mixed_cash_stock 13, mixed_cash_stock_election 1 |
 | Provenance keys | `metadata.source = maud_v1`, `metadata.source_dataset = data/maud/contracts.jsonl` |
@@ -26,7 +26,7 @@ Definitions. The annotation schema operationalizes the ABA 2021 Public
 Target Deal Points Study, making MAUD the reference benchmark for
 merger-agreement legal reasoning.
 
-In mailroom-corpus the corpus serves as the **long-document stress class**.
+In mailroom-dataset the corpus serves as the **long-document stress class**.
 Agreement texts were streamed from the Zenodo v1 corpus export; the
 consideration-type annotation informs `expected_subclass`, and the upstream
 label bookkeeping rides in `metadata.maud_label_count` (individual answer
@@ -43,7 +43,7 @@ task). Every row's `metadata.original_file` points at its upstream
 | Original download | <https://www.atticusprojectai.org/maud/> |
 | Corpus export | Zenodo record [7500064](https://zenodo.org/records/7500064) (CC BY 4.0) |
 | Family mirror | [`Lucius-Morningstar/mailroom-maud-contracts`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-maud-contracts) |
-| Form in mailroom-corpus | full agreement text in `doc_text`; upstream `contract_N.txt` path in `metadata.original_file` |
+| Form in mailroom-dataset | full agreement text in `doc_text`; upstream `contract_N.txt` path in `metadata.original_file` |
 
 ## Attribution
 
@@ -66,7 +66,7 @@ attribution is required when redistributing or building on these rows:
 
 Zenodo DOI: `10.5281/zenodo.7500064`.
 
-## Purpose in mailroom-corpus
+## Purpose in mailroom-dataset
 
 1. **doc_type supervision** — 152 gold `merger_agreement` labels; the
    smallest large-document class, deliberately kept to exercise long-context

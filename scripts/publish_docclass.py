@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""CLI: publish the mailroom-corpus corpus to the HuggingFace Hub.
+"""CLI: publish the mailroom-corpus (v8 baseline) corpus to the HuggingFace Hub.
 
 Centralized replacement for llm-entity-extraction's publish_docclass_v6.py —
 stage parquet configs (default/ground_truth), render the README card, write
-the manifest, and upload via the mailroom_eda modules.
+the manifest, and upload via the mailroom_eda modules. Targets the frozen
+v8 `mailroom-corpus` baseline (V8_REPO_ID); the v9 successor
+`mailroom-dataset` is published by `scripts/build_v9.py`.
 
 Usage:
     python scripts/publish_docclass.py --rows data/v7_rows.jsonl --stage /tmp/v7_stage

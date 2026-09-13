@@ -1,7 +1,7 @@
 """P1 evaluation-contract derivations (plan §86, HUB-022).
 
 Pure, deterministic derivations of the Mailroom evaluation-hardening ground
-truth for every ``mailroom-corpus`` row, per the §84A dependency chain
+truth for every ``mailroom-dataset`` row, per the §84A dependency chain
 (document_id → annotation_provenance → confidence-band/calibration fixtures;
 failure/review/retry expectations → P3 fixtures). Every derivation is a pure
 function of the row (+ the pipeline's taxonomy.yaml for specialist routing);

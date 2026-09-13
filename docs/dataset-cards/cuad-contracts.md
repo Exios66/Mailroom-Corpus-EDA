@@ -1,16 +1,16 @@
-# CUAD Contracts — mailroom-corpus source card
+# CUAD Contracts — mailroom-dataset source card
 
-> `contract` · 509 rows (30.8% of the corpus) · 26 strata · train 455 / test 54
+> `contract` · 600 rows (18.2% of the corpus) · 26 strata · train 540 / test 60
 > · license **CC BY 4.0** · one of the five source corpora of
-> [`Lucius-Morningstar/mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
+> [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
 
 ## Identity
 
 | Field | Value |
 |---|---|
 | doc_type | `contract` |
-| Rows | 509 (30.8% of 1,650) |
-| Splits | train 455 / test 54 (`md5(filename) % 10 == 0 → test`) |
+| Rows | 600 (18.2% of 3,302): 509 CUAD v1 + 91 SEC EDGAR EX-10 |
+| Splits | train 540 / test 60 (`md5(filename) % 10 == 0 → test`) |
 | Strata | 26 `expected_subclass` values (CUAD's 28-group contract taxonomy; 26 groups appear in the merged surface) |
 | Largest strata | Maintenance 34, License_Agreements 33, Distributor 32, Strategic Alliance 32, Sponsorship 31 |
 | Smallest strata | Non_Compete_Non_Solicit 3, Joint Venture 9, Affiliate_Agreements 10 |
@@ -28,14 +28,15 @@ over 25,000 answer spans total, to support legal contract review by NLP
 models. It is the standard benchmark for contract-understanding tasks and
 was published at NeurIPS 2021 (Datasets & Benchmarks).
 
-In mailroom-corpus the corpus is the **contract backbone**: every row keeps
+In mailroom-dataset the corpus is the **contract backbone**: every row keeps
 CUAD's own commercial-contract grouping as the second-level gold label
 (`expected_subclass` — e.g. `Co_Branding`, `Distributor`, `License_Agreements`),
 plus the full official clause annotation set on the `ground_truth` config as
 `cuad_clause_labels`. The upstream corpus was created with dozens of legal
 experts from The Atticus Project and carries over 13,000 annotations across
-41 clause types (per the official paper); the 509-row merged subset alone
-contributes 13,753 verified answer spans to the `ground_truth` config. The
+41 clause types (per the official paper); the 600-row merged subset alone
+contributes 13,753 verified answer spans (509 CUAD rows) to the `ground_truth`
+config. The
 509 rows are a byte-verified export of the
 Braintrust CUAD mirror curated as
 [`mailroom-cuad-contracts-full`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts-full),
@@ -53,7 +54,7 @@ points at its upstream CUAD PDF path (source PDFs ride along under
 | Mirror repo | <https://github.com/TheAtticusProject/cuad> |
 | HF mirror of the original | [`theatticusproject/cuad`](https://huggingface.co/datasets/theatticusproject/cuad) (CC BY 4.0) |
 | Family ingestion mirror | [`Lucius-Morningstar/mailroom-cuad-contracts-full`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts-full) (byte-verified export used for the merge) |
-| Form in mailroom-corpus | full contract text in `doc_text`; PDF basename in `filename`; upstream PDF path in `metadata.original_file` / `metadata.pdf_path` |
+| Form in mailroom-dataset | full contract text in `doc_text`; PDF basename in `filename`; upstream PDF path in `metadata.original_file` / `metadata.pdf_path` |
 
 ## Attribution
 
@@ -73,7 +74,7 @@ attribution is required when redistributing or building on these rows:
 }
 ```
 
-## Purpose in mailroom-corpus
+## Purpose in mailroom-dataset
 
 1. **doc_type supervision** — 509 gold `contract` labels (30.8% of the
    corpus), the second-largest class after insurance_claim.

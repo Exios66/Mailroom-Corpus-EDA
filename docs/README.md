@@ -1,23 +1,24 @@
-# Docclass-Merged — Source Dataset Cards
+# Mailroom Dataset — Source Dataset Cards
 
 Documentation for the five source corpora integrated into
-[`Lucius-Morningstar/mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
-(schema v7, 1,650 rows, published 2026-08-31). Each card records the full
-context, source material, attribution, and the purpose the corpus serves
-inside the merged classification surface. All numbers are reproducible from
-this repo's EDA pipeline (`run_all.py`) and the tables under
-[`reports/tables/`](../reports/tables/).
+[`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
+(v1, canonically v9 of the corpus family, 3,302 rows, published 2026-09-12;
+lineage parent the frozen v8 `mailroom-corpus`, 2,000 rows). Each card
+records the full context, source material, attribution, and the purpose the
+corpus serves inside the merged classification surface. All numbers are
+reproducible from this repo's EDA pipeline (`run_all.py`) and the tables
+under [`reports/tables/`](../reports/tables/).
 
 ## The five corpora
 
 | Card | doc_type | Rows | Share | License | Upstream origin |
-|---|---|---:|---:|---|---|
-| [CUAD contracts](dataset-cards/cuad-contracts.md) | `contract` | 509 | 30.8% | CC BY 4.0 | CUAD v1 — The Atticus Project |
-| [MAUD merger agreements](dataset-cards/maud-merger-agreements.md) | `merger_agreement` | 152 | 9.2% | CC BY 4.0 | MAUD v1 — The Atticus Project (Zenodo 7500064) |
-| [S-1 corporate records](dataset-cards/s1-corporate-records.md) | `corporate_record` | 39 | 2.4% | Public domain (US gov works) | SEC EDGAR S-1 exhibits |
-| [Enron correspondence](dataset-cards/enron-correspondence.md) | `correspondence` | 350 | 21.2% | Research use (inherited from CMU Enron) | CMU Enron Email Dataset via `enron-correspondence-dedup` |
-| [CMS DE-SynPUF insurance claims](dataset-cards/cms-desynpuf-insurance-claims.md) | `insurance_claim` | 600 | 36.4% | CMS public-use (synthetic) | CMS DE-SynPUF 2008–2010 Sample 1 via `claims-data-eda` |
-| **Total** | 5 doc_types | **1,650** | 100% | mixed — see per-card terms | 48 strata (`expected` × `expected_subclass`) |
+|---|---:|---:|---|---|
+| [CUAD contracts](dataset-cards/cuad-contracts.md) | `contract` | 600 | 18.2% | CC BY 4.0 | CUAD v1 — The Atticus Project (+ SEC EDGAR EX-10) |
+| [MAUD merger agreements](dataset-cards/maud-merger-agreements.md) | `merger_agreement` | 152 | 4.6% | CC BY 4.0 | MAUD v1 — The Atticus Project (Zenodo 7500064) |
+| [S-1 corporate records](dataset-cards/s1-corporate-records.md) | `corporate_record` | 450 | 13.6% | Public domain (US gov works) | SEC EDGAR S-1/8-K exhibits |
+| [Enron correspondence](dataset-cards/enron-correspondence.md) | `correspondence` | 1000 | 30.3% | Research use (inherited from CMU Enron) | CMU Enron Email Dataset via `enron-correspondence-dedup` |
+| [CMS DE-SynPUF insurance claims](dataset-cards/cms-desynpuf-insurance-claims.md) | `insurance_claim` | 1100 | 33.3% | CMS public-use (synthetic) | CMS DE-SynPUF 2008–2010 Sample 1 via `claims-data-eda` (+ GNOTHEIA/BDR/INSURBIAS LOB lines) |
+| **Total** | 5 doc_types | **3,302** | 100% | mixed — see per-card terms | 55 strata (`expected` × `expected_subclass`) |
 
 ## How each corpus entered the merge
 
@@ -28,6 +29,8 @@ this repo's EDA pipeline (`run_all.py`) and the tables under
 | v5 (KANBAN-084) | + clause-level GT | +400 insurance_claim | DE-SynPUF EOB renders with verbatim GT contract; `cuad_clause_labels` / `maud_clause_labels` joined |
 | v6 (KANBAN-105) | blind-surface repair | +240 correspondence, +200 insurance_claim | stratified re-draw excluding existing filenames; DE-SynPUF re-render (record_id exclusion) |
 | v7 (issue #5) | intent hydration | no row change | 350/350 correspondence rows carry canonical 8-class `intent` + provenance columns |
+| v8 (2026-09-02) | frozen baseline | 1,650 → 2,000 | `mailroom-corpus` — insurance LOB expansion (property/auto) + full GT conformance; never destroyed |
+| v9 (2026-09-12) | standalone successor | 2,000 → 3,302 | `mailroom-dataset` v1 — §84 hardened GT (identity/provenance/matter): correspondence +650, corporate_record +411, contract +91 (EX-10), insurance +150 (INSURBIAS) |
 
 ## Row-level provenance
 
@@ -65,16 +68,16 @@ carry `metadata.license = "Enron corpus — released for research use"`.
 
 Per-row `split` follows the family rule `md5(filename) % 10 == 0 → test`
 (~10%), deterministic and stable across rebuilds; identical to the rule used
-by every sibling dataset in the family. Current counts: train 1,474 / test
-176 (contract 455/54, merger_agreement 135/17, corporate_record 38/1,
-correspondence 310/40, insurance_claim 536/64).
+by every sibling dataset in the family. Current counts: train 2,979 / test
+323 (contract 540/60, merger_agreement 135/17, corporate_record 403/47,
+correspondence 915/85, insurance_claim 986/114).
 
 ## Two-config layout reminder
 
 `default` (blind) carries no label columns; all gold labels —
 `expected`, `expected_subclass`, clause GT, sentiment/topic/intent — live in
 the `ground_truth` config, keyed 1:1 on `filename`. See the
-[live dataset card](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
+[live dataset card](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
 for the full row shape and config contract.
 
 ## Related family repos

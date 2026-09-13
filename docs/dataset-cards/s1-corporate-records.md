@@ -1,18 +1,18 @@
-# S-1 Corporate Records — mailroom-corpus source card
+# S-1 Corporate Records — mailroom-dataset source card
 
-> `corporate_record` · 39 rows (2.4% of the corpus) · 5 strata · train 38 / test 1
+> `corporate_record` · 450 rows (13.6% of the corpus) · 10 strata · train 403 / test 47
 > · license **public domain (US government works)** · one of the five source
 > corpora of
-> [`Lucius-Morningstar/mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
+> [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
 
 ## Identity
 
 | Field | Value |
 |---|---|
 | doc_type | `corporate_record` |
-| Rows | 39 (2.4% of 1,650) — the minority class |
-| Splits | train 38 / test 1 (`md5(filename) % 10 == 0 → test`; 2.6% test share) |
-| Strata | 5 `expected_subclass` values: articles_of_incorporation 20, rights_instrument 14, bylaws 2, powers_of_attorney 2, other 1 |
+| Rows | 450 (13.6% of 3,302): 39 S-1 legacy + 411 EDGAR expansion |
+| Splits | train 403 / test 47 (`md5(filename) % 10 == 0 → test`) |
+| Strata | 10 `expected_subclass` values: charter_amendment 80, articles_of_incorporation 62, officer_certificate 61, indenture 57, subsidiary_list 53, rights_instrument 46, board_resolution 32, bylaws 28, powers_of_attorney 28, other 3 |
 | Provenance keys | `metadata.source = edgar_s1`, `metadata.source_dataset = data/s1_corporate_records/corporate-records.jsonl` |
 | Entered at | v1–v3 (legacy rows) — founding corpus |
 | License | US public domain (SEC EDGAR filings are US government works) |
@@ -23,18 +23,20 @@ The corporate-record block comprises exhibits extracted from **SEC EDGAR
 S-1 registration statements** — the filings companies submit before an IPO.
 Exhibit documents (articles of incorporation, rights instruments, bylaws,
 powers of attorney) were pulled live from EDGAR with their filer metadata
-retained: 39 rows across **11 unique CIKs**, each carrying
+retained: 450 rows across **333 unique CIKs**, each carrying
 `metadata.exhibit_type`, `metadata.exhibit_description`,
 `metadata.exhibit_url`, `metadata.filer`, `metadata.accession` and
 `metadata.filing_date` — a full audit trail back to the EDGAR source
 document. Every row's `metadata.original_file` points at the upstream .htm
 exhibit original.
 
-In mailroom-corpus this is the **minority-class / governance-document
-block**: it deliberately introduces a heavily imbalanced class so that
-classification systems are evaluated under realistic mailroom conditions —
-rare but high-stakes document types that must not be confused with the
-dominant contracts and correspondence.
+In mailroom-dataset this is the **governance-document block**: it
+deliberately introduces a heavily imbalanced class so that classification
+systems are evaluated under realistic mailroom conditions — high-stakes
+document types that must not be confused with the dominant contracts and
+correspondence. (The v8 corpus expanded the block from 39 to 450 rows with
+the EDGAR exhibit expansion; merger_agreement at 152 rows is now the
+smallest class.)
 
 ## Source material
 
@@ -42,7 +44,7 @@ dominant contracts and correspondence.
 |---|---|
 | Original download | SEC EDGAR — <https://www.sec.gov/edgar.shtml> (public filings; exhibit URLs preserved per row in `metadata.exhibit_url`) |
 | Family mirror | [`Lucius-Morningstar/mailroom-s1-corporate-records`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-s1-corporate-records) |
-| Form in mailroom-corpus | exhibit text in `doc_text`; upstream .htm exhibit path in `metadata.original_file`; filer/accession metadata retained |
+| Form in mailroom-dataset | exhibit text in `doc_text`; upstream .htm exhibit path in `metadata.original_file`; filer/accession metadata retained |
 
 ## Attribution
 
@@ -52,18 +54,19 @@ dominant contracts and correspondence.
   presented as official SEC records. Re-verify filings against EDGAR before
   any commercial redistribution.
 - No formal academic publication accompanies this block; cite the
-  mailroom-corpus dataset and reference EDGAR as the upstream source.
+  mailroom-dataset and reference EDGAR as the upstream source.
 
-## Purpose in mailroom-corpus
+## Purpose in mailroom-dataset
 
-1. **doc_type supervision under extreme imbalance** — 39 gold
-   `corporate_record` labels (2.4%): the corpus's imbalance stress test
-   (max/min type ratio 15.4×, stratum-level 150×, with `corporate_record/
-   other` the single-row minimum).
-2. **Second-level classification** — five governance-document subclasses
-   (articles of incorporation, rights instruments, bylaws, powers of
-   attorney, other) spanning the corporate-record taxonomy the llm-mailroom
-   triage target distinguishes.
+1. **doc_type supervision under imbalance** — 450 gold
+   `corporate_record` labels (13.6%): the corpus's governance-document
+   imbalance stress test (max/min type ratio 7.24×, with
+   `corporate_record/other` the 3-row minimum).
+2. **Second-level classification** — ten governance-document subclasses
+   (charter_amendment, articles_of_incorporation, officer_certificate,
+   indenture, subsidiary_list, rights_instrument, board_resolution, bylaws,
+   powers_of_attorney, other) spanning the corporate-record taxonomy the
+   llm-mailroom triage target distinguishes.
 3. **Filing provenance modeling** — filer/accession/exhibit metadata makes
    this the only block with a live pointer back to the authoritative
    regulatory source per row, useful for provenance-aware evaluation.
