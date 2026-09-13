@@ -8,8 +8,8 @@ machine-readable manifest + the human audit report under
 ``docs/reports/audits/`` (monorepo root).
 
 Usage:
-    python scripts/baseline_audit.py            # audit + write artifacts
-    python scripts/baseline_audit.py --check    # audit only, no writes
+    python scripts/audit/baseline_audit.py            # audit + write artifacts
+    python scripts/audit/baseline_audit.py --check    # audit only, no writes
 """
 from __future__ import annotations
 
@@ -20,8 +20,13 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-PKG_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PKG_ROOT / "src"))
+import importlib.util
+import sys
+_b = Path(__file__).resolve()
+while not (_b / "_bootstrap.py").is_file():
+    _b = _b.parent
+sys.path.insert(0, str(_b))
+from _bootstrap import ROOT  # noqa: E402
 
 from mailroom_eda.config import PARQUET_DIR, MANIFEST_PATH  # noqa: E402
 from mailroom_eda.dataset_export import assign_split  # noqa: E402
@@ -29,7 +34,7 @@ from mailroom_eda.docclass_uploader import GT_SCALAR_KEYS  # noqa: E402
 from mailroom_eda.download import parse_manifest  # noqa: E402
 from mailroom_eda.identity import enrich_rows  # noqa: E402
 
-MONOREPO_ROOT = PKG_ROOT.parents[1]
+MONOREPO_ROOT = ROOT
 OUT_DIR = MONOREPO_ROOT / "docs" / "reports" / "audits"
 
 RELEASE_MARKER = "docclass-merged-v0.1-working"

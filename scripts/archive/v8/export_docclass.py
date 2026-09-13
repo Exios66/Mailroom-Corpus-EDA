@@ -13,8 +13,13 @@ import argparse
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+import importlib.util
+import sys
+_b = Path(__file__).resolve()
+while not (_b / "_bootstrap.py").is_file():
+    _b = _b.parent
+sys.path.insert(0, str(_b))
+from _bootstrap import ROOT  # noqa: E402
 
 from mailroom_eda.dataset_export import (  # noqa: E402
     export_to_jsonl,

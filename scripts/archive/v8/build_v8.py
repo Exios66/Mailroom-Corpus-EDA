@@ -25,8 +25,13 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+import importlib.util
+import sys
+_b = Path(__file__).resolve()
+while not (_b / "_bootstrap.py").is_file():
+    _b = _b.parent
+sys.path.insert(0, str(_b))
+from _bootstrap import ROOT  # noqa: E402
 
 import pandas as pd  # noqa: E402
 

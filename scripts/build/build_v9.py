@@ -6,16 +6,21 @@ default; --publish creates Lucius-Morningstar/mailroom-dataset and uploads
 the verified tree via the centralized hf_interface.
 
 Usage:
-    .venv/bin/python scripts/build_v9.py                 # stage under data/v9/stage
-    .venv/bin/python scripts/build_v9.py --publish       # stage + publish v1
+    .venv/bin/python scripts/build/build_v9.py                 # stage under data/v9/stage
+    .venv/bin/python scripts/build/build_v9.py --publish       # stage + publish v1
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+import importlib.util
+import sys
+_b = Path(__file__).resolve()
+while not (_b / "_bootstrap.py").is_file():
+    _b = _b.parent
+sys.path.insert(0, str(_b))
+from _bootstrap import ROOT  # noqa: E402
 
 from mailroom_eda.v9_build import main  # noqa: E402
 

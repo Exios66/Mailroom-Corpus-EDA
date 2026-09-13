@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """CLI: correspondence intent backfill for mailroom-corpus v7 (issue #5).
 
-Phases implemented (mirrors https://github.com/Exios66/mailroom-dev/issues/5):
+Phases implemented (mirrors https://github.com/Exios66/mailroom-dev/issues/5 —
+tracked in the LLM-Mailroom-Services/Digital-Mailroom monorepo):
   Phase 1  taxonomy cross-walk (canonical 8-class vocabulary + external map)
   Phase 2  sha256 exact-body join vs Enron/AESLC (provenance aeslc_join)
   Phase 3  constrained LLM pass for residuals (confidence thresholding)
@@ -29,8 +30,13 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+import importlib.util
+import sys
+_b = Path(__file__).resolve()
+while not (_b / "_bootstrap.py").is_file():
+    _b = _b.parent
+sys.path.insert(0, str(_b))
+from _bootstrap import ROOT  # noqa: E402
 
 
 def _load_env() -> None:

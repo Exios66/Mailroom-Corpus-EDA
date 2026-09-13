@@ -13,7 +13,7 @@ hand-edited numbers). Reads:
   - reports/tables/               tables grid
 
 Usage:
-    .venv/bin/python scripts/generate_index.py
+    .venv/bin/python scripts/reports/generate_index.py
 """
 from __future__ import annotations
 
@@ -21,7 +21,13 @@ import json
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+import importlib.util
+import sys
+_b = Path(__file__).resolve()
+while not (_b / "_bootstrap.py").is_file():
+    _b = _b.parent
+sys.path.insert(0, str(_b))
+from _bootstrap import ROOT  # noqa: E402
 REPORT_DIR = ROOT / "reports"
 
 

@@ -21,8 +21,8 @@ are tallied (``absence_classification`` per class/field + the
 matrix no longer mis-scopes closure work on by-design-empty rows.
 
 Usage (via run_all conventions or standalone):
-    python scripts/coverage_matrix.py            # write md + json
-    python scripts/coverage_matrix.py --check    # print only
+    python scripts/audit/coverage_matrix.py            # write md + json
+    python scripts/audit/coverage_matrix.py --check    # print only
 """
 from __future__ import annotations
 
@@ -33,24 +33,27 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
-PKG_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PKG_ROOT / "src"))
+import importlib.util
+import sys
+_b = Path(__file__).resolve()
+while not (_b / "_bootstrap.py").is_file():
+    _b = _b.parent
+sys.path.insert(0, str(_b))
+from _bootstrap import ROOT  # noqa: E402
 
 from mailroom_eda.config import PARQUET_DIR  # noqa: E402
 from mailroom_eda.eval_contract import SOURCE_BY_CLASS, specialist_registry  # noqa: E402
-
-MONOREPO_ROOT = PKG_ROOT.parents[1]
 
 
 def _audits_dir() -> Path:
     """docs/reports/audits — this repo's own docs tree (standalone layout),
     else the nearest ancestor carrying it (Digital-Mailroom monorepo layout,
     where the artifacts consolidate at the repo root)."""
-    for root in (PKG_ROOT, *PKG_ROOT.parents):
+    for root in (ROOT, *ROOT.parents):
         cand = root / "docs" / "reports" / "audits"
         if cand.exists():
             return cand
-    return PKG_ROOT / "docs" / "reports" / "audits"
+    return ROOT / "docs" / "reports" / "audits"
 
 
 OUT_DIR = _audits_dir()

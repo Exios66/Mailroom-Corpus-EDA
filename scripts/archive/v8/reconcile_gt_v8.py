@@ -30,13 +30,18 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+import importlib.util
+import sys
+_b = Path(__file__).resolve()
+while not (_b / "_bootstrap.py").is_file():
+    _b = _b.parent
+sys.path.insert(0, str(_b))
+from _bootstrap import ROOT  # noqa: E402
 
 from mailroom_eda import identity  # noqa: E402
 from mailroom_eda import matter  # noqa: F401,E402
 from mailroom_eda import eval_contract as ec  # noqa: E402
-from mailroom_eda.config import V8_V8_REPO_ID  # noqa: E402
+from mailroom_eda.config import V8_REPO_ID  # noqa: E402
 from mailroom_eda.dataset_export import safe_jsonl_line  # noqa: E402
 from mailroom_eda.docclass_uploader import upsert_section  # noqa: E402
 from mailroom_eda.release_sections import (  # noqa: E402
@@ -50,7 +55,6 @@ from mailroom_eda.release_sections import (  # noqa: E402
 )
 
 V8_GT_REVISION = "bba2f750"  # HUB-028's v8 GT commit (historical, resolvable)
-SNAPSHOT = ROOT / "data" / "parquet"
 
 
 def fetch_v8_gt() -> list[dict]:

@@ -7,7 +7,7 @@ renders it data-driven from the summary JSON + reports/tables/* (source of
 truth = the data — never hand-edit the report).
 
 Usage:
-    .venv/bin/python scripts/generate_summary_md.py
+    .venv/bin/python scripts/reports/generate_summary_md.py
 """
 from __future__ import annotations
 
@@ -15,7 +15,13 @@ import csv
 import json
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+import importlib.util
+import sys
+_b = Path(__file__).resolve()
+while not (_b / "_bootstrap.py").is_file():
+    _b = _b.parent
+sys.path.insert(0, str(_b))
+from _bootstrap import ROOT  # noqa: E402
 REPORT_DIR = ROOT / "reports"
 
 
@@ -249,8 +255,10 @@ treemap, strata, timeline, sources, metadata.
   render, blind-label strip, leak guard
 - `src/mailroom_eda/intent_backfill.py` — correspondence intent hydration +
   provenance columns
-- `scripts/publish_docclass.py` / `backfill_intent.py` / `export_docclass.py` /
-  `verify_hf.py` — CLIs
+- `scripts/backfill/backfill_intent.py` — intent hydration CLI
+- `scripts/publish/verify_hf.py` — byte-verify a local export against the Hub
+- `scripts/archive/v8/publish_docclass.py` / `export_docclass.py` — frozen
+  v8 baseline docclass publish/export (archived)
 
 ## ML-readiness recommendations
 

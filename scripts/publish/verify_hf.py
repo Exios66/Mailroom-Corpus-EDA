@@ -2,8 +2,9 @@
 """CLI: verify a local docclass export against the Hub (byte-identity check).
 
 Usage:
-    python scripts/verify_hf.py --jsonl data/hf_export/mailroom-cuad-contracts-full.jsonl --repo Lucius-Morningstar/mailroom-cuad-contracts-full
-    python scripts/verify_hf.py --repo Lucius-Morningstar/mailroom-dataset     # list files
+    python scripts/publish/verify_hf.py --repo Lucius-Morningstar/mailroom-dataset \
+        --jsonl data/ground_truth_hardened.jsonl
+    python scripts/publish/verify_hf.py --repo Lucius-Morningstar/mailroom-dataset  # list files
 """
 from __future__ import annotations
 
@@ -12,8 +13,13 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+import importlib.util
+import sys
+_b = Path(__file__).resolve()
+while not (_b / "_bootstrap.py").is_file():
+    _b = _b.parent
+sys.path.insert(0, str(_b))
+from _bootstrap import ROOT  # noqa: E402
 
 from mailroom_eda.hf_interface import (  # noqa: E402
     get_hf_api,
