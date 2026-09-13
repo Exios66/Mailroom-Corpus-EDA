@@ -123,8 +123,10 @@ treemap, strata, timeline, sources, metadata.
   render, blind-label strip, leak guard
 - `src/mailroom_eda/intent_backfill.py` — correspondence intent hydration +
   provenance columns
-- `scripts/publish_docclass.py` / `backfill_intent.py` / `export_docclass.py` /
-  `verify_hf.py` — CLIs
+- `scripts/backfill/backfill_intent.py` — intent hydration CLI
+- `scripts/publish/verify_hf.py` — byte-verify a local export against the Hub
+- `scripts/archive/v8/publish_docclass.py` / `export_docclass.py` — frozen
+  v8 baseline docclass publish/export (archived)
 
 ## ML-readiness recommendations
 
