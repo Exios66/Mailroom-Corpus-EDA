@@ -191,3 +191,27 @@ def test_snapshot_gt_schema_is_v9(snapshot_rows):
         gf = row["gt_fields"]
         union |= set(json.loads(gf) if isinstance(gf, str) else gf)
     assert union == set(GT_KEY_SET) | {"relationships", "related_document_ids"}
+
+
+def test_edgar_cuad_exception_documented(snapshot_rows):
+    """#30 (epic #27): the 91 SEC EDGAR EX-10 contract rows carry no CUAD
+    clause annotation — a DATED documented exception (2026-09-13) recorded in
+    scripts/audit/coverage_matrix.py ABSENCE_RULES (the corpus-eda LLM clause
+    pass could not run on the execution date for want of a working provider
+    credential; follow-up catalogued in
+    docs/reports/audits/cuad_ex10_annotation_review.md). This pin flips when
+    the follow-up annotation lands — the 509 CUAD rows must keep the full
+    41-type label set either way."""
+    edgar = [
+        r for r in snapshot_rows
+        if r["expected"] == "contract" and r.get("source_corpus") == "sec_edgar"
+    ]
+    assert len(edgar) == 91
+    assert all(not _gt_value_present(r.get("cuad_clause_labels")) for r in edgar)
+    # the 509 CUAD-v1 rows keep the full label set (never loosened)
+    cuad = [
+        r for r in snapshot_rows
+        if r["expected"] == "contract" and r.get("source_corpus") != "sec_edgar"
+    ]
+    assert len(cuad) == 509
+    assert all(_gt_value_present(r.get("cuad_clause_labels")) for r in cuad)

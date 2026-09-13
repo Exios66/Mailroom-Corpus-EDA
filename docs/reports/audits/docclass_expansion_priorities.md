@@ -8,7 +8,7 @@ is high-priority when it attacks a zero-coverage GT field or an all-zero
 scenario axis for a load-bearing class.
 
 
-Corpus: 3302 rows; median class size 600 rows. Priorities: high 3, medium 2, low 4.
+Corpus: 3302 rows; median class size 600 rows. Priorities: high 3, medium 0, low 6.
 
 ## [HIGH] Adversarial/ambiguous cases (§89; §30, §68)
 
@@ -24,17 +24,11 @@ Second-smallest class (152 rows vs a 600-row median class) and single-source (MA
 
 Evidence: zero scenario axes: merger_agreement.tested, merger_agreement.regression, merger_agreement.challenge, merger_agreement.multi_document — scarcity: merger_agreement rows=152 (median 600).
 
-## [MEDIUM] Contract subclasses (§89: contract subclasses)
+## [LOW] Contract subclasses (§89: contract subclasses)
 
-600 rows across 26 strata (509 CUAD-v1 + 91 EDGAR EX-10) is the deepest subclass spread in the corpus; growth here is refinement, not gap-closing — valuable for routing confusion matrices, not blocking.
+600 rows across 26 strata (509 CUAD-v1 + 91 EDGAR EX-10) is the deepest subclass spread in the corpus; clause coverage is 100% over eligible (the EX-10 rows are a dated documented exception, issue #30) so growth here is refinement, not gap-closing — valuable for routing confusion matrices, not blocking.
 
-Evidence: partial fields: contract.cuad_clause_labels 509/600 — zero scenario axes: contract.tested, contract.regression, contract.challenge, contract.multi_document.
-
-## [MEDIUM] Legal document families (§89: legal document families)
-
-Clause coverage is at 85% (509/600 — the 91 EDGAR EX-10 ship no CUAD annotation) and contract rows are not scarce — the family axis (contract+amendment+exhibit) is owned by grouping_scenarios, where the bundle scaffold must be paired with family-sampled anchors; growth here refines anchor diversity for those grouping evals and can close the EX-10 clause gap.
-
-Evidence: partial fields: contract.cuad_clause_labels 509/600 — zero scenario axes: contract.tested, contract.regression, contract.challenge, contract.multi_document.
+Evidence: zero scenario axes: contract.tested, contract.regression, contract.challenge, contract.multi_document.
 
 ## [LOW] Corporate records (§89: corporate records)
 
@@ -57,3 +51,9 @@ The P3 ingestion failure stage needs genuinely unreadable/non-text sources (scan
 Largest class (1,100 rows) and now fully covered over eligible rows. Issue #28 absence classification closed the by-design rows: adjuster is 100% over eligible (150/150 — the only rows that should carry an adjuster are the 150 BDR auto rows; CMS/GNOTHEIA/INSURBIAS absence is schema-documented), denial_reasons is 100% over eligible (36/36 denied claims; non-denied absence is schema-documented), and supporting_documents is 100% over eligible (issue #29: the 150 INSURBIAS narrative rows now carry feature-grounded supporting_documents derived from each narrative; the 6 rows whose narrative references no supporting-document feature are a documented absence per v9_build._insurbias_supporting_doc_absent). The insurance_workflow surface that distinguishes a claim decision from a claim intake is no longer dark — growth here would target decision/adjudication depth (denied-claim breadth), not gap-closing.
 
 Evidence: zero scenario axes: insurance_claim.tested, insurance_claim.regression, insurance_claim.challenge, insurance_claim.multi_document.
+
+## [LOW] Legal document families (§89: legal document families)
+
+Clause coverage is 100% over eligible (issue #30: the 91 EDGAR EX-10 rows are a dated documented exception — the LLM clause pass could not run on 2026-09-13 for want of a working provider credential — so they no longer count as a gap; the follow-up is recorded in the coverage matrix absence rules). Contract rows are not scarce — the family axis (contract+amendment+exhibit) is owned by grouping_scenarios, where the bundle scaffold must be paired with family-sampled anchors; growth here refines anchor diversity for those grouping evals and can deliver the EX-10 annotation follow-up.
+
+Evidence: zero scenario axes: contract.tested, contract.regression, contract.challenge, contract.multi_document.

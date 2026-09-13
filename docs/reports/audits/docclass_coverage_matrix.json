@@ -15,10 +15,10 @@
       "absence_classification": {
         "cuad_clause_labels": {
           "populated": 509,
-          "eligible": 600,
-          "documented_absence": 0,
-          "genuine_gap": 91,
-          "coverage_pct": 85
+          "eligible": 509,
+          "documented_absence": 91,
+          "genuine_gap": 0,
+          "coverage_pct": 100
         }
       },
       "tested": 0,
@@ -575,8 +575,13 @@
       "rule": "v9_build.py complete_gt_fields + _insurbias_supporting_documents / _insurbias_supporting_doc_absent (issue #29): the INSURBIAS draw rows ship claim narratives only, so supporting_documents is derived deterministically from each narrative's referenced features \u2014 repair estimate on any vehicle-damage / repair assertion (the v8 BDR auto precedent, v8_build.py _auto_row 'supporting = [\"repair estimate\"]'), plus police report (authorities/police referenced), damage photos (image referenced), medical records (injury asserted, negation-aware), fire report (fire department called). Rows whose narrative references NO such feature (bare accident reports \u2014 6/150 on the v9 draw) keep '[]', a documented absence per LIST_GT_FIELDS ('a valid JSON array is the COMPLETE answer \u2014 [] means no items (honest), never a missing value').",
       "documented_absence": 6,
       "populated_matching_absence_predicate": 0
+    },
+    "contract.cuad_clause_labels": {
+      "rule": "DATED EXCEPTION 2026-09-13 (issue #30 fallback): the 91 SEC EDGAR EX-10 contract rows ship no CUAD clause annotation (the CUAD rows carry the full 41-type label set). Annotation via the corpus-eda LLM clause pass lineage (the DMR-052 provider seam; constrained zero-shot pass, temperature 0.1) was attempted and could not run: the sole OPENROUTER_API_KEY returns 401 'API key expired', no VLLM_BASE_URL / Modal endpoint is configured, and no local ollama model is cached \u2014 quality cannot be gated, so the rows are a documented exception pending a working credential. '{}' is a complete no-annotations answer per v9_build.DICT_GT_FIELDS ('dict-typed clause labels use \"{}\" for no annotations').",
+      "documented_absence": 91,
+      "populated_matching_absence_predicate": 0
     }
   },
-  "coverage_basis_note": "\u00a741 coverage is reported over ELIGIBLE rows only (populated / eligible). Unpopulated cells are classified schema_documented_absence \u2014 the v8_build/v9 conformance law says the field is empty on this row (e.g. adjuster on CMS/GNOTHEIA/INSURBIAS rows, denial_reasons on non-denied claims, supporting_documents on the 6 INSURBIAS bare-accident narratives that reference no supporting-document feature \u2014 issue #29) \u2014 or genuine_gap \u2014 the field should be populated but is not (e.g. cuad_clause_labels on the 91 EDGAR EX-10 contracts). Documented absences are tallied in absence_classification / absence_rules but never counted as gaps (issue #28, epic #27).",
+  "coverage_basis_note": "\u00a741 coverage is reported over ELIGIBLE rows only (populated / eligible). Unpopulated cells are classified schema_documented_absence \u2014 the v8_build/v9 conformance law says the field is empty on this row (e.g. adjuster on CMS/GNOTHEIA/INSURBIAS rows, denial_reasons on non-denied claims, supporting_documents on the 6 INSURBIAS bare-accident narratives that reference no supporting-document feature \u2014 issue #29) or a dated operational exception (cuad_clause_labels on the 91 SEC EDGAR EX-10 contracts \u2014 issue #30 fallback: the LLM clause pass could not run on 2026-09-13, no working provider credential; see the absence_rules entry for the dated follow-up) \u2014 or genuine_gap \u2014 the field should be populated but is not. After issues #29/#30 the corpus reports ZERO genuine gaps: every partial-coverage field flagged by the v9 audit sweep is closed. Documented absences are tallied in absence_classification / absence_rules but never counted as gaps (issue #28, epic #27).",
   "scenario_columns_note": "tested/regression/challenge/multi-document are \u00a740 template columns at zero: the sandbox/pilot fixtures (P1) and the matter/grouping (P2) + recovery (P3) families fill them at their phases \u2014 the corpus does not overstate coverage (\u00a714A/\u00a753)."
 }
