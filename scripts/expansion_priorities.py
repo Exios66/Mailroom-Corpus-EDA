@@ -36,10 +36,22 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from mailroom_eda.eval_contract import expected_gt_fields  # noqa: E402
 
-REPO_ROOT = ROOT.parent.parent
-MATRIX_PATH = REPO_ROOT / "docs" / "reports" / "audits" / "docclass_coverage_matrix.json"
-OUT_MD = REPO_ROOT / "docs" / "reports" / "audits" / "docclass_expansion_priorities.md"
-OUT_JSON = REPO_ROOT / "docs" / "reports" / "audits" / "docclass_expansion_priorities.json"
+
+def _audits_dir() -> Path:
+    """docs/reports/audits — this repo's own docs tree (standalone layout),
+    else the nearest ancestor carrying it (Digital-Mailroom monorepo layout,
+    where the artifacts consolidate at the repo root)."""
+    for root in (ROOT, *ROOT.parents):
+        cand = root / "docs" / "reports" / "audits"
+        if cand.exists():
+            return cand
+    return ROOT / "docs" / "reports" / "audits"
+
+
+AUDITS_DIR = _audits_dir()
+MATRIX_PATH = AUDITS_DIR / "docclass_coverage_matrix.json"
+OUT_MD = AUDITS_DIR / "docclass_expansion_priorities.md"
+OUT_JSON = AUDITS_DIR / "docclass_expansion_priorities.json"
 
 SCENARIO_COLUMNS = ("tested", "regression", "challenge", "multi_document")
 
@@ -53,10 +65,10 @@ EXPANSION_FAMILIES: tuple[dict[str, Any], ...] = (
         "title": "Corporate records (§89: corporate records)",
         "classes": ("corporate_record",),
         "rationale": (
-            "Smallest live class (39 rows vs 2,000 corpus-wide) carrying the "
-            "sharpest field gap (intent 0%) — too few rows for stratified "
-            "eval noise to average out; expansion is load-bearing for the "
-            "corporate_records_specialist route."
+            "Grew 39 → 450 on v9 (issue #3) with the purpose-GT gap closed "
+            "(intent/subject_matter/keywords at 100%) — but still below the "
+            "600-row median; more depth keeps the corporate_records_specialist "
+            "route robust to stratified eval noise."
         ),
     },
     {
@@ -65,8 +77,8 @@ EXPANSION_FAMILIES: tuple[dict[str, Any], ...] = (
         "classes": tuple(),
         "rationale": (
             "multi_document is zero for every class. §14A verified the honest "
-            "source-field baseline (19/350 subject-thread rows; header threads "
-            "structurally absent) — real multi-document behavior is only "
+            "source-field baseline (23/1,000 subject-thread rows on v9; header "
+            "threads structurally absent) — real multi-document behavior is only "
             "reachable via the synthetic bundle scaffold (bundles.py) or "
             "family-sampled expansion. Highest-leverage axis in the corpus."
         ),
@@ -87,10 +99,11 @@ EXPANSION_FAMILIES: tuple[dict[str, Any], ...] = (
         "title": "Correspondence contexts (§89: correspondence contexts)",
         "classes": ("correspondence",),
         "rationale": (
-            "intent is 100% (v7 hydration) but subject_matter/keywords sit at "
-            "27% — the purpose-GT axis the correspondence_specialist is "
-            "evaluated on is two-thirds dark; contexts (notices, demands, "
-            "threads) target exactly that."
+            "intent/subject_matter/keywords are all 100% (v9 purpose-GT "
+            "completion, issue #3) — the purpose-GT axis the correspondence "
+            "specialist is evaluated on is no longer dark; context expansion "
+            "(notices, demands, threads) now targets topic diversity rather "
+            "than gap-closing."
         ),
     },
     {
@@ -98,9 +111,10 @@ EXPANSION_FAMILIES: tuple[dict[str, Any], ...] = (
         "title": "Insurance workflow documents (§89: insurance workflow)",
         "classes": ("insurance_claim",),
         "rationale": (
-            "Largest class (600 rows) with adjuster at 0% and partial "
-            "coverage on denial_reasons/supporting_documents — the workflow "
-            "fields that distinguish a claim decision from a claim intake."
+            "Largest class (1,100 rows) with adjuster at 14% (150/1,100) and "
+            "denial_reasons at 3% (36/1,100), supporting_documents at 86% "
+            "(950/1,100) — the workflow fields that distinguish a claim "
+            "decision from a claim intake."
         ),
     },
     {
@@ -108,11 +122,12 @@ EXPANSION_FAMILIES: tuple[dict[str, Any], ...] = (
         "title": "Legal document families (§89: legal document families)",
         "classes": ("contract",),
         "rationale": (
-            "Clause coverage is at 100% (cuad labels) and contract rows are "
-            "not scarce — the family axis (contract+amendment+exhibit) is "
-            "owned by grouping_scenarios, where the bundle scaffold must be "
-            "paired with family-sampled anchors; growth here refines anchor "
-            "diversity for those grouping evals, it closes no field gap."
+            "Clause coverage is at 85% (509/600 — the 91 EDGAR EX-10 ship no "
+            "CUAD annotation) and contract rows are not scarce — the family "
+            "axis (contract+amendment+exhibit) is owned by grouping_scenarios, "
+            "where the bundle scaffold must be paired with family-sampled "
+            "anchors; growth here refines anchor diversity for those grouping "
+            "evals and can close the EX-10 clause gap."
         ),
     },
     {
@@ -120,9 +135,10 @@ EXPANSION_FAMILIES: tuple[dict[str, Any], ...] = (
         "title": "Contract subclasses (§89: contract subclasses)",
         "classes": ("contract",),
         "rationale": (
-            "509 rows across 26 strata is the deepest subclass spread in the "
-            "corpus; growth here is refinement, not gap-closing — valuable "
-            "for routing confusion matrices, not blocking."
+            "600 rows across 26 strata (509 CUAD-v1 + 91 EDGAR EX-10) is the "
+            "deepest subclass spread in the corpus; growth here is "
+            "refinement, not gap-closing — valuable for routing confusion "
+            "matrices, not blocking."
         ),
     },
     {
@@ -130,7 +146,7 @@ EXPANSION_FAMILIES: tuple[dict[str, Any], ...] = (
         "title": "Merger documents (§89: merger documents)",
         "classes": ("merger_agreement",),
         "rationale": (
-            "Second-smallest class (152 rows vs a 350-row median class) and "
+            "Second-smallest class (152 rows vs a 600-row median class) and "
             "single-source (MAUD): the objective scarcity rule drives the "
             "priority — the merger route of contracts_specialist needs "
             "statistical depth, and format diversity within the class is "
@@ -223,7 +239,7 @@ def build_priorities() -> dict[str, Any]:
 
     items.sort(key=lambda i: (PRIORITY_RANK[i["priority"]], i["family"]))
     return {
-        "generated_from": str(MATRIX_PATH.relative_to(REPO_ROOT)),
+        "generated_from": str(MATRIX_PATH.relative_to(AUDITS_DIR.parent.parent.parent)),
         "discipline": "do not optimize for raw row count (§89) — priority is evaluation value",
         "rows_total": matrix["rows_total"],
         "median_class_rows": median_rows,
@@ -273,8 +289,8 @@ def main() -> None:
     payload = build_priorities()
     OUT_JSON.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     OUT_MD.write_text(write_md(payload), encoding="utf-8")
-    print(f"wrote {OUT_JSON.relative_to(REPO_ROOT)}")
-    print(f"wrote {OUT_MD.relative_to(REPO_ROOT)}")
+    print(f"wrote {OUT_JSON.relative_to(AUDITS_DIR.parent.parent.parent)}")
+    print(f"wrote {OUT_MD.relative_to(AUDITS_DIR.parent.parent.parent)}")
     for item in payload["items"]:
         print(f"  [{item['priority'].upper():6}] {item['family']}")
 

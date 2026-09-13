@@ -28,7 +28,20 @@ from mailroom_eda.config import PARQUET_DIR  # noqa: E402
 from mailroom_eda.eval_contract import SOURCE_BY_CLASS, specialist_registry  # noqa: E402
 
 MONOREPO_ROOT = PKG_ROOT.parents[1]
-OUT_DIR = MONOREPO_ROOT / "docs" / "reports" / "audits"
+
+
+def _audits_dir() -> Path:
+    """docs/reports/audits — this repo's own docs tree (standalone layout),
+    else the nearest ancestor carrying it (Digital-Mailroom monorepo layout,
+    where the artifacts consolidate at the repo root)."""
+    for root in (PKG_ROOT, *PKG_ROOT.parents):
+        cand = root / "docs" / "reports" / "audits"
+        if cand.exists():
+            return cand
+    return PKG_ROOT / "docs" / "reports" / "audits"
+
+
+OUT_DIR = _audits_dir()
 
 #: §41 field-coverage map: class → GT columns that feed the specialist's
 #: expected_fields surface (matches conftest's EXTRACTION_GT_BY_CLASS +
@@ -54,6 +67,9 @@ FIELD_KEYS_BY_CLASS: dict[str, tuple[str, ...]] = {
 def load_rows() -> list[dict]:
     import pandas as pd
 
+    from mailroom_eda.docclass_uploader import GT_SCALAR_KEYS
+    from mailroom_eda.download import _expand_gt_fields
+
     frames = []
     for split in ("train", "test"):
         for f in sorted((PARQUET_DIR / "ground_truth" / split).glob("*.parquet")):
@@ -62,7 +78,29 @@ def load_rows() -> list[dict]:
         raise SystemExit(
             f"snapshot missing at {PARQUET_DIR}/ground_truth — fetch via run_all.py P0"
         )
-    return pd.concat(frames, ignore_index=True).to_dict("records")
+    df = pd.concat(frames, ignore_index=True)
+    if "gt_fields" in df.columns:
+        # v9 schema: label keys live inside the nested gt_fields JSON
+        # (sparse per-class, 12–29 keys). Expand to flat keys so §41 field
+        # coverage reads real values; keep canonical top-level matter
+        # columns (relationships/related_document_ids mirror in gt_fields).
+        df = _expand_gt_fields(df)
+        df = df.loc[:, ~df.columns.duplicated(keep="first")]
+        df[list(GT_SCALAR_KEYS)] = df[list(GT_SCALAR_KEYS)].fillna("")
+    return df.to_dict("records")
+
+
+def _populated(v) -> bool:
+    """v9 complete-GT convention: '' is absent and the JSON-encoded no-item
+    markers ``'[]'`` / ``'{}'`` carry no ground truth (the 91 EDGAR EX-10
+    contracts ship ``cuad_clause_labels = '{}'`` — no CUAD annotation)."""
+    if v is None:
+        return False
+    if isinstance(v, str):
+        v = v.strip()
+        if not v or v in ("[]", "{}"):
+            return False
+    return v not in ("", [], {})
 
 
 def build(rows: list[dict]) -> dict:
@@ -74,7 +112,7 @@ def build(rows: list[dict]) -> dict:
     for doc_class, keys in FIELD_KEYS_BY_CLASS.items():
         class_rows = [r for r in rows if r["expected"] == doc_class]
         field_coverage[doc_class] = {
-            key: sum(1 for r in class_rows if str(r.get(key) or "").strip()) for key in keys
+            key: sum(1 for r in class_rows if _populated(r.get(key))) for key in keys
         }
     classes = sorted({r["expected"] for r in rows})
     coverage = {
@@ -87,11 +125,15 @@ def build(rows: list[dict]) -> dict:
                 "rows": sum(1 for r in rows if r["expected"] == doc_class),
                 "strata": sum(1 for (c, _) in strata if c == doc_class),
                 # class view stays the old class-map source (honest primary
-                # source per §8) but insurance now spans three: note the
-                # v8 LOB expansion in the report's source cell (HUB-028).
+                # source per §8) but insurance now spans four: note the
+                # v8 LOB expansion + the v9 INSURBIAS draw in the report's
+                # source cell (HUB-028 / issue #3).
                 "source": (
                     SOURCE_BY_CLASS.get(doc_class, "")
-                    + (" (+ GNOTHEIA, BDR)" if doc_class == "insurance_claim" else "")
+                    + (
+                        " (+ GNOTHEIA, BDR, INSURBIAS)"
+                        if doc_class == "insurance_claim" else ""
+                    )
                 ),
                 "specialist": registry.get(doc_class, ""),
                 "field_coverage": field_coverage[doc_class],

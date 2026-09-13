@@ -1,0 +1,372 @@
+{
+  "generated_from": "local snapshot @ ground_truth config (network-free)",
+  "rows_total": 3302,
+  "classes": 5,
+  "strata": 55,
+  "class_view": {
+    "contract": {
+      "rows": 600,
+      "strata": 26,
+      "source": "theatticusproject/cuad",
+      "specialist": "contracts_specialist",
+      "field_coverage": {
+        "cuad_clause_labels": 509
+      },
+      "tested": 0,
+      "regression": 0,
+      "challenge": 0,
+      "multi_document": 0
+    },
+    "corporate_record": {
+      "rows": 450,
+      "strata": 10,
+      "source": "sec_edgar",
+      "specialist": "corporate_records_specialist",
+      "field_coverage": {
+        "intent": 450,
+        "subject_matter": 450,
+        "keywords": 450
+      },
+      "tested": 0,
+      "regression": 0,
+      "challenge": 0,
+      "multi_document": 0
+    },
+    "correspondence": {
+      "rows": 1000,
+      "strata": 8,
+      "source": "Lucius-Morningstar/enron-correspondence-dedup",
+      "specialist": "correspondence_specialist",
+      "field_coverage": {
+        "intent": 1000,
+        "subject_matter": 1000,
+        "keywords": 1000,
+        "sentiment_label": 1000,
+        "content_topic": 1000
+      },
+      "tested": 0,
+      "regression": 0,
+      "challenge": 0,
+      "multi_document": 0
+    },
+    "insurance_claim": {
+      "rows": 1100,
+      "strata": 6,
+      "source": "cms_desynpuf (+ GNOTHEIA, BDR, INSURBIAS)",
+      "specialist": "insurance_claims_specialist",
+      "field_coverage": {
+        "claim_number": 1100,
+        "policy_number": 1100,
+        "insurer": 1100,
+        "insured_party": 1100,
+        "claim_type": 1100,
+        "date_of_loss": 1100,
+        "date_filed": 1100,
+        "claimed_amount": 1100,
+        "adjuster": 150,
+        "damages_description": 1100,
+        "coverage_determination": 1100,
+        "denial_reasons": 36,
+        "supporting_documents": 950,
+        "intent": 1100,
+        "subject_matter": 1100,
+        "keywords": 1100
+      },
+      "tested": 0,
+      "regression": 0,
+      "challenge": 0,
+      "multi_document": 0
+    },
+    "merger_agreement": {
+      "rows": 152,
+      "strata": 5,
+      "source": "maud",
+      "specialist": "contracts_specialist",
+      "field_coverage": {
+        "maud_clause_labels": 152
+      },
+      "tested": 0,
+      "regression": 0,
+      "challenge": 0,
+      "multi_document": 0
+    }
+  },
+  "strata_view": [
+    {
+      "class": "contract",
+      "subclass": "Affiliate_Agreements",
+      "rows": 11
+    },
+    {
+      "class": "contract",
+      "subclass": "Agency Agreements",
+      "rows": 13
+    },
+    {
+      "class": "contract",
+      "subclass": "Co_Branding",
+      "rows": 22
+    },
+    {
+      "class": "contract",
+      "subclass": "Collaboration",
+      "rows": 26
+    },
+    {
+      "class": "contract",
+      "subclass": "Consulting Agreements",
+      "rows": 38
+    },
+    {
+      "class": "contract",
+      "subclass": "Development",
+      "rows": 28
+    },
+    {
+      "class": "contract",
+      "subclass": "Distributor",
+      "rows": 32
+    },
+    {
+      "class": "contract",
+      "subclass": "Endorsement",
+      "rows": 24
+    },
+    {
+      "class": "contract",
+      "subclass": "Franchise",
+      "rows": 15
+    },
+    {
+      "class": "contract",
+      "subclass": "Hosting",
+      "rows": 20
+    },
+    {
+      "class": "contract",
+      "subclass": "IP",
+      "rows": 35
+    },
+    {
+      "class": "contract",
+      "subclass": "Joint Venture",
+      "rows": 9
+    },
+    {
+      "class": "contract",
+      "subclass": "Joint Venture _ Filing",
+      "rows": 14
+    },
+    {
+      "class": "contract",
+      "subclass": "License_Agreements",
+      "rows": 43
+    },
+    {
+      "class": "contract",
+      "subclass": "Maintenance",
+      "rows": 34
+    },
+    {
+      "class": "contract",
+      "subclass": "Manufacturing",
+      "rows": 17
+    },
+    {
+      "class": "contract",
+      "subclass": "Marketing",
+      "rows": 17
+    },
+    {
+      "class": "contract",
+      "subclass": "Non_Compete_Non_Solicit",
+      "rows": 3
+    },
+    {
+      "class": "contract",
+      "subclass": "Outsourcing",
+      "rows": 18
+    },
+    {
+      "class": "contract",
+      "subclass": "Promotion",
+      "rows": 12
+    },
+    {
+      "class": "contract",
+      "subclass": "Reseller",
+      "rows": 12
+    },
+    {
+      "class": "contract",
+      "subclass": "Service",
+      "rows": 34
+    },
+    {
+      "class": "contract",
+      "subclass": "Sponsorship",
+      "rows": 31
+    },
+    {
+      "class": "contract",
+      "subclass": "Strategic Alliance",
+      "rows": 32
+    },
+    {
+      "class": "contract",
+      "subclass": "Supply",
+      "rows": 47
+    },
+    {
+      "class": "contract",
+      "subclass": "Transportation",
+      "rows": 13
+    },
+    {
+      "class": "corporate_record",
+      "subclass": "articles_of_incorporation",
+      "rows": 62
+    },
+    {
+      "class": "corporate_record",
+      "subclass": "board_resolution",
+      "rows": 32
+    },
+    {
+      "class": "corporate_record",
+      "subclass": "bylaws",
+      "rows": 28
+    },
+    {
+      "class": "corporate_record",
+      "subclass": "charter_amendment",
+      "rows": 80
+    },
+    {
+      "class": "corporate_record",
+      "subclass": "indenture",
+      "rows": 57
+    },
+    {
+      "class": "corporate_record",
+      "subclass": "officer_certificate",
+      "rows": 61
+    },
+    {
+      "class": "corporate_record",
+      "subclass": "other",
+      "rows": 3
+    },
+    {
+      "class": "corporate_record",
+      "subclass": "powers_of_attorney",
+      "rows": 28
+    },
+    {
+      "class": "corporate_record",
+      "subclass": "rights_instrument",
+      "rows": 46
+    },
+    {
+      "class": "corporate_record",
+      "subclass": "subsidiary_list",
+      "rows": 53
+    },
+    {
+      "class": "correspondence",
+      "subclass": "attorney_demand",
+      "rows": 3
+    },
+    {
+      "class": "correspondence",
+      "subclass": "demand",
+      "rows": 66
+    },
+    {
+      "class": "correspondence",
+      "subclass": "email",
+      "rows": 557
+    },
+    {
+      "class": "correspondence",
+      "subclass": "letter",
+      "rows": 79
+    },
+    {
+      "class": "correspondence",
+      "subclass": "meeting_request",
+      "rows": 53
+    },
+    {
+      "class": "correspondence",
+      "subclass": "memo",
+      "rows": 83
+    },
+    {
+      "class": "correspondence",
+      "subclass": "notice",
+      "rows": 81
+    },
+    {
+      "class": "correspondence",
+      "subclass": "press_release",
+      "rows": 78
+    },
+    {
+      "class": "insurance_claim",
+      "subclass": "auto",
+      "rows": 300
+    },
+    {
+      "class": "insurance_claim",
+      "subclass": "carrier",
+      "rows": 150
+    },
+    {
+      "class": "insurance_claim",
+      "subclass": "inpatient",
+      "rows": 150
+    },
+    {
+      "class": "insurance_claim",
+      "subclass": "outpatient",
+      "rows": 150
+    },
+    {
+      "class": "insurance_claim",
+      "subclass": "pde",
+      "rows": 150
+    },
+    {
+      "class": "insurance_claim",
+      "subclass": "property",
+      "rows": 200
+    },
+    {
+      "class": "merger_agreement",
+      "subclass": "all_cash",
+      "rows": 57
+    },
+    {
+      "class": "merger_agreement",
+      "subclass": "all_stock",
+      "rows": 24
+    },
+    {
+      "class": "merger_agreement",
+      "subclass": "mixed_cash_stock",
+      "rows": 13
+    },
+    {
+      "class": "merger_agreement",
+      "subclass": "mixed_cash_stock_election",
+      "rows": 1
+    },
+    {
+      "class": "merger_agreement",
+      "subclass": "other",
+      "rows": 57
+    }
+  ],
+  "scenario_columns_note": "tested/regression/challenge/multi-document are \u00a740 template columns at zero: the sandbox/pilot fixtures (P1) and the matter/grouping (P2) + recovery (P3) families fill them at their phases \u2014 the corpus does not overstate coverage (\u00a714A/\u00a753)."
+}

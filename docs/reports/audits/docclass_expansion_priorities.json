@@ -1,0 +1,177 @@
+{
+  "generated_from": "docs/reports/audits/docclass_coverage_matrix.json",
+  "discipline": "do not optimize for raw row count (\u00a789) \u2014 priority is evaluation value",
+  "rows_total": 3302,
+  "median_class_rows": 600,
+  "items": [
+    {
+      "family": "adversarial_ambiguous",
+      "title": "Adversarial/ambiguous cases (\u00a789; \u00a730, \u00a768)",
+      "priority": "high",
+      "rationale": "challenge is zero for every class and the \u00a768/\u00a770/\u00a772A fixture builders (fixtures.py) are scaffold-only until populated with real adversarial documents \u2014 the sorter's 'know when not to guess' behavior (\u00a767) is currently untested against reality.",
+      "classes": [],
+      "field_gaps": {
+        "zero": [],
+        "partial": []
+      },
+      "scenario_zero": [],
+      "scarcity": []
+    },
+    {
+      "family": "grouping_scenarios",
+      "title": "Grouping scenarios (\u00a789: grouping scenarios; \u00a714)",
+      "priority": "high",
+      "rationale": "multi_document is zero for every class. \u00a714A verified the honest source-field baseline (23/1,000 subject-thread rows on v9; header threads structurally absent) \u2014 real multi-document behavior is only reachable via the synthetic bundle scaffold (bundles.py) or family-sampled expansion. Highest-leverage axis in the corpus.",
+      "classes": [],
+      "field_gaps": {
+        "zero": [],
+        "partial": []
+      },
+      "scenario_zero": [],
+      "scarcity": []
+    },
+    {
+      "family": "merger_documents",
+      "title": "Merger documents (\u00a789: merger documents)",
+      "priority": "high",
+      "rationale": "Second-smallest class (152 rows vs a 600-row median class) and single-source (MAUD): the objective scarcity rule drives the priority \u2014 the merger route of contracts_specialist needs statistical depth, and format diversity within the class is the natural way to add it.",
+      "classes": [
+        "merger_agreement"
+      ],
+      "field_gaps": {
+        "zero": [],
+        "partial": []
+      },
+      "scenario_zero": [
+        "merger_agreement.tested",
+        "merger_agreement.regression",
+        "merger_agreement.challenge",
+        "merger_agreement.multi_document"
+      ],
+      "scarcity": [
+        "merger_agreement rows=152 (median 600)"
+      ]
+    },
+    {
+      "family": "contract_subclasses",
+      "title": "Contract subclasses (\u00a789: contract subclasses)",
+      "priority": "medium",
+      "rationale": "600 rows across 26 strata (509 CUAD-v1 + 91 EDGAR EX-10) is the deepest subclass spread in the corpus; growth here is refinement, not gap-closing \u2014 valuable for routing confusion matrices, not blocking.",
+      "classes": [
+        "contract"
+      ],
+      "field_gaps": {
+        "zero": [],
+        "partial": [
+          "contract.cuad_clause_labels 509/600"
+        ]
+      },
+      "scenario_zero": [
+        "contract.tested",
+        "contract.regression",
+        "contract.challenge",
+        "contract.multi_document"
+      ],
+      "scarcity": []
+    },
+    {
+      "family": "insurance_workflow",
+      "title": "Insurance workflow documents (\u00a789: insurance workflow)",
+      "priority": "medium",
+      "rationale": "Largest class (1,100 rows) with adjuster at 14% (150/1,100) and denial_reasons at 3% (36/1,100), supporting_documents at 86% (950/1,100) \u2014 the workflow fields that distinguish a claim decision from a claim intake.",
+      "classes": [
+        "insurance_claim"
+      ],
+      "field_gaps": {
+        "zero": [],
+        "partial": [
+          "insurance_claim.adjuster 150/1100",
+          "insurance_claim.denial_reasons 36/1100",
+          "insurance_claim.supporting_documents 950/1100"
+        ]
+      },
+      "scenario_zero": [
+        "insurance_claim.tested",
+        "insurance_claim.regression",
+        "insurance_claim.challenge",
+        "insurance_claim.multi_document"
+      ],
+      "scarcity": []
+    },
+    {
+      "family": "legal_document_families",
+      "title": "Legal document families (\u00a789: legal document families)",
+      "priority": "medium",
+      "rationale": "Clause coverage is at 85% (509/600 \u2014 the 91 EDGAR EX-10 ship no CUAD annotation) and contract rows are not scarce \u2014 the family axis (contract+amendment+exhibit) is owned by grouping_scenarios, where the bundle scaffold must be paired with family-sampled anchors; growth here refines anchor diversity for those grouping evals and can close the EX-10 clause gap.",
+      "classes": [
+        "contract"
+      ],
+      "field_gaps": {
+        "zero": [],
+        "partial": [
+          "contract.cuad_clause_labels 509/600"
+        ]
+      },
+      "scenario_zero": [
+        "contract.tested",
+        "contract.regression",
+        "contract.challenge",
+        "contract.multi_document"
+      ],
+      "scarcity": []
+    },
+    {
+      "family": "corporate_records",
+      "title": "Corporate records (\u00a789: corporate records)",
+      "priority": "low",
+      "rationale": "Grew 39 \u2192 450 on v9 (issue #3) with the purpose-GT gap closed (intent/subject_matter/keywords at 100%) \u2014 but still below the 600-row median; more depth keeps the corporate_records_specialist route robust to stratified eval noise.",
+      "classes": [
+        "corporate_record"
+      ],
+      "field_gaps": {
+        "zero": [],
+        "partial": []
+      },
+      "scenario_zero": [
+        "corporate_record.tested",
+        "corporate_record.regression",
+        "corporate_record.challenge",
+        "corporate_record.multi_document"
+      ],
+      "scarcity": []
+    },
+    {
+      "family": "correspondence_contexts",
+      "title": "Correspondence contexts (\u00a789: correspondence contexts)",
+      "priority": "low",
+      "rationale": "intent/subject_matter/keywords are all 100% (v9 purpose-GT completion, issue #3) \u2014 the purpose-GT axis the correspondence specialist is evaluated on is no longer dark; context expansion (notices, demands, threads) now targets topic diversity rather than gap-closing.",
+      "classes": [
+        "correspondence"
+      ],
+      "field_gaps": {
+        "zero": [],
+        "partial": []
+      },
+      "scenario_zero": [
+        "correspondence.tested",
+        "correspondence.regression",
+        "correspondence.challenge",
+        "correspondence.multi_document"
+      ],
+      "scarcity": []
+    },
+    {
+      "family": "format_diversity",
+      "title": "Format diversity (\u00a789: format diversity; \u00a758 ingestion)",
+      "priority": "low",
+      "rationale": "The P3 ingestion failure stage needs genuinely unreadable/non-text sources (scans, broken encodings) that the current text-native corpus cannot supply; valuable once P3 fixtures graduate to the published suite \u2014 sequencing, not a corpus-gap judgment (explicit override, the only one in this backlog).",
+      "classes": [],
+      "field_gaps": {
+        "zero": [],
+        "partial": []
+      },
+      "scenario_zero": [],
+      "scarcity": []
+    }
+  ]
+}
