@@ -377,7 +377,10 @@ def complete_gt_fields(rows: list[dict]) -> dict:
             # draw) keep "[]": a documented absence, complete per
             # LIST_GT_FIELDS.
             if str((r.get("metadata") or {}).get("source_dataset") or "") == INSURBIAS_SOURCE:
-                if not str(gt.get("supporting_documents") or "").strip():
+                # draws ship '[]' (a no-items placeholder); '' and '[]' both
+                # mean "no documents yet" for derivation purposes.
+                cur = str(gt.get("supporting_documents") or "").strip()
+                if not cur or cur in ("[]", "{}", "null"):
                     docs = _insurbias_supporting_documents(str(r.get("doc_text") or ""))
                     if docs:
                         gt["supporting_documents"] = json.dumps(docs, ensure_ascii=False)
