@@ -170,7 +170,7 @@ def test_live_snapshot_header_threads_are_structurally_absent(
     source-native header threads are structurally 0 — and the never-mix
     guard must hold over the real corpus."""
     corr = [r for r in snapshot_rows if r.get("expected") == "correspondence"]
-    assert len(corr) == 350
+    assert len(corr) == 1000
     for row in corr:
         md = snapshot_metadata.get(row["filename"]) or {}
         assert str(md.get("in_reply_to") or "").strip() == ""  # the audited fact
@@ -188,10 +188,12 @@ def test_live_snapshot_subject_threads_reconstructed_and_separate(
     corr = [r for r in snapshot_rows if r.get("expected") == "correspondence"]
     rows = [{**r, "metadata": snapshot_metadata.get(r["filename"])} for r in corr]
     with_subject = sum(1 for r in rows if mt.normalize_subject(mt._row_subject(r)))
-    # verified floor (HF audit 2026-09-02): 346/350 dedup subjects non-empty,
-    # ~80 of those degenerate Re:/FW:-only → ~266 meaningful — doc_text
-    # extraction matches (266/350 live). The rest are genuinely subjectless.
-    assert with_subject >= 260, f"subject extraction degraded: {with_subject}/350"
+    # v9 snapshot truth (verified on the pinned corpus): 498/1,000
+    # correspondence rows carry a non-degenerate subject extracted from the
+    # doc_text RFC822 header block (291 llm_zero_shot / 149 aeslc_join /
+    # 29 manual / 29 heuristic intent rows); the rest are genuinely
+    # subjectless or Re:/Fwd:-only degenerate.
+    assert with_subject == 498, f"subject extraction degraded: {with_subject}/1000"
     out = mt.enrich_rows(rows)
     constructions = {r["matter_construction"] for r in out}
     assert constructions <= {"heuristic_reconstructed", ""}
@@ -199,7 +201,7 @@ def test_live_snapshot_subject_threads_reconstructed_and_separate(
     matters = {r["matter_id"] for r in assigned}
     multi = [m for m in matters if sum(1 for r in assigned if r["matter_id"] == m) >= 2]
     print(
-        f"\n§14A live audit: {with_subject}/350 subjects extracted; "
+        f"\n§14A live audit: {with_subject}/1000 subjects extracted; "
         f"{len(assigned)} rows in {len(matters)} heuristic threads "
         f"({len(multi)} multi-member); {len(out) - len(assigned)} unassigned"
     )

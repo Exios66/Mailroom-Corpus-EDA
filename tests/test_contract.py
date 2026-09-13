@@ -19,6 +19,7 @@ from conftest import (
     ENRICHMENT_KEYS,
     EXTRACTION_GT_BY_CLASS,
     FIVE_CLASSES,
+    GT_TOP_LEVEL_KEYS,
     PURPOSE_GT_CLASSES,
     PURPOSE_GT_KEYS,
     taxonomy_field_types,
@@ -29,6 +30,20 @@ from mailroom_eda.docclass_uploader import GT_SCALAR_KEYS
 from mailroom_eda.identity import enrich_rows
 
 GT_KEY_SET = set(GT_SCALAR_KEYS)
+
+
+def _gt_value_present(v) -> bool:
+    """v9 complete-GT convention: '' is absent and the JSON-encoded no-item
+    markers ``'[]'`` / ``'{}'`` carry no GT signal (same convention
+    ``_parse_labels`` uses in integrity.py / visualizations.py). Native
+    empty lists/dicts are absent too (v8-era flat schema)."""
+    if v is None:
+        return False
+    if isinstance(v, str):
+        v = v.strip()
+        if not v or v in ("[]", "{}"):
+            return False
+    return v not in ("", [], {})
 
 
 def _check_row_contract(rows: list[dict]) -> None:
@@ -66,10 +81,16 @@ def _check_row_contract(rows: list[dict]) -> None:
         assert row["source_filename"] == row["filename"]
         assert len(row["content_sha256"]) == 64
         assert len(row["normalized_text_sha256"]) == 64
-        # expected_fields schema-valid: GT keys stay inside the 27-key schema
+        # expected_fields schema-valid: GT keys stay inside the v9 27-key
+        # GT scalar schema (fixture rows carry gt_fields as a dict; snapshot
+        # rows carry it as the harness-expanded flat keys)
         gt = row.get("gt_fields") or {}
+        if isinstance(gt, str):
+            gt = {k: row[k] for k in GT_KEY_SET if k in row}
         unknown = set(gt) - GT_KEY_SET
-        assert not unknown, f"{row['filename']}: GT keys outside the 27-key schema: {unknown}"
+        assert not unknown, (
+            f"{row['filename']}: GT keys outside the 27-key schema: {unknown}"
+        )
 
 
 def _check_mailroom_contract(rows: list[dict], field_types: dict[str, set[str]]) -> None:
@@ -78,17 +99,33 @@ def _check_mailroom_contract(rows: list[dict], field_types: dict[str, set[str]])
         cls = row["expected"]
         assert cls in field_types, f"{cls}: no doc_classes entry in taxonomy.yaml"
         gt = row.get("gt_fields") or {}
-        present = {k for k, v in gt.items() if v not in (None, "", [])}
+        if isinstance(gt, str):
+            # v9 snapshot rows: gt_fields JSON expanded to flat keys by the
+            # harness; only non-empty values are "present"
+            gt = {k: row.get(k) for k in GT_KEY_SET}
+        present = {k for k, v in gt.items() if _gt_value_present(v)}
         for key in present:
             if key in ENRICHMENT_KEYS:
-                # purpose GT only rides the three purpose classes (§20/§21)
+                # purpose GT rides the three purpose classes (§20/§21), which
+                # expose intent/subject_matter/keywords as specialist
+                # field_types. The v9 EX-10 contract expansion (issue #3) is
+                # the documented exception: 91 EDGAR contracts carry
+                # heuristic intent (material_agreement) that the contracts
+                # specialist does NOT consume (no intent field_type) — those
+                # rows are enrichment-only, validated by
+                # test_mailroom_contract_snapshot's count pin below.
                 if key in PURPOSE_GT_KEYS:
-                    assert cls in PURPOSE_GT_CLASSES, (
-                        f"{row['filename']}: purpose-GT key {key} on {cls}"
-                    )
-                    assert key in field_types[cls], (
-                        f"{row['filename']}: {key} not in {cls} field_types"
-                    )
+                    if cls in PURPOSE_GT_CLASSES:
+                        assert key in field_types[cls], (
+                            f"{row['filename']}: {key} not in {cls} field_types"
+                        )
+                    else:
+                        assert cls == "contract" and (
+                            str(row.get("intent_source") or "") == "heuristic"
+                        ), (
+                            f"{row['filename']}: purpose-GT key {key} on {cls} "
+                            "outside the v9 heuristic-contract exception"
+                        )
                 continue
             mapping = EXTRACTION_GT_BY_CLASS[cls]
             assert key in mapping, (
@@ -111,19 +148,46 @@ def test_mailroom_contract_fixture(fixture_rows):
 
 
 def test_row_contract_snapshot(snapshot_rows):
-    """Full-corpus §63 run against the pinned local snapshot (v8, 2,000 rows)."""
-    assert len(snapshot_rows) == 2000
+    """Full-corpus §63 run against the pinned local snapshot (v9, 3,302 rows)."""
+    assert len(snapshot_rows) == 3302
     _check_row_contract(snapshot_rows)
 
 
 def test_mailroom_contract_snapshot(snapshot_rows):
     _check_mailroom_contract(snapshot_rows, taxonomy_field_types())
+    # v9 truth (issue #3): exactly the 91 EDGAR EX-10 contracts carry
+    # heuristic purpose intent — value material_agreement, provenance
+    # heuristic — and no other contract row does.
+    heuristic_contract = [
+        r for r in snapshot_rows
+        if r["expected"] == "contract" and _gt_value_present(r.get("intent"))
+    ]
+    assert len(heuristic_contract) == 91
+    assert {r["intent_source"] for r in heuristic_contract} == {"heuristic"}
+    assert {r["intent"] for r in heuristic_contract} == {"material_agreement"}
 
 
-def test_snapshot_gt_schema_is_27_key(snapshot_rows):
-    """The published ground_truth config stays inside the 27-key GT schema
-    (plus the four identity columns filename/expected/expected_subclass/split)."""
+def test_snapshot_gt_schema_is_v9(snapshot_rows):
+    """The published ground_truth config carries the v9 schema: 36 top-level
+    columns (identity / provenance / matter / eval-contract, plus
+    prompt/expected/expected_subclass/split/_published and the nested
+    ``gt_fields`` JSON) with the label keys expanded to flat GT keys by the
+    test harness — i.e. the 36-column set + the 27-key GT scalar set.
+    The nested gt_fields union across the corpus is the full 29-key label
+    set (27 scalar keys + the two matter columns that also exist
+    top-level)."""
+    import json
+
     # doc_text is joined in from the default config by the test harness;
     # it is not a ground_truth config column.
     cols = set(snapshot_rows[0].keys()) - {"doc_text"}
-    assert cols == GT_KEY_SET | {"filename", "expected", "expected_subclass", "split"}
+    assert len(cols) == 36 + len(GT_KEY_SET)
+    assert cols == GT_TOP_LEVEL_KEYS | set(GT_KEY_SET)
+    # every row carries the identical flat schema (no sparse rows)
+    assert {frozenset(set(r.keys()) - {"doc_text"}) for r in snapshot_rows} == {frozenset(cols)}
+    # nested gt_fields: the union across the corpus is the full 29-key set
+    union: set[str] = set()
+    for row in snapshot_rows:
+        gf = row["gt_fields"]
+        union |= set(json.loads(gf) if isinstance(gf, str) else gf)
+    assert union == set(GT_KEY_SET) | {"relationships", "related_document_ids"}

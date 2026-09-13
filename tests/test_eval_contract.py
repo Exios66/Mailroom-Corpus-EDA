@@ -2,7 +2,7 @@
 
 Every derived field is validated against a closed vocabulary and against the
 row's existing provenance columns; the full-snapshot run (data/parquet)
-re-verifies over all 1,650 rows."""
+re-verifies over all 3,302 rows."""
 from __future__ import annotations
 
 import sys
@@ -159,23 +159,28 @@ def test_row_level_invariants_over_fixture_rows(fixture_rows):
 
 
 def test_enrichment_over_full_snapshot(snapshot_rows):
-    """§84B: 100% of rows carry a valid evaluation contract (v8 full corpus)."""
+    """§84B: 100% of rows carry a valid evaluation contract (v9 full corpus)."""
     enriched = ec.enrich_rows(snapshot_rows)
-    assert len(enriched) == 2000
+    assert len(enriched) == 3302
     for row in enriched:
         assert row["expected_specialist"] in ec.SPECIALISTS
         assert row["expected_stage"] in ec.TERMINAL_STAGES
         assert row["annotation_method"] in ec.ANNOTATION_METHODS
         assert row["annotation_source"] != ""
     # provenance regimes over the real corpus: intent-derived methods on the
-    # 350 correspondence rows (verified 162 joins / 92 llm / 96 manual),
-    # synthetic on all 950 insurance rows (600 DE-SynPUF + 200 GNOTHEIA +
-    # 150 BDR — v8 LOB expansion, HUB-028), source_native elsewhere.
+    # 1,000 correspondence rows (verified 637 llm_zero_shot / 162 aeslc_join
+    # / 105 heuristic / 96 manual — four sources, §20), synthetic on all
+    # 1,100 insurance rows (950 manual + 150 heuristic intent, all
+    # synthetic-flagged §4A), heuristic on the 450 corporate_record + 105
+    # correspondence + 91 contract rows, source_native on the remaining 661
+    # (509 contract + 152 MAUD — v9 expansion, issue #3).
     methods = {m: sum(1 for r in enriched if r["annotation_method"] == m) for m in
-               ("verified_join", "llm_zero_shot", "human_annotated", "synthetic")}
+               ("verified_join", "llm_zero_shot", "human_annotated",
+                "synthetic", "heuristic", "source_native")}
     assert methods == {
-        "verified_join": 162, "llm_zero_shot": 92,
-        "human_annotated": 96, "synthetic": 950,
+        "verified_join": 162, "llm_zero_shot": 637,
+        "human_annotated": 96, "synthetic": 1100,
+        "heuristic": 646, "source_native": 661,
     }
 
 

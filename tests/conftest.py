@@ -25,8 +25,15 @@ FIVE_CLASSES = {
     "insurance_claim",
 }
 
-# The 27-key ground-truth schema splits into per-class extraction GT and
-# enrichment/purpose GT. Extraction keys map onto the specialist
+# The v9 ground-truth schema (mailroom-dataset v1, 3,302 rows): the GT
+# parquet carries 36 top-level columns (identity / provenance / matter /
+# eval-contract, plus prompt/expected/expected_subclass/split/_published)
+# with all 29 label keys inside a nested ``gt_fields`` JSON column. The label
+# set splits into per-class extraction GT and enrichment/purpose GT — the 27
+# GT_SCALAR_KEYS below; the other two gt_fields keys (relationships,
+# related_document_ids) are matter columns that also exist top-level.
+# ``load_snapshot_rows()`` expands gt_fields to flat keys so consumers keep
+# the v8-era flat schema. Extraction keys map onto the specialist
 # ``field_types`` in llm-mailroom's config/taxonomy.yaml (§64); the two
 # clause-list keys use GT-side names for the specialist's cuad_clauses /
 # maud_clauses fields.
@@ -55,6 +62,29 @@ ENRICHMENT_KEYS = {
 PURPOSE_GT_CLASSES = {"corporate_record", "correspondence", "insurance_claim"}
 PURPOSE_GT_KEYS = {"intent", "subject_matter", "keywords"}
 
+# The 36 top-level columns of the v9 ground_truth parquet (verified on the
+# pinned snapshot; also enforced by tests/test_contract.py). The 27 flat GT
+# scalar keys (GT_SCALAR_KEYS) are disjoint from these — after expansion a
+# snapshot row carries exactly these + the 27 GT keys + the harness-joined
+# ``doc_text``.
+GT_TOP_LEVEL_KEYS = {
+    "filename", "prompt", "expected", "expected_subclass", "split",
+    "gt_fields", "_published",
+    # identity / provenance (§9–§11)
+    "document_id", "source_corpus", "source_document_id", "source_filename",
+    "source_revision", "content_sha256", "normalized_text_sha256",
+    # eval-contract (§45/§58/§59)
+    "expected_specialist", "expected_stage", "review_expected",
+    "review_reason", "retry_expected", "expected_post_retry_state",
+    "annotation_source", "annotation_method", "annotation_model",
+    "annotation_prompt_version", "annotation_confidence",
+    "annotation_reviewer", "annotation_timestamp",
+    # matter / grouping (§13–§16)
+    "matter_id", "matter_construction", "group_id", "group_role",
+    "thread_position", "thread_size", "thread_evidence",
+    "relationships", "related_document_ids",
+}
+
 
 def load_fixture_rows() -> list[dict]:
     rows = []
@@ -69,8 +99,20 @@ def load_fixture_rows() -> list[dict]:
 def load_snapshot_rows() -> list[dict]:
     """Ground-truth config rows from the local HF snapshot (both splits),
     with doc_text joined in from the default config by filename (the GT
-    config carries no text — blind/label split)."""
+    config carries no text — blind/label split).
+
+    v9 schema: the label/annotation fields live inside the nested
+    ``gt_fields`` JSON column (29-key union). We expand them to flat
+    top-level GT keys via mailroom_eda.download._expand_gt_fields so
+    consumers keep the flat v8-era schema; the two matter columns that also
+    appear inside gt_fields (relationships, related_document_ids) keep their
+    canonical top-level values. Missing class-specific GT keys become the
+    corpus-wide absence convention (''), not NaN.
+    """
     import pandas as pd
+
+    from mailroom_eda.docclass_uploader import GT_SCALAR_KEYS
+    from mailroom_eda.download import _expand_gt_fields
 
     frames = []
     for split in ("train", "test"):
@@ -79,6 +121,14 @@ def load_snapshot_rows() -> list[dict]:
     if not frames:
         return []
     df = pd.concat(frames, ignore_index=True)
+    if "gt_fields" in df.columns:
+        df = _expand_gt_fields(df)
+        # keep-first: canonical top-level matter columns beat the gt_fields
+        # mirror (relationships differs on 14 rows — derived vs raw label)
+        df = df.loc[:, ~df.columns.duplicated(keep="first")]
+        # corpus-wide absence is '' — a sparse per-class gt_fields JSON
+        # (12–29 keys) must not leave NaN in the flat GT columns
+        df[list(GT_SCALAR_KEYS)] = df[list(GT_SCALAR_KEYS)].fillna("")
     blind_dir = SNAPSHOT_GT.parent / "default"
     blind = []
     for split in ("train", "test"):
@@ -88,7 +138,7 @@ def load_snapshot_rows() -> list[dict]:
         zip(pd.concat(blind, ignore_index=True)["filename"],
             pd.concat(blind, ignore_index=True)["doc_text"])
     )
-    df["doc_text"] = df["filename"].map(text_by_filename)
+    df["doc_text"] = df["filename"].map(text_by_filename).fillna("")
     return df.to_dict("records")
 
 
@@ -96,15 +146,31 @@ def snapshot_available() -> bool:
     return SNAPSHOT_GT.exists() and any(SNAPSHOT_GT.rglob("*.parquet"))
 
 
+def _taxonomy_path() -> Path:
+    """llm-mailroom's taxonomy.yaml, wherever the sibling checkout lives:
+    the standalone sibling repo, or the Digital-Mailroom monorepo package
+    (both carry the live config the §64 interface contract validates)."""
+    candidates = (
+        ROOT.parent / "llm-mailroom" / "src" / "config" / "taxonomy.yaml",
+        ROOT.parent / "Digital-Mailroom" / "packages" / "llm-mailroom"
+        / "src" / "config" / "taxonomy.yaml",
+    )
+    for p in candidates:
+        if p.exists():
+            return p
+    raise FileNotFoundError(
+        "llm-mailroom taxonomy.yaml not found under "
+        f"{ROOT.parent} (need the sibling checkout or the "
+        "Digital-Mailroom monorepo)"
+    )
+
+
 def taxonomy_field_types() -> dict[str, set[str]]:
     """doc_classes key -> field_types keys, from llm-mailroom's taxonomy.yaml
     (read by path — the corpus package does not depend on the pipeline)."""
     import yaml
 
-    tax_path = (
-        ROOT.parent / "llm-mailroom" / "src" / "config" / "taxonomy.yaml"
-    )
-    cfg = yaml.safe_load(tax_path.read_text(encoding="utf-8"))
+    cfg = yaml.safe_load(_taxonomy_path().read_text(encoding="utf-8"))
     return {
         str(dc["key"]): set((dc.get("field_types") or {}).keys())
         for dc in cfg.get("doc_classes", [])
