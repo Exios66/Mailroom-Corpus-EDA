@@ -426,8 +426,9 @@ def backfill_correspondence(
             break
         if not api_key:
             raise SystemExit(
-                "LLM pass requires OPENROUTER_API_KEY (set it in the environment "
-                "or ~/.hermes/.env). Rows not in the sidecar cannot be labeled."
+                "LLM pass requires a provider key — set OPENROUTER_API_KEY, or "
+                "VLLM_API_KEY (+VLLM_BASE_URL for a self-hosted vLLM/Modal "
+                "endpoint). Rows not in the sidecar cannot be labeled."
             )
         text = doc_text_map.get(fn, "")
         subject = (join_hits.get(fn) or {}).get("subject_line", "")

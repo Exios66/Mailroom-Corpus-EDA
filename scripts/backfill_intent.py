@@ -90,8 +90,16 @@ def main() -> int:
 
     gt = load_ground_truth()
     blind = load_default()
+    # Provider-agnostic LLM pass (DMR-052): OpenRouter first, then a
+    # self-hosted OpenAI-compatible endpoint (vLLM/Modal) — the labeling call
+    # itself only needs an OpenAI-shaped base_url + api_key.
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    if not api_key:
+        api_key = os.environ.get("VLLM_API_KEY", "")
+        base_url = os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1")
+        if api_key:
+            print(f"LLM pass: self-hosted vLLM endpoint ({base_url})")
 
     if args.join_only:
         index = ib.build_enron_index(force=args.force_index)
