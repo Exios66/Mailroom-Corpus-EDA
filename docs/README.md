@@ -82,9 +82,11 @@ for the full row shape and config contract.
 
 ## Related family repos
 
+The family is cataloged in the public
+[**Mailroom Corpus Family** collection](https://huggingface.co/collections/Lucius-Morningstar/mailroom-corpus-family-6aa715cce29d415b0db92473)
+on Hugging Face:
+
 - [`enron-correspondence-dedup`](https://huggingface.co/datasets/Lucius-Morningstar/enron-correspondence-dedup) — the 247K-row deduplicated Enron corpus the correspondence sample was drawn from
 - [`mailroom-cuad-contracts-full`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts-full) — byte-verified CUAD mirror used at ingestion
-- [`mailroom-maud-contracts`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-maud-contracts) — MAUD mirror
-- [`mailroom-s1-corporate-records`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-s1-corporate-records) — S-1 exhibits mirror
 - [`cms-desynpuf-insurance-claims`](https://huggingface.co/datasets/Lucius-Morningstar/cms-desynpuf-insurance-claims) — the v5-era rendered-EOB claims corpus (v6 re-rendered from source)
 - [`LLM Mailroom`](https://github.com/Exios66/llm-mailroom) — the agentic triage system evaluated against this benchmark
