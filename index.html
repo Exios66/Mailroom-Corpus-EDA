@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Interactive EDA dashboard for the mailroom-dataset (v1 / corpus v9) — 3,302 legal documents across 5 classes, 55 strata.">
+<meta property="og:title" content="mailroom-dataset Corpus — EDA Dashboard">
+<meta property="og:description" content="Interactive exploration of the canonical legal-document corpus powering the LLM-Mailroom evaluation pipeline.">
+<meta property="og:type" content="website">
+<title>mailroom-dataset Corpus — EDA Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d29; --card: #212433;
+    --border: #2a2d3e; --text: #e2e4ed; --muted: #8b8fa3;
+    --accent: #6c72ff; --accent2: #38bdf8; --accent3: #f472b6;
+    --green: #34d399; --orange: #fb923c; --red: #f87171;
+    --radius: 10px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Inter',system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); line-height:1.6; -webkit-font-smoothing:antialiased; }
+  a { color:var(--accent2); text-decoration:none; transition:color .15s; } a:hover { color:var(--accent); text-decoration:underline; }
+
+  /* ── Hero ── */
+  .hero { background:linear-gradient(135deg,#1a1040 0%,#0f1117 50%,#0a1628 100%); padding:3.5rem 2rem 2.5rem; border-bottom:1px solid var(--border); position:relative; overflow:hidden; }
+  .hero::before { content:''; position:absolute; top:-50%; right:-10%; width:400px; height:400px; background:radial-gradient(circle,rgba(108,114,255,.08) 0%,transparent 70%); pointer-events:none; }
+  .hero-inner { max-width:1100px; margin:0 auto; position:relative; }
+  .hero h1 { font-size:2.4rem; font-weight:700; margin-bottom:0.3rem; letter-spacing:-0.02em; }
+  .hero .sub { color:var(--muted); font-size:0.95rem; margin-bottom:1.5rem; }
+  .hero .sub code { background:var(--card); padding:2px 7px; border-radius:4px; font-size:0.85rem; border:1px solid var(--border); }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:0.8rem; margin-top:1.2rem; }
+  .stat { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:1rem 1.2rem; text-align:center; transition:border-color .2s; }
+  .stat:hover { border-color:var(--accent); }
+  .stat .num { font-size:1.7rem; font-weight:700; color:var(--accent); line-height:1.2; }
+  .stat .label { font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; margin-top:0.25rem; }
+
+  /* ── Nav ── */
+  .nav { background:var(--surface); border-bottom:1px solid var(--border); padding:0 2rem; position:sticky; top:0; z-index:100; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); }
+  .nav-inner { max-width:1100px; margin:0 auto; display:flex; gap:0; }
+  .nav a { font-size:0.82rem; color:var(--muted); padding:0.7rem 1rem; border-bottom:2px solid transparent; transition:all .15s; display:block; }
+  .nav a:hover { color:var(--text); text-decoration:none; }
+  .nav a.active { color:var(--accent); border-bottom-color:var(--accent); }
+  .nav .nav-right { margin-left:auto; display:flex; align-items:center; gap:0.8rem; }
+  .nav .nav-right a { font-size:0.78rem; color:var(--muted); }
+  .nav .nav-right a:hover { color:var(--accent2); }
+
+  /* ── Container ── */
+  .container { max-width:1100px; margin:0 auto; padding:2.5rem 1.5rem; }
+  section { margin-bottom:3.5rem; scroll-margin-top:3.5rem; }
+  section h2 { font-size:1.3rem; font-weight:600; margin-bottom:1rem; padding-bottom:0.5rem; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:0.5rem; }
+  section h2::before { content:''; width:4px; height:1.2em; background:var(--accent); border-radius:2px; flex-shrink:0; }
+
+  /* ── Class composition bar ── */
+  .class-bar { display:flex; height:36px; border-radius:6px; overflow:hidden; margin:1rem 0; }
+  .class-bar div { display:flex; align-items:center; justify-content:center; font-size:0.72rem; font-weight:600; color:#fff; min-width:30px; transition:opacity .15s; }
+  .class-bar div:hover { opacity:.85; }
+  .legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin:0.6rem 0 1.2rem; }
+  .legend span { display:flex; align-items:center; gap:0.4rem; font-size:0.8rem; color:var(--muted); }
+  .legend span::before { content:''; width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+  .legend .l-ins::before { background:#6c72ff; } .legend .l-con::before { background:#38bdf8; }
+  .legend .l-corr::before { background:#34d399; } .legend .l-mrg::before { background:#fb923c; }
+  .legend .l-corp::before { background:#f472b6; }
+
+  /* ── Key findings ── */
+  .findings { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1.2rem 1.5rem; margin-top:1rem; }
+  .findings h3 { font-size:0.9rem; font-weight:600; color:var(--accent2); margin-bottom:0.6rem; }
+  .findings ul { padding-left:1.2rem; color:var(--muted); font-size:0.88rem; }
+  .findings li { margin:0.3rem 0; }
+  .findings strong { color:var(--accent); }
+
+  /* ── Interactive grid ── */
+  .interactive-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(420px,1fr)); gap:1.2rem; }
+  .interactive-card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; transition:border-color .2s, box-shadow .2s; }
+  .interactive-card:hover { border-color:var(--accent); box-shadow:0 4px 20px rgba(108,114,255,.1); }
+  .interactive-card iframe { width:100%; height:420px; border:none; display:block; }
+  .interactive-card .ic-caption { padding:0.6rem 1rem; font-size:0.8rem; color:var(--muted); border-top:1px solid var(--border); }
+
+  /* ── Gallery ── */
+  .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:1rem; }
+  .gallery-item { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; transition:transform .15s, box-shadow .15s; cursor:pointer; }
+  .gallery-item:hover { transform:translateY(-3px); box-shadow:0 8px 24px rgba(0,0,0,.4); }
+  .gallery-item img { width:100%; height:180px; object-fit:cover; display:block; background:#181b27; }
+  .gallery-item .caption { padding:0.5rem 0.8rem; font-size:0.75rem; color:var(--muted); border-top:1px solid var(--border); }
+
+  /* ── Tables grid ── */
+  .tables-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:0.8rem; }
+  .table-card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:0.9rem 1.2rem; display:flex; align-items:center; gap:0.8rem; transition:border-color .15s; text-decoration:none; color:var(--text); }
+  .table-card:hover { border-color:var(--accent); text-decoration:none; }
+  .table-card .icon { font-size:1.4rem; flex-shrink:0; }
+  .table-card .info .name { font-weight:500; font-size:0.88rem; }
+  .table-card .info .desc { font-size:0.73rem; color:var(--muted); margin-top:0.1rem; }
+
+  /* ── Report markdown ── */
+  .report-md { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:2rem; line-height:1.8; }
+  .report-md h1 { font-size:1.5rem; margin-bottom:0.5rem; }
+  .report-md h2 { font-size:1.15rem; color:var(--accent2); margin:1.5rem 0 0.5rem; }
+  .report-md h3 { font-size:1rem; color:var(--accent3); margin:1rem 0 0.3rem; }
+  .report-md table { border-collapse:collapse; width:100%; margin:0.8rem 0; font-size:0.85rem; }
+  .report-md th, .report-md td { border:1px solid var(--border); padding:0.4rem 0.7rem; text-align:left; }
+  .report-md th { background:var(--surface); color:var(--muted); font-weight:500; }
+  .report-md code { background:var(--surface); padding:1px 5px; border-radius:3px; font-size:0.82rem; }
+  .report-md pre { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem; overflow-x:auto; margin:0.8rem 0; }
+  .report-md pre code { background:none; padding:0; }
+  .report-md blockquote { border-left:3px solid var(--accent); padding:0.5rem 1rem; margin:0.8rem 0; color:var(--muted); background:var(--surface); border-radius:0 6px 6px 0; }
+  .report-md strong { color:var(--accent); }
+  .report-md em { color:var(--muted); }
+  .report-md ul, .report-md ol { padding-left:1.5rem; margin:0.4rem 0; }
+  .report-md li { margin:0.2rem 0; }
+
+  /* ── Lightbox ── */
+  .lightbox { display:none; position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:1000; align-items:center; justify-content:center; cursor:zoom-out; }
+  .lightbox.active { display:flex; }
+  .lightbox img { max-width:92vw; max-height:92vh; border-radius:8px; box-shadow:0 0 60px rgba(0,0,0,.5); }
+  .lightbox .close { position:absolute; top:1.5rem; right:1.5rem; color:#fff; font-size:1.5rem; cursor:pointer; background:rgba(255,255,255,.1); width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background .15s; }
+  .lightbox .close:hover { background:rgba(255,255,255,.2); }
+  .lightbox .caption-bar { position:absolute; bottom:2rem; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.7); padding:0.5rem 1.2rem; border-radius:8px; font-size:0.85rem; color:#fff; backdrop-filter:blur(8px); max-width:80vw; text-align:center; }
+
+  /* ── Scroll to top ── */
+  .scroll-top { position:fixed; bottom:2rem; right:2rem; width:44px; height:44px; border-radius:50%; background:var(--accent); color:#fff; border:none; cursor:pointer; font-size:1.2rem; display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none; transition:opacity .2s, transform .2s; z-index:999; box-shadow:0 4px 16px rgba(108,114,255,.3); }
+  .scroll-top.visible { opacity:1; pointer-events:auto; }
+  .scroll-top:hover { transform:translateY(-2px); }
+
+  /* ── Footer ── */
+  footer { border-top:1px solid var(--border); padding:2rem; text-align:center; }
+  footer p { color:var(--muted); font-size:0.8rem; }
+  footer .sibling-links { margin-top:0.8rem; display:flex; gap:1.5rem; justify-content:center; flex-wrap:wrap; }
+  footer .sibling-links a { font-size:0.82rem; }
+
+  /* ── Responsive ── */
+  @media (max-width:768px) {
+    .hero h1 { font-size:1.6rem; }
+    .stats { grid-template-columns:repeat(3,1fr); }
+    .interactive-grid { grid-template-columns:1fr; }
+    .gallery { grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); }
+    .nav-inner { overflow-x:auto; }
+    .nav .nav-right { display:none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-inner">
+    <h1>mailroom-dataset Corpus</h1>
+    <div class="sub">EDA Dashboard &mdash; Generated <code>2026-09-13</code> &middot; Pipeline <code>run_all.py</code> (P0&ndash;P6) &middot; Data <code>Lucius-Morningstar/mailroom-dataset</code> v1 (corpus v9)</div>
+    <div class="stats">
+      <div class="stat"><div class="num">3,302</div><div class="label">Documents</div></div>
+      <div class="stat"><div class="num">5</div><div class="label">Doc Types</div></div>
+      <div class="stat"><div class="num">55</div><div class="label">Strata</div></div>
+      <div class="stat"><div class="num">7.2×</div><div class="label">Imbalance Ratio</div></div>
+      <div class="stat"><div class="num">13,753</div><div class="label">CUAD Spans</div></div>
+      <div class="stat"><div class="num">100%</div><div class="label">Offset Match</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="nav">
+  <div class="nav-inner">
+    <a href="#overview" class="active">Overview</a>
+    <a href="#interactive">Interactive Charts</a>
+    <a href="#gallery">Figures</a>
+    <a href="#tables">Tables</a>
+    <a href="#report">Full Report</a>
+    <div class="nav-right">
+      <a href="https://exios66.github.io/claims-data-eda/">Claims EDA</a>
+      <a href="https://exios66.github.io/Enron-Evaluation-Environment/">Enron EDA</a>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+<section id="overview">
+  <h2>Corpus Composition</h2>
+  <div class="class-bar">
+    <div class="insurance_claim" style="width:33.3%">33.3%</div>
+    <div class="contract" style="width:18.2%">18.2%</div>
+    <div class="correspondence" style="width:30.3%">30.3%</div>
+    <div class="merger_agreement" style="width:4.6%">4.6%</div>
+    <div class="corporate_record" style="width:13.6%">13.6%</div>
+  </div>
+  <div class="legend">
+    <span class="l-ins">insurance_claim &mdash; 1,100</span>
+    <span class="l-con">contract &mdash; 600</span>
+    <span class="l-cor">correspondence &mdash; 1,000</span>
+    <span class="l-mer">merger_agreement &mdash; 152</span>
+    <span class="l-cor">corporate_record &mdash; 450</span>
+  </div>
+  <div class="findings">
+    <h3>Key Findings</h3>
+    <ul>
+      <li>Token budget: 77% ≤4k; 90% ≤16k; 93% ≤32k; 100% ≤128k</li>
+      <li>CUAD: 509 contracts × 41 clause types; 13,753 spans, 100% exact offset</li>
+      <li>MAUD: 152 agreements × 22 tasks</li>
+      <li>Insurance: 13/13 fields 100% filled; coverage determination fully populated</li>
+      <li>Correspondence: intent 100% hydrated (1000 rows; aeslc_join 162; heuristic 105; llm_zero_shot 637; manual 96)</li>
+      <li>Split: train 2,979 / test 323 (9.8%)</li>
+    </ul>
+  </div>
+</section>
+
+<section id="interactive">
+  <h2>Interactive Charts</h2>
+  <div class="interactive-grid">
+    <div class="interactive-card"><iframe src="figures_interactive/04_text_length_violin.html" loading="lazy" title="04_text_length_violin"></iframe><div class="ic-caption">04_text_length_violin</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/05_token_budget_coverage.html" loading="lazy" title="05_token_budget_coverage"></iframe><div class="ic-caption">05_token_budget_coverage</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/06_text_length_ecdf.html" loading="lazy" title="06_text_length_ecdf"></iframe><div class="ic-caption">06_text_length_ecdf</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/08_cuad_clause_presence.html" loading="lazy" title="08_cuad_clause_presence"></iframe><div class="ic-caption">08_cuad_clause_presence</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/09_cuad_span_counts.html" loading="lazy" title="09_cuad_span_counts"></iframe><div class="ic-caption">09_cuad_span_counts</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/10_cuad_top_clauses.html" loading="lazy" title="10_cuad_top_clauses"></iframe><div class="ic-caption">10_cuad_top_clauses</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/11_cuad_cooccurrence.html" loading="lazy" title="11_cuad_cooccurrence"></iframe><div class="ic-caption">11_cuad_cooccurrence</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/13_maud_task_frequency.html" loading="lazy" title="13_maud_task_frequency"></iframe><div class="ic-caption">13_maud_task_frequency</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/14_maud_answer_distribution.html" loading="lazy" title="14_maud_answer_distribution"></iframe><div class="ic-caption">14_maud_answer_distribution</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/16_claim_amount.html" loading="lazy" title="16_claim_amount"></iframe><div class="ic-caption">16_claim_amount</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/17_coverage_determination.html" loading="lazy" title="17_coverage_determination"></iframe><div class="ic-caption">17_coverage_determination</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/18_claim_dates.html" loading="lazy" title="18_claim_dates"></iframe><div class="ic-caption">18_claim_dates</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/20_corr_topic_intent.html" loading="lazy" title="20_corr_topic_intent"></iframe><div class="ic-caption">20_corr_topic_intent</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/23_imbalance_treemap.html" loading="lazy" title="23_imbalance_treemap"></iframe><div class="ic-caption">23_imbalance_treemap</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/24_strata_ratio.html" loading="lazy" title="24_strata_ratio"></iframe><div class="ic-caption">24_strata_ratio</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/26_filing_timeline.html" loading="lazy" title="26_filing_timeline"></iframe><div class="ic-caption">26_filing_timeline</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/27_source_proportions.html" loading="lazy" title="27_source_proportions"></iframe><div class="ic-caption">27_source_proportions</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/30_metadata_heatmap.html" loading="lazy" title="30_metadata_heatmap"></iframe><div class="ic-caption">30_metadata_heatmap</div></div>
+  </div>
+</section>
+
+<section id="gallery">
+  <h2>All Figures (30)</h2>
+  <div class="gallery" id="gallery-grid">
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/01_type_and_subclass_distribution.png" loading="lazy" alt="01_type_and_subclass_distribution.png"><div class="caption">01_type_and_subclass_distribution</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/02_strata_train_test.png" loading="lazy" alt="02_strata_train_test.png"><div class="caption">02_strata_train_test</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/03_metadata_fill_rate_heatmap.png" loading="lazy" alt="03_metadata_fill_rate_heatmap.png"><div class="caption">03_metadata_fill_rate_heatmap</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/04_text_length_violin.png" loading="lazy" alt="04_text_length_violin.png"><div class="caption">04_text_length_violin</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/05_token_budget_coverage.png" loading="lazy" alt="05_token_budget_coverage.png"><div class="caption">05_token_budget_coverage</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/06_text_length_ecdf.png" loading="lazy" alt="06_text_length_ecdf.png"><div class="caption">06_text_length_ecdf</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/07_length_by_subclass.png" loading="lazy" alt="07_length_by_subclass.png"><div class="caption">07_length_by_subclass</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/08_cuad_clause_presence.png" loading="lazy" alt="08_cuad_clause_presence.png"><div class="caption">08_cuad_clause_presence</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/09_cuad_span_counts.png" loading="lazy" alt="09_cuad_span_counts.png"><div class="caption">09_cuad_span_counts</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/10_cuad_top_clauses.png" loading="lazy" alt="10_cuad_top_clauses.png"><div class="caption">10_cuad_top_clauses</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/11_cuad_cooccurrence.png" loading="lazy" alt="11_cuad_cooccurrence.png"><div class="caption">11_cuad_cooccurrence</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/12_cuad_spans_distribution.png" loading="lazy" alt="12_cuad_spans_distribution.png"><div class="caption">12_cuad_spans_distribution</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/13_maud_task_frequency.png" loading="lazy" alt="13_maud_task_frequency.png"><div class="caption">13_maud_task_frequency</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/14_maud_answer_distribution.png" loading="lazy" alt="14_maud_answer_distribution.png"><div class="caption">14_maud_answer_distribution</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/15_maud_category_coverage.png" loading="lazy" alt="15_maud_category_coverage.png"><div class="caption">15_maud_category_coverage</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/16_claim_amount_distribution.png" loading="lazy" alt="16_claim_amount_distribution.png"><div class="caption">16_claim_amount_distribution</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/17_coverage_determination.png" loading="lazy" alt="17_coverage_determination.png"><div class="caption">17_coverage_determination</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/18_claim_dates_timeline.png" loading="lazy" alt="18_claim_dates_timeline.png"><div class="caption">18_claim_dates_timeline</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/19_claim_subtype_fields.png" loading="lazy" alt="19_claim_subtype_fields.png"><div class="caption">19_claim_subtype_fields</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/20_corr_content_topic.png" loading="lazy" alt="20_corr_content_topic.png"><div class="caption">20_corr_content_topic</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/21_corr_intent.png" loading="lazy" alt="21_corr_intent.png"><div class="caption">21_corr_intent</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/22_corr_sentiment.png" loading="lazy" alt="22_corr_sentiment.png"><div class="caption">22_corr_sentiment</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/23_imbalance_treemap.png" loading="lazy" alt="23_imbalance_treemap.png"><div class="caption">23_imbalance_treemap</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/24_strata_imbalance_ratio.png" loading="lazy" alt="24_strata_imbalance_ratio.png"><div class="caption">24_strata_imbalance_ratio</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/25_minority_strata.png" loading="lazy" alt="25_minority_strata.png"><div class="caption">25_minority_strata</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/26_filing_date_timeline.png" loading="lazy" alt="26_filing_date_timeline.png"><div class="caption">26_filing_date_timeline</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/27_source_proportions.png" loading="lazy" alt="27_source_proportions.png"><div class="caption">27_source_proportions</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/28_date_span_by_type.png" loading="lazy" alt="28_date_span_by_type.png"><div class="caption">28_date_span_by_type</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/29_metadata_correlation.png" loading="lazy" alt="29_metadata_correlation.png"><div class="caption">29_metadata_correlation</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/30_metadata_cardinality.png" loading="lazy" alt="30_metadata_cardinality.png"><div class="caption">30_metadata_cardinality</div></div>
+  </div>
+</section>
+
+<section id="tables">
+  <h2>Data Tables (17)</h2>
+  <div class="tables-grid">
+    <a class="table-card" href="tables/claim_amount_stats.csv"><div class="icon">📊</div><div class="info"><div class="name">claim_amount_stats.csv</div><div class="desc">claim_amount_stats.csv</div></div></a>
+    <a class="table-card" href="tables/claim_field_coverage.csv"><div class="icon">📊</div><div class="info"><div class="name">claim_field_coverage.csv</div><div class="desc">claim_field_coverage.csv</div></div></a>
+    <a class="table-card" href="tables/correspondence_topic_intent.csv"><div class="icon">📊</div><div class="info"><div class="name">correspondence_topic_intent.csv</div><div class="desc">correspondence_topic_intent.csv</div></div></a>
+    <a class="table-card" href="tables/cuad_clause_stats.csv"><div class="icon">📊</div><div class="info"><div class="name">cuad_clause_stats.csv</div><div class="desc">cuad_clause_stats.csv</div></div></a>
+    <a class="table-card" href="tables/cuad_cooccurrence_matrix.csv"><div class="icon">📊</div><div class="info"><div class="name">cuad_cooccurrence_matrix.csv</div><div class="desc">cuad_cooccurrence_matrix.csv</div></div></a>
+    <a class="table-card" href="tables/imbalance_metrics.json"><div class="icon">📋</div><div class="info"><div class="name">imbalance_metrics.json</div><div class="desc">imbalance_metrics.json</div></div></a>
+    <a class="table-card" href="tables/integrity_report.json"><div class="icon">📋</div><div class="info"><div class="name">integrity_report.json</div><div class="desc">integrity_report.json</div></div></a>
+    <a class="table-card" href="tables/maud_task_stats.csv"><div class="icon">📊</div><div class="info"><div class="name">maud_task_stats.csv</div><div class="desc">maud_task_stats.csv</div></div></a>
+    <a class="table-card" href="tables/metadata_coverage_by_type.csv"><div class="icon">📊</div><div class="info"><div class="name">metadata_coverage_by_type.csv</div><div class="desc">metadata_coverage_by_type.csv</div></div></a>
+    <a class="table-card" href="tables/minority_strata_report.csv"><div class="icon">📊</div><div class="info"><div class="name">minority_strata_report.csv</div><div class="desc">minority_strata_report.csv</div></div></a>
+    <a class="table-card" href="tables/provenance_by_type.csv"><div class="icon">📊</div><div class="info"><div class="name">provenance_by_type.csv</div><div class="desc">provenance_by_type.csv</div></div></a>
+    <a class="table-card" href="tables/provenance_detailed.csv"><div class="icon">📊</div><div class="info"><div class="name">provenance_detailed.csv</div><div class="desc">provenance_detailed.csv</div></div></a>
+    <a class="table-card" href="tables/strata_counts.csv"><div class="icon">📊</div><div class="info"><div class="name">strata_counts.csv</div><div class="desc">strata_counts.csv</div></div></a>
+    <a class="table-card" href="tables/strata_imbalance_detailed.csv"><div class="icon">📊</div><div class="info"><div class="name">strata_imbalance_detailed.csv</div><div class="desc">strata_imbalance_detailed.csv</div></div></a>
+    <a class="table-card" href="tables/temporal_summary.csv"><div class="icon">📊</div><div class="info"><div class="name">temporal_summary.csv</div><div class="desc">temporal_summary.csv</div></div></a>
+    <a class="table-card" href="tables/text_length_stats_by_type.csv"><div class="icon">📊</div><div class="info"><div class="name">text_length_stats_by_type.csv</div><div class="desc">text_length_stats_by_type.csv</div></div></a>
+    <a class="table-card" href="tables/token_budget_coverage.csv"><div class="icon">📊</div><div class="info"><div class="name">token_budget_coverage.csv</div><div class="desc">token_budget_coverage.csv</div></div></a>
+  </div>
+</section>
+
+<section id="report">
+  <h2>Full Summary Report</h2>
+  <div class="report-md" id="report-content">Loading...</div>
+</section>
+
+</div>
+
+<footer>
+  <p>mailroom-dataset Corpus EDA &mdash; Generated by <code>run_all.py</code> (P0&ndash;P6) &mdash; <a href="https://github.com/Exios66/Mailroom-Corpus-EDA">Source</a></p>
+  <div class="sibling-links">
+    <a href="https://exios66.github.io/claims-data-eda/">Claims EDA &rarr;</a>
+    <a href="https://exios66.github.io/Enron-Evaluation-Environment/">Enron EDA &rarr;</a>
+  </div>
+</footer>
+
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <div class="close">&times;</div>
+  <img id="lightbox-img" src="" alt="">
+  <div class="caption-bar" id="lightbox-caption"></div>
+</div>
+
+<button class="scroll-top" id="scrollTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Scroll to top">&uarr;</button>
+
+<script>
+/* ── Lightbox ── */
+function openLightbox(el) {
+  const img = el.querySelector('img');
+  const cap = el.querySelector('.caption');
+  document.getElementById('lightbox-img').src = img.src;
+  document.getElementById('lightbox-caption').textContent = cap ? cap.textContent : '';
+  document.getElementById('lightbox').classList.add('active');
+}
+function closeLightbox() { document.getElementById('lightbox').classList.remove('active'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+/* ── Render markdown ── */
+function renderMd(url, elId) {
+  fetch(url).then(r => r.text()).then(md => {
+    let html = md
+      .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/^>\s?(.+)$/gm, '<blockquote>$1</blockquote>')
+      .replace(/<\/blockquote>\s*<blockquote>/g, '<br>')
+      .replace(/\|(.+)\|/g, (m) => {
+        const cells = m.split('|').filter(c => c.trim());
+        if (cells.every(c => /^[\s\-:]+$/.test(c))) return '';
+        return '<tr>' + cells.map(c => `<td>${c.trim()}</td>`).join('') + '</tr>';
+      })
+      .replace(/(<tr>[\s\S]*?<\/tr>)/g, '<table>$1</table>')
+      .replace(/<\/table>\s*<table>/g, '')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/(<li>[\s\S]*?<\/li>)/g, (m) => { return m.includes('</ul>') ? m : '<ul>' + m + '</ul>'; })
+      .replace(/<\/ul>\s*<ul>/g, '')
+      .replace(/\n{2,}/g, '</p><p>')
+      .replace(/\n/g, '<br>');
+    document.getElementById(elId).innerHTML = '<p>' + html + '</p>';
+  }).catch(() => {
+    document.getElementById(elId).innerHTML = '<p><a href="' + url + '">View raw markdown</a></p>';
+  });
+}
+renderMd('SUMMARY_REPORT.md', 'report-content');
+
+/* ── Smooth scroll ── */
+document.querySelectorAll('.nav a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) target.scrollIntoView({ behavior:'smooth', block:'start' });
+  });
+});
+
+/* ── Scroll spy ── */
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('.nav a[href^="#"]');
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      navLinks.forEach(l => l.classList.remove('active'));
+      const active = document.querySelector(`.nav a[href="#${entry.target.id}"]`);
+      if (active) active.classList.add('active');
+    }
+  });
+}, { rootMargin: '-20% 0px -70% 0px' });
+sections.forEach(s => observer.observe(s));
+
+/* ── Scroll to top ── */
+const scrollBtn = document.getElementById('scrollTop');
+window.addEventListener('scroll', () => {
+  scrollBtn.classList.toggle('visible', window.scrollY > 400);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+doc_type,min,max,median,count
+contract,2002,2026,2015.0,91
+corporate_record,2001,2026,2012.0,450
+correspondence,1997,2002,2001.0,1000
+insurance_claim,2008,2026,2009.0,947
