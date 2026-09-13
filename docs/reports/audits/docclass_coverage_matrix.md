@@ -14,7 +14,7 @@ Generated from the local pinned snapshot — 3302 rows, 5 classes, 55 class × s
 
 ## Field coverage per specialist (§41)
 
-Coverage is reported over **eligible rows only** (populated / eligible). Unpopulated cells are classified `schema_documented_absence` — the v8_build/v9 conformance law says the field is empty on this row (e.g. `adjuster` on CMS/GNOTHEIA/INSURBIAS rows, `denial_reasons` on non-denied claims) — or `genuine_gap` — the field should be populated but is not (e.g. `cuad_clause_labels` on the 91 EDGAR EX-10 contracts, the 150 INSURBIAS rows shipping no `supporting_documents`). Documented absences are tallied but never counted as gaps (issue #28).
+Coverage is reported over **eligible rows only** (populated / eligible). Unpopulated cells are classified `schema_documented_absence` — the v8_build/v9 conformance law says the field is empty on this row (e.g. `adjuster` on CMS/GNOTHEIA/INSURBIAS rows, `denial_reasons` on non-denied claims, `supporting_documents` on the 6 INSURBIAS bare-accident narratives that reference no supporting-document feature — issue #29) — or `genuine_gap` — the field should be populated but is not (e.g. `cuad_clause_labels` on the 91 EDGAR EX-10 contracts). Documented absences are tallied but never counted as gaps (issue #28).
 
 ### `contract` (600 rows, `contracts_specialist`)
 
@@ -59,7 +59,7 @@ Coverage is reported over **eligible rows only** (populated / eligible). Unpopul
 | `keywords` | 1100 | 1100 | 0 | 0 | 100% |
 | `policy_number` | 1100 | 1100 | 0 | 0 | 100% |
 | `subject_matter` | 1100 | 1100 | 0 | 0 | 100% |
-| `supporting_documents` | 950 | 1100 | 0 | 150 | 86% |
+| `supporting_documents` | 1094 | 1094 | 6 | 0 | 100% |
 
 ### `merger_agreement` (152 rows, `contracts_specialist`)
 
@@ -73,6 +73,7 @@ Rows classified `schema_documented_absence` are **not coverage gaps**: the confo
 
 - **`insurance_claim.adjuster`** — 950 rows classified documented-absence; 0 populated rows match the absence predicate (0 = conformance-clean). v8_build.py ALLOWED_EMPTY = {'adjuster'} + module docstring ('' only where the schema documents absence, e.g. adjuster on property/CMS rows); v9_build.py ALLOWED_EMPTY['insurance_claim'] = {'adjuster'}; conform_rows: 'the only documented scalar allowance is insurance_claim.adjuster (source-absent on CMS / GNOTHEIA / INSURBIAS)' — only the BDR auto rows carry adjuster pseudonyms (v8_build.py _auto_row: _pseudo_adjuster(claim_id)).
 - **`insurance_claim.denial_reasons`** — 1064 rows classified documented-absence; 0 populated rows match the absence predicate (0 = conformance-clean). v8_build.py _auto_row: reasons = _auto_denial_reasons(r) if determination == 'denied' else [] — denial reasons exist only on denied claims; non-denied rows ship '[]' (a complete no-items answer per v9_build.py LIST_GT_FIELDS: 'a valid JSON array is the COMPLETE answer — [] means no items (honest), never a missing value').
+- **`insurance_claim.supporting_documents`** — 6 rows classified documented-absence; 0 populated rows match the absence predicate (0 = conformance-clean). v9_build.py complete_gt_fields + _insurbias_supporting_documents / _insurbias_supporting_doc_absent (issue #29): the INSURBIAS draw rows ship claim narratives only, so supporting_documents is derived deterministically from each narrative's referenced features — repair estimate on any vehicle-damage / repair assertion (the v8 BDR auto precedent, v8_build.py _auto_row 'supporting = ["repair estimate"]'), plus police report (authorities/police referenced), damage photos (image referenced), medical records (injury asserted, negation-aware), fire report (fire department called). Rows whose narrative references NO such feature (bare accident reports — 6/150 on the v9 draw) keep '[]', a documented absence per LIST_GT_FIELDS ('a valid JSON array is the COMPLETE answer — [] means no items (honest), never a missing value').
 
 ## Scenario columns (§40)
 

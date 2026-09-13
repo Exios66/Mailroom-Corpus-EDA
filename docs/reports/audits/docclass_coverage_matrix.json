@@ -136,7 +136,7 @@
         "damages_description": 1100,
         "coverage_determination": 1100,
         "denial_reasons": 36,
-        "supporting_documents": 950,
+        "supporting_documents": 1094,
         "intent": 1100,
         "subject_matter": 1100,
         "keywords": 1100
@@ -227,11 +227,11 @@
           "coverage_pct": 100
         },
         "supporting_documents": {
-          "populated": 950,
-          "eligible": 1100,
-          "documented_absence": 0,
-          "genuine_gap": 150,
-          "coverage_pct": 86
+          "populated": 1094,
+          "eligible": 1094,
+          "documented_absence": 6,
+          "genuine_gap": 0,
+          "coverage_pct": 100
         },
         "intent": {
           "populated": 1100,
@@ -570,8 +570,13 @@
       "rule": "v8_build.py _auto_row: reasons = _auto_denial_reasons(r) if determination == 'denied' else [] \u2014 denial reasons exist only on denied claims; non-denied rows ship '[]' (a complete no-items answer per v9_build.py LIST_GT_FIELDS: 'a valid JSON array is the COMPLETE answer \u2014 [] means no items (honest), never a missing value').",
       "documented_absence": 1064,
       "populated_matching_absence_predicate": 0
+    },
+    "insurance_claim.supporting_documents": {
+      "rule": "v9_build.py complete_gt_fields + _insurbias_supporting_documents / _insurbias_supporting_doc_absent (issue #29): the INSURBIAS draw rows ship claim narratives only, so supporting_documents is derived deterministically from each narrative's referenced features \u2014 repair estimate on any vehicle-damage / repair assertion (the v8 BDR auto precedent, v8_build.py _auto_row 'supporting = [\"repair estimate\"]'), plus police report (authorities/police referenced), damage photos (image referenced), medical records (injury asserted, negation-aware), fire report (fire department called). Rows whose narrative references NO such feature (bare accident reports \u2014 6/150 on the v9 draw) keep '[]', a documented absence per LIST_GT_FIELDS ('a valid JSON array is the COMPLETE answer \u2014 [] means no items (honest), never a missing value').",
+      "documented_absence": 6,
+      "populated_matching_absence_predicate": 0
     }
   },
-  "coverage_basis_note": "\u00a741 coverage is reported over ELIGIBLE rows only (populated / eligible). Unpopulated cells are classified schema_documented_absence \u2014 the v8_build/v9 conformance law says the field is empty on this row (e.g. adjuster on CMS/GNOTHEIA/INSURBIAS rows, denial_reasons on non-denied claims) \u2014 or genuine_gap \u2014 the field should be populated but is not (e.g. cuad_clause_labels on the 91 EDGAR EX-10 contracts, the 150 INSURBIAS rows shipping no supporting_documents). Documented absences are tallied in absence_classification / absence_rules but never counted as gaps (issue #28, epic #27).",
+  "coverage_basis_note": "\u00a741 coverage is reported over ELIGIBLE rows only (populated / eligible). Unpopulated cells are classified schema_documented_absence \u2014 the v8_build/v9 conformance law says the field is empty on this row (e.g. adjuster on CMS/GNOTHEIA/INSURBIAS rows, denial_reasons on non-denied claims, supporting_documents on the 6 INSURBIAS bare-accident narratives that reference no supporting-document feature \u2014 issue #29) \u2014 or genuine_gap \u2014 the field should be populated but is not (e.g. cuad_clause_labels on the 91 EDGAR EX-10 contracts). Documented absences are tallied in absence_classification / absence_rules but never counted as gaps (issue #28, epic #27).",
   "scenario_columns_note": "tested/regression/challenge/multi-document are \u00a740 template columns at zero: the sandbox/pilot fixtures (P1) and the matter/grouping (P2) + recovery (P3) families fill them at their phases \u2014 the corpus does not overstate coverage (\u00a714A/\u00a753)."
 }

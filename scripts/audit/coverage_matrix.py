@@ -43,6 +43,10 @@ from _bootstrap import ROOT  # noqa: E402
 
 from mailroom_eda.config import PARQUET_DIR  # noqa: E402
 from mailroom_eda.eval_contract import SOURCE_BY_CLASS, specialist_registry  # noqa: E402
+from mailroom_eda.v9_build import (  # noqa: E402
+    INSURBIAS_SOURCE,
+    _insurbias_supporting_doc_absent,
+)
 
 
 def _audits_dir() -> Path:
@@ -121,6 +125,43 @@ ABSENCE_RULES: dict[tuple[str, str], dict[str, Any]] = {
             str(r.get("coverage_determination") or "").strip().lower() != "denied"
         ),
     },
+    # issue #29 (epic #27): the v9 INSURBIAS draw (feihuangfh/INSURBIAS) ships
+    # claim narratives only; supporting_documents is derived from each
+    # narrative's referenced features (v9_build.complete_gt_fields →
+    # _insurbias_supporting_documents: repair estimate on vehicle-damage /
+    # repair assertions — the v8 BDR auto precedent v8_build.py _auto_row —
+    # plus police report / damage photos / medical records / fire report on
+    # explicit feature matches). A row is a documented absence ONLY when its
+    # narrative references NO supporting-document feature (bare accident
+    # report — v9_build._insurbias_supporting_doc_absent; 6/150 on the v9
+    # draw): no damage, no repair need, no police/authorities, no image, no
+    # injury, no towing, no witness, no fire department. "[]" is a complete
+    # no-items answer per LIST_GT_FIELDS. The predicate mirrors the build's
+    # and reuses it so audit and build can never drift apart.
+    ("insurance_claim", "supporting_documents"): {
+        "rule": (
+            "v9_build.py complete_gt_fields + _insurbias_supporting_"
+            "documents / _insurbias_supporting_doc_absent (issue #29): the "
+            "INSURBIAS draw rows ship claim narratives only, so "
+            "supporting_documents is derived deterministically from each "
+            "narrative's referenced features — repair estimate on any "
+            "vehicle-damage / repair assertion (the v8 BDR auto precedent, "
+            "v8_build.py _auto_row 'supporting = [\"repair estimate\"]'), "
+            "plus police report (authorities/police referenced), damage "
+            "photos (image referenced), medical records (injury asserted, "
+            "negation-aware), fire report (fire department called). Rows "
+            "whose narrative references NO such feature (bare accident "
+            "reports — 6/150 on the v9 draw) keep '[]', a documented absence "
+            "per LIST_GT_FIELDS ('a valid JSON array is the COMPLETE answer "
+            "— [] means no items (honest), never a missing value')."
+        ),
+        # absent only on INSURBIAS rows whose narrative grounds no document
+        "is_documented_absence": lambda r: (
+            str((r.get("metadata") or {}).get("source_dataset") or "")
+            == INSURBIAS_SOURCE
+            and _insurbias_supporting_doc_absent(str(r.get("doc_text") or ""))
+        ),
+    },
 }
 
 
@@ -179,7 +220,12 @@ def load_rows() -> list[dict]:
     if not blind.empty:
         # metadata (source_dataset & co.) lives in the blind config — join it
         # so the absence rules can key on the actual source (issue #28).
-        df = df.merge(blind[["filename", "metadata"]], on="filename", how="left")
+        # doc_text rides the same join: the insurance_claim.supporting_documents
+        # absence rule (issue #29) inspects the INSURBIAS narrative to decide
+        # whether a row is a documented absence (bare accident report).
+        df = df.merge(
+            blind[["filename", "doc_text", "metadata"]], on="filename", how="left"
+        )
     return df.to_dict("records")
 
 
@@ -283,10 +329,11 @@ def build(rows: list[dict]) -> dict:
             "eligible). Unpopulated cells are classified "
             "schema_documented_absence — the v8_build/v9 conformance law says "
             "the field is empty on this row (e.g. adjuster on CMS/GNOTHEIA/"
-            "INSURBIAS rows, denial_reasons on non-denied claims) — or "
+            "INSURBIAS rows, denial_reasons on non-denied claims, "
+            "supporting_documents on the 6 INSURBIAS bare-accident narratives "
+            "that reference no supporting-document feature — issue #29) — or "
             "genuine_gap — the field should be populated but is not (e.g. "
-            "cuad_clause_labels on the 91 EDGAR EX-10 contracts, the 150 "
-            "INSURBIAS rows shipping no supporting_documents). Documented "
+            "cuad_clause_labels on the 91 EDGAR EX-10 contracts). Documented "
             "absences are tallied in absence_classification / absence_rules "
             "but never counted as gaps (issue #28, epic #27)."
         ),
@@ -323,10 +370,11 @@ def render_md(coverage: dict) -> str:
         "eligible). Unpopulated cells are classified "
         "`schema_documented_absence` — the v8_build/v9 conformance law says "
         "the field is empty on this row (e.g. `adjuster` on CMS/GNOTHEIA/"
-        "INSURBIAS rows, `denial_reasons` on non-denied claims) — or "
+        "INSURBIAS rows, `denial_reasons` on non-denied claims, "
+        "`supporting_documents` on the 6 INSURBIAS bare-accident narratives "
+        "that reference no supporting-document feature — issue #29) — or "
         "`genuine_gap` — the field should be populated but is not (e.g. "
-        "`cuad_clause_labels` on the 91 EDGAR EX-10 contracts, the 150 "
-        "INSURBIAS rows shipping no `supporting_documents`). Documented "
+        "`cuad_clause_labels` on the 91 EDGAR EX-10 contracts). Documented "
         "absences are tallied but never counted as gaps (issue #28).",
         "",
     ]

@@ -8,7 +8,7 @@ is high-priority when it attacks a zero-coverage GT field or an all-zero
 scenario axis for a load-bearing class.
 
 
-Corpus: 3302 rows; median class size 600 rows. Priorities: high 3, medium 3, low 3.
+Corpus: 3302 rows; median class size 600 rows. Priorities: high 3, medium 2, low 4.
 
 ## [HIGH] Adversarial/ambiguous cases (§89; §30, §68)
 
@@ -29,12 +29,6 @@ Evidence: zero scenario axes: merger_agreement.tested, merger_agreement.regressi
 600 rows across 26 strata (509 CUAD-v1 + 91 EDGAR EX-10) is the deepest subclass spread in the corpus; growth here is refinement, not gap-closing — valuable for routing confusion matrices, not blocking.
 
 Evidence: partial fields: contract.cuad_clause_labels 509/600 — zero scenario axes: contract.tested, contract.regression, contract.challenge, contract.multi_document.
-
-## [MEDIUM] Insurance workflow documents (§89: insurance workflow)
-
-Largest class (1,100 rows). Issue #28 absence classification closed the by-design rows: adjuster is 100% over eligible (150/150 — the only rows that should carry an adjuster are the 150 BDR auto rows; CMS/GNOTHEIA/INSURBIAS absence is schema-documented) and denial_reasons is 100% over eligible (36/36 denied claims; non-denied absence is schema-documented). The open surface is supporting_documents at 86% (950/1,100) — the 150 INSURBIAS narrative rows ship no supporting docs (genuine gap, covered by no documented rule) — the workflow field that distinguishes a claim decision from a claim intake.
-
-Evidence: partial fields: insurance_claim.supporting_documents 950/1100 — zero scenario axes: insurance_claim.tested, insurance_claim.regression, insurance_claim.challenge, insurance_claim.multi_document.
 
 ## [MEDIUM] Legal document families (§89: legal document families)
 
@@ -57,3 +51,9 @@ Evidence: zero scenario axes: correspondence.tested, correspondence.regression, 
 ## [LOW] Format diversity (§89: format diversity; §58 ingestion)
 
 The P3 ingestion failure stage needs genuinely unreadable/non-text sources (scans, broken encodings) that the current text-native corpus cannot supply; valuable once P3 fixtures graduate to the published suite — sequencing, not a corpus-gap judgment (explicit override, the only one in this backlog).
+
+## [LOW] Insurance workflow documents (§89: insurance workflow)
+
+Largest class (1,100 rows) and now fully covered over eligible rows. Issue #28 absence classification closed the by-design rows: adjuster is 100% over eligible (150/150 — the only rows that should carry an adjuster are the 150 BDR auto rows; CMS/GNOTHEIA/INSURBIAS absence is schema-documented), denial_reasons is 100% over eligible (36/36 denied claims; non-denied absence is schema-documented), and supporting_documents is 100% over eligible (issue #29: the 150 INSURBIAS narrative rows now carry feature-grounded supporting_documents derived from each narrative; the 6 rows whose narrative references no supporting-document feature are a documented absence per v9_build._insurbias_supporting_doc_absent). The insurance_workflow surface that distinguishes a claim decision from a claim intake is no longer dark — growth here would target decision/adjudication depth (denied-claim breadth), not gap-closing.
+
+Evidence: zero scenario axes: insurance_claim.tested, insurance_claim.regression, insurance_claim.challenge, insurance_claim.multi_document.

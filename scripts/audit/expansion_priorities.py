@@ -118,16 +118,22 @@ EXPANSION_FAMILIES: tuple[dict[str, Any], ...] = (
         "title": "Insurance workflow documents (§89: insurance workflow)",
         "classes": ("insurance_claim",),
         "rationale": (
-            "Largest class (1,100 rows). Issue #28 absence classification "
-            "closed the by-design rows: adjuster is 100% over eligible "
-            "(150/150 — the only rows that should carry an adjuster are the "
-            "150 BDR auto rows; CMS/GNOTHEIA/INSURBIAS absence is "
-            "schema-documented) and denial_reasons is 100% over eligible "
-            "(36/36 denied claims; non-denied absence is schema-documented). "
-            "The open surface is supporting_documents at 86% (950/1,100) — "
-            "the 150 INSURBIAS narrative rows ship no supporting docs "
-            "(genuine gap, covered by no documented rule) — the workflow "
-            "field that distinguishes a claim decision from a claim intake."
+            "Largest class (1,100 rows) and now fully covered over eligible "
+            "rows. Issue #28 absence classification closed the by-design "
+            "rows: adjuster is 100% over eligible (150/150 — the only rows "
+            "that should carry an adjuster are the 150 BDR auto rows; "
+            "CMS/GNOTHEIA/INSURBIAS absence is schema-documented), "
+            "denial_reasons is 100% over eligible (36/36 denied claims; "
+            "non-denied absence is schema-documented), and "
+            "supporting_documents is 100% over eligible (issue #29: the 150 "
+            "INSURBIAS narrative rows now carry feature-grounded "
+            "supporting_documents derived from each narrative; the 6 rows "
+            "whose narrative references no supporting-document feature are a "
+            "documented absence per v9_build._insurbias_supporting_doc_absent). "
+            "The insurance_workflow surface that distinguishes a claim "
+            "decision from a claim intake is no longer dark — growth here "
+            "would target decision/adjudication depth (denied-claim breadth), "
+            "not gap-closing."
         ),
     },
     {
