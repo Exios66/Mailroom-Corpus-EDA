@@ -8,9 +8,24 @@ from pathlib import Path
 import pandas as pd
 from huggingface_hub import snapshot_download
 
-from .config import DATA_DIR, JSONL_PATH, MANIFEST_PATH, PARQUET_DIR, REPO_ID
+from .config import (
+    DATA_DIR,
+    JSONL_PATH,
+    MANIFEST_PATH,
+    PARQUET_DIR,
+    REPO_ID,
+    REPO_REVISION,
+)
 
-ALLOW_PATTERNS = ["parquet/*", "manifest.txt", "docclass_merged.jsonl", "README.md"]
+# v9 repo tree: parquet configs (default/ground_truth/bundles/streams/fixtures)
+# + manifest + the hardened GT sidecar. The legacy `docclass_merged.jsonl` no
+# longer ships; sidecar JSONLs (bundles/streams/fixtures) are staged-only.
+ALLOW_PATTERNS = [
+    "parquet/*",
+    "manifest.txt",
+    "ground_truth_hardened.jsonl",
+    "README.md",
+]
 
 
 def download_corpus(force: bool = False) -> Path:
@@ -21,6 +36,7 @@ def download_corpus(force: bool = False) -> Path:
     snapshot_download(
         repo_id=REPO_ID,
         repo_type="dataset",
+        revision=REPO_REVISION,
         local_dir=DATA_DIR,
         allow_patterns=ALLOW_PATTERNS,
     )
@@ -61,7 +77,27 @@ def _load_config(cfg: str) -> pd.DataFrame:
                 df = df.assign(split=split)  # default config: split implicit in directory
             frames.append(df)
     df = pd.concat(frames, ignore_index=True)
+    if cfg == "ground_truth" and "gt_fields" in df.columns:
+        # v9 schema: all label/annotation fields live inside the `gt_fields`
+        # JSON column (uniform 29-key set — the §84 complete-GT pass). Expand
+        # them to top-level columns so consumers keep the flat v8-era schema.
+        df = _expand_gt_fields(df)
     return df
+
+
+def _expand_gt_fields(df: pd.DataFrame) -> pd.DataFrame:
+    """Promote the v9 `gt_fields` JSON column to top-level GT columns.
+
+    Values are kept as native JSON (strings stay strings; nested label maps
+    stay JSON-encoded strings, which the consumers' `_parse_labels()` handles).
+    """
+    parsed = df["gt_fields"].apply(
+        lambda v: json.loads(v)
+        if isinstance(v, str) and v.strip()
+        else (v if isinstance(v, dict) else {})
+    )
+    expanded = pd.DataFrame(parsed.tolist(), index=df.index)
+    return pd.concat([df, expanded], axis=1)
 
 
 def load_jsonl() -> pd.DataFrame:
@@ -78,7 +114,8 @@ def validate_against_manifest() -> dict:
     """Compare on-disk reality to manifest claims. Returns a report dict."""
     man = parse_manifest()
     report: dict = {"manifest": man}
-    m_total = re.search(r"(\d+)", man.get("rows_total", ""))
+    # v8 manifests used `rows_total`; v9 uses `rows` — accept either.
+    m_total = re.search(r"(\d+)", man.get("rows_total", "") or man.get("rows", ""))
     report["manifest_rows_total"] = int(m_total.group(1)) if m_total else None
 
     blind = load_default()

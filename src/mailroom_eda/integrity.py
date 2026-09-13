@@ -57,7 +57,10 @@ def audit_split_rule(blind: pd.DataFrame, gt: pd.DataFrame) -> dict:
         "rule": "md5(record_id) % 10 (source placement)",
         "checked": checked,
         "rows_moved_by_family_rule": moved,
-        "manifest_claim": "65/400 moved",
+        # v9 note: the family split rule (md5(filename)) is authoritative; this
+        # counter records how many claims landed in a different split than their
+        # source record_id placement would imply (informational, not an error).
+        "manifest_claim": f"{moved}/{checked} rows differ from source placement",
     }
     return out
 

@@ -2,7 +2,7 @@
 
 # 📁 Corpus EDA Reports
 
-**Exploratory Data Analysis reports for the mailroom-corpus-eda package.**
+**Exploratory Data Analysis reports for the mailroom-dataset (v1 / corpus v9) — `Lucius-Morningstar/mailroom-dataset`, 3,302 rows.**
 
 </div>
 

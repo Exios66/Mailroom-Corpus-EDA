@@ -9,7 +9,7 @@ from pathlib import Path
 from collections import Counter
 from typing import Any
 
-from .config import DOC_TYPES, REPO_ID
+from .config import DOC_TYPES, V8_REPO_ID
 from .dataset_export import (
     normalize_metadata_rows,
     stage_parquet,
@@ -117,7 +117,7 @@ def render_card_v6(rows: list[dict], append_stats: dict, file_stats: dict) -> st
 
     import subprocess
     r = subprocess.run(
-        ["curl", "-sL", "--max-time", "60", f"https://huggingface.co/datasets/{REPO_ID}/raw/main/README.md"],
+        ["curl", "-sL", "--max-time", "60", f"https://huggingface.co/datasets/{V8_REPO_ID}/raw/main/README.md"],
         capture_output=True, text=True, timeout=90)
     card = r.stdout
     if not card.startswith("---"):
@@ -374,7 +374,7 @@ def publish_docclass(
     if publish:
         api = get_hf_api()
         revision = f"rev2 (+{append_stats['ins_n']} insurance)" if ins_n(rows) else "rev1 (correspondence + original files)"
-        upload_folder(api, stage_dir, REPO_ID, commit_message or f"issue #5: schema v7 intent hydration — {len(rows)} rows")
-        return {"status": "published", "repo": f"https://huggingface.co/datasets/{REPO_ID}"}
+        upload_folder(api, stage_dir, V8_REPO_ID, commit_message or f"issue #5: schema v7 intent hydration — {len(rows)} rows")
+        return {"status": "published", "repo": f"https://huggingface.co/datasets/{V8_REPO_ID}"}
 
     return {"status": "staged", "stage_dir": str(stage_dir), "counts": counts}

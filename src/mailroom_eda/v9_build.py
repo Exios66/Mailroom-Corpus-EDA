@@ -49,7 +49,7 @@ if str(ROOT / "scripts") not in sys.path:
 
 from mailroom_eda import identity  # noqa: E402
 from mailroom_eda import eval_contract as ec  # noqa: E402
-from mailroom_eda.config import DATA_DIR, REPO_ID  # noqa: E402
+from mailroom_eda.config import DATA_DIR, V8_REPO_ID  # noqa: E402
 from mailroom_eda.dataset_export import (  # noqa: E402
     assign_split,
     normalize_metadata_rows,
@@ -680,7 +680,7 @@ def build_manifest_v9(rows: list[dict], counts: dict, draw_counts: dict,
         "\n".join([
             f"name       : {V9_REPO_ID}",
             f"version    : {V9_VERSION} (canonically v9 of the mailroom corpus family)",
-            f"parent     : {REPO_ID} (frozen v8 baseline, 2,000 rows)",
+            f"parent     : {V8_REPO_ID} (frozen v8 baseline, 2,000 rows)",
             f"rows       : {len(rows)} (train {split_c.get('train', 0)}, test {split_c.get('test', 0)})",
             f"composition: " + ", ".join(f"{c} {n}" for c, n in sorted(comp.items())),
             f"draws      : " + ", ".join(f"{c} +{n}" for c, n in sorted(draw_counts.items())),

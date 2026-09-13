@@ -246,7 +246,7 @@ def fig_cuad_top_clauses(gt: pd.DataFrame) -> None:
     for i, v in enumerate(coverage.values):
         ax.text(100 * v + 0.6, i, f"{100*v:.0f}%", va="center", fontsize=8)
     ax.set_xlabel("% of contracts containing clause")
-    ax.set_title("Top 20 CUAD clauses by contract coverage (n=509)")
+    ax.set_title(f"Top 20 CUAD clauses by contract coverage (n={len(mat)})")
     fig.tight_layout()
     fig.savefig(FIG_DIR / "10_cuad_top_clauses.png")
     plt.close(fig)
@@ -344,12 +344,13 @@ def fig_maud_task_frequency(gt: pd.DataFrame) -> None:
     import matplotlib.pyplot as plt
 
     mf = _maud_frame(gt)
+    n_agreements = int(mf["filename"].nunique())
     counts = mf.groupby("task")["filename"].nunique().sort_values()
     fig, ax = plt.subplots(figsize=(9, 8))
     ax.barh(counts.index, counts.values, color="#55A868")
     for i, v in enumerate(counts.values):
         ax.text(v + 0.8, i, str(v), va="center", fontsize=8)
-    ax.set_xlabel("merger agreements containing task (n=152)")
+    ax.set_xlabel(f"merger agreements containing task (n={n_agreements})")
     ax.set_title("MAUD task frequency across merger agreements")
     fig.tight_layout()
     fig.savefig(FIG_DIR / "13_maud_task_frequency.png")
@@ -381,8 +382,9 @@ def fig_maud_category_coverage(gt: pd.DataFrame) -> None:
     import matplotlib.pyplot as plt
 
     mf = _maud_frame(gt)
+    n_agreements = int(mf["filename"].nunique())
     cats = sorted(mf["category"].unique())
-    task_cov = mf.groupby("task")["filename"].nunique() / 152
+    task_cov = mf.groupby("task")["filename"].nunique() / n_agreements
     data = {}
     for cat in cats:
         tasks = mf[mf["category"] == cat]["task"].unique()
@@ -397,7 +399,7 @@ def fig_maud_category_coverage(gt: pd.DataFrame) -> None:
         ax.set_yticks([])
         ax.set_ylim(0, 1.05)
         ax.tick_params(labelsize=7)
-    axes[0].set_title("MAUD task coverage by category (share of 152 agreements)")
+    axes[0].set_title(f"MAUD task coverage by category (share of {n_agreements} agreements)")
     axes[-1].set_xlabel("tasks within category")
     fig.tight_layout()
     fig.savefig(FIG_DIR / "15_maud_category_coverage.png")
@@ -797,7 +799,7 @@ def fig_metadata_cardinality(meta: pd.DataFrame) -> None:
     ax.barh(card.index, card.values, color="#55A868")
     ax.set_xscale("log")
     ax.set_xlabel("unique values (log)")
-    ax.set_title("Metadata field cardinality (43 keys)")
+    ax.set_title(f"Metadata field cardinality ({len(card)} keys)")
     fig.tight_layout()
     fig.savefig(FIG_DIR / "30_metadata_cardinality.png")
     plt.close(fig)
@@ -812,9 +814,12 @@ def save_eda_tables(blind: pd.DataFrame, gt: pd.DataFrame, meta: pd.DataFrame) -
     TABLE_DIR.mkdir(parents=True, exist_ok=True)
     df = _text_frame(blind, gt)
 
-    # Text stats
+    # Text stats (real doc_text — the tokens/chars must describe the corpus,
+    # not zero-fill; rows are aligned to `blind` by filename)
+    text_by_fn = blind.set_index("filename")["doc_text"]
     text_stats = compute_token_stats(
-        [{"expected": r.doc_type, "doc_text": ""} for r in df.itertuples()], by_type=True
+        [{"expected": r.doc_type, "doc_text": text_by_fn[r.filename]} for r in df.itertuples()],
+        by_type=True,
     )
     text_stats.to_csv(TABLE_DIR / "text_length_stats_by_type.csv", index=False)
 
@@ -974,7 +979,10 @@ def run(save: bool = True) -> dict:
     fig_metadata_cardinality(meta)
 
     tables = save_eda_tables(blind, gt, meta) if save else {}
-    return {"figures": 30, "tables": tables}
+    # Count what was actually written (figures may legitimately be skipped
+    # when a class/corpus subset is empty — never hard-wire the count).
+    n_figs = len(list(FIG_DIR.glob("*.png"))) if save else 30
+    return {"figures": n_figs, "tables": tables}
 
 
 if __name__ == "__main__":

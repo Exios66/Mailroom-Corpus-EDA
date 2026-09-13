@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Interactive EDA dashboard for the docclass-merged corpus — 1,650 legal documents across 5 classes, 48 strata.">
-<meta property="og:title" content="docclass-merged Corpus — EDA Dashboard">
+<meta name="description" content="Interactive EDA dashboard for the mailroom-dataset (v1 / corpus v9) — 3,302 legal documents across 5 classes, 55 strata.">
+<meta property="og:title" content="mailroom-dataset Corpus — EDA Dashboard">
 <meta property="og:description" content="Interactive exploration of the canonical legal-document corpus powering the LLM-Mailroom evaluation pipeline.">
 <meta property="og:type" content="website">
-<title>docclass-merged Corpus — EDA Dashboard</title>
+<title>mailroom-dataset Corpus — EDA Dashboard</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
 <style>
   :root {
@@ -141,13 +141,13 @@
 
 <div class="hero">
   <div class="hero-inner">
-    <h1>docclass-merged Corpus</h1>
-    <div class="sub">EDA Dashboard &mdash; Generated <code>2026-08-31</code> &middot; Pipeline <code>run_all.py</code> (P0&ndash;P6) &middot; Data <code>Lucius-Morningstar/docclass-merged</code> v7</div>
+    <h1>mailroom-dataset Corpus</h1>
+    <div class="sub">EDA Dashboard &mdash; Generated <code>2026-09-13</code> &middot; Pipeline <code>run_all.py</code> (P0&ndash;P6) &middot; Data <code>Lucius-Morningstar/mailroom-dataset</code> v1 (corpus v9)</div>
     <div class="stats">
-      <div class="stat"><div class="num">1,650</div><div class="label">Documents</div></div>
+      <div class="stat"><div class="num">3,302</div><div class="label">Documents</div></div>
       <div class="stat"><div class="num">5</div><div class="label">Doc Types</div></div>
-      <div class="stat"><div class="num">48</div><div class="label">Strata</div></div>
-      <div class="stat"><div class="num">15.4&times;</div><div class="label">Imbalance Ratio</div></div>
+      <div class="stat"><div class="num">55</div><div class="label">Strata</div></div>
+      <div class="stat"><div class="num">7.2×</div><div class="label">Imbalance Ratio</div></div>
       <div class="stat"><div class="num">13,753</div><div class="label">CUAD Spans</div></div>
       <div class="stat"><div class="num">100%</div><div class="label">Offset Match</div></div>
     </div>
@@ -173,29 +173,28 @@
 <section id="overview">
   <h2>Corpus Composition</h2>
   <div class="class-bar">
-    <div class="insurance" style="width:36.4%">36.4%</div>
-    <div class="contract" style="width:30.8%">30.8%</div>
-    <div class="correspondence" style="width:21.2%">21.2%</div>
-    <div class="merger" style="width:9.2%">9.2%</div>
-    <div class="corporate" style="width:2.4%"></div>
+    <div class="insurance_claim" style="width:33.3%">33.3%</div>
+    <div class="contract" style="width:18.2%">18.2%</div>
+    <div class="correspondence" style="width:30.3%">30.3%</div>
+    <div class="merger_agreement" style="width:4.6%">4.6%</div>
+    <div class="corporate_record" style="width:13.6%">13.6%</div>
   </div>
   <div class="legend">
-    <span class="l-ins">insurance_claim &mdash; 600</span>
-    <span class="l-con">contract &mdash; 509</span>
-    <span class="l-corr">correspondence &mdash; 350</span>
-    <span class="l-mrg">merger_agreement &mdash; 152</span>
-    <span class="l-lorp">corporate_record &mdash; 39</span>
+    <span class="l-ins">insurance_claim &mdash; 1,100</span>
+    <span class="l-con">contract &mdash; 600</span>
+    <span class="l-cor">correspondence &mdash; 1,000</span>
+    <span class="l-mer">merger_agreement &mdash; 152</span>
+    <span class="l-cor">corporate_record &mdash; 450</span>
   </div>
   <div class="findings">
     <h3>Key Findings</h3>
     <ul>
-      <li>Merger agreements are longest: mean ~356k chars &asymp; 89k tokens &mdash; <strong>exceeds 32k/65k contexts</strong></li>
-      <li>Insurance claims uniformly short: ~1,200 chars, &sigma;=186</li>
-      <li>Token budget: 65% &le;4k, 82% &le;16k, 88% &le;32k, 99.7% &le;131k</li>
-      <li>CUAD: 509 contracts &times; 41 clause types; 13,753 spans, 100% exact offset</li>
-      <li>MAUD: 152 agreements &times; 22 tasks; 3 tasks annotated on every agreement</li>
-      <li>Insurance: 9/13 fields 100% filled; coverage determination fully populated</li>
-      <li>Correspondence: intent 100% hydrated (issue #5); sentiment-labeled subset</li>
+      <li>Token budget: 77% ≤4k; 90% ≤16k; 93% ≤32k; 100% ≤128k</li>
+      <li>CUAD: 509 contracts × 41 clause types; 13,753 spans, 100% exact offset</li>
+      <li>MAUD: 152 agreements × 22 tasks</li>
+      <li>Insurance: 13/13 fields 100% filled; coverage determination fully populated</li>
+      <li>Correspondence: intent 100% hydrated (1000 rows; aeslc_join 162; heuristic 105; llm_zero_shot 637; manual 96)</li>
+      <li>Split: train 2,979 / test 323 (9.8%)</li>
     </ul>
   </div>
 </section>
@@ -203,82 +202,83 @@
 <section id="interactive">
   <h2>Interactive Charts</h2>
   <div class="interactive-grid">
-    <div class="interactive-card"><iframe src="figures_interactive/04_text_length_violin.html" loading="lazy" title="Text Length Distribution by Class"></iframe><div class="ic-caption">Text Length Distribution by Class (violin)</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/05_token_budget_coverage.html" loading="lazy" title="Token Budget Coverage"></iframe><div class="ic-caption">Token Budget Coverage (CDF)</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/06_text_length_ecdf.html" loading="lazy" title="Text Length ECDF"></iframe><div class="ic-caption">Text Length ECDF</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/08_cuad_clause_presence.html" loading="lazy" title="CUAD Clause Presence Rate"></iframe><div class="ic-caption">CUAD Clause Presence Rate</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/09_cuad_span_counts.html" loading="lazy" title="CUAD Span Counts per Clause"></iframe><div class="ic-caption">CUAD Span Counts per Clause</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/10_cuad_top_clauses.html" loading="lazy" title="CUAD Top Clauses"></iframe><div class="ic-caption">CUAD Top Clauses by Frequency</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/11_cuad_cooccurrence.html" loading="lazy" title="CUAD Clause Co-occurrence"></iframe><div class="ic-caption">CUAD Clause Co-occurrence</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/13_maud_task_frequency.html" loading="lazy" title="MAUD Task Frequency"></iframe><div class="ic-caption">MAUD Task Frequency</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/14_maud_answer_distribution.html" loading="lazy" title="MAUD Answer Distribution"></iframe><div class="ic-caption">MAUD Answer Distribution</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/16_claim_amount.html" loading="lazy" title="Claim Amount Distribution"></iframe><div class="ic-caption">Claim Amount Distribution</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/17_coverage_determination.html" loading="lazy" title="Coverage Determination"></iframe><div class="ic-caption">Coverage Determination Breakdown</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/18_claim_dates.html" loading="lazy" title="Claim Dates Timeline"></iframe><div class="ic-caption">Claim Dates Timeline</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/20_corr_topic_intent.html" loading="lazy" title="Correspondence Topic x Intent"></iframe><div class="ic-caption">Correspondence Topic &times; Intent</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/23_imbalance_treemap.html" loading="lazy" title="Class Imbalance Treemap"></iframe><div class="ic-caption">Class Imbalance Treemap</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/24_strata_ratio.html" loading="lazy" title="Strata Imbalance Ratio"></iframe><div class="ic-caption">Strata Imbalance Ratio</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/26_filing_timeline.html" loading="lazy" title="Filing Date Timeline"></iframe><div class="ic-caption">Filing Date Timeline</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/27_source_proportions.html" loading="lazy" title="Source Corpus Proportions"></iframe><div class="ic-caption">Source Corpus Proportions</div></div>
-    <div class="interactive-card"><iframe src="figures_interactive/30_metadata_heatmap.html" loading="lazy" title="Metadata Fill Rate Heatmap"></iframe><div class="ic-caption">Metadata Fill Rate Heatmap</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/04_text_length_violin.html" loading="lazy" title="04_text_length_violin"></iframe><div class="ic-caption">04_text_length_violin</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/05_token_budget_coverage.html" loading="lazy" title="05_token_budget_coverage"></iframe><div class="ic-caption">05_token_budget_coverage</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/06_text_length_ecdf.html" loading="lazy" title="06_text_length_ecdf"></iframe><div class="ic-caption">06_text_length_ecdf</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/08_cuad_clause_presence.html" loading="lazy" title="08_cuad_clause_presence"></iframe><div class="ic-caption">08_cuad_clause_presence</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/09_cuad_span_counts.html" loading="lazy" title="09_cuad_span_counts"></iframe><div class="ic-caption">09_cuad_span_counts</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/10_cuad_top_clauses.html" loading="lazy" title="10_cuad_top_clauses"></iframe><div class="ic-caption">10_cuad_top_clauses</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/11_cuad_cooccurrence.html" loading="lazy" title="11_cuad_cooccurrence"></iframe><div class="ic-caption">11_cuad_cooccurrence</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/13_maud_task_frequency.html" loading="lazy" title="13_maud_task_frequency"></iframe><div class="ic-caption">13_maud_task_frequency</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/14_maud_answer_distribution.html" loading="lazy" title="14_maud_answer_distribution"></iframe><div class="ic-caption">14_maud_answer_distribution</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/16_claim_amount.html" loading="lazy" title="16_claim_amount"></iframe><div class="ic-caption">16_claim_amount</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/17_coverage_determination.html" loading="lazy" title="17_coverage_determination"></iframe><div class="ic-caption">17_coverage_determination</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/18_claim_dates.html" loading="lazy" title="18_claim_dates"></iframe><div class="ic-caption">18_claim_dates</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/20_corr_topic_intent.html" loading="lazy" title="20_corr_topic_intent"></iframe><div class="ic-caption">20_corr_topic_intent</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/23_imbalance_treemap.html" loading="lazy" title="23_imbalance_treemap"></iframe><div class="ic-caption">23_imbalance_treemap</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/24_strata_ratio.html" loading="lazy" title="24_strata_ratio"></iframe><div class="ic-caption">24_strata_ratio</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/26_filing_timeline.html" loading="lazy" title="26_filing_timeline"></iframe><div class="ic-caption">26_filing_timeline</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/27_source_proportions.html" loading="lazy" title="27_source_proportions"></iframe><div class="ic-caption">27_source_proportions</div></div>
+    <div class="interactive-card"><iframe src="figures_interactive/30_metadata_heatmap.html" loading="lazy" title="30_metadata_heatmap"></iframe><div class="ic-caption">30_metadata_heatmap</div></div>
   </div>
 </section>
 
 <section id="gallery">
   <h2>All Figures (30)</h2>
   <div class="gallery" id="gallery-grid">
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/01_type_and_subclass_distribution.png" loading="lazy" alt="Type and subclass distribution chart"><div class="caption">01 &mdash; Type &amp; Subclass Distribution</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/02_strata_train_test.png" loading="lazy" alt="Strata train/test split"><div class="caption">02 &mdash; Strata Train/Test Split</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/03_metadata_fill_rate_heatmap.png" loading="lazy" alt="Metadata fill rate heatmap"><div class="caption">03 &mdash; Metadata Fill Rate Heatmap</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/04_text_length_violin.png" loading="lazy" alt="Text length violin plot"><div class="caption">04 &mdash; Text Length Violin</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/05_token_budget_coverage.png" loading="lazy" alt="Token budget coverage"><div class="caption">05 &mdash; Token Budget Coverage</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/06_text_length_ecdf.png" loading="lazy" alt="Text length ECDF"><div class="caption">06 &mdash; Text Length ECDF</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/07_length_by_subclass.png" loading="lazy" alt="Length by subclass"><div class="caption">07 &mdash; Length by Subclass</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/08_cuad_clause_presence.png" loading="lazy" alt="CUAD clause presence"><div class="caption">08 &mdash; CUAD Clause Presence</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/09_cuad_span_counts.png" loading="lazy" alt="CUAD span counts"><div class="caption">09 &mdash; CUAD Span Counts</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/10_cuad_top_clauses.png" loading="lazy" alt="CUAD top clauses"><div class="caption">10 &mdash; CUAD Top Clauses</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/11_cuad_cooccurrence.png" loading="lazy" alt="CUAD co-occurrence matrix"><div class="caption">11 &mdash; CUAD Co-occurrence</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/12_cuad_spans_distribution.png" loading="lazy" alt="CUAD spans distribution"><div class="caption">12 &mdash; CUAD Spans Distribution</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/13_maud_task_frequency.png" loading="lazy" alt="MAUD task frequency"><div class="caption">13 &mdash; MAUD Task Frequency</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/14_maud_answer_distribution.png" loading="lazy" alt="MAUD answer distribution"><div class="caption">14 &mdash; MAUD Answer Distribution</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/15_maud_category_coverage.png" loading="lazy" alt="MAUD category coverage"><div class="caption">15 &mdash; MAUD Category Coverage</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/16_claim_amount_distribution.png" loading="lazy" alt="Claim amount distribution"><div class="caption">16 &mdash; Claim Amount Distribution</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/17_coverage_determination.png" loading="lazy" alt="Coverage determination"><div class="caption">17 &mdash; Coverage Determination</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/18_claim_dates_timeline.png" loading="lazy" alt="Claim dates timeline"><div class="caption">18 &mdash; Claim Dates Timeline</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/19_claim_subtype_fields.png" loading="lazy" alt="Claim subtype fields"><div class="caption">19 &mdash; Claim Subtype Fields</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/20_corr_content_topic.png" loading="lazy" alt="Correspondence content topic"><div class="caption">20 &mdash; Correspondence Content Topic</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/21_corr_intent.png" loading="lazy" alt="Correspondence intent"><div class="caption">21 &mdash; Correspondence Intent</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/22_corr_sentiment.png" loading="lazy" alt="Correspondence sentiment"><div class="caption">22 &mdash; Correspondence Sentiment</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/23_imbalance_treemap.png" loading="lazy" alt="Imbalance treemap"><div class="caption">23 &mdash; Imbalance Treemap</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/24_strata_imbalance_ratio.png" loading="lazy" alt="Strata imbalance ratio"><div class="caption">24 &mdash; Strata Imbalance Ratio</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/25_minority_strata.png" loading="lazy" alt="Minority strata"><div class="caption">25 &mdash; Minority Strata</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/26_filing_date_timeline.png" loading="lazy" alt="Filing date timeline"><div class="caption">26 &mdash; Filing Date Timeline</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/27_source_proportions.png" loading="lazy" alt="Source proportions"><div class="caption">27 &mdash; Source Proportions</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/28_date_span_by_type.png" loading="lazy" alt="Date span by type"><div class="caption">28 &mdash; Date Span by Type</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/29_metadata_correlation.png" loading="lazy" alt="Metadata correlation"><div class="caption">29 &mdash; Metadata Correlation</div></div>
-    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/30_metadata_cardinality.png" loading="lazy" alt="Metadata cardinality"><div class="caption">30 &mdash; Metadata Cardinality</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/01_type_and_subclass_distribution.png" loading="lazy" alt="01_type_and_subclass_distribution.png"><div class="caption">01_type_and_subclass_distribution</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/02_strata_train_test.png" loading="lazy" alt="02_strata_train_test.png"><div class="caption">02_strata_train_test</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/03_metadata_fill_rate_heatmap.png" loading="lazy" alt="03_metadata_fill_rate_heatmap.png"><div class="caption">03_metadata_fill_rate_heatmap</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/04_text_length_violin.png" loading="lazy" alt="04_text_length_violin.png"><div class="caption">04_text_length_violin</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/05_token_budget_coverage.png" loading="lazy" alt="05_token_budget_coverage.png"><div class="caption">05_token_budget_coverage</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/06_text_length_ecdf.png" loading="lazy" alt="06_text_length_ecdf.png"><div class="caption">06_text_length_ecdf</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/07_length_by_subclass.png" loading="lazy" alt="07_length_by_subclass.png"><div class="caption">07_length_by_subclass</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/08_cuad_clause_presence.png" loading="lazy" alt="08_cuad_clause_presence.png"><div class="caption">08_cuad_clause_presence</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/09_cuad_span_counts.png" loading="lazy" alt="09_cuad_span_counts.png"><div class="caption">09_cuad_span_counts</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/10_cuad_top_clauses.png" loading="lazy" alt="10_cuad_top_clauses.png"><div class="caption">10_cuad_top_clauses</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/11_cuad_cooccurrence.png" loading="lazy" alt="11_cuad_cooccurrence.png"><div class="caption">11_cuad_cooccurrence</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/12_cuad_spans_distribution.png" loading="lazy" alt="12_cuad_spans_distribution.png"><div class="caption">12_cuad_spans_distribution</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/13_maud_task_frequency.png" loading="lazy" alt="13_maud_task_frequency.png"><div class="caption">13_maud_task_frequency</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/14_maud_answer_distribution.png" loading="lazy" alt="14_maud_answer_distribution.png"><div class="caption">14_maud_answer_distribution</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/15_maud_category_coverage.png" loading="lazy" alt="15_maud_category_coverage.png"><div class="caption">15_maud_category_coverage</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/16_claim_amount_distribution.png" loading="lazy" alt="16_claim_amount_distribution.png"><div class="caption">16_claim_amount_distribution</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/17_coverage_determination.png" loading="lazy" alt="17_coverage_determination.png"><div class="caption">17_coverage_determination</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/18_claim_dates_timeline.png" loading="lazy" alt="18_claim_dates_timeline.png"><div class="caption">18_claim_dates_timeline</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/19_claim_subtype_fields.png" loading="lazy" alt="19_claim_subtype_fields.png"><div class="caption">19_claim_subtype_fields</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/20_corr_content_topic.png" loading="lazy" alt="20_corr_content_topic.png"><div class="caption">20_corr_content_topic</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/21_corr_intent.png" loading="lazy" alt="21_corr_intent.png"><div class="caption">21_corr_intent</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/22_corr_sentiment.png" loading="lazy" alt="22_corr_sentiment.png"><div class="caption">22_corr_sentiment</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/23_imbalance_treemap.png" loading="lazy" alt="23_imbalance_treemap.png"><div class="caption">23_imbalance_treemap</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/24_strata_imbalance_ratio.png" loading="lazy" alt="24_strata_imbalance_ratio.png"><div class="caption">24_strata_imbalance_ratio</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/25_minority_strata.png" loading="lazy" alt="25_minority_strata.png"><div class="caption">25_minority_strata</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/26_filing_date_timeline.png" loading="lazy" alt="26_filing_date_timeline.png"><div class="caption">26_filing_date_timeline</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/27_source_proportions.png" loading="lazy" alt="27_source_proportions.png"><div class="caption">27_source_proportions</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/28_date_span_by_type.png" loading="lazy" alt="28_date_span_by_type.png"><div class="caption">28_date_span_by_type</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/29_metadata_correlation.png" loading="lazy" alt="29_metadata_correlation.png"><div class="caption">29_metadata_correlation</div></div>
+    <div class="gallery-item" onclick="openLightbox(this)"><img src="figures/30_metadata_cardinality.png" loading="lazy" alt="30_metadata_cardinality.png"><div class="caption">30_metadata_cardinality</div></div>
   </div>
 </section>
 
 <section id="tables">
-  <h2>Data Tables (16)</h2>
+  <h2>Data Tables (17)</h2>
   <div class="tables-grid">
-    <a class="table-card" href="tables/strata_counts.csv"><div class="icon">📊</div><div class="info"><div class="name">strata_counts.csv</div><div class="desc">Document count per stratum (class &times; subclass)</div></div></a>
-    <a class="table-card" href="tables/text_length_stats_by_type.csv"><div class="icon">📊</div><div class="info"><div class="name">text_length_stats_by_type.csv</div><div class="desc">Text length statistics per class</div></div></a>
-    <a class="table-card" href="tables/token_budget_coverage.csv"><div class="icon">📊</div><div class="info"><div class="name">token_budget_coverage.csv</div><div class="desc">Token budget coverage by threshold</div></div></a>
-    <a class="table-card" href="tables/cuad_clause_stats.csv"><div class="icon">📊</div><div class="info"><div class="name">cuad_clause_stats.csv</div><div class="desc">CUAD clause presence &amp; span stats</div></div></a>
-    <a class="table-card" href="tables/cuad_cooccurrence_matrix.csv"><div class="icon">📊</div><div class="info"><div class="name">cuad_cooccurrence_matrix.csv</div><div class="desc">CUAD clause co-occurrence matrix</div></div></a>
-    <a class="table-card" href="tables/maud_task_stats.csv"><div class="icon">📊</div><div class="info"><div class="name">maud_task_stats.csv</div><div class="desc">MAUD task frequency &amp; coverage</div></div></a>
-    <a class="table-card" href="tables/claim_amount_stats.csv"><div class="icon">📊</div><div class="info"><div class="name">claim_amount_stats.csv</div><div class="desc">Insurance claim amount statistics</div></div></a>
-    <a class="table-card" href="tables/claim_field_coverage.csv"><div class="icon">📊</div><div class="info"><div class="name">claim_field_coverage.csv</div><div class="desc">Insurance field fill rates</div></div></a>
-    <a class="table-card" href="tables/correspondence_topic_intent.csv"><div class="icon">📊</div><div class="info"><div class="name">correspondence_topic_intent.csv</div><div class="desc">Topic &times; intent cross-tab</div></div></a>
-    <a class="table-card" href="tables/metadata_coverage_by_type.csv"><div class="icon">📊</div><div class="info"><div class="name">metadata_coverage_by_type.csv</div><div class="desc">Metadata field coverage per class</div></div></a>
-    <a class="table-card" href="tables/provenance_by_type.csv"><div class="icon">📊</div><div class="info"><div class="name">provenance_by_type.csv</div><div class="desc">Source provenance per class</div></div></a>
-    <a class="table-card" href="tables/provenance_detailed.csv"><div class="icon">📊</div><div class="info"><div class="name">provenance_detailed.csv</div><div class="desc">Detailed per-row provenance</div></div></a>
-    <a class="table-card" href="tables/temporal_summary.csv"><div class="icon">📊</div><div class="info"><div class="name">temporal_summary.csv</div><div class="desc">Date range &amp; temporal coverage</div></div></a>
-    <a class="table-card" href="tables/strata_imbalance_detailed.csv"><div class="icon">📊</div><div class="info"><div class="name">strata_imbalance_detailed.csv</div><div class="desc">Per-stratum imbalance metrics</div></div></a>
-    <a class="table-card" href="tables/minority_strata_report.csv"><div class="icon">📊</div><div class="info"><div class="name">minority_strata_report.csv</div><div class="desc">Minority strata detail</div></div></a>
-    <a class="table-card" href="tables/imbalance_metrics.json"><div class="icon">📋</div><div class="info"><div class="name">imbalance_metrics.json</div><div class="desc">Aggregate imbalance metrics</div></div></a>
+    <a class="table-card" href="tables/claim_amount_stats.csv"><div class="icon">📊</div><div class="info"><div class="name">claim_amount_stats.csv</div><div class="desc">claim_amount_stats.csv</div></div></a>
+    <a class="table-card" href="tables/claim_field_coverage.csv"><div class="icon">📊</div><div class="info"><div class="name">claim_field_coverage.csv</div><div class="desc">claim_field_coverage.csv</div></div></a>
+    <a class="table-card" href="tables/correspondence_topic_intent.csv"><div class="icon">📊</div><div class="info"><div class="name">correspondence_topic_intent.csv</div><div class="desc">correspondence_topic_intent.csv</div></div></a>
+    <a class="table-card" href="tables/cuad_clause_stats.csv"><div class="icon">📊</div><div class="info"><div class="name">cuad_clause_stats.csv</div><div class="desc">cuad_clause_stats.csv</div></div></a>
+    <a class="table-card" href="tables/cuad_cooccurrence_matrix.csv"><div class="icon">📊</div><div class="info"><div class="name">cuad_cooccurrence_matrix.csv</div><div class="desc">cuad_cooccurrence_matrix.csv</div></div></a>
+    <a class="table-card" href="tables/imbalance_metrics.json"><div class="icon">📋</div><div class="info"><div class="name">imbalance_metrics.json</div><div class="desc">imbalance_metrics.json</div></div></a>
+    <a class="table-card" href="tables/integrity_report.json"><div class="icon">📋</div><div class="info"><div class="name">integrity_report.json</div><div class="desc">integrity_report.json</div></div></a>
+    <a class="table-card" href="tables/maud_task_stats.csv"><div class="icon">📊</div><div class="info"><div class="name">maud_task_stats.csv</div><div class="desc">maud_task_stats.csv</div></div></a>
+    <a class="table-card" href="tables/metadata_coverage_by_type.csv"><div class="icon">📊</div><div class="info"><div class="name">metadata_coverage_by_type.csv</div><div class="desc">metadata_coverage_by_type.csv</div></div></a>
+    <a class="table-card" href="tables/minority_strata_report.csv"><div class="icon">📊</div><div class="info"><div class="name">minority_strata_report.csv</div><div class="desc">minority_strata_report.csv</div></div></a>
+    <a class="table-card" href="tables/provenance_by_type.csv"><div class="icon">📊</div><div class="info"><div class="name">provenance_by_type.csv</div><div class="desc">provenance_by_type.csv</div></div></a>
+    <a class="table-card" href="tables/provenance_detailed.csv"><div class="icon">📊</div><div class="info"><div class="name">provenance_detailed.csv</div><div class="desc">provenance_detailed.csv</div></div></a>
+    <a class="table-card" href="tables/strata_counts.csv"><div class="icon">📊</div><div class="info"><div class="name">strata_counts.csv</div><div class="desc">strata_counts.csv</div></div></a>
+    <a class="table-card" href="tables/strata_imbalance_detailed.csv"><div class="icon">📊</div><div class="info"><div class="name">strata_imbalance_detailed.csv</div><div class="desc">strata_imbalance_detailed.csv</div></div></a>
+    <a class="table-card" href="tables/temporal_summary.csv"><div class="icon">📊</div><div class="info"><div class="name">temporal_summary.csv</div><div class="desc">temporal_summary.csv</div></div></a>
+    <a class="table-card" href="tables/text_length_stats_by_type.csv"><div class="icon">📊</div><div class="info"><div class="name">text_length_stats_by_type.csv</div><div class="desc">text_length_stats_by_type.csv</div></div></a>
+    <a class="table-card" href="tables/token_budget_coverage.csv"><div class="icon">📊</div><div class="info"><div class="name">token_budget_coverage.csv</div><div class="desc">token_budget_coverage.csv</div></div></a>
   </div>
 </section>
 
@@ -290,7 +290,7 @@
 </div>
 
 <footer>
-  <p>docclass-merged Corpus EDA &mdash; Generated by <code>run_all.py</code> (P0&ndash;P6) &mdash; <a href="https://github.com/Exios66/Mailroom-Corpus-EDA">Source</a></p>
+  <p>mailroom-dataset Corpus EDA &mdash; Generated by <code>run_all.py</code> (P0&ndash;P6) &mdash; <a href="https://github.com/Exios66/Mailroom-Corpus-EDA">Source</a></p>
   <div class="sibling-links">
     <a href="https://exios66.github.io/claims-data-eda/">Claims EDA &rarr;</a>
     <a href="https://exios66.github.io/Enron-Evaluation-Environment/">Enron EDA &rarr;</a>
@@ -317,35 +317,27 @@ function openLightbox(el) {
 function closeLightbox() { document.getElementById('lightbox').classList.remove('active'); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
 
-/* ── Render markdown with table headers, blockquotes, code blocks ── */
+/* ── Render markdown ── */
 function renderMd(url, elId) {
   fetch(url).then(r => r.text()).then(md => {
     let html = md
-      // Code blocks first (preserve content)
       .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
       .replace(/^### (.+)$/gm, '<h3>$1</h3>')
       .replace(/^## (.+)$/gm, '<h2>$1</h2>')
       .replace(/^# (.+)$/gm, '<h1>$1</h1>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/`([^`]+)`/g, '<code>$1</code>')
-      // Blockquotes
       .replace(/^>\s?(.+)$/gm, '<blockquote>$1</blockquote>')
       .replace(/<\/blockquote>\s*<blockquote>/g, '<br>')
-      // Tables with header detection
       .replace(/\|(.+)\|/g, (m) => {
         const cells = m.split('|').filter(c => c.trim());
         if (cells.every(c => /^[\s\-:]+$/.test(c))) return '';
-        const isHeader = cells.some(c => /^[\s\-:]+$/.test(c)) ? false : false;
         return '<tr>' + cells.map(c => `<td>${c.trim()}</td>`).join('') + '</tr>';
       })
       .replace(/(<tr>[\s\S]*?<\/tr>)/g, '<table>$1</table>')
       .replace(/<\/table>\s*<table>/g, '')
-      // Lists
       .replace(/^- (.+)$/gm, '<li>$1</li>')
-      .replace(/(<li>[\s\S]*?<\/li>)/g, (m) => {
-        if (m.includes('</ul>')) return m;
-        return '<ul>' + m + '</ul>';
-      })
+      .replace(/(<li>[\s\S]*?<\/li>)/g, (m) => { return m.includes('</ul>') ? m : '<ul>' + m + '</ul>'; })
       .replace(/<\/ul>\s*<ul>/g, '')
       .replace(/\n{2,}/g, '</p><p>')
       .replace(/\n/g, '<br>');
@@ -356,7 +348,7 @@ function renderMd(url, elId) {
 }
 renderMd('SUMMARY_REPORT.md', 'report-content');
 
-/* ── Smooth scroll for nav ── */
+/* ── Smooth scroll ── */
 document.querySelectorAll('.nav a[href^="#"]').forEach(a => {
   a.addEventListener('click', e => {
     e.preventDefault();
@@ -365,7 +357,7 @@ document.querySelectorAll('.nav a[href^="#"]').forEach(a => {
   });
 });
 
-/* ── Scroll spy for active nav ── */
+/* ── Scroll spy ── */
 const sections = document.querySelectorAll('section[id]');
 const navLinks = document.querySelectorAll('.nav a[href^="#"]');
 const observer = new IntersectionObserver(entries => {
@@ -379,7 +371,7 @@ const observer = new IntersectionObserver(entries => {
 }, { rootMargin: '-20% 0px -70% 0px' });
 sections.forEach(s => observer.observe(s));
 
-/* ── Scroll to top visibility ── */
+/* ── Scroll to top ── */
 const scrollBtn = document.getElementById('scrollTop');
 window.addEventListener('scroll', () => {
   scrollBtn.classList.toggle('visible', window.scrollY > 400);

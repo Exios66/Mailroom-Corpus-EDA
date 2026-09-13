@@ -36,7 +36,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from mailroom_eda import identity  # noqa: E402
 from mailroom_eda import matter  # noqa: F401,E402
 from mailroom_eda import eval_contract as ec  # noqa: E402
-from mailroom_eda.config import REPO_ID  # noqa: E402
+from mailroom_eda.config import V8_V8_REPO_ID  # noqa: E402
 from mailroom_eda.dataset_export import safe_jsonl_line  # noqa: E402
 from mailroom_eda.docclass_uploader import upsert_section  # noqa: E402
 from mailroom_eda.release_sections import (  # noqa: E402
@@ -60,7 +60,7 @@ def fetch_v8_gt() -> list[dict]:
     frames = []
     for split in ("train", "test"):
         path = Path(hf_hub_download(
-            repo_id=REPO_ID,
+            repo_id=V8_REPO_ID,
             filename=f"parquet/ground_truth/{split}/{split}-00000-of-00001.parquet",
             repo_type="dataset", revision=V8_GT_REVISION,
         ))
@@ -75,7 +75,7 @@ def fetch_tip_blind() -> tuple[dict[str, str], dict[str, dict]]:
     frames = []
     for split in ("train", "test"):
         path = Path(hf_hub_download(
-            repo_id=REPO_ID,
+            repo_id=V8_REPO_ID,
             filename=f"parquet/default/{split}/{split}-00000-of-00001.parquet",
             repo_type="dataset",
         ))
@@ -277,7 +277,7 @@ def main() -> int:
 
     # card: refresh ONLY the §84 section with live numbers (legacy title
     # present at tip — replace_card_section handles the rename)
-    card = fetch_live_card(REPO_ID)
+    card = fetch_live_card(V8_REPO_ID)
     assert card is not None, "live card unavailable"
     methods = ", ".join(
         f"`{k}` {v}" for k, v in sorted(facts["annotation_methods"].items())
@@ -304,7 +304,7 @@ def main() -> int:
                "parquet/fixtures/train/train-00000-of-00001.parquet",
                "parquet/fixtures/test/test-00000-of-00001.parquet",
                "bundles.jsonl", "fixtures.jsonl"):
-        md = get_hf_file_metadata(hf_hub_url(REPO_ID, fn, repo_type="dataset"))
+        md = get_hf_file_metadata(hf_hub_url(V8_REPO_ID, fn, repo_type="dataset"))
         # LFS objects carry the sha256 as the etag; non-LFS files expose the
         # git blob id (labeled below so the verification table stays honest)
         etag = (md.etag or "").strip('"')
@@ -332,8 +332,8 @@ def main() -> int:
     if args.publish:
         from mailroom_eda.hf_interface import get_hf_api, upload_folder
 
-        upload_folder(get_hf_api(), stage_dir, REPO_ID, args.commit_message)
-        print(f"published → https://huggingface.co/datasets/{REPO_ID}")
+        upload_folder(get_hf_api(), stage_dir, V8_REPO_ID, args.commit_message)
+        print(f"published → https://huggingface.co/datasets/{V8_REPO_ID}")
     return 0
 
 

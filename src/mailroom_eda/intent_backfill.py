@@ -321,7 +321,11 @@ def llm_label_one(text: str, model: str, api_key: str, base_url: str, subject_li
 # Orchestration
 # ---------------------------------------------------------------------------
 
-INTENT_SOURCES = ("manual", "aeslc_join", "llm_zero_shot")
+# Canonical intent provenance enum. v9 (issue #3/#9) adds ``heuristic``: the
+# +650 correspondence draws hydrate intent via §20/§43 subject-line heuristics
+# (deterministic, ``intent_status = auto_labeled``), joining the v7 trio
+# (manual / aeslc_join / llm_zero_shot).
+INTENT_SOURCES = ("manual", "aeslc_join", "llm_zero_shot", "heuristic")
 
 
 def load_existing_labels() -> dict[str, dict]:
@@ -499,7 +503,8 @@ def backfill_correspondence(
     )
     # Merge totals (sidecar-resumed rows count as labeled too) so the manifest
     # reflects the final corpus state, not just this run's new calls. The
-    # three intent_source values are DISJOINT and sum to the correspondence
+    # four intent_source values (v9 adds ``heuristic`` for the §20/§43
+    # subject-line-hydrated draws) are DISJOINT and sum to the correspondence
     # row count; aeslc_joined counts the rows hydrated through the exact-body
     # join (== aeslc_join_total).
     stats["manual_total"] = int(
@@ -511,6 +516,9 @@ def backfill_correspondence(
     stats["llm_zero_shot_total"] = int(
         (gt.loc[corr_mask, "intent_source"] == "llm_zero_shot").sum()
     )
+    stats["heuristic_total"] = int(
+        (gt.loc[corr_mask, "intent_source"] == "heuristic").sum()
+    )
     stats["aeslc_joined"] = stats["aeslc_join_total"]
     stats["flagged_review"] = int(
         (gt.loc[corr_mask, "intent_status"] == "flagged_review").sum()
@@ -518,11 +526,17 @@ def backfill_correspondence(
     stats["other_fallback"] = int(
         (gt.loc[corr_mask, "intent"] == "other").sum()
     )
-    total_sources = stats["manual_total"] + stats["aeslc_join_total"] + stats["llm_zero_shot_total"]
+    total_sources = (
+        stats["manual_total"]
+        + stats["aeslc_join_total"]
+        + stats["llm_zero_shot_total"]
+        + stats["heuristic_total"]
+    )
     assert total_sources == int(corr_mask.sum()), (
         f"intent_source totals do not sum to correspondence rows: "
         f"{stats['manual_total']} manual + {stats['aeslc_join_total']} aeslc_join + "
-        f"{stats['llm_zero_shot_total']} llm_zero_shot != {int(corr_mask.sum())}"
+        f"{stats['llm_zero_shot_total']} llm_zero_shot + "
+        f"{stats['heuristic_total']} heuristic != {int(corr_mask.sum())}"
     )
     return gt, stats
 

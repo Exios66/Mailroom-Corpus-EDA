@@ -7,9 +7,19 @@ from pathlib import Path
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-REPO_ID = "Lucius-Morningstar/mailroom-corpus"
+# Canonical dataset (v9 of the mailroom corpus family; standalone successor
+# of the frozen v8 `mailroom-corpus` baseline). Pinned tip sha for
+# reproducible pulls; see docs for the v8/v9 lineage.
+REPO_ID = "Lucius-Morningstar/mailroom-dataset"
+REPO_REVISION = "a706784419c37e57930fe17fc7ca0d7ee6672f0f"
 REPO_URL = f"https://huggingface.co/datasets/{REPO_ID}"
 HF_USERNAME = "Lucius-Morningstar"
+
+# Frozen v8 baseline of the corpus family — the lineage parent of
+# `mailroom-dataset` (2,000 rows, pinned at eafe1ab4). Legacy v8 tooling
+# (build_v8, reconcile_gt_v8, the v7-era docclass_uploader) targets THIS repo,
+# never REPO_ID.
+V8_REPO_ID = "Lucius-Morningstar/mailroom-corpus"
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
@@ -21,7 +31,10 @@ REPORT_DIR = ROOT / "reports"
 INTERACTIVE_FIG_DIR = ROOT / "reports" / "figures_interactive"
 
 MANIFEST_PATH = DATA_DIR / "manifest.txt"
-JSONL_PATH = DATA_DIR / "docclass_merged.jsonl"
+# v9 ships the hardened ground-truth sidecar instead of the legacy merged
+# JSONL; P1 jsonl-parity audits against this file (doc_text + metadata +
+# labels, 3,302 rows).
+JSONL_PATH = DATA_DIR / "ground_truth_hardened.jsonl"
 HF_EXPORT_DIR = DATA_DIR / "hf_export"
 
 DOC_TYPES = ["contract", "merger_agreement", "corporate_record", "correspondence", "insurance_claim"]

@@ -147,11 +147,12 @@ def html_cuad_cooccurrence(gt: pd.DataFrame) -> str:
 
 def html_maud_task_frequency(gt: pd.DataFrame) -> str:
     mf = _maud_frame(gt)
+    n_agreements = int(mf["filename"].nunique())
     counts = mf.groupby("task")["filename"].nunique().sort_values()
     fig = px.bar(
         x=counts.values, y=counts.index, orientation="h",
         color=counts.values, color_continuous_scale="Greens",
-        title="MAUD task frequency (n=152 merger agreements)",
+        title=f"MAUD task frequency (n={n_agreements} merger agreements)",
         labels={"x": "agreements", "y": ""},
     )
     fig.update_layout(coloraxis_showscale=False)

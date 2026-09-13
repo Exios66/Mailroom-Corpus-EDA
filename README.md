@@ -1,14 +1,14 @@
 <div align="center">
 
-# 📊 Mailroom-Corpus EDA
+# 📊 Mailroom-Dataset EDA
 
-**Full-corpus exploratory data analysis for the mailroom-corpus — 1,650 legal documents across 5 classes, 48 strata, with centralized HuggingFace upload helpers.**
+**Full-corpus exploratory data analysis for the mailroom-dataset (v1, canonically v9 of the mailroom corpus family) — 3,302 legal documents across 5 classes, 55 strata, with centralized HuggingFace upload helpers.**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/status-production-success)](reports/SUMMARY_REPORT.md)
-[![🤗 Dataset](https://img.shields.io/badge/%F0%9F%A4%97_Dataset-mailroom--corpus-fbe425?logo=huggingface&logoColor=black)](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
+[![🤗 Dataset](https://img.shields.io/badge/%F0%9F%A4%97_Dataset-mailroom--dataset-fbe425?logo=huggingface&logoColor=black)](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
 
-<img src="reports/figures/01_type_and_subclass_distribution.png" alt="Document type and subclass distribution across the 1,650-document corpus" width="720"/>
+<img src="reports/figures/01_type_and_subclass_distribution.png" alt="Document type and subclass distribution across the 3,302-document corpus" width="720"/>
 
 </div>
 
@@ -20,10 +20,10 @@
 
 | Metric | Value |
 |:---|:---|
-| **Documents** | 1,650 |
+| **Documents** | 3,302 |
 | **Doc Types** | 5 (insurance_claim, contract, correspondence, merger_agreement, corporate_record) |
-| **Strata** | 48 |
-| **Imbalance Ratio** | 15.4× |
+| **Strata** | 55 |
+| **Imbalance Ratio** | 7.2× |
 | **CUAD Spans** | 13,753 |
 | **Offset Match** | 100% |
 
@@ -33,11 +33,11 @@
 
 | Class | Count | % |
 |:---|---:|---:|
-| `insurance_claim` | 600 | 36.4% |
-| `contract` | 509 | 30.8% |
-| `correspondence` | 350 | 21.2% |
-| `merger_agreement` | 152 | 9.2% |
-| `corporate_record` | 39 | 2.4% |
+| `insurance_claim` | 1,100 | 33.3% |
+| `correspondence` | 1,000 | 30.3% |
+| `contract` | 600 | 18.2% |
+| `corporate_record` | 450 | 13.6% |
+| `merger_agreement` | 152 | 4.6% |
 
 </div>
 
@@ -84,15 +84,15 @@ cd Mailroom-Corpus-EDA
 
 ## Dataset Cards
 
-Per-source documentation for the five corpora integrated into [`mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus) lives in [`docs/dataset-cards/`](docs/dataset-cards/):
+Per-source documentation for the corpora integrated into [`mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset) lives in [`docs/dataset-cards/`](docs/dataset-cards/):
 
 | Corpus | Doc Type | Count | Card |
 |:---|:---|---:|:---|
-| CUAD contracts | `contract` | 509 | [View →](docs/dataset-cards/cuad-contracts.md) |
+| CUAD contracts + SEC EDGAR EX-10 | `contract` | 600 | [View →](docs/dataset-cards/cuad-contracts.md) |
 | MAUD merger agreements | `merger_agreement` | 152 | [View →](docs/dataset-cards/maud-merger-agreements.md) |
-| S-1 corporate records | `corporate_record` | 39 | [View →](docs/dataset-cards/s1-corporate-records.md) |
-| Enron correspondence | `correspondence` | 350 | [View →](docs/dataset-cards/enron-correspondence.md) |
-| CMS DE-SynPUF insurance claims | `insurance_claim` | 600 | [View →](docs/dataset-cards/cms-desynpuf-insurance-claims.md) |
+| S-1 + EDGAR corporate records | `corporate_record` | 450 | [View →](docs/dataset-cards/s1-corporate-records.md) |
+| Enron correspondence | `correspondence` | 1,000 | [View →](docs/dataset-cards/enron-correspondence.md) |
+| CMS DE-SynPUF + GNOTHEIA + BDR + INSURBIAS insurance claims | `insurance_claim` | 1,100 | [View →](docs/dataset-cards/cms-desynpuf-insurance-claims.md) |
 
 ## HF Hub Interface
 
@@ -136,13 +136,13 @@ HF_TOKEN=hf_... .venv/bin/python scripts/publish_docclass.py \
 
 ## Key Findings
 
-- **Merger agreements are longest**: mean ~356k chars ≈ 89k tokens — **exceeds 32k/65k contexts**
-- **Insurance claims uniformly short**: ~1,200 chars, σ=186
-- **Token budget**: 65% ≤4k, 82% ≤16k, 88% ≤32k, 99.7% ≤131k
-- **CUAD**: 509 contracts × 41 clause types; 13,753 spans, 100% exact offset
+- **Merger agreements are longest**: mean ~89k chars ≈ 22k tokens (heuristic) — **max ~252k chars ≈ 63k tokens exceeds 32k/65k contexts**
+- **Insurance claims uniformly short**: ~690 chars, σ=953 — six LOB subtypes (carrier/inpatient/outpatient/pde + property/auto)
+- **Token budget**: 77% ≤4k, 90% ≤16k, 93% ≤32k, 99.8% ≤131k
+- **CUAD**: 509 annotated contracts × 41 clause types; 13,753 spans, 100% exact offset (91 v9 EX-10 contracts carry no CUAD spans)
 - **MAUD**: 152 agreements × 22 tasks; 3 tasks annotated on every agreement
-- **Insurance**: 9/13 fields 100% filled; coverage determination fully populated
-- **Correspondence**: intent 100% hydrated (issue #5); sentiment-labeled subset
+- **Insurance**: 13/13 fields 100% filled; coverage determination fully populated
+- **Correspondence**: intent 100% hydrated (1,000/1,000, four provenance paths incl. v9 `heuristic`); sentiment-labeled subset
 
 ---
 

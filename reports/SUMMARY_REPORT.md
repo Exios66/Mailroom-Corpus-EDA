@@ -1,89 +1,89 @@
-# Docclass Merged Corpus — EDA Summary Report
+# Mailroom Dataset (v9) — EDA Summary Report
 
-Generated: 2026-08-31 · Pipeline: `run_all.py` (P0–P6) · Data: `Lucius-Morningstar/mailroom-corpus` (v7; **v8 supersedes — see note below**)
+Generated: 2026-09-13 · Pipeline: `run_all.py` (P0–P6) · Data: `Lucius-Morningstar/mailroom-dataset` v1 (canonically **v9** of the corpus family, pinned `a7067844`)
 
-> **v8 note (HUB-028, 2026-09-02)**: this report's figures describe the v7
-> snapshot (1,650 rows). The published v8 corpus is **2,000 rows**:
-> insurance_claim 950 (carrier/inpatient/outpatient/pde 600 CMS DE-SynPUF +
-> property 200 GNOTHEIA + auto 150 BDR motor), contract 509, correspondence
-> 350, merger_agreement 152, corporate_record 39 — 50 strata. The EDA
-> pipeline's P0–P6 run against v8 has not been re-executed; figure
-> regeneration is a follow-up (data: `Lucius-Morningstar/mailroom-corpus` v8,
-> tip `bba2f750`). Double-hardened since: the §84 release (HUB-022/HUB-032)
-> adds the 60-col evaluation-contract `ground_truth`, the `bundles`
-> (50 rows), `streams` (62 rows — §27–§29/§48 STREAM tier) and `fixtures`
-> (32 rows) configs at `eafe1ab4` — the §40–41 coverage matrix
-> (`docs/reports/audits/docclass_coverage_matrix.md`) and the P5 surface
-> ledger (`docclass_p5_surfaces.md`) are the current-coverage instruments.
+> v9 lineage (tracking epic #18): standalone successor of the frozen v8
+> `Lucius-Morningstar/mailroom-corpus` baseline (2,000 rows, `eafe1ab4` —
+> never destroyed). v9 expansion: correspondence +650, corporate records +411,
+> contract +91 (SEC EDGAR EX-10), insurance +150 (INSURBIAS + §36 workflow
+> docs), plus the v8 synthetic LOB expansion (property/auto) and the §84
+> hardened evaluation-contract columns (identity, provenance, matter) on the
+> `ground_truth` config.
 
 ## Executive Summary
 
-The corpus is a **1,650-document** legal classification surface across **five
-doc_types** and **48 strata** (doc_type × expected_subclass). The dataset is
-fully joinable (blind ↔ ground_truth, 100% filename-set agreement), the split
-rule (md5(filename) % 10 → test) is byte-exact with zero mismatches, and all
-annotation offsets validate (CUAD 13,753/13,753 span matches = 100%).
+The corpus is a **3,302-document** legal classification surface across
+**five doc_types** and **55 strata** (doc_type × expected_subclass). The
+dataset is fully joinable (blind ↔ ground_truth, 3,302/3,302
+filename-set agreement), the split rule (md5(filename) % 10 → test) is
+byte-exact with zero mismatches, and all annotation offsets validate (CUAD
+13,753/13,753 span matches = 100%).
 
-| doc_type | n | share | source |
-|---|---|---|---|
-| insurance_claim | 600 | 36.4% | CMS DE-SynPUF 2008–2010 renders |
-| contract | 509 | 30.8% | CUAD v1 (theatticusproject/cuad) |
-| correspondence | 350 | 21.2% | CMU Enron maildir (dedup) |
-| merger_agreement | 152 | 9.2% | MAUD v1 (Zenodo 7500064) |
-| corporate_record | 39 | 2.4% | SEC EDGAR S-1 exhibits |
+| insurance_claim | 1,100 | 33.3% | bdr-ai-org/insurance-motor-claims-decision-v1; cms-de-synpuf-2008-2010-sample1; feihuangfh/INSURBIAS |
+| contract | 600 | 18.2% | cuad_v1 |
+| correspondence | 1,000 | 30.3% | cmu_enron_maildir |
+| merger_agreement | 152 | 4.6% | maud_v1 |
+| corporate_record | 450 | 13.6% | edgar_s1 |
 
-**Imbalance:** max/min ratio 15.4× at type level, 150× at stratum level
-(min stratum `corporate_record/other` = 1 row). Type entropy = 1.97 bits.
+**Imbalance:** max/min ratio 7.2× at type
+level, 557× at stratum level (min
+stratum `merger_agreement/mixed_cash_stock_election` = 1 row).
+Type entropy = 2.09 bits.
 
 ## Key Findings
 
 ### 1. Text & token geometry
-- Merger agreements are by far the longest (mean ~356k chars ≈ 89k tokens;
-  max 1.0M chars ≈ 252k tokens) — **exceed common 32k/65k contexts**.
-- Insurance claims are uniformly short (~1,200 chars, σ=186) — a tight,
-  homogeneous block.
-- Token budget coverage: 65% of the corpus fits ≤4k tokens, 73% ≤8k, 82%
-  ≤16k, 88% ≤32k, 99.7% ≤131k.
+- `merger_agreement` documents are by far the longest (mean ~89,048.5 chars
+  ≈ 22,262.1 tokens; max 252,135 chars ≈ 63,033.8
+  tokens) — **exceed common 32k/65k contexts**.
+- Insurance claims are uniformly short (~691.5 chars, σ=952.6).
+- Token budget coverage: 76.6% ≤4k 89.6% ≤16k 93.2% ≤32k 99.8% ≤128k.
 
 ### 2. CUAD annotations (509 contracts, 41 clause types)
-- Every contract carries annotations; 13,753 spans with **100% exact offset
-  match** against doc_text.
-- Most-annotated: `Parties` (508 docs, mean 5.0 spans), `Agreement Date`
-  (469), `Governing Law` (436), `Expiration Date` (412).
-- 14 clauses appear in <15% of contracts (long-tail annotation).
+- 13,753 spans with **100.0% exact offset match** against doc_text.
+- Most-annotated: `Document Name` (509 docs, mean 1.0 spans), `Parties` (508 docs, mean 5.0 spans), `Agreement Date` (469 docs, mean 1.0 spans), `Governing Law` (436 docs, mean 1.1 spans).
+- 91 v9 EX-10 contracts carry no CUAD clause annotations (source-native EDGAR
+  exhibits; `cuad_clause_labels` = `{}`), so annotation density is computed
+  over the 509 CUAD-v1 contracts.
 
 ### 3. MAUD annotations (152 merger agreements, 22 tasks)
-- 3 tasks annotated on every agreement; coverage ranges 11–152 docs.
-- Mean 16.4 labels per agreement (range 11–20).
-- Metadata count consistency: 152/152 rows match
-  `maud_label_count == sum(maud_categories) == upstream count`.
+- `Accuracy of Target R&W Closing Condition` on 152 agreements (100.0%)
+- `MAE Definition` on 152 agreements (100.0%)
+- `Tail Period & Acquisition Proposal Details` on 152 agreements (100.0%)
+- `Ordinary course covenant` on 151 agreements (99.3%)
+- Metadata count consistency: 152/152
+  rows match `maud_label_count == sum(maud_categories) == upstream count`.
 
-### 4. Insurance claims (600 rows)
-- 9/13 fields 100% filled; `adjuster` 59%, `claimed_amount` 99.7% (v6 rev2
-  boosted 400→600 with balanced subtypes: carrier/inpatient/outpatient/pde
-  × 150).
-- Coverage determination & denial reasons fully populated → ready for
+### 4. Insurance claims (1,100 rows)
+- Claimed amount present on 1,062 rows (median $1,250); coverage
+  determination & denial reasons fully populated → ready for
   coverage-classification supervision.
-- Loss→filing delay: median 0 days (425/597 same-day; max 35 days) — see
-  `18_claim_dates_timeline.png`.
+- 13/13 fields 100% filled across all 6 LOB subtypes
+  (carrier/inpatient/outpatient/pde/property/auto).
 
-### 5. Correspondence (350 rows)
-- Enron source: subclass (8), content-topic (11), intent (8, canonical closed
-  set), sentiment (neutral 178 / positive 97 / negative 75) — the only
-  sentiment-labeled subset.
-- **Intent is 100% hydrated** (issue #5 / v7): all 350 rows carry a canonical
-  intent — `intent_source` records the hydration path (disjoint, sums to 350):
-  96 manual + 162 aeslc_join (sha256 exact-body join-assisted pass vs the
-  Enron/AESLC mirrors; the mirrors carry no intent annotations — the join
-  supplies provenance + recovered subject as context) + 92 llm_zero_shot
-  (deepseek-chat via OpenRouter, closed 8-class vocabulary, confidence
-  threshold 0.85), 1 flagged_review. Every canonical intent class appears in
-  the 10% test split.
+### 5. Correspondence (1,000 rows)
+- **Intent is 100% hydrated** (1,000/1,000
+  rows): `intent_source` records the hydration path (disjoint, sums to 1,000):
+  162 aeslc_join + 105 heuristic + 637 llm_zero_shot + 96 manual. v9 adds the `heuristic` provenance for the §20/§43
+  subject-line-hydrated draws (105 rows,
+  `intent_status = auto_labeled`); 25 rows flagged for review.
+- Every canonical intent class appears in the 10% test split: `analysis`, `meeting_invite`, `notice`, `other`, `payment_demand`, `press_communication`, `request`, `update`.
 
 ### 6. Split integrity
-- 90/10 train/test: 1,474/176. Per-stratum test shares deviate from 10%
-  (0%–26.7%) — small strata often have zero test rows (flagged in
-  `24_strata_imbalance_ratio.png`).
+- 90/10 train/test: 2,979/323. Per-stratum test shares deviate
+  from 10% (0%–max); 10 strata have zero test rows and
+  5 minority strata (<10 rows, 19 rows total) — flagged in
+  `24_strata_imbalance_ratio.png` / `25_minority_strata.png`.
+
+### 7. §84 hardened evaluation contract (ground_truth config)
+- Ground truth carries 65 columns after `gt_fields` expansion:
+  identity (`document_id`, `content_sha256`, `normalized_text_sha256`),
+  provenance (`source_corpus`, `source_document_id`, `source_filename`,
+  `source_revision`, `annotation_*`), and the evaluation contract
+  (`expected_specialist`, `expected_stage`, `retry_expected`,
+  `review_expected`, `review_reason`, `expected_post_retry_state`) plus the
+  matter/group tier (`matter_id`, `matter_construction`, `group_id`,
+  `group_role`, `thread_*`, `relationships`, `related_document_ids`).
 
 ## Artifacts
 
@@ -114,31 +114,30 @@ treemap, strata, timeline, sources, metadata.
 `correspondence_topic_intent.csv`, `strata_imbalance_detailed.csv`,
 `minority_strata_report.csv`, `temporal_summary.csv`, `provenance_detailed.csv`.
 
-## HF Interface (centralized, was llm-entity-extraction)
+## HF Interface (centralized)
 
 - `src/mailroom_eda/hf_interface.py` — Hub client: upload, sha verify, repo mgmt
 - `src/mailroom_eda/dataset_export.py` — KANBAN-076 cast-safe metadata,
   KANBAN-088 JSONL safety, parquet staging, manifests, splits
-- `src/mailroom_eda/docclass_uploader.py` — v7 publish, surgical card render,
-  blind-label strip, leak guard
-- `src/mailroom_eda/intent_backfill.py` — correspondence intent hydration
-  (issue #5): cross-walk, Enron/AESLC sha256 join, constrained LLM pass,
+- `src/mailroom_eda/docclass_uploader.py` — docclass publish, surgical card
+  render, blind-label strip, leak guard
+- `src/mailroom_eda/intent_backfill.py` — correspondence intent hydration +
   provenance columns
 - `scripts/publish_docclass.py` / `backfill_intent.py` / `export_docclass.py` /
   `verify_hf.py` — CLIs
 
 ## ML-readiness recommendations
 
-1. **Long docs**: merger_agreement requires 131k+ context or chunking;
-   contract median fits 32k.
-2. **Minority strata** (7 strata < 10 rows): consider stratification-aware
-   sampling or merging (e.g., `bylaws`/`powers_of_attorney` → corporate_record
-   rollup) for training stability.
-3. **Zero-test strata** (14 strata): add a per-stratum test floor for the
+1. **Long docs**: `merger_agreement` requires 131k+ context or chunking; most
+   contract text fits 32k.
+2. **Minority strata** (5 strata < 10 rows): consider
+   stratification-aware sampling or class/subclass rollups for training
+   stability.
+3. **Zero-test strata** (10): add a per-stratum test floor for the
    next corpus revision.
-4. **Sentiment labels** cover all correspondence (350 rows); intent is fully
-   hydrated (350/350, canonical 8-class set with `intent_source` /
-   `intent_confidence` / `intent_status` provenance, issue #5 / v7) — a
+4. **Sentiment/intent labels** cover all correspondence (1,000
+   rows); intent is fully hydrated (canonical 8-class set with
+   `intent_source` / `intent_confidence` / `intent_status` provenance) — a
    ready multi-task head target (intent + sentiment + topic).
-5. **Claims block** is near-uniform in length/subtype — synthetic-data
-   caveats apply (PAID only, health LOB).
+5. **Claims block** spans six LOB subtypes (carrier/inpatient/outpatient/pde +
+   property/auto) — synthetic-data caveats apply (PAID only, health LOB).

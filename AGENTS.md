@@ -1,9 +1,12 @@
 # AGENTS.md — Mailroom-Corpus-EDA
 
 Exploratory data analysis (and the centralized HF upload helpers) for the
-[`Lucius-Morningstar/mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
-corpus — 1,650 legal documents across 5 doc_types (insurance_claim,
-merger_agreement, contract, correspondence, corporate_record), 48 strata.
+[`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
+corpus (v1, canonically **v9** of the mailroom corpus family) — **3,302** legal
+documents across 5 doc_types (insurance_claim, merger_agreement, contract,
+correspondence, corporate_record), 55 strata. Pinned at tip `a7067844`;
+standalone successor of the frozen v8 `mailroom-corpus` baseline (2,000 rows,
+`eafe1ab4` — never destroyed).
 
 Mirror of the standalone `Exios66/Mailroom-Corpus-EDA` repo; in the monorepo
 it lives at `packages/mailroom-corpus-eda` as a virtual uv member (no build).
@@ -85,7 +88,44 @@ runs used to clobber the full-corpus summary with phase-partial stats.)
 - **Determinism**: `RANDOM_STATE = 42`; rebuilds of JSONL/parquet must be
   byte-identical (sorted rows, deterministic order).
 
-## HF facts (verified 2026-09-02, schema v8)
+## HF facts (verified 2026-09-13, dataset v1 / corpus v9)
+
+- Repo: `Lucius-Morningstar/mailroom-dataset` (v1, canonically v9; data tip
+  `a7067844`). 3,302 rows (train 2,979 / test 323): insurance_claim 1,100
+  (carrier/inpatient/outpatient/pde 600 CMS DE-SynPUF + property 200 GNOTHEIA
+  + auto 150 BDR motor + 150 INSURBIAS/§36), correspondence 1,000,
+  contract 600 (509 CUAD + 91 SEC EDGAR EX-10), corporate_record 450,
+  merger_agreement 152 — 55 strata. Lineage: standalone successor of
+  `Lucius-Morningstar/mailroom-corpus` (frozen v8 baseline, 2,000 rows,
+  `eafe1ab4` — never destroyed); old `docclass-merged` repo DELETED.
+- Configs: `default` (blind, 4 cols) + `ground_truth` (36 top-level cols incl.
+  identity/provenance/matter + a `gt_fields` JSON column carrying the 29-key
+  §84 complete-GT label set — the EDA layer expands it via
+  `download._expand_gt_fields`) + `bundles` (50) + `streams` (62) +
+  `fixtures` (32). Sidecars: `ground_truth_hardened.jsonl`,
+  `bundles.jsonl`, `streams.jsonl`, `fixtures.jsonl`, `manifest.txt`.
+- Split: train 2,979 / test 323 on both configs; filename sets equal.
+- v9 expansion (tracking epic #18): correspondence +650 (intent hydrated via
+  §20/§43 subject-line heuristics — new `intent_source = heuristic`
+  provenance), corporate records +411, contract +91 (EX-10 — no CUAD
+  clause annotations), insurance +150 (INSURBIAS narratives + §36 workflow
+  docs). The v8 synthetic LOB expansion (property/auto) and the §84 hardened
+  columns carry over.
+- Correspondence intent (issue #5 + v9): 1,000/1,000 rows carry a canonical
+  8-class intent; sources 637 llm_zero_shot + 162 aeslc_join + 105 heuristic
+  + 96 manual; 25 flagged_review; all 8 classes in the test split (85 rows).
+- Related: `enron-correspondence-dedup`, `mailroom-cuad-contracts-full`,
+  `mailroom-s1-corporate-records`, `mailroom-maud-contracts`.
+
+License note: the corpus card is CC-BY-4.0; v8 additions are Apache-2.0
+(GNOTHEIA) + MIT (BDR); INSURBIAS is CC-BY-4.0. XpertSystems ins001/ins007/
+hlt015 samples are CC-BY-NC-4.0 and were excluded.
+
+## HF facts (verified 2026-09-02, schema v8 — historical baseline)
+
+The v8 facts below describe the frozen baseline repo
+(`Lucius-Morningstar/mailroom-corpus`), which remains pinned at `eafe1ab4`
+for lineage and is superseded by `mailroom-dataset` above.
 
 - Repo: `Lucius-Morningstar/mailroom-corpus` (v8, 2,000 rows; data tip
   `bba2f750`; hardened release rebuilt on v8 at `eafe1ab4`).

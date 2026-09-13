@@ -31,7 +31,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import pandas as pd  # noqa: E402
 
 from mailroom_eda import v8_build as vb  # noqa: E402
-from mailroom_eda.config import REPO_ID  # noqa: E402
+from mailroom_eda.config import V8_REPO_ID  # noqa: E402
 from mailroom_eda.dataset_export import stage_parquet, safe_jsonl_line  # noqa: E402
 from mailroom_eda.docclass_uploader import (  # noqa: E402
     build_manifest,
@@ -244,9 +244,9 @@ def main() -> int:
 
     if args.publish:
         api = get_hf_api()
-        upload_folder(api, stage, REPO_ID,
+        upload_folder(api, stage, V8_REPO_ID,
                       commit_message=f"schema v8: insurance LOB expansion (HUB-028) — {len(rows_exp)} rows")
-        print("published:", f"https://huggingface.co/datasets/{REPO_ID}")
+        print("published:", f"https://huggingface.co/datasets/{V8_REPO_ID}")
         for f in ("parquet/default/train/train-00000-of-00001.parquet",
                   "parquet/ground_truth/train/train-00000-of-00001.parquet"):
             p = stage / f
