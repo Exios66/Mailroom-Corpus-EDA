@@ -1,7 +1,8 @@
 """Correspondence intent backfill for mailroom-corpus v7 (KANBAN issue #5).
 
 Implements the four-phase plan from
-https://github.com/Exios66/mailroom-dev/issues/5:
+https://github.com/Exios66/mailroom-dev/issues/5 (the issue tracker now
+lives in the org monorepo LLM-Mailroom-Services/Digital-Mailroom):
 
 Phase 1 — Taxonomy cross-walk: the canonical Enron intent vocabulary is
     vendored from llm-mailroom's ``INTENT_LABELS["correspondence"]`` (8

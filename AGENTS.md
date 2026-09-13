@@ -11,7 +11,8 @@ standalone successor of the frozen v8 `mailroom-corpus` baseline (2,000 rows,
 Mirror of the standalone `Exios66/Mailroom-Corpus-EDA` repo; in the monorepo
 it lives at `packages/mailroom-corpus-eda` as a virtual uv member (no build).
 Never edit it from both places in one session — develop here, sync via
-`scripts/sync_packages.py` in mailroom-dev.
+`scripts/sync_packages.py` in the org monorepo
+(`LLM-Mailroom-Services/Digital-Mailroom`).
 
 ## Layout
 
@@ -39,10 +40,19 @@ Never edit it from both places in one session — develop here, sync via
     scaffold over real anchors; publish rides §84)
   - `fixtures.py` — §68–§72A fixture content (calibration quartet at live
     bands, arbiter scenarios, failure-stage matrix; publish rides §84)
-- `scripts/` — CLI wrappers: `publish_docclass.py`, `backfill_intent.py`,
-  `export_docclass.py`, `verify_hf.py`, `coverage_matrix.py` (→
-  `docs/reports/audits/docclass_coverage_matrix.*`), `expansion_priorities.py`
-  (→ `docs/reports/audits/docclass_expansion_priorities.*`)
+- `scripts/` — CLI wrappers, organized by purpose:
+  - `build/build_v9.py` — build + publish the v9 `mailroom-dataset`
+  - `publish/verify_hf.py` — byte-verify a local export against the Hub
+  - `audit/` — `baseline_audit.py`, `coverage_matrix.py` (→
+    `docs/reports/audits/docclass_coverage_matrix.*`), `expansion_priorities.py`
+    (→ `docs/reports/audits/docclass_expansion_priorities.*`)
+  - `reports/` — `generate_index.py`, `generate_summary_md.py` (data-driven
+    report generators)
+  - `backfill/backfill_intent.py` — correspondence intent hydration (issue #5)
+  - `archive/v8/` — frozen `mailroom-corpus` tooling (build_v8,
+    publish_hardened, reconcile_gt_v8, publish_docclass, export_docclass)
+  - `archive/v9-acquisition/` — one-time v9 EDGAR/draw sourcing
+  - `_bootstrap.py` — shared repo-root + `src/` path bootstrap for all CLIs
 - `run_all.py` — 7-phase pipeline (P0 download → P6 intent coverage audit)
 - `reports/` — generated artifacts (figures/, figures_interactive/, tables/, SUMMARY_REPORT.md)
   - ALL of `reports/` is tracked in full per human directive (HUB-008) — never
@@ -56,8 +66,9 @@ Never edit it from both places in one session — develop here, sync via
 ```bash
 .venv/bin/python run_all.py                      # full pipeline P0-P6
 .venv/bin/python run_all.py --phases P3 P4       # figures only
-.venv/bin/python scripts/backfill_intent.py --check
-.venv/bin/python scripts/publish_docclass.py --help
+.venv/bin/python scripts/backfill/backfill_intent.py --check
+.venv/bin/python scripts/build/build_v9.py --help
+.venv/bin/python scripts/audit/coverage_matrix.py --check
 ```
 
 **Summary writes**: `reports/SUMMARY_REPORT.json` is written only by a
@@ -80,7 +91,7 @@ runs used to clobber the full-corpus summary with phase-partial stats.)
   regenerating can never be byte-identical — the committed files are the
   canonical upstream bytes; treat local regeneration as scratch only.
 - **Intent backfill** (issue #5): never hand-edit `data/backfill/intent_labels.jsonl`;
-  re-run `scripts/backfill_intent.py` (checkpointed — the LLM pass skips rows
+  re-run `scripts/backfill/backfill_intent.py` (checkpointed — the LLM pass skips rows
   already in the sidecar). The canonical vocabulary is the closed 8-class set
   in `intent_backfill.CANONICAL_INTENTS`; `other` is the explicit fallback,
   never null.
@@ -139,7 +150,8 @@ for lineage and is superseded by `mailroom-dataset` above.
   matter/group) + `bundles` (38 cols, 50 rows) + `streams` (39 cols, 62 rows
   — §27–§29/§48 STREAM tier: `RUN-SIM-001` interleaved ingress stream over
   the bundle matters, 12 no-matter distractors) + `fixtures` (30 cols, 32
-  rows). Built via `scripts/publish_hardened.py` (HUB-022) on the v8 base:
+  rows). Built via `scripts/archive/v8/publish_hardened.py` (HUB-022) on
+  the v8 base:
   v7 `document_id`s unchanged (0 drift), v8 LOB rows carry their own
   `source_corpus`/`annotation_source` (GNOTHEIA/BDR) + pinned
   `source_revision` via `metadata.source_dataset` / `.source_revision`

@@ -34,6 +34,7 @@ target-version = "py311"
 
 # Monorepo: EDA + scripts + reports, no distribution — resolve deps in the
 # shared workspace venv without building/installing a package. Mirror of the
-# standalone Exios66/Mailroom-Corpus-EDA repo; see mailroom-dev AGENTS.md.
+# standalone Exios66/Mailroom-Corpus-EDA repo; see the
+# LLM-Mailroom-Services/Digital-Mailroom AGENTS.md.
 [tool.uv]
 package = false

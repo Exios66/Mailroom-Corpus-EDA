@@ -117,7 +117,7 @@ def p6_intent_coverage() -> dict:
         report = {
             "status": "pre-backfill",
             "note": "ground_truth carries no intent provenance columns yet — "
-                    "run scripts/backfill_intent.py and publish v7, then re-run.",
+                    "run scripts/backfill/backfill_intent.py and publish v7, then re-run.",
             "intent_covered": int(gt.loc[gt["expected"] == "correspondence",
                                          "intent"].fillna("").str.strip().ne("").sum()),
         }

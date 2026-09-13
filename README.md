@@ -109,30 +109,31 @@ The upload/publish helpers previously living in [llm-entity-extraction](https://
 ### CLI Commands
 
 <details>
-<summary>Intent backfill & publish commands</summary>
+<summary>v9 build/publish, intent backfill & verification</summary>
 
 ```bash
+# v9 mailroom-dataset build — stage-only by default
+.venv/bin/python scripts/build/build_v9.py
+
+# ...and publish to https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset
+HF_TOKEN=hf_... .venv/bin/python scripts/build/build_v9.py --publish
+
 # Correspondence intent backfill (issue #5; needs OPENROUTER_API_KEY for LLM pass)
-.venv/bin/python scripts/backfill_intent.py --check
-.venv/bin/python scripts/backfill_intent.py --join-only
-.venv/bin/python scripts/backfill_intent.py            # full Phases 1-5
-
-# Stage the v7 dump into the Hub tree (no upload)
-.venv/bin/python scripts/publish_docclass.py --rows data/v7_rows.jsonl \
-    --stage /tmp/stage --intent-stats data/v7_intent_stats.json
-
-# Publish to https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus
-HF_TOKEN=hf_... .venv/bin/python scripts/publish_docclass.py \
-    --rows data/v7_rows.jsonl --stage /tmp/stage \
-    --intent-stats data/v7_intent_stats.json \
-    --commit-message "issue #5: v7 intent hydration" --publish
+.venv/bin/python scripts/backfill/backfill_intent.py --check
+.venv/bin/python scripts/backfill/backfill_intent.py --join-only
+.venv/bin/python scripts/backfill/backfill_intent.py            # full Phases 1-5
 
 # Byte-verify a local export against the Hub
-.venv/bin/python scripts/verify_hf.py --repo Lucius-Morningstar/mailroom-corpus \
-    --jsonl data/hf_export/mailroom-cuad-contracts-full.jsonl
+.venv/bin/python scripts/publish/verify_hf.py --repo Lucius-Morningstar/mailroom-dataset \
+    --jsonl data/ground_truth_hardened.jsonl
 ```
 
 </details>
+
+> Frozen v8 tooling (build_v8 / publish_hardened / reconcile_gt_v8 /
+> publish_docclass / export_docclass) is archived under
+> `scripts/archive/v8/`; the one-time v9 EDGAR/draw sourcing lives under
+> `scripts/archive/v9-acquisition/`. See `scripts/README.md`.
 
 ## Key Findings
 

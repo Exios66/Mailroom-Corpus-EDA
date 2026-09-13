@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT / "src"))
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_rows.jsonl"
 SNAPSHOT_GT = ROOT / "data" / "parquet" / "ground_truth"
 
-# Canonical five-class taxonomy (docs/v7-taxonomy.md; HUB_CLASSES).
+# Canonical five-class taxonomy (docs/dataset-cards/; HUB_CLASSES).
 FIVE_CLASSES = {
     "contract",
     "merger_agreement",

@@ -137,7 +137,7 @@ Intent distribution (v7 EDA): notice 74, request 73, meeting_invite 57,
 press_communication 51, update 51, other 22, analysis 12, payment_demand
 10. Every canonical class appears in the 10% test split (test sources:
 aeslc_join 26, llm_zero_shot 14). The checkpointed backfill is reproducible
-via `scripts/backfill_intent.py` (never hand-edit
+via `scripts/backfill/backfill_intent.py` (never hand-edit
 `data/backfill/intent_labels.jsonl`).
 
 ## Subset statistics (v7 EDA)
@@ -173,5 +173,5 @@ via `scripts/backfill_intent.py` (never hand-edit
 - EDA figures: `20`–`22` (`reports/figures/`) — correspondence topic,
   intent, sentiment
 - Backfill module: `src/mailroom_eda/intent_backfill.py`; CLI:
-  `scripts/backfill_intent.py --check`
+  `scripts/backfill/backfill_intent.py --check`
 - Full corpus: <https://huggingface.co/datasets/Lucius-Morningstar/enron-correspondence-dedup>
