@@ -1,4 +1,4 @@
-"""Export data from docclass corpus to HF/Braintrust export format."""
+"""Export data from the mailroom-dataset corpus (v9; successor of docclass-merged)."""
 from __future__ import annotations
 
 import json
@@ -171,7 +171,13 @@ def build_manifest(
     stripped_n: int,
     intent_stats: dict | None = None,
 ) -> str:
-    """Generate manifest.txt content."""
+    """Generate the v7-era manifest.txt content (LEGACY — hub#57).
+
+    Retained for the archived v8 builder (``scripts/archive/v8/build_v8.py``)
+    which is the only caller. The v9 builder uses its own
+    ``build_manifest_v9`` (``mailroom_eda.v9_build``); the v7 schema/marker
+    text below describes the v7 lineage, not the current v9 surface.
+    """
     from collections import Counter
 
     types = Counter(r["expected"] for r in rows)

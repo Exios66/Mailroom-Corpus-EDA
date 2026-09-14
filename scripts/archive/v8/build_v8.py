@@ -47,9 +47,16 @@ from mailroom_eda.hf_interface import get_hf_api, sha256_file, upload_folder  # 
 
 
 def load_v7_rows() -> list[dict]:
-    """Reconstruct v7 row dicts from the Hub parquet (default + gt join)."""
-    base = Path(
-        "/Users/luciusjmorningstar/.cache/huggingface/hub/datasets--Lucius-Morningstar--mailroom-corpus"
+    """Reconstruct v7 row dicts from the Hub parquet (default + gt join).
+
+    hub#60: the snapshot path is derived from HF_HOME (the huggingface_hub
+    cache root), NOT a hardcoded developer-machine path — any clone with the
+    pinned snapshot downloaded resolves here.
+    """
+    from huggingface_hub.constants import HF_HUB_CACHE
+
+    base = Path(HF_HUB_CACHE) / (
+        "datasets--Lucius-Morningstar--mailroom-corpus"
         "/snapshots/bb57c5ad00333d239ea456fe3f2298c3ba5b5108/parquet"
     )
     rows: list[dict] = []

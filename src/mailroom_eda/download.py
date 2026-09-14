@@ -29,7 +29,7 @@ ALLOW_PATTERNS = [
 
 
 def download_corpus(force: bool = False) -> Path:
-    """Snapshot-download parquet configs + manifest + legacy JSONL into data/."""
+    """Snapshot-download the pinned v9 parquet configs + manifest into data/."""
     marker = PARQUET_DIR / "ground_truth" / "train"
     if marker.exists() and list(marker.glob("*.parquet")) and not force:
         return DATA_DIR

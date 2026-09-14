@@ -4,7 +4,7 @@ Exploratory data analysis (and the centralized HF upload helpers) for the
 [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
 corpus (v1, canonically **v9** of the mailroom corpus family) — **3,302** legal
 documents across 5 doc_types (insurance_claim, merger_agreement, contract,
-correspondence, corporate_record), 55 strata. Pinned at tip `a7067844`;
+correspondence, corporate_record), 55 strata. Pinned at tip `46a4d3c2…` (mailroom-dataset v9);
 standalone successor of the frozen v8 `mailroom-corpus` baseline (2,000 rows,
 `eafe1ab4` — never destroyed).
 
@@ -102,7 +102,7 @@ runs used to clobber the full-corpus summary with phase-partial stats.)
 ## HF facts (verified 2026-09-13, dataset v1 / corpus v9)
 
 - Repo: `Lucius-Morningstar/mailroom-dataset` (v1, canonically v9; data tip
-  `a7067844`). 3,302 rows (train 2,979 / test 323): insurance_claim 1,100
+  `46a4d3c2…`). 3,302 rows (train 2,979 / test 323): insurance_claim 1,100
   (carrier/inpatient/outpatient/pde 600 CMS DE-SynPUF + property 200 GNOTHEIA
   + auto 150 BDR motor + 150 INSURBIAS/§36), correspondence 1,000,
   contract 600 (509 CUAD + 91 SEC EDGAR EX-10), corporate_record 450,

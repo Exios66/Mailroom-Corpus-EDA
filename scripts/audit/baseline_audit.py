@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""mailroom-corpus baseline audit (plan §4 / §85 P0).
+"""mailroom-dataset baseline audit (plan §4 / §85 P0).
 
-Freezes the current corpus as release marker ``docclass-merged-v0.1-working``:
+Freezes the current corpus as release marker ``mailroom-dataset-v1-working``:
 loads the local HF snapshot (fetched at the pinned revision), verifies the
 §9–§11 identity/provenance/hash groundwork over every row, and writes a
 machine-readable manifest + the human audit report under
-``docs/reports/audits/`` (monorepo root).
+``docs/reports/audits/`` (monorepo root). The frozen v8 parent
+(``Lucius-Morningstar/mailroom-corpus``) is the lineage predecessor, not the
+audit target.
 
 Usage:
     python scripts/audit/baseline_audit.py            # audit + write artifacts
@@ -28,7 +30,7 @@ while not (_b / "_bootstrap.py").is_file():
 sys.path.insert(0, str(_b))
 from _bootstrap import ROOT  # noqa: E402
 
-from mailroom_eda.config import PARQUET_DIR, MANIFEST_PATH  # noqa: E402
+from mailroom_eda.config import PARQUET_DIR, MANIFEST_PATH, REPO_ID, REPO_REVISION  # noqa: E402
 from mailroom_eda.dataset_export import assign_split  # noqa: E402
 from mailroom_eda.docclass_uploader import GT_SCALAR_KEYS  # noqa: E402
 from mailroom_eda.download import parse_manifest  # noqa: E402
@@ -37,13 +39,13 @@ from mailroom_eda.identity import enrich_rows  # noqa: E402
 MONOREPO_ROOT = ROOT
 OUT_DIR = MONOREPO_ROOT / "docs" / "reports" / "audits"
 
-RELEASE_MARKER = "docclass-merged-v0.1-working"
+RELEASE_MARKER = "mailroom-dataset-v1-working"
 # Hub revision facts (verified via HfApi.list_repo_commits 2026-09-02):
 #   bb57c5ad 2026-09-02  issue #5 fix: intent_source aeslc_join (162 rows)
 #   fc1f211c 2026-08-31  card: pretty_name v6 -> v7
 #   1acd2600 2026-08-31  v7 correspondence intent hydration (data)
 #   b3ec9ee7 2026-08-31  purpose-GT push (former pipeline pin — stale)
-PINNED_REVISION = "bb57c5ad00333d239ea456fe3f2298c3ba5b5108"
+PINNED_REVISION = REPO_REVISION
 
 
 def sha256_file(path: Path) -> str:
@@ -113,10 +115,11 @@ def audit() -> dict:
         "release_marker": RELEASE_MARKER,
         "audited_at_utc": pd.Timestamp.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "dataset": {
-            "name": "Lucius-Morningstar/mailroom-corpus",
+            "name": REPO_ID,
             "pinned_revision": PINNED_REVISION,
-            "schema_version": manifest_txt.get("schema_version", "7"),
+            "schema_version": manifest_txt.get("schema_version", "9"),
             "builder": "mailroom_eda.dataset_export @ Mailroom-Corpus-EDA",
+            "v8_parent": "Lucius-Morningstar/mailroom-corpus",
         },
         "rows_total": len(rows),
         "class_counts": dict(sorted(class_counts.items())),
@@ -181,7 +184,7 @@ def main() -> int:
 
     if not args.check:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
-        out = OUT_DIR / "docclass_merged_baseline.json"
+        out = OUT_DIR / "mailroom_dataset_baseline.json"
         out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
         print(f"\nmanifest -> {out}")
     return 0

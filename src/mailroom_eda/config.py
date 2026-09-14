@@ -9,9 +9,10 @@ import matplotlib.pyplot as plt
 
 # Canonical dataset (v9 of the mailroom corpus family; standalone successor
 # of the frozen v8 `mailroom-corpus` baseline). Pinned tip sha for
-# reproducible pulls; see docs for the v8/v9 lineage.
+# reproducible pulls; see docs for the v8/v9 lineage. (hub#57: re-pinned
+# 2026-09-14 to the live tip 46a4d3c2 — the prior a7067844 pin was stale.)
 REPO_ID = "Lucius-Morningstar/mailroom-dataset"
-REPO_REVISION = "a706784419c37e57930fe17fc7ca0d7ee6672f0f"
+REPO_REVISION = "46a4d3c240a36671cde0182fff4960f6b8b73aca"
 REPO_URL = f"https://huggingface.co/datasets/{REPO_ID}"
 HF_USERNAME = "Lucius-Morningstar"
 

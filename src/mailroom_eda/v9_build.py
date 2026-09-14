@@ -97,7 +97,7 @@ EXPECTED_SUBCLASS_BY_CLASS: dict[str, tuple[str, ...]] = {
         "demand", "meeting_request", "attorney_demand",
     ),
     "insurance_claim": ("auto", "carrier", "inpatient", "outpatient", "pde",
-                        "property", "residential", "health", "commercial"),
+                        "property"),
 }
 
 #: Class-relevant GT keys (subset of the 27 stage_parquet scalar keys).
@@ -822,7 +822,7 @@ def verify_v9_stage(rows: list[dict], stage_dir: Path, counts: dict) -> None:
     ], ignore_index=True)
     assert len(gt) == len(rows), f"GT {len(gt)} != rows {len(rows)}"
     assert gt["document_id"].nunique() == len(rows), "document_id not unique"
-    assert set(gt["expected"]) <= set(EXPECTED_SUBCLASS_BY_CLASS)
+    assert set(gt["expected"].astype(str).unique()) <= set(EXPECTED_SUBCLASS_BY_CLASS)
     for col in IDENTITY_FIELDS + CONTRACT_FIELDS + MATTER_SCALARS:
         assert gt[col].isna().sum() == 0, f"{col} has NaN"
     # no label keys in default metadata (label-free by construction)

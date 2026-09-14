@@ -1,4 +1,5 @@
-"""Correspondence intent backfill for mailroom-corpus v7 (KANBAN issue #5).
+"""Correspondence intent backfill for mailroom-dataset v9 (successor of the
+frozen v8 `mailroom-corpus`; issue #5 lineage).
 
 Implements the four-phase plan from
 https://github.com/Exios66/mailroom-dev/issues/5 (the issue tracker now
@@ -637,4 +638,3 @@ def build_v7_rows(
             fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
     print(f"v7 rows -> {path} ({len(rows)} rows)")
     return rows
-    return report
