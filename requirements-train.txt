@@ -1,0 +1,16 @@
+# Mailroom-Corpus-EDA — OPTIONAL training/fine-tuning dependencies (ModernBERT).
+#
+# Install into the repo-local .venv on top of requirements.txt:
+#     .venv/bin/pip install -r requirements-train.txt
+#
+# These are the fine-tune stack for the modernbert/ subfolder (hierarchical
+# ModernBERT-base classifier over the published mailroom-modernbert-training
+# dataset). The base requirements.txt stays the EDA-only surface; nothing in
+# src/mailroom_eda/ imports these.
+#
+# Versions verified 2026-09-17 against Python 3.13 (repo-local .venv).
+torch==2.7.1
+transformers==4.51.3
+datasets==5.0.1
+accelerate==1.6.0
+evaluate==0.4.3
