@@ -10,9 +10,13 @@ import matplotlib.pyplot as plt
 # Canonical dataset (v9 of the mailroom corpus family; standalone successor
 # of the frozen v8 `mailroom-corpus` baseline). Pinned tip sha for
 # reproducible pulls; see docs for the v8/v9 lineage. (hub#57: re-pinned
-# 2026-09-14 to the live tip 46a4d3c2 — the prior a7067844 pin was stale.)
+# 2026-09-14 to the live tip 46a4d3c2 — the prior a7067844 pin was stale.
+# Re-pinned again 2026-09-26 to ed7576b6 — the v9.1 quality revision,
+# mailroom-issues#196 Phase B: weak-indirect-signal removal, row-level GT
+# presence codes, context-window bands. Zero identity/content drift; row
+# set unchanged. See mailroom_eda.v9_1_revision.)
 REPO_ID = "Lucius-Morningstar/mailroom-dataset"
-REPO_REVISION = "46a4d3c240a36671cde0182fff4960f6b8b73aca"
+REPO_REVISION = "ed7576b676343e0b402ec5412cded301e629bdee"
 REPO_URL = f"https://huggingface.co/datasets/{REPO_ID}"
 HF_USERNAME = "Lucius-Morningstar"
 

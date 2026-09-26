@@ -4,9 +4,11 @@ Exploratory data analysis (and the centralized HF upload helpers) for the
 [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
 corpus (v1, canonically **v9** of the mailroom corpus family) — **3,302** legal
 documents across 5 doc_types (insurance_claim, merger_agreement, contract,
-correspondence, corporate_record), 55 strata. Pinned at tip `46a4d3c2…` (mailroom-dataset v9);
-standalone successor of the frozen v8 `mailroom-corpus` baseline (2,000 rows,
-`eafe1ab4` — never destroyed).
+correspondence, corporate_record), 55 strata. Pinned at tip `ed7576b6…`
+(the v9.1 quality revision — mailroom-issues#196 Phase B; zero row/identity/
+content drift from the v9 tip `46a4d3c2…` it revises); standalone successor
+of the frozen v8 `mailroom-corpus` baseline (2,000 rows, `eafe1ab4` — never
+destroyed).
 
 Mirror of the standalone `Exios66/Mailroom-Corpus-EDA` repo; in the monorepo
 it lives at `packages/mailroom-corpus-eda` as a virtual uv member (no build).
@@ -114,7 +116,47 @@ runs used to clobber the full-corpus summary with phase-partial stats.)
 - **Determinism**: `RANDOM_STATE = 42`; rebuilds of JSONL/parquet must be
   byte-identical (sorted rows, deterministic order).
 
+## HF facts (verified 2026-09-26, dataset v1 / corpus v9.1 quality revision)
+
+Code-only revision of the v9 tip below (mailroom-issues#196 Phase B —
+"Modal + LLM-ingestion formatting"; plan doc
+`docs/plans/v9.1-data-quality-hf-revision.md`). No new document sourcing;
+zero row-set/identity/content drift (`document_id`, `content_sha256`,
+`doc_text`, every pre-existing `gt_fields`/`metadata` key byte-identical).
+Built + published by `mailroom_eda.v9_1_revision` /
+`scripts/build/build_v9_1_quality_revision.py`.
+
+- Repo: `Lucius-Morningstar/mailroom-dataset`, tip `ed7576b676343e0b402ec5412cded301e629bdee`
+  (revises v9 tip `46a4d3c2…` below; same 3,302 rows, train 2,979 / test 323).
+- **B1 — weak-indirect signal removal**: `metadata.clause_count` /
+  `metadata.maud_label_count` (a direct function of the hidden clause-label
+  GT — non-zero leaked "this doc has labeled clauses" to anything scoring
+  the blind `default` config) removed from blind metadata; now GT-only in
+  `gt_fields.clause_count` / `gt_fields.maud_label_count`.
+- **B2 — row-level GT presence codes** (`mailroom_eda.gt_presence`, single-
+  sourced with `scripts/audit/coverage_matrix.py`): every row's `gt_fields`
+  gained `gt_presence` (JSON) — one of `populated` / `schema_documented_absence`
+  / `pending_annotation` / `not_applicable` per label-bearing field. Verified
+  **zero `genuine_gap`** at publish time. Live distribution: `populated`
+  22,591 · `schema_documented_absence` 2,020 · `not_applicable` 41,338 ·
+  `pending_annotation` 91 (the 91 SEC EDGAR EX-10 `contract.cuad_clause_labels`
+  rows — issue #30 — now honestly diagnosed as blocked on the Modal/vLLM
+  clause-pass credential, not silently `{}`/100%-eligible).
+- **B4 — context-window budget bands**: `gt_fields.token_estimate` /
+  `gt_fields.context_window_band` (`<=4k` 2,530 · `<=16k` 428 · `<=32k` 120 ·
+  `>32k` 224 rows).
+- `docclass_uploader.GT_SCALAR_KEYS` extended with the 5 new fields
+  (`clause_count`, `maud_label_count`, `gt_presence`, `token_estimate`,
+  `context_window_band`) now that they are live on the Hub — `config.py`'s
+  `REPO_REVISION` is re-pinned to this tip.
+- `bundles` / `streams` / `fixtures` configs and sidecars are byte-identical
+  to the v9 tip — read-only inputs, never restaged by this revision.
+
 ## HF facts (verified 2026-09-13, dataset v1 / corpus v9)
+
+The v9 facts below describe the tip the v9.1 quality revision above revises
+in place (same repo, same 3,302 rows) — kept for the pre-revision schema
+(`ground_truth`'s 29-key `gt_fields` set, before B1/B2/B4).
 
 - Repo: `Lucius-Morningstar/mailroom-dataset` (v1, canonically v9; data tip
   `46a4d3c2…`). 3,302 rows (train 2,979 / test 323): insurance_claim 1,100
