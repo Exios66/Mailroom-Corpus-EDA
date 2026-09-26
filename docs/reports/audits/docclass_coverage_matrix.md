@@ -14,67 +14,72 @@ Generated from the local pinned snapshot — 3302 rows, 5 classes, 55 class × s
 
 ## Field coverage per specialist (§41)
 
-Coverage is reported over **eligible rows only** (populated / eligible). Unpopulated cells are classified `schema_documented_absence` — the v8_build/v9 conformance law says the field is empty on this row (e.g. `adjuster` on CMS/GNOTHEIA/INSURBIAS rows, `denial_reasons` on non-denied claims, `supporting_documents` on the 6 INSURBIAS bare-accident narratives that reference no supporting-document feature — issue #29) or a dated operational exception (`cuad_clause_labels` on the 91 SEC EDGAR EX-10 contracts — issue #30 fallback: the LLM clause pass could not run on 2026-09-13, no working provider credential; see the absence_rules entry for the dated follow-up) — or `genuine_gap` — the field should be populated but is not. After issues #29/#30 the corpus reports **zero genuine gaps**. Documented absences are tallied but never counted as gaps (issue #28).
+Coverage is reported over **eligible rows only** (populated / eligible, eligible = populated + genuine_gap + pending_annotation). Unpopulated cells are classified `schema_documented_absence` — the v8_build/v9 conformance law says the field is empty on this row (e.g. `adjuster` on CMS/GNOTHEIA/INSURBIAS rows, `denial_reasons` on non-denied claims, `supporting_documents` on the 6 INSURBIAS bare-accident narratives that reference no supporting-document feature — issue #29), excluded from eligible (absent by design, never a coverage target) — or `pending_annotation` — a genuine, catalogued gap blocked on a dependency (`cuad_clause_labels` on the 91 SEC EDGAR EX-10 contracts — issue #30: the LLM clause pass could not run on 2026-09-13, no working provider credential; see the pending_rules entry), counted AGAINST coverage_pct — or `genuine_gap` — the field should be populated and no rule explains the absence (mailroom-issues#196 Phase B2: after issues #28/#29 the corpus reports zero undiagnosed genuine gaps; the EX-10 clause hole is now honestly `pending_annotation`, not silently folded into `schema_documented_absence`). Documented absences are tallied but never counted as gaps (issue #28).
 
 ### `contract` (600 rows, `contracts_specialist`)
 
-| field | populated | eligible | documented-absent | genuine gap | coverage |
-|---|---|---|---|---|---|
-| `cuad_clause_labels` | 509 | 509 | 91 | 0 | 100% |
+| field | populated | eligible | documented-absent | pending-annotation | genuine gap | coverage |
+|---|---|---|---|---|---|---|
+| `cuad_clause_labels` | 509 | 600 | 0 | 91 | 0 | 85% |
 
 ### `corporate_record` (450 rows, `corporate_records_specialist`)
 
-| field | populated | eligible | documented-absent | genuine gap | coverage |
-|---|---|---|---|---|---|
-| `intent` | 450 | 450 | 0 | 0 | 100% |
-| `keywords` | 450 | 450 | 0 | 0 | 100% |
-| `subject_matter` | 450 | 450 | 0 | 0 | 100% |
+| field | populated | eligible | documented-absent | pending-annotation | genuine gap | coverage |
+|---|---|---|---|---|---|---|
+| `intent` | 450 | 450 | 0 | 0 | 0 | 100% |
+| `keywords` | 450 | 450 | 0 | 0 | 0 | 100% |
+| `subject_matter` | 450 | 450 | 0 | 0 | 0 | 100% |
 
 ### `correspondence` (1000 rows, `correspondence_specialist`)
 
-| field | populated | eligible | documented-absent | genuine gap | coverage |
-|---|---|---|---|---|---|
-| `content_topic` | 1000 | 1000 | 0 | 0 | 100% |
-| `intent` | 1000 | 1000 | 0 | 0 | 100% |
-| `keywords` | 1000 | 1000 | 0 | 0 | 100% |
-| `sentiment_label` | 1000 | 1000 | 0 | 0 | 100% |
-| `subject_matter` | 1000 | 1000 | 0 | 0 | 100% |
+| field | populated | eligible | documented-absent | pending-annotation | genuine gap | coverage |
+|---|---|---|---|---|---|---|
+| `content_topic` | 1000 | 1000 | 0 | 0 | 0 | 100% |
+| `intent` | 1000 | 1000 | 0 | 0 | 0 | 100% |
+| `keywords` | 1000 | 1000 | 0 | 0 | 0 | 100% |
+| `sentiment_label` | 1000 | 1000 | 0 | 0 | 0 | 100% |
+| `subject_matter` | 1000 | 1000 | 0 | 0 | 0 | 100% |
 
 ### `insurance_claim` (1100 rows, `insurance_claims_specialist`)
 
-| field | populated | eligible | documented-absent | genuine gap | coverage |
-|---|---|---|---|---|---|
-| `adjuster` | 150 | 150 | 950 | 0 | 100% |
-| `claim_number` | 1100 | 1100 | 0 | 0 | 100% |
-| `claim_type` | 1100 | 1100 | 0 | 0 | 100% |
-| `claimed_amount` | 1100 | 1100 | 0 | 0 | 100% |
-| `coverage_determination` | 1100 | 1100 | 0 | 0 | 100% |
-| `damages_description` | 1100 | 1100 | 0 | 0 | 100% |
-| `date_filed` | 1100 | 1100 | 0 | 0 | 100% |
-| `date_of_loss` | 1100 | 1100 | 0 | 0 | 100% |
-| `denial_reasons` | 36 | 36 | 1064 | 0 | 100% |
-| `insured_party` | 1100 | 1100 | 0 | 0 | 100% |
-| `insurer` | 1100 | 1100 | 0 | 0 | 100% |
-| `intent` | 1100 | 1100 | 0 | 0 | 100% |
-| `keywords` | 1100 | 1100 | 0 | 0 | 100% |
-| `policy_number` | 1100 | 1100 | 0 | 0 | 100% |
-| `subject_matter` | 1100 | 1100 | 0 | 0 | 100% |
-| `supporting_documents` | 1094 | 1094 | 6 | 0 | 100% |
+| field | populated | eligible | documented-absent | pending-annotation | genuine gap | coverage |
+|---|---|---|---|---|---|---|
+| `adjuster` | 150 | 150 | 950 | 0 | 0 | 100% |
+| `claim_number` | 1100 | 1100 | 0 | 0 | 0 | 100% |
+| `claim_type` | 1100 | 1100 | 0 | 0 | 0 | 100% |
+| `claimed_amount` | 1100 | 1100 | 0 | 0 | 0 | 100% |
+| `coverage_determination` | 1100 | 1100 | 0 | 0 | 0 | 100% |
+| `damages_description` | 1100 | 1100 | 0 | 0 | 0 | 100% |
+| `date_filed` | 1100 | 1100 | 0 | 0 | 0 | 100% |
+| `date_of_loss` | 1100 | 1100 | 0 | 0 | 0 | 100% |
+| `denial_reasons` | 36 | 36 | 1064 | 0 | 0 | 100% |
+| `insured_party` | 1100 | 1100 | 0 | 0 | 0 | 100% |
+| `insurer` | 1100 | 1100 | 0 | 0 | 0 | 100% |
+| `intent` | 1100 | 1100 | 0 | 0 | 0 | 100% |
+| `keywords` | 1100 | 1100 | 0 | 0 | 0 | 100% |
+| `policy_number` | 1100 | 1100 | 0 | 0 | 0 | 100% |
+| `subject_matter` | 1100 | 1100 | 0 | 0 | 0 | 100% |
+| `supporting_documents` | 1094 | 1094 | 6 | 0 | 0 | 100% |
 
 ### `merger_agreement` (152 rows, `contracts_specialist`)
 
-| field | populated | eligible | documented-absent | genuine gap | coverage |
-|---|---|---|---|---|---|
-| `maud_clause_labels` | 152 | 152 | 0 | 0 | 100% |
+| field | populated | eligible | documented-absent | pending-annotation | genuine gap | coverage |
+|---|---|---|---|---|---|---|
+| `maud_clause_labels` | 152 | 152 | 0 | 0 | 0 | 100% |
 
-## Documented absences (§v8_build/v9 conformance law + dated exceptions)
+## Documented absences (§v8_build/v9 conformance law)
 
-Rows classified `schema_documented_absence` are **not coverage gaps**: the conformance law documents the field empty on them, or a dated operational exception records the classification (issue #30 fallback). Rules (with code citations; full text in the JSON):
+Rows classified `schema_documented_absence` are **not coverage gaps**: the conformance law documents the field empty on them by design — they never close. Rules (with code citations; full text in the JSON):
 
-- **`contract.cuad_clause_labels`** — 91 rows classified documented-absence; 0 populated rows match the absence predicate (0 = conformance-clean). DATED EXCEPTION 2026-09-13 (issue #30 fallback): the 91 SEC EDGAR EX-10 contract rows ship no CUAD clause annotation (the CUAD rows carry the full 41-type label set). Annotation via the corpus-eda LLM clause pass lineage (the DMR-052 provider seam; constrained zero-shot pass, temperature 0.1) was attempted and could not run: the sole OPENROUTER_API_KEY returns 401 'API key expired', no VLLM_BASE_URL / Modal endpoint is configured, and no local ollama model is cached — quality cannot be gated, so the rows are a documented exception pending a working credential. '{}' is a complete no-annotations answer per v9_build.DICT_GT_FIELDS ('dict-typed clause labels use "{}" for no annotations').
-- **`insurance_claim.adjuster`** — 950 rows classified documented-absence; 0 populated rows match the absence predicate (0 = conformance-clean). v8_build.py ALLOWED_EMPTY = {'adjuster'} + module docstring ('' only where the schema documents absence, e.g. adjuster on property/CMS rows); v9_build.py ALLOWED_EMPTY['insurance_claim'] = {'adjuster'}; conform_rows: 'the only documented scalar allowance is insurance_claim.adjuster (source-absent on CMS / GNOTHEIA / INSURBIAS)' — only the BDR auto rows carry adjuster pseudonyms (v8_build.py _auto_row: _pseudo_adjuster(claim_id)).
-- **`insurance_claim.denial_reasons`** — 1064 rows classified documented-absence; 0 populated rows match the absence predicate (0 = conformance-clean). v8_build.py _auto_row: reasons = _auto_denial_reasons(r) if determination == 'denied' else [] — denial reasons exist only on denied claims; non-denied rows ship '[]' (a complete no-items answer per v9_build.py LIST_GT_FIELDS: 'a valid JSON array is the COMPLETE answer — [] means no items (honest), never a missing value').
-- **`insurance_claim.supporting_documents`** — 6 rows classified documented-absence; 0 populated rows match the absence predicate (0 = conformance-clean). v9_build.py complete_gt_fields + _insurbias_supporting_documents / _insurbias_supporting_doc_absent (issue #29): the INSURBIAS draw rows ship claim narratives only, so supporting_documents is derived deterministically from each narrative's referenced features — repair estimate on any vehicle-damage / repair assertion (the v8 BDR auto precedent, v8_build.py _auto_row 'supporting = ["repair estimate"]'), plus police report (authorities/police referenced), damage photos (image referenced), medical records (injury asserted, negation-aware), fire report (fire department called). Rows whose narrative references NO such feature (bare accident reports — 6/150 on the v9 draw) keep '[]', a documented absence per LIST_GT_FIELDS ('a valid JSON array is the COMPLETE answer — [] means no items (honest), never a missing value').
+- **`insurance_claim.adjuster`** — 950 rows classified documented-absence; 0 populated rows match the absence predicate (0 = conformance-clean). v8_build.py ALLOWED_EMPTY = {'adjuster'}; v9_build.py ALLOWED_EMPTY['insurance_claim'] = {'adjuster'} — source-absent on every insurance subclass except the BDR auto draw, which carries adjuster pseudonyms.
+- **`insurance_claim.denial_reasons`** — 1064 rows classified documented-absence; 0 populated rows match the absence predicate (0 = conformance-clean). v8_build.py _auto_row: denial reasons exist only on denied claims; non-denied rows ship '[]' (a complete no-items answer per v9_build.LIST_GT_FIELDS).
+- **`insurance_claim.supporting_documents`** — 6 rows classified documented-absence; 0 populated rows match the absence predicate (0 = conformance-clean). v9_build.py complete_gt_fields + _insurbias_supporting_documents / _insurbias_supporting_doc_absent (issue #29): INSURBIAS rows ship claim narratives only; supporting_documents is derived from referenced features. '[]' is a documented absence only when the narrative grounds no such feature (bare accident report, 6/150 on the v9 draw).
+
+## Pending annotations (catalogued gaps blocked on a dependency)
+
+Rows classified `pending_annotation` ARE coverage gaps — they count against `coverage_pct` above — but the gap is diagnosed and catalogued (never a silent `{}`), and closes as soon as the named dependency clears (mailroom-issues#196 Phase B2):
+
+- **`contract.cuad_clause_labels`** — 91 rows classified pending-annotation; 0 populated rows match the pending predicate (0 = conformance-clean). issue #30 (dated 2026-09-13): the 91 SEC EDGAR EX-10 contract rows ship no CUAD clause annotation — the clause-classification pass could not run (no working OPENROUTER_API_KEY / VLLM_BASE_URL / Modal endpoint at build time). '{}' is a complete no-annotations answer per v9_build.DICT_GT_FIELDS, but the gap is a catalogued pending annotation, not a schema-documented absence: it closes as soon as a working clause-pass credential re-runs the DMR-052 provider seam over exactly these 91 filenames (docs/reports/audits/cuad_ex10_annotation_review.md).
 
 ## Scenario columns (§40)
 
