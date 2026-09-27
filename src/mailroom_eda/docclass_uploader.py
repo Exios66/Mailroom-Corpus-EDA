@@ -32,6 +32,12 @@ GT_SCALAR_KEYS = [
     "cuad_clause_labels", "maud_clause_labels",
     "intent", "subject_matter", "keywords",
     "intent_source", "intent_confidence", "intent_status",
+    # v9.1 quality revision (mailroom-issues#196 Phase B), live on the Hub as
+    # of tip ed7576b6: weak-indirect signals moved out of blind metadata
+    # (B1) + row-level presence codes and token/context bands (B2/B4) — see
+    # mailroom_eda.gt_presence / mailroom_eda.v9_1_revision.
+    "clause_count", "maud_label_count", "gt_presence",
+    "token_estimate", "context_window_band",
 ]
 
 PURPOSE_GT_KEYS = ("intent", "subject_matter", "keywords")

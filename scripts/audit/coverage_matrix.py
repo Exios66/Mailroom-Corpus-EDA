@@ -43,9 +43,12 @@ from _bootstrap import ROOT  # noqa: E402
 
 from mailroom_eda.config import PARQUET_DIR  # noqa: E402
 from mailroom_eda.eval_contract import SOURCE_BY_CLASS, specialist_registry  # noqa: E402
-from mailroom_eda.v9_build import (  # noqa: E402
-    INSURBIAS_SOURCE,
-    _insurbias_supporting_doc_absent,
+from mailroom_eda.gt_presence import (  # noqa: E402
+    ABSENCE_RULES,
+    FIELD_KEYS_BY_CLASS,
+    PENDING_ANNOTATION_RULES,
+    classify_field,
+    is_populated,
 )
 
 
@@ -62,166 +65,16 @@ def _audits_dir() -> Path:
 
 OUT_DIR = _audits_dir()
 
-#: §41 field-coverage map: class → GT columns that feed the specialist's
-#: expected_fields surface (matches conftest's EXTRACTION_GT_BY_CLASS +
-#: the enrichment keys; empty class maps = enrichment-GT classes).
-FIELD_KEYS_BY_CLASS: dict[str, tuple[str, ...]] = {
-    "contract": ("cuad_clause_labels",),
-    "merger_agreement": ("maud_clause_labels",),
-    "correspondence": (
-        "intent", "subject_matter", "keywords", "sentiment_label",
-        "content_topic",
-    ),
-    "corporate_record": ("intent", "subject_matter", "keywords"),
-    "insurance_claim": (
-        "claim_number", "policy_number", "insurer", "insured_party",
-        "claim_type", "date_of_loss", "date_filed", "claimed_amount",
-        "adjuster", "damages_description", "coverage_determination",
-        "denial_reasons", "supporting_documents",
-        "intent", "subject_matter", "keywords",
-    ),
-}
-
-#: Documented-absence rules (issue #28): (class, field) -> rule. A rule cites
-#: the code that documents the absence and supplies the predicate deciding
-#: whether a row's unpopulated cell is a schema-documented absence. Where a
-#: (class, field) pair has NO rule here, every unpopulated cell is a genuine
-#: gap — the issue's discipline: derive rules from code + schema, verify
-#: against the snapshot, never invent.
-#:
-#: Verified against the v9 snapshot (3,302 rows) by build(): the rule's
-#: ``documented_absence`` count must reproduce the data (see the JSON's
-#: ``absence_rules`` section, which also reports zero populated rows matching
-#: an absence predicate — conformance-clean).
-ABSENCE_RULES: dict[tuple[str, str], dict[str, Any]] = {
-    ("insurance_claim", "adjuster"): {
-        "rule": (
-            "v8_build.py ALLOWED_EMPTY = {'adjuster'} + module docstring "
-            "('' only where the schema documents absence, e.g. adjuster on "
-            "property/CMS rows); v9_build.py ALLOWED_EMPTY['insurance_claim'] "
-            "= {'adjuster'}; conform_rows: 'the only documented scalar "
-            "allowance is insurance_claim.adjuster (source-absent on CMS / "
-            "GNOTHEIA / INSURBIAS)' — only the BDR auto rows carry adjuster "
-            "pseudonyms (v8_build.py _auto_row: _pseudo_adjuster(claim_id))."
-        ),
-        # source-absent on every insurance subclass EXCEPT the BDR auto draw
-        # (metadata.source_dataset mirrors v8_build.BDR_AUTO_REPO).
-        "is_documented_absence": lambda r: (
-            str((r.get("metadata") or {}).get("source_dataset") or "")
-            != "bdr-ai-org/insurance-motor-claims-decision-v1"
-        ),
-    },
-    ("insurance_claim", "denial_reasons"): {
-        "rule": (
-            "v8_build.py _auto_row: reasons = _auto_denial_reasons(r) if "
-            "determination == 'denied' else [] — denial reasons exist only on "
-            "denied claims; non-denied rows ship '[]' (a complete no-items "
-            "answer per v9_build.py LIST_GT_FIELDS: 'a valid JSON array is "
-            "the COMPLETE answer — [] means no items (honest), never a "
-            "missing value')."
-        ),
-        # the only rows eligible for denial reasons are denied determinations
-        "is_documented_absence": lambda r: (
-            str(r.get("coverage_determination") or "").strip().lower() != "denied"
-        ),
-    },
-    # issue #29 (epic #27): the v9 INSURBIAS draw (feihuangfh/INSURBIAS) ships
-    # claim narratives only; supporting_documents is derived from each
-    # narrative's referenced features (v9_build.complete_gt_fields →
-    # _insurbias_supporting_documents: repair estimate on vehicle-damage /
-    # repair assertions — the v8 BDR auto precedent v8_build.py _auto_row —
-    # plus police report / damage photos / medical records / fire report on
-    # explicit feature matches). A row is a documented absence ONLY when its
-    # narrative references NO supporting-document feature (bare accident
-    # report — v9_build._insurbias_supporting_doc_absent; 6/150 on the v9
-    # draw): no damage, no repair need, no police/authorities, no image, no
-    # injury, no towing, no witness, no fire department. "[]" is a complete
-    # no-items answer per LIST_GT_FIELDS. The predicate mirrors the build's
-    # and reuses it so audit and build can never drift apart.
-    ("insurance_claim", "supporting_documents"): {
-        "rule": (
-            "v9_build.py complete_gt_fields + _insurbias_supporting_"
-            "documents / _insurbias_supporting_doc_absent (issue #29): the "
-            "INSURBIAS draw rows ship claim narratives only, so "
-            "supporting_documents is derived deterministically from each "
-            "narrative's referenced features — repair estimate on any "
-            "vehicle-damage / repair assertion (the v8 BDR auto precedent, "
-            "v8_build.py _auto_row 'supporting = [\"repair estimate\"]'), "
-            "plus police report (authorities/police referenced), damage "
-            "photos (image referenced), medical records (injury asserted, "
-            "negation-aware), fire report (fire department called). Rows "
-            "whose narrative references NO such feature (bare accident "
-            "reports — 6/150 on the v9 draw) keep '[]', a documented absence "
-            "per LIST_GT_FIELDS ('a valid JSON array is the COMPLETE answer "
-            "— [] means no items (honest), never a missing value')."
-        ),
-        # absent only on INSURBIAS rows whose narrative grounds no document
-        "is_documented_absence": lambda r: (
-            str((r.get("metadata") or {}).get("source_dataset") or "")
-            == INSURBIAS_SOURCE
-            and _insurbias_supporting_doc_absent(str(r.get("doc_text") or ""))
-        ),
-    },
-    # issue #30 (epic #27): DATED EXCEPTION (2026-09-13). The 91 sec_edgar
-    # EX-10 contract rows carry no CUAD clause annotation. The populate path
-    # (clause-classification pass over the EX-10 texts with the 41-type CUAD
-    # vocabulary, human-gated) could not be executed in this environment on
-    # the execution date: the only LLM credential available
-    # (OPENROUTER_API_KEY in the eval-environment) returns 401 "API key
-    # expired", no VLLM_BASE_URL/Modal endpoint is configured, and no local
-    # ollama model is cached — so annotation quality cannot be produced, let
-    # alone gated. Per issue #30's fallback, the rows are classified here as
-    # a documented exception (not a schema law) so the matrix stops counting
-    # them as a gap; "{}" is a complete no-annotations answer per
-    # v9_build.DICT_GT_FIELDS. Follow-up: re-run the clause pass when a
-    # working provider credential is available (scope = these 91 rows,
-    # catalogued in docs/reports/audits/cuad_ex10_annotation_review.md).
-    ("contract", "cuad_clause_labels"): {
-        "rule": (
-            "DATED EXCEPTION 2026-09-13 (issue #30 fallback): the 91 SEC "
-            "EDGAR EX-10 contract rows ship no CUAD clause annotation (the "
-            "CUAD rows carry the full 41-type label set). Annotation via the "
-            "corpus-eda LLM clause pass lineage (the DMR-052 provider seam; "
-            "constrained zero-shot pass, temperature 0.1) was attempted and "
-            "could not run: the sole OPENROUTER_API_KEY returns 401 'API key "
-            "expired', no VLLM_BASE_URL / Modal endpoint is configured, and "
-            "no local ollama model is cached — quality cannot be gated, so "
-            "the rows are a documented exception pending a working "
-            "credential. '{}' is a complete no-annotations answer per "
-            "v9_build.DICT_GT_FIELDS ('dict-typed clause labels use \"{}\" "
-            "for no annotations')."
-        ),
-        # sec_edgar EX-10 draws are the only contract rows without CUAD labels
-        "is_documented_absence": lambda r: (
-            str((r.get("metadata") or {}).get("source_dataset") or "") == "sec_edgar"
-        ),
-    },
-}
-
-
-def _is_documented_absence(doc_class: str, key: str, row: dict) -> bool:
-    """True when a documented conformance rule says this row's field is empty
-    (issue #28). No rule => False (absence is then a genuine gap)."""
-    rule = ABSENCE_RULES.get((doc_class, key))
-    if rule is None:
-        return False
-    return bool(rule["is_documented_absence"](row))
-
-
-def _classify(doc_class: str, key: str, row: dict) -> str:
-    """Classify one (class, field) cell for §41 coverage (issue #28):
-
-    - ``populated`` — carries ground truth,
-    - ``schema_documented_absence`` — the v8_build/v9 conformance law says
-      the field is empty on this row,
-    - ``genuine_gap`` — should be populated but is not (no documented rule
-      covers the absence).
-    """
-    if _populated(row.get(key)):
-        return "populated"
-    if _is_documented_absence(doc_class, key, row):
-        return "schema_documented_absence"
-    return "genuine_gap"
+#: §41 field-coverage map (class -> GT columns) and the documented-absence /
+#: pending-annotation rules (issue #28/#30) are now single-sourced in
+#: ``mailroom_eda.gt_presence`` — the same module the Hub publish path
+#: (``scripts/build/build_v9_1_quality_revision.py``) uses to compute the
+#: row-level ``gt_presence`` column, so the audit and the shipped data can
+#: never drift apart (mailroom-issues#196 Phase B2). ``classify_field``
+#: returns one of ``populated`` / ``schema_documented_absence`` /
+#: ``pending_annotation`` / ``genuine_gap`` for a ``(class, field)`` cell
+#: that IS class-relevant (this CLI never asks about a not-applicable cell,
+#: since it only iterates ``FIELD_KEYS_BY_CLASS[doc_class]``).
 
 
 def load_rows() -> list[dict]:
@@ -263,43 +116,39 @@ def load_rows() -> list[dict]:
     return df.to_dict("records")
 
 
-def _populated(v) -> bool:
-    """v9 complete-GT convention: '' is absent and the JSON-encoded no-item
-    markers ``'[]'`` / ``'{}'`` carry no ground truth (the 91 EDGAR EX-10
-    contracts ship ``cuad_clause_labels = '{}'`` — no CUAD annotation)."""
-    if v is None:
-        return False
-    if isinstance(v, str):
-        v = v.strip()
-        if not v or v in ("[]", "{}"):
-            return False
-    return v not in ("", [], {})
-
-
 def build(rows: list[dict]) -> dict:
     registry = specialist_registry()
     strata: Counter = Counter(
         (r["expected"], str(r.get("expected_subclass") or "")) for r in rows
     )
     field_coverage: dict[str, dict[str, int]] = {}
-    # issue #28: per (class, field) classification of every unpopulated cell.
+    # issue #28/#30: per (class, field) classification of every unpopulated
+    # cell — populated / schema_documented_absence / pending_annotation /
+    # genuine_gap, via the single-sourced mailroom_eda.gt_presence rules.
     absence_classification: dict[str, dict[str, dict[str, int]]] = {}
     for doc_class, keys in FIELD_KEYS_BY_CLASS.items():
         class_rows = [r for r in rows if r["expected"] == doc_class]
         field_coverage[doc_class] = {
-            key: sum(1 for r in class_rows if _populated(r.get(key))) for key in keys
+            key: sum(1 for r in class_rows if is_populated(r.get(key))) for key in keys
         }
         absence_classification[doc_class] = {}
         for key in keys:
-            tally = Counter(_classify(doc_class, key, r) for r in class_rows)
+            tally = Counter(classify_field(doc_class, key, r) for r in class_rows)
             populated = tally["populated"]
             documented = tally["schema_documented_absence"]
+            pending = tally["pending_annotation"]
             genuine = tally["genuine_gap"]
-            eligible = populated + genuine
+            # "eligible" = rows where the field should eventually carry GT:
+            # populated + genuine (undiagnosed) + pending (diagnosed, but
+            # still a real gap pending a dependency) — documented absences
+            # are excluded, they are absent by design and never a coverage
+            # target (issue #28's original discipline, unchanged).
+            eligible = populated + genuine + pending
             absence_classification[doc_class][key] = {
                 "populated": populated,
                 "eligible": eligible,
                 "documented_absence": documented,
+                "pending_annotation": pending,
                 "genuine_gap": genuine,
                 "coverage_pct": round(populated / eligible * 100) if eligible else 0,
             }
@@ -314,11 +163,28 @@ def build(rows: list[dict]) -> dict:
             "rule": rule["rule"],
             "documented_absence": sum(
                 1 for r in class_rows
-                if not _populated(r.get(key)) and rule["is_documented_absence"](r)
+                if not is_populated(r.get(key)) and rule["is_documented_absence"](r)
             ),
             "populated_matching_absence_predicate": sum(
                 1 for r in class_rows
-                if _populated(r.get(key)) and rule["is_documented_absence"](r)
+                if is_populated(r.get(key)) and rule["is_documented_absence"](r)
+            ),
+        }
+    # issue #30: pending-annotation rules get the same live re-verification —
+    # a genuine, catalogued gap blocked on a dependency, distinct from a
+    # by-design documented absence (mailroom-issues#196 Phase B2).
+    pending_rules: dict[str, dict[str, Any]] = {}
+    for (doc_class, key), rule in PENDING_ANNOTATION_RULES.items():
+        class_rows = [r for r in rows if r["expected"] == doc_class]
+        pending_rules[f"{doc_class}.{key}"] = {
+            "rule": rule["rule"],
+            "pending_annotation": sum(
+                1 for r in class_rows
+                if not is_populated(r.get(key)) and rule["is_pending"](r)
+            ),
+            "populated_matching_pending_predicate": sum(
+                1 for r in class_rows
+                if is_populated(r.get(key)) and rule["is_pending"](r)
             ),
         }
     classes = sorted({r["expected"] for r in rows})
@@ -358,23 +224,28 @@ def build(rows: list[dict]) -> dict:
             for (c, sc), n in sorted(strata.items())
         ],
         "absence_rules": absence_rules,
+        "pending_rules": pending_rules,
         "coverage_basis_note": (
             "§41 coverage is reported over ELIGIBLE rows only (populated / "
-            "eligible). Unpopulated cells are classified "
+            "eligible, where eligible = populated + genuine_gap + "
+            "pending_annotation). Unpopulated cells are classified "
             "schema_documented_absence — the v8_build/v9 conformance law says "
             "the field is empty on this row (e.g. adjuster on CMS/GNOTHEIA/"
             "INSURBIAS rows, denial_reasons on non-denied claims, "
             "supporting_documents on the 6 INSURBIAS bare-accident narratives "
-            "that reference no supporting-document feature — issue #29) or a "
-            "dated operational exception (cuad_clause_labels on the 91 SEC "
-            "EDGAR EX-10 contracts — issue #30 fallback: the LLM clause pass "
-            "could not run on 2026-09-13, no working provider credential; "
-            "see the absence_rules entry for the dated follow-up) — or "
-            "genuine_gap — the field should be populated but is not. After "
-            "issues #29/#30 the corpus reports ZERO genuine gaps: every "
-            "partial-coverage field flagged by the v9 audit sweep is closed. "
-            "Documented absences are tallied in absence_classification / "
-            "absence_rules but never counted as gaps (issue #28, epic #27)."
+            "that reference no supporting-document feature — issue #29) and "
+            "excluded from eligible entirely (absent by design, never a "
+            "coverage target) — or pending_annotation — a genuine, "
+            "catalogued gap blocked on a specific dependency "
+            "(cuad_clause_labels on the 91 SEC EDGAR EX-10 contracts — issue "
+            "#30: the LLM clause pass could not run on 2026-09-13, no "
+            "working provider credential; see pending_rules for the "
+            "re-verified count) — or genuine_gap — the field should be "
+            "populated and no rule explains the absence. Documented absences "
+            "are tallied in absence_classification / absence_rules but never "
+            "counted as gaps; pending annotations ARE counted against "
+            "coverage_pct (honest: they close only when the dependency "
+            "clears, mailroom-issues#196 Phase B2) (issue #28, epic #27)."
         ),
         "scenario_columns_note": (
             "tested/regression/challenge/multi-document are §40 template "
@@ -406,19 +277,25 @@ def render_md(coverage: dict) -> str:
     lines += ["", "## Field coverage per specialist (§41)", ""]
     lines += [
         "Coverage is reported over **eligible rows only** (populated / "
-        "eligible). Unpopulated cells are classified "
+        "eligible, eligible = populated + genuine_gap + pending_annotation). "
+        "Unpopulated cells are classified "
         "`schema_documented_absence` — the v8_build/v9 conformance law says "
         "the field is empty on this row (e.g. `adjuster` on CMS/GNOTHEIA/"
         "INSURBIAS rows, `denial_reasons` on non-denied claims, "
         "`supporting_documents` on the 6 INSURBIAS bare-accident narratives "
-        "that reference no supporting-document feature — issue #29) or a "
-        "dated operational exception (`cuad_clause_labels` on the 91 SEC "
-        "EDGAR EX-10 contracts — issue #30 fallback: the LLM clause pass "
-        "could not run on 2026-09-13, no working provider credential; see "
-        "the absence_rules entry for the dated follow-up) — or "
-        "`genuine_gap` — the field should be populated but is not. After "
-        "issues #29/#30 the corpus reports **zero genuine gaps**. Documented "
-        "absences are tallied but never counted as gaps (issue #28).",
+        "that reference no supporting-document feature — issue #29), "
+        "excluded from eligible (absent by design, never a coverage target) "
+        "— or `pending_annotation` — a genuine, catalogued gap blocked on a "
+        "dependency (`cuad_clause_labels` on the 91 SEC EDGAR EX-10 "
+        "contracts — issue #30: the LLM clause pass could not run on "
+        "2026-09-13, no working provider credential; see the pending_rules "
+        "entry), counted AGAINST coverage_pct — or `genuine_gap` — the "
+        "field should be populated and no rule explains the absence "
+        "(mailroom-issues#196 Phase B2: after issues #28/#29 the corpus "
+        "reports zero undiagnosed genuine gaps; the EX-10 clause hole is now "
+        "honestly `pending_annotation`, not silently folded into "
+        "`schema_documented_absence`). Documented absences are tallied but "
+        "never counted as gaps (issue #28).",
         "",
     ]
     for doc_class in sorted(coverage["class_view"]):
@@ -431,29 +308,29 @@ def render_md(coverage: dict) -> str:
         lines.append(f"### `{doc_class}` ({total} rows, `{view['specialist']}`)")
         lines += [
             "",
-            "| field | populated | eligible | documented-absent | genuine gap | coverage |",
-            "|---|---|---|---|---|---|",
+            "| field | populated | eligible | documented-absent | pending-annotation | genuine gap | coverage |",
+            "|---|---|---|---|---|---|---|",
         ]
         for key in sorted(fields):
             a = ac.get(key) or {}
             n = a.get("populated", 0)
             eligible = a.get("eligible", 0)
             doc_abs = a.get("documented_absence", 0)
+            pending = a.get("pending_annotation", 0)
             gap = a.get("genuine_gap", 0)
             pct = f"{a.get('coverage_pct', 0)}%" if eligible else "—"
             lines.append(
-                f"| `{key}` | {n} | {eligible} | {doc_abs} | {gap} | {pct} |"
+                f"| `{key}` | {n} | {eligible} | {doc_abs} | {pending} | {gap} | {pct} |"
             )
         lines.append("")
     absence_rules = coverage.get("absence_rules") or {}
     if absence_rules:
         lines += [
-            "## Documented absences (§v8_build/v9 conformance law + dated exceptions)",
+            "## Documented absences (§v8_build/v9 conformance law)",
             "",
             "Rows classified `schema_documented_absence` are **not coverage "
-            "gaps**: the conformance law documents the field empty on them, or "
-            "a dated operational exception records the classification (issue "
-            "#30 fallback). "
+            "gaps**: the conformance law documents the field empty on them "
+            "by design — they never close. "
             "Rules (with code citations; full text in the JSON):",
             "",
         ]
@@ -464,6 +341,27 @@ def render_md(coverage: dict) -> str:
                 "documented-absence; "
                 f"{rule['populated_matching_absence_predicate']} populated rows "
                 "match the absence predicate (0 = conformance-clean). "
+                f"{rule['rule']}"
+            )
+        lines.append("")
+    pending_rules = coverage.get("pending_rules") or {}
+    if pending_rules:
+        lines += [
+            "## Pending annotations (catalogued gaps blocked on a dependency)",
+            "",
+            "Rows classified `pending_annotation` ARE coverage gaps — they "
+            "count against `coverage_pct` above — but the gap is diagnosed "
+            "and catalogued (never a silent `{}`), and closes as soon as the "
+            "named dependency clears (mailroom-issues#196 Phase B2):",
+            "",
+        ]
+        for key in sorted(pending_rules):
+            rule = pending_rules[key]
+            lines.append(
+                f"- **`{key}`** — {rule['pending_annotation']} rows classified "
+                "pending-annotation; "
+                f"{rule['populated_matching_pending_predicate']} populated rows "
+                "match the pending predicate (0 = conformance-clean). "
                 f"{rule['rule']}"
             )
         lines.append("")
