@@ -161,7 +161,7 @@ def review_expected(row: dict[str, Any]) -> tuple[bool, str]:
     §31 incomplete/conflicting sources) that land with the v0.2 publication.
     """
     ood = str(row.get("fixture_kind") or "")
-    if ood == "ood_unknown":
+    if ood in ("ood_unknown", "ood_retired_class"):
         return True, "taxonomy_unknown"
     if ood == "low_confidence":
         return True, "low_confidence"
@@ -169,6 +169,8 @@ def review_expected(row: dict[str, Any]) -> tuple[bool, str]:
         return True, "incomplete_extraction"
     if ood == "conflicting":
         return True, "conflicting_information"
+    if ood == "ambiguous":
+        return True, "ambiguous"
     return False, ""
 
 
@@ -399,7 +401,7 @@ def enrich_row(row: dict[str, Any]) -> dict[str, Any]:
     out["review_expected"] = str(bool(review)).lower()
     out["review_reason"] = review_reason
     out["retry_expected"] = str(bool(retry)).lower()
-    out["expected_post_retry_state"] = post_retry_state(row) if retry else ""
+    out["expected_post_retry_state"] = post_retry if retry else ""
     provenance = annotation_provenance(row)
     out["annotation_source"] = provenance["source"]
     out["annotation_method"] = provenance["method"]
@@ -409,14 +411,6 @@ def enrich_row(row: dict[str, Any]) -> dict[str, Any]:
     out["annotation_reviewer"] = provenance["reviewer"]
     out["annotation_timestamp"] = provenance["timestamp"]
     return out
-
-
-def post_retry_state(row: dict[str, Any]) -> str:
-    """§31: expected_post_retry_state for retry fixtures (canonical: archived)."""
-    ood = str(row.get("fixture_kind") or "")
-    if ood == "retry_review":
-        return "human_review"
-    return "archived"
 
 
 def enrich_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
