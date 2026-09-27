@@ -116,6 +116,30 @@ runs used to clobber the full-corpus summary with phase-partial stats.)
 - **Determinism**: `RANDOM_STATE = 42`; rebuilds of JSONL/parquet must be
   byte-identical (sorted rows, deterministic order).
 
+## Cursor Cloud specific instructions
+
+The default Cloud Agent image ships Python 3.12 without `python3.12-venv`, so
+`python3 -m venv` fails until that package is installed (`ensurepip` is
+missing). Use a repo-local `.venv`:
+
+```bash
+sudo apt-get install -y python3.12-venv
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt 'pytest>=8.0'
+.venv/bin/python -m pytest tests/
+.venv/bin/python run_all.py --phases P0
+```
+
+`pytest` is a dev extra and is absent from `requirements.txt`. `run_all.py --phases P0`
+fetches the public `Lucius-Morningstar/mailroom-dataset` snapshot into gitignored
+`data/`; the full-corpus tests skip until that snapshot exists. Publishing
+needs `HF_TOKEN`. Reading the public snapshot does not.
+
+§64 / §59 tests read `../llm-mailroom/src/config/taxonomy.yaml` (a sibling of
+this checkout). Pin that clone to `417d5a0814cb14f5c3834c063045c9a8c7801cfb`.
+`llm-mailroom` `main` after that commit routes `merger_agreement` to
+`merger_agreement_specialist`, and these tests expect `contracts_specialist`.
+
 ## HF facts (verified 2026-09-26, dataset v1 / corpus v9.1 quality revision)
 
 Code-only revision of the v9 tip below (mailroom-issues#196 Phase B —
