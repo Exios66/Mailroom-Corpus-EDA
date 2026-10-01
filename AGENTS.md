@@ -120,25 +120,40 @@ runs used to clobber the full-corpus summary with phase-partial stats.)
 
 The default Cloud Agent image ships Python 3.12 without `python3.12-venv`, so
 `python3 -m venv` fails until that package is installed (`ensurepip` is
-missing). Use a repo-local `.venv`:
+missing). Use a repo-local `.venv`. The checkout parent is not always
+writable; create the sibling taxonomy clone with `sudo` before `git init`.
 
 ```bash
+sudo apt-get update
 sudo apt-get install -y python3.12-venv
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt 'pytest>=8.0'
+sudo mkdir -p ../llm-mailroom
+sudo chown "$(id -u):$(id -g)" ../llm-mailroom
+git init ../llm-mailroom
+git -C ../llm-mailroom remote get-url origin >/dev/null 2>&1 || git -C ../llm-mailroom remote add origin https://github.com/Exios66/llm-mailroom.git
+git -C ../llm-mailroom fetch --depth 1 origin 417d5a0814cb14f5c3834c063045c9a8c7801cfb
+git -C ../llm-mailroom checkout --force --detach FETCH_HEAD
 .venv/bin/python -m pytest tests/
 .venv/bin/python run_all.py --phases P0
+.venv/bin/python scripts/audit/coverage_matrix.py --check
 ```
 
-`pytest` is a dev extra and is absent from `requirements.txt`. `run_all.py --phases P0`
-fetches the public `Lucius-Morningstar/mailroom-dataset` snapshot into gitignored
-`data/`; the full-corpus tests skip until that snapshot exists. Publishing
-needs `HF_TOKEN`. Reading the public snapshot does not.
+`pytest` is a dev extra and is absent from `requirements.txt`. Without the
+sibling pin, `test_mailroom_contract_fixture` and
+`test_expected_specialist_matches_live_taxonomy_yaml` cannot read
+`../llm-mailroom/src/config/taxonomy.yaml`. `llm-mailroom` `main` after
+`417d5a0814cb14f5c3834c063045c9a8c7801cfb` routes `merger_agreement` to
+`merger_agreement_specialist`; these tests expect `contracts_specialist`.
 
-§64 / §59 tests read `../llm-mailroom/src/config/taxonomy.yaml` (a sibling of
-this checkout). Pin that clone to `417d5a0814cb14f5c3834c063045c9a8c7801cfb`.
-`llm-mailroom` `main` after that commit routes `merger_agreement` to
-`merger_agreement_specialist`, and these tests expect `contracts_specialist`.
+`run_all.py --phases P0` fetches the public
+`Lucius-Morningstar/mailroom-dataset` snapshot into gitignored `data/`
+(3,302 rows at revision `ed7576b6`). Publishing needs `HF_TOKEN`. Reading
+the public snapshot does not. Full-corpus tests skip until that snapshot
+exists. After it is present, `tests/test_contract.py::test_mailroom_contract_snapshot`
+fails: v9.1 `gt_fields` includes `gt_presence` (and the other B2/B4 keys),
+which the §64 checker does not register as enrichment or extraction keys.
+`scripts/audit/coverage_matrix.py --check` is the read-only corpus audit.
 
 ## HF facts (verified 2026-09-26, dataset v1 / corpus v9.1 quality revision)
 
