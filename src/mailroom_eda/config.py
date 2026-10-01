@@ -14,9 +14,13 @@ import matplotlib.pyplot as plt
 # Re-pinned again 2026-09-26 to ed7576b6 — the v9.1 quality revision,
 # mailroom-issues#196 Phase B: weak-indirect-signal removal, row-level GT
 # presence codes, context-window bands. Zero identity/content drift; row
-# set unchanged. See mailroom_eda.v9_1_revision.)
+# set unchanged. See mailroom_eda.v9_1_revision.
+# Re-pinned 2026-10-01 to the Hub tag v9.1 (bc9eab28), the docs commit that
+# sits on ed7576b6. Same 3,302 rows; bc9eab28 is the current tag.)
 REPO_ID = "Lucius-Morningstar/mailroom-dataset"
-REPO_REVISION = "ed7576b676343e0b402ec5412cded301e629bdee"
+REPO_TAG = "v9.1"
+REPO_REVISION = "bc9eab280044befb51e19dda3071d290a8677f42"
+REPO_DATA_REVISION = "ed7576b676343e0b402ec5412cded301e629bdee"
 REPO_URL = f"https://huggingface.co/datasets/{REPO_ID}"
 HF_USERNAME = "Lucius-Morningstar"
 

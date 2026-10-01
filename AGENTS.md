@@ -4,8 +4,9 @@ Exploratory data analysis (and the centralized HF upload helpers) for the
 [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
 corpus (v1, canonically **v9** of the mailroom corpus family) — **3,302** legal
 documents across 5 doc_types (insurance_claim, merger_agreement, contract,
-correspondence, corporate_record), 55 strata. Pinned at tip `ed7576b6…`
-(the v9.1 quality revision — mailroom-issues#196 Phase B; zero row/identity/
+correspondence, corporate_record), 55 strata. Canonical Hub tag **`v9.1`**
+(`bc9eab28…`, docs pin on the quality-revision data commit `ed7576b6…`
+— mailroom-issues#196 Phase B; zero row/identity/
 content drift from the v9 tip `46a4d3c2…` it revises); standalone successor
 of the frozen v8 `mailroom-corpus` baseline (2,000 rows, `eafe1ab4` — never
 destroyed).
