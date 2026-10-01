@@ -120,8 +120,11 @@ runs used to clobber the full-corpus summary with phase-partial stats.)
 
 The default Cloud Agent image ships Python 3.12 without `python3.12-venv`, so
 `python3 -m venv` fails until that package is installed (`ensurepip` is
-missing). Use a repo-local `.venv`. The checkout parent is not always
-writable; create the sibling taxonomy clone with `sudo` before `git init`.
+missing). Use a repo-local `.venv`. Cloud Agent `install` starts at the
+workspace root, not this checkout, so locate `Mailroom-Corpus-EDA` first
+(typically `/agent/repos/Mailroom-Corpus-EDA`). The checkout parent is not
+always writable; create the sibling taxonomy clone with `sudo` before
+`git init`.
 
 ```bash
 sudo apt-get update
