@@ -350,6 +350,34 @@ def load_existing_labels() -> dict[str, dict]:
     return out
 
 
+def preserve_existing_provenance(
+    *, intent: object, intent_source: object, intent_confidence: object, intent_status: object,
+) -> dict:
+    """Provenance for a row this run's backfill did not touch (not in ``need``).
+
+    "manual" is only backfilled for legacy rows that predate provenance
+    tracking (intent populated but ``intent_source`` empty) -- an
+    already-recorded source (e.g. v9's ``heuristic`` draws) must never be
+    overwritten, or a re-run of this backfill on a later corpus revision
+    would silently relabel every heuristic-sourced row as manual.
+    """
+    has_intent = str(intent or "").strip()
+    existing_source = str(intent_source or "").strip()
+    if existing_source:
+        return {
+            "intent": intent,
+            "intent_source": existing_source,
+            "intent_confidence": intent_confidence,
+            "intent_status": intent_status,
+        }
+    return {
+        "intent": intent,
+        "intent_source": "manual" if has_intent else "",
+        "intent_confidence": 1.0 if has_intent else intent_confidence,
+        "intent_status": "manual" if has_intent else intent_status,
+    }
+
+
 def backfill_correspondence(
     gt: pd.DataFrame,
     blind: pd.DataFrame,
@@ -469,14 +497,12 @@ def backfill_correspondence(
     def _row_values(fn: str, src: pd.Series) -> dict:
         entry = merged.get(fn)
         if entry is None:
-            # preserve pre-existing labels as-is
-            has_intent = str(src.get("intent", "") or "").strip()
-            return {
-                "intent": src.get("intent", ""),
-                "intent_source": "manual" if has_intent else src.get("intent_source", ""),
-                "intent_confidence": 1.0 if has_intent else src.get("intent_confidence", ""),
-                "intent_status": "manual" if has_intent else src.get("intent_status", ""),
-            }
+            return preserve_existing_provenance(
+                intent=src.get("intent", ""),
+                intent_source=src.get("intent_source", ""),
+                intent_confidence=src.get("intent_confidence", ""),
+                intent_status=src.get("intent_status", ""),
+            )
         return {
             "intent": entry["intent"],
             "intent_source": entry["intent_source"],

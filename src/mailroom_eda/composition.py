@@ -155,7 +155,6 @@ def run(save: bool = True) -> dict:
     if save:
         strata.to_csv(TABLE_DIR / "strata_counts.csv", index=False)
         provenance(blind, gt).to_csv(TABLE_DIR / "provenance_by_type.csv", index=False)
-        strata.to_json(TABLE_DIR / "imbalance_metrics.json", orient="records", indent=2)
         with open(TABLE_DIR / "imbalance_metrics.json", "w") as f:
             json.dump(out["imbalance"], f, indent=2, default=str)
         fig_type_distribution(gt)
