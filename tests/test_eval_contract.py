@@ -92,9 +92,15 @@ def test_review_retry_expectations_canonical_rows_are_clean():
 def test_review_retry_fixture_kinds():
     row = {"fixture_kind": "ood_unknown"}
     assert ec.review_expected(row) == (True, "taxonomy_unknown")
+    assert ec.review_expected({"fixture_kind": "ood_retired_class"}) == (True, "taxonomy_unknown")
     assert ec.review_expected({"fixture_kind": "low_confidence"}) == (True, "low_confidence")
     assert ec.review_expected({"fixture_kind": "incomplete"}) == (True, "incomplete_extraction")
     assert ec.review_expected({"fixture_kind": "conflicting"}) == (True, "conflicting_information")
+    # §30: two classes plausibly fit -> review, reason "ambiguous" (was
+    # missing: fixture_kind "ambiguous" fell through to (False, ""), which
+    # left failure_stage_matrix's classification/routing/grouping rows with
+    # review_reason "ambiguous" but review_expected "false").
+    assert ec.review_expected({"fixture_kind": "ambiguous"}) == (True, "ambiguous")
     assert ec.retry_expected({"fixture_kind": "retry"}) == (True, "archived")
     assert ec.retry_expected({"fixture_kind": "retry_review"}) == (True, "human_review")
 

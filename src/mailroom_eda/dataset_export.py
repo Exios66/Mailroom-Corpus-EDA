@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .config import DOC_TYPES, JSONL_PATH, PARQUET_DIR, CHARS_PER_TOKEN
+from .config import DOC_TYPES, JSONL_PATH, PARQUET_DIR, CHARS_PER_TOKEN, split_rule
 
 
 LINE_BOUNDARY_HAZARDS = ("\u2028", "\u2029", "\u0085")
@@ -54,9 +54,14 @@ def normalize_metadata_rows(rows: list[dict]) -> list[dict]:
 
 
 def assign_split(filename: str) -> str:
-    """Deterministic 90/10 train/test split keyed on filename (md5 % 10 == 0 -> test)."""
-    digest = int(hashlib.md5(filename.strip().encode("utf-8")).hexdigest(), 16)
-    return "test" if digest % 10 == 0 else "train"
+    """Deterministic 90/10 train/test split keyed on filename (md5 % 10 == 0
+    -> test). Single-sourced from ``config.split_rule`` (never re-declared —
+    a second, independently-maintained copy of this rule previously
+    stripped the filename before hashing while ``config.split_rule`` (the
+    rule ``integrity.audit_split_rule`` verifies against) did not, so the
+    two could silently disagree on any filename carrying incidental
+    whitespace)."""
+    return split_rule(filename)
 
 
 def estimate_tokens(text: str, chars_per_token: float = CHARS_PER_TOKEN) -> float:
