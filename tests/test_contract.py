@@ -19,6 +19,7 @@ from conftest import (
     ENRICHMENT_KEYS,
     EXTRACTION_GT_BY_CLASS,
     FIVE_CLASSES,
+    GT_META_KEYS,
     GT_TOP_LEVEL_KEYS,
     PURPOSE_GT_CLASSES,
     PURPOSE_GT_KEYS,
@@ -105,6 +106,8 @@ def _check_mailroom_contract(rows: list[dict], field_types: dict[str, set[str]])
             gt = {k: row.get(k) for k in GT_KEY_SET}
         present = {k for k, v in gt.items() if _gt_value_present(v)}
         for key in present:
+            if key in GT_META_KEYS:
+                continue  # v9.1 published meta, not a taxonomy field
             if key in ENRICHMENT_KEYS:
                 # purpose GT rides the three purpose classes (§20/§21), which
                 # expose intent/subject_matter/keywords as specialist
@@ -168,21 +171,20 @@ def test_mailroom_contract_snapshot(snapshot_rows):
 
 
 def test_snapshot_gt_schema_is_v9(snapshot_rows):
-    """The published ground_truth config carries the v9 schema: 36 top-level
-    columns (identity / provenance / matter / eval-contract, plus
-    prompt/expected/expected_subclass/split/_published and the nested
-    ``gt_fields`` JSON) with the label keys expanded to flat GT keys by the
-    test harness — i.e. the 36-column set + the 27-key GT scalar set.
-    The nested gt_fields union across the corpus is the full 29-key label
-    set (27 scalar keys + the two matter columns that also exist
-    top-level)."""
+    """The published ground_truth config carries the v9.2 schema: 35
+    top-level columns (v9.1's 36 minus the removed, build-internal
+    `_published`) with the label keys expanded to flat GT keys by the test
+    harness — i.e. the 35-column set + the 32-key GT scalar set. The nested
+    gt_fields union across the corpus is the full 34-key label set (32
+    scalar keys + the two matter columns that also exist top-level)."""
     import json
 
     # doc_text is joined in from the default config by the test harness;
     # it is not a ground_truth config column.
     cols = set(snapshot_rows[0].keys()) - {"doc_text"}
-    assert len(cols) == 36 + len(GT_KEY_SET)
+    assert len(cols) == 35 + len(GT_KEY_SET)
     assert cols == GT_TOP_LEVEL_KEYS | set(GT_KEY_SET)
+    assert "_published" not in cols
     # every row carries the identical flat schema (no sparse rows)
     assert {frozenset(set(r.keys()) - {"doc_text"}) for r in snapshot_rows} == {frozenset(cols)}
     # nested gt_fields: the union across the corpus is the full 29-key set
@@ -215,3 +217,56 @@ def test_edgar_cuad_exception_documented(snapshot_rows):
     ]
     assert len(cuad) == 509
     assert all(_gt_value_present(r.get("cuad_clause_labels")) for r in cuad)
+
+
+def test_snapshot_relations_mirrors_single_sourced(snapshot_rows):
+    """v9.2 §14A: the nested gt_fields mirrors are canonical copies of the
+    top-level matter columns (the permanent-'[]' split-brain is gone)."""
+    import json
+
+    for row in snapshot_rows:
+        gt = row["gt_fields"]
+        gt = json.loads(gt) if isinstance(gt, str) else gt
+        assert json.loads(gt["relationships"]) == [str(x) for x in row["relationships"]]
+        assert json.loads(gt["related_document_ids"]) == [
+            str(x) for x in row["related_document_ids"]
+        ]
+
+
+def test_snapshot_relation_ids_resolve(snapshot_rows):
+    """Every relation target is a real document_id; heuristic threads are
+    symmetric and every matter member carries at least one target."""
+    known = {r["document_id"] for r in snapshot_rows}
+    matter_rows = [r for r in snapshot_rows if r["matter_id"]]
+    assert len(matter_rows) == 23          # 9 heuristic threads (live v9.1 truth)
+    for row in matter_rows:
+        targets = [str(x) for x in row["related_document_ids"]]
+        assert targets, row["filename"]
+        assert set(targets) <= known
+    rel = {
+        r["document_id"]: {str(x) for x in r["related_document_ids"]}
+        for r in snapshot_rows if list(r["related_document_ids"])
+    }
+    for doc, targets in rel.items():
+        for t in targets:
+            assert doc in rel.get(t, set()), (doc, t)   # symmetry
+
+
+def test_registry_single_source():
+    """v9.2 C5: the three stale inline 27-key GT lists are replaced by one
+    single source; the v9.1 keys are never silently dropped on rebuild."""
+    from mailroom_eda.release_sections import GT_SCALAR_KEYS, LEGACY_V7_GT_KEYS
+    from mailroom_eda.v9_build import CLASS_GT_KEYS
+
+    from mailroom_eda import docclass_uploader, intent_backfill
+
+    assert len(GT_SCALAR_KEYS) == 32 and len(LEGACY_V7_GT_KEYS) == 27
+    assert set(LEGACY_V7_GT_KEYS) <= set(GT_SCALAR_KEYS)
+    assert set(GT_SCALAR_KEYS) - set(LEGACY_V7_GT_KEYS) == {
+        "clause_count", "maud_label_count", "gt_presence",
+        "token_estimate", "context_window_band",
+    }
+    assert all(k in set(GT_SCALAR_KEYS) for keys in CLASS_GT_KEYS.values() for k in keys)
+    # every current-generation consumer resolves to the ONE source
+    assert tuple(docclass_uploader.GT_SCALAR_KEYS) == tuple(GT_SCALAR_KEYS)
+    assert intent_backfill.GT_PUBLISH_KEYS == LEGACY_V7_GT_KEYS

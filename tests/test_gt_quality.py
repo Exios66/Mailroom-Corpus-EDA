@@ -41,9 +41,9 @@ def _codes(row: dict) -> set[tuple[str, str, str]]:
     return {(f.severity, f.field, f.code) for f in gq.audit_row(row)}
 
 
-def test_hub_pin_is_tag_v9_1():
-    assert REPO_TAG == "v9.1"
-    assert REPO_REVISION == "bc9eab280044befb51e19dda3071d290a8677f42"
+def test_hub_pin_is_tag_v9_2():
+    assert REPO_TAG == "v9.2"
+    assert REPO_REVISION == "670e8bc6f8d82221f741d5da479ee88bed8cac4a"
     assert gq.HUB_REVISION == REPO_REVISION
 
 

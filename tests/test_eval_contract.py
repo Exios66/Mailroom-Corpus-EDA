@@ -6,6 +6,7 @@ re-verifies over all 3,302 rows."""
 from __future__ import annotations
 
 import sys
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -206,3 +207,37 @@ def test_confidence_bands_read_live_taxonomy():
         assert band["low"] < band["judge_band_high"] < band["high"], doc_class
     assert bands["by_class"]["contract"]["high"] == 0.98
     assert bands["by_class"]["correspondence"]["high"] == 0.95
+
+
+# ------------------------------------------------- v9.2 C1 nested provenance
+
+def test_annotation_provenance_reads_nested_gt_fields():
+    row = {
+        "filename": "enron_x_010", "expected": "correspondence",
+        "gt_fields": {"intent_source": "llm_zero_shot", "intent_confidence": "0.91"},
+    }
+    p = ec.annotation_provenance(row)
+    assert (p["method"], p["model"], p["confidence"]) == ("llm_zero_shot", "deepseek-chat", "0.91")
+    row["gt_fields"] = {"intent_source": "aeslc_join", "intent_confidence": "1.0"}
+    assert ec.annotation_provenance(row)["method"] == "verified_join"
+    row["gt_fields"] = {"intent_source": "manual", "intent_confidence": "1.0"}
+    assert ec.annotation_provenance(row)["reviewer"] == "human"
+
+
+def test_annotation_provenance_prefers_published_source_corpus():
+    row = {"filename": "ex10_001.txt", "expected": "contract",
+           "source_corpus": "sec_edgar", "gt_fields": {}}
+    assert ec.annotation_provenance(row)["source"] == "sec_edgar"
+
+
+def test_published_annotation_provenance_matches_derivation(snapshot_rows):
+    """v9.2 pin: the PUBLISHED columns carry the six regimes (regression for
+    the top-level-vs-nested read bug that shipped only source_native +
+    synthetic)."""
+    methods = Counter(str(r.get("annotation_method") or "") for r in snapshot_rows)
+    assert dict(methods) == {
+        "verified_join": 162, "llm_zero_shot": 637, "human_annotated": 96,
+        "synthetic": 1100, "heuristic": 646, "source_native": 661,
+    }
+    assert {str(r.get("annotation_model") or "") for r in snapshot_rows
+            if r.get("annotation_method") == "llm_zero_shot"} == {"deepseek-chat"}

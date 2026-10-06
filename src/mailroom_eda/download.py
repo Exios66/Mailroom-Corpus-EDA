@@ -97,7 +97,10 @@ def _expand_gt_fields(df: pd.DataFrame) -> pd.DataFrame:
         else (v if isinstance(v, dict) else {})
     )
     expanded = pd.DataFrame(parsed.tolist(), index=df.index)
-    return pd.concat([df, expanded], axis=1)
+    out = pd.concat([df, expanded], axis=1)
+    # the nested two matter mirrors duplicate top-level columns — keep-first
+    # so canonical top-level values win and row access stays scalar
+    return out.loc[:, ~out.columns.duplicated(keep="first")]
 
 
 def load_jsonl() -> pd.DataFrame:

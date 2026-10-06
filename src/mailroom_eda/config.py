@@ -16,11 +16,17 @@ import matplotlib.pyplot as plt
 # presence codes, context-window bands. Zero identity/content drift; row
 # set unchanged. See mailroom_eda.v9_1_revision.
 # Re-pinned 2026-10-01 to the Hub tag v9.1 (bc9eab28), the docs commit that
-# sits on ed7576b6. Same 3,302 rows; bc9eab28 is the current tag.)
+# sits on ed7576b6. Same 3,302 rows; bc9eab28 is the current tag.
+# Re-pinned 2026-10-06 to the Hub tag v9.2 (670e8bc6), the docs/card commit
+# that sits on the v9.2 data commit d49f60a4 (plan
+# docs/plans/v9.2-relations-provenance-revision.md, mailroom_eda.v9_2_revision):
+# six-regime annotation provenance, relation producer + gt_fields mirror SSOT,
+# build-internal `_published` removal, GT-registry single-sourcing. Zero
+# row-set/identity/content drift from v9.1; row set unchanged (3,302).)
 REPO_ID = "Lucius-Morningstar/mailroom-dataset"
-REPO_TAG = "v9.1"
-REPO_REVISION = "bc9eab280044befb51e19dda3071d290a8677f42"
-REPO_DATA_REVISION = "ed7576b676343e0b402ec5412cded301e629bdee"
+REPO_TAG = "v9.2"
+REPO_REVISION = "670e8bc6f8d82221f741d5da479ee88bed8cac4a"
+REPO_DATA_REVISION = "d49f60a402ccc090617db58a8593aa971d63a2ff"
 REPO_URL = f"https://huggingface.co/datasets/{REPO_ID}"
 HF_USERNAME = "Lucius-Morningstar"
 

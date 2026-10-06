@@ -26,6 +26,7 @@ caller supplies the default-config metadata map.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections import defaultdict
 from typing import Any
@@ -44,6 +45,22 @@ THREAD_REPLY_KEY = "in_reply_to"
 THREAD_CUSTODIAN_KEY = "custodian"
 
 ANGLE_RE = re.compile(r"<([^>]+)>")
+
+
+def _related_ids(members: list[dict[str, Any]], index: int) -> list[str]:
+    """§14A relation targets for one thread member: every OTHER member's
+    identifier, in thread order. Uses ``document_id`` when the caller
+    enriched identity (the §84 chain always does), ``filename`` otherwise
+    (bare unit rows). Empty entries never ship."""
+    out: list[str] = []
+    for pos, member in enumerate(members):
+        if pos == index:
+            continue
+        ident = str(member.get("document_id") or member.get("filename") or "")
+        if ident:
+            out.append(ident)
+    return out
+
 
 #: Re:/Fwd:/Fw:/[...] prefixes stripped (repeatedly) when normalizing subjects.
 SUBJECT_PREFIX_RE = re.compile(r"^\s*(re|fw|fwd|aw)\s*:", re.I)
@@ -132,6 +149,8 @@ def source_native_threads(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         "relationships": (
                             ["responds_to"] if position > 0 else []
                         ),
+                        "related_document_ids": _related_ids(members, position),
+                        "thread_evidence": "message_id+in_reply_to",
                         "thread_position": position,
                         "thread_size": len(members),
                     }
@@ -235,6 +254,7 @@ def heuristic_subject_threads(
                     "group_id": f"GROUP-SUBJ-{_stable_hash(subject, 10)}",
                     "group_role": "correspondence",
                     "relationships": (["responds_to"] if position > 0 else []),
+                    "related_document_ids": _related_ids(members, position),
                     "thread_position": position,
                     "thread_size": len(members),
                     "thread_evidence": f"subject+custodian+{window_days}d-window",
@@ -267,8 +287,21 @@ def enrich_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         g = by_filename.get(str(row.get("filename") or ""))
         for key in (
             "matter_id", "matter_construction", "group_id", "group_role",
-            "relationships", "thread_position", "thread_size", "thread_evidence",
+            "relationships", "related_document_ids", "thread_position",
+            "thread_size", "thread_evidence",
         ):
-            merged[key] = g[key] if g else ([] if key == "relationships" else "")
+            merged[key] = g[key] if g else (
+                [] if key in ("relationships", "related_document_ids") else ""
+            )
+        gt = merged.get("gt_fields")
+        if isinstance(gt, dict):
+            # §14A mirror single-sourcing: the nested gt_fields copies must
+            # never diverge from the canonical top-level matter columns.
+            gt = dict(gt)
+            gt["relationships"] = json.dumps(
+                [str(x) for x in merged["relationships"]], ensure_ascii=False)
+            gt["related_document_ids"] = json.dumps(
+                [str(x) for x in merged["related_document_ids"]], ensure_ascii=False)
+            merged["gt_fields"] = gt
         out.append(merged)
     return out

@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from .config import DOC_TYPES, JSONL_PATH, PARQUET_DIR, CHARS_PER_TOKEN
+from .release_sections import GT_SCALAR_KEYS
 
 
 LINE_BOUNDARY_HAZARDS = ("\u2028", "\u2029", "\u0085")
@@ -92,7 +93,9 @@ def stage_parquet(
         rows: List of merged docclass rows with keys:
             filename, doc_text, prompt, expected, expected_subclass, split, metadata, gt_fields
         stage_dir: Output directory for parquet files
-        gt_scalar_keys: Ground truth scalar column names
+        gt_scalar_keys: Ground truth scalar column names. Defaults to the
+            current v9 surface (`release_sections.GT_SCALAR_KEYS`); legacy
+            v7/v8 callers must pass `release_sections.LEGACY_V7_GT_KEYS`.
 
     Returns:
         Dict of (config, split) -> row count
@@ -101,17 +104,7 @@ def stage_parquet(
     import pyarrow.parquet as pq
 
     if gt_scalar_keys is None:
-        gt_scalar_keys = [
-            "label_evidence", "content_topic", "topic_evidence",
-            "sentiment_score", "sentiment_label", "sentiment_evidence",
-            "claim_number", "policy_number", "insurer", "insured_party",
-            "claim_type", "date_of_loss", "date_filed", "claimed_amount",
-            "adjuster", "damages_description", "coverage_determination",
-            "denial_reasons", "supporting_documents",
-            "cuad_clause_labels", "maud_clause_labels",
-            "intent", "subject_matter", "keywords",
-            "intent_source", "intent_confidence", "intent_status",
-        ]
+        gt_scalar_keys = list(GT_SCALAR_KEYS)
 
     def _blind_row(r: dict) -> dict:
         return {

@@ -52,6 +52,7 @@ from pathlib import Path
 import pandas as pd
 
 from .config import DATA_DIR, RANDOM_STATE
+from .release_sections import LEGACY_V7_GT_KEYS
 
 BACKFILL_DIR = DATA_DIR / "backfill"
 INDEX_CACHE = BACKFILL_DIR / "enron_body_sha256.parquet"
@@ -586,17 +587,9 @@ def test_split_intent_coverage(gt: pd.DataFrame) -> dict:
     return report
 
 
-GT_PUBLISH_KEYS = [
-    "label_evidence", "content_topic", "topic_evidence",
-    "sentiment_score", "sentiment_label", "sentiment_evidence",
-    "claim_number", "policy_number", "insurer", "insured_party",
-    "claim_type", "date_of_loss", "date_filed", "claimed_amount",
-    "adjuster", "damages_description", "coverage_determination",
-    "denial_reasons", "supporting_documents",
-    "cuad_clause_labels", "maud_clause_labels",
-    "intent", "subject_matter", "keywords",
-    "intent_source", "intent_confidence", "intent_status",
-]
+#: v7 publish surface (frozen); current surfaces use
+#: `release_sections.GT_SCALAR_KEYS`.
+GT_PUBLISH_KEYS = LEGACY_V7_GT_KEYS
 
 
 def build_v7_rows(

@@ -73,20 +73,29 @@ def p5_export() -> dict:
     print("P5: dataset export helpers (JSONL + parquet staging)")
     from mailroom_eda import dataset_export
     from mailroom_eda.download import load_default, load_ground_truth
+    from mailroom_eda.release_sections import GT_SCALAR_KEYS, MATTER_LISTS
 
     blind = load_default()
     gt = load_ground_truth()
-    gt_keys = (
-        "label_evidence", "content_topic", "topic_evidence",
-        "sentiment_score", "sentiment_label", "sentiment_evidence",
-        "claim_number", "policy_number", "insurer", "insured_party",
-        "claim_type", "date_of_loss", "date_filed", "claimed_amount",
-        "adjuster", "damages_description", "coverage_determination",
-        "denial_reasons", "supporting_documents",
-        "cuad_clause_labels", "maud_clause_labels",
-        "intent", "subject_matter", "keywords",
-        "intent_source", "intent_confidence", "intent_status",
-    )
+    gt_keys = (*GT_SCALAR_KEYS, *MATTER_LISTS)
+
+    def _gf(r, k):
+        v = r.get(k)
+        # matter lists arrive as a list, tuple, or numpy array (pandas list
+        # column) — JSON-encode them, never repr(); a scalar uses the ''
+        # absence convention. (isinstance(list) alone misses the ndarray case,
+        # and pd.isna(ndarray) is ambiguous.)
+        if isinstance(v, (list, tuple)) or (
+            v is not None and not isinstance(v, str) and hasattr(v, "__len__")
+        ):
+            return json.dumps([str(x) for x in list(v)], ensure_ascii=False)
+        if v is None:
+            return ""
+        try:
+            return "" if pd.isna(v) else v
+        except (TypeError, ValueError):
+            return v
+
     rows = []
     for _, r in gt.iterrows():
         b = blind[blind["filename"] == r["filename"]].iloc[0]
@@ -98,7 +107,7 @@ def p5_export() -> dict:
             "expected_subclass": r["expected_subclass"],
             "split": r["split"],
             "metadata": b["metadata"],
-            "gt_fields": {k: ("" if pd.isna(r.get(k)) else r.get(k)) for k in gt_keys},
+            "gt_fields": {k: _gf(r, k) for k in gt_keys},
         })
     staged = dataset_export.stage_parquet(rows, ROOT / "data" / "staging")
     staged_serializable = {f"{a}/{b}": n for (a, b), n in staged.items()}

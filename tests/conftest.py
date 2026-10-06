@@ -25,18 +25,19 @@ FIVE_CLASSES = {
     "insurance_claim",
 }
 
-# The v9 ground-truth schema (mailroom-dataset v1, 3,302 rows): the GT
-# parquet carries 36 top-level columns (identity / provenance / matter /
-# eval-contract, plus prompt/expected/expected_subclass/split/_published)
-# with all 29 label keys inside a nested ``gt_fields`` JSON column. The label
-# set splits into per-class extraction GT and enrichment/purpose GT — the 27
-# GT_SCALAR_KEYS below; the other two gt_fields keys (relationships,
-# related_document_ids) are matter columns that also exist top-level.
-# ``load_snapshot_rows()`` expands gt_fields to flat keys so consumers keep
-# the v8-era flat schema. Extraction keys map onto the specialist
-# ``field_types`` in llm-mailroom's config/taxonomy.yaml (§64); the two
-# clause-list keys use GT-side names for the specialist's cuad_clauses /
-# maud_clauses fields.
+# The v9.2 ground-truth schema (mailroom-dataset v1, 3,302 rows): the GT
+# parquet carries 35 top-level columns (identity / provenance / matter /
+# eval-contract, plus prompt/expected/expected_subclass/split — v9.1's 36
+# minus the removed, build-internal `_published`) with all 34 label keys
+# inside a nested ``gt_fields`` JSON column. The label set splits into
+# per-class extraction GT, enrichment/purpose GT, and the v9.1 published
+# meta keys — the 32 GT_SCALAR_KEYS below; the other two gt_fields keys
+# (relationships, related_document_ids) are matter columns that also exist
+# top-level. ``load_snapshot_rows()`` expands gt_fields to flat keys so
+# consumers keep the v8-era flat schema. Extraction keys map onto the
+# specialist ``field_types`` in llm-mailroom's config/taxonomy.yaml (§64);
+# the two clause-list keys use GT-side names for the specialist's
+# cuad_clauses / maud_clauses fields.
 EXTRACTION_GT_BY_CLASS: dict[str, dict[str, str]] = {
     "contract": {"cuad_clause_labels": "cuad_clauses"},
     "merger_agreement": {"maud_clause_labels": "maud_clauses"},
@@ -62,14 +63,22 @@ ENRICHMENT_KEYS = {
 PURPOSE_GT_CLASSES = {"corporate_record", "correspondence", "insurance_claim"}
 PURPOSE_GT_KEYS = {"intent", "subject_matter", "keywords"}
 
-# The 36 top-level columns of the v9 ground_truth parquet (verified on the
-# pinned snapshot; also enforced by tests/test_contract.py). The 27 flat GT
+# v9.1 meta keys (clause counts, presence codes, token bands) are
+# published-surface columns but NOT specialist extraction fields —
+# registered so the §64 loop can skip them explicitly.
+GT_META_KEYS = {
+    "clause_count", "maud_label_count", "gt_presence",
+    "token_estimate", "context_window_band",
+}
+
+# The 35 top-level columns of the v9.2 ground_truth parquet (verified on the
+# pinned snapshot; also enforced by tests/test_contract.py). The 32 flat GT
 # scalar keys (GT_SCALAR_KEYS) are disjoint from these — after expansion a
-# snapshot row carries exactly these + the 27 GT keys + the harness-joined
+# snapshot row carries exactly these + the 32 GT keys + the harness-joined
 # ``doc_text``.
 GT_TOP_LEVEL_KEYS = {
     "filename", "prompt", "expected", "expected_subclass", "split",
-    "gt_fields", "_published",
+    "gt_fields",
     # identity / provenance (§9–§11)
     "document_id", "source_corpus", "source_document_id", "source_filename",
     "source_revision", "content_sha256", "normalized_text_sha256",
@@ -101,8 +110,8 @@ def load_snapshot_rows() -> list[dict]:
     with doc_text joined in from the default config by filename (the GT
     config carries no text — blind/label split).
 
-    v9 schema: the label/annotation fields live inside the nested
-    ``gt_fields`` JSON column (29-key union). We expand them to flat
+    v9.2 schema: the label/annotation fields live inside the nested
+    ``gt_fields`` JSON column (34-key union). We expand them to flat
     top-level GT keys via mailroom_eda.download._expand_gt_fields so
     consumers keep the flat v8-era schema; the two matter columns that also
     appear inside gt_fields (relationships, related_document_ids) keep their

@@ -176,7 +176,10 @@ def stage_configs(rows: list[dict], bundle_rows: list[dict], fixture_rows: list[
                   stream_rows: list[dict], stage_dir: Path) -> dict:
     gt_dir = stage_dir / "parquet" / "ground_truth"
     counts: dict[tuple[str, str], int] = {}
-    original_cols = [c for c in rows[0] if c not in
+    # '_'-prefixed keys are build-internal (e.g. the v8 `_published`
+    # migration map) and must never reach a published config.
+    original_cols = [c for c in rows[0]
+                     if not c.startswith("_") and c not in
                      {"doc_text", "metadata"} | set(IDENTITY_FIELDS)
                      | set(CONTRACT_FIELDS) | set(MATTER_SCALARS) | set(MATTER_LISTS)]
 
@@ -245,7 +248,8 @@ def verify_stage(rows: list[dict], bundle_rows: list[dict], fixture_rows: list[d
     assert not (stage_dir / "parquet" / "default").exists(), "blind config must NEVER be staged"
 
     # ground_truth: the original columns are value-identical to the snapshot
-    original_cols = [c for c in rows[0] if c not in
+    original_cols = [c for c in rows[0]
+                     if not c.startswith("_") and c not in
                      {"doc_text", "metadata"} | set(IDENTITY_FIELDS)
                      | set(CONTRACT_FIELDS) | set(MATTER_SCALARS) | set(MATTER_LISTS)]
     staged = pd.concat([

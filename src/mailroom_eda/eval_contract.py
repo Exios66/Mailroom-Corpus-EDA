@@ -35,6 +35,7 @@ without pushing a new revision.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -100,6 +101,24 @@ INTENT_SOURCE_METHOD = {
 
 #: The LLM that produced llm_zero_shot labels (v7 intent hydration, issue #5).
 LLM_ZERO_SHOT_MODEL = "deepseek-chat"
+
+
+def _provenance_value(row: dict[str, Any], key: str) -> str:
+    """Read one intent-provenance key from the row or its nested ``gt_fields``
+    JSON. v9/v9.1 publish labels only inside ``gt_fields``; legacy flat rows
+    carry the v7-era top-level keys. Absence is '' (corpus convention)."""
+    v = row.get(key)
+    if v is None or (isinstance(v, float) and v != v) or v == "":
+        gt = row.get("gt_fields") or {}
+        if isinstance(gt, str):
+            try:
+                gt = json.loads(gt)
+            except (ValueError, TypeError):
+                gt = {}
+        if isinstance(gt, dict):
+            v = gt.get(key)
+    return "" if v is None else str(v)
+
 
 PATH_TAXONOMY = (
     Path(__file__).resolve().parents[2]
@@ -208,12 +227,12 @@ def annotation_provenance(row: dict[str, Any]) -> dict[str, str]:
     method, model, prompt_version = "source_native", "", ""
     confidence = ""
     reviewer, timestamp = "", ""
-    intent_source = str(row.get("intent_source") or "")
+    intent_source = _provenance_value(row, "intent_source")
     if intent_source in INTENT_SOURCE_METHOD:
         method = INTENT_SOURCE_METHOD[intent_source]
         if method == "llm_zero_shot":
             model = LLM_ZERO_SHOT_MODEL
-        confidence = str(row.get("intent_confidence") or "")
+        confidence = _provenance_value(row, "intent_confidence")
         reviewer = "human" if intent_source == "manual" else ""
     # timestamp: the v7 builder does not track per-row annotation timestamps —
     # cast-safe '' (same rule as identity.source_revision, §43 groundwork).
@@ -223,6 +242,10 @@ def annotation_provenance(row: dict[str, Any]) -> dict[str, str]:
         # (§4A/§39), so the primary label regime stays ``synthetic``; the
         # intent annotation regime is carried on intent_source separately.
         method = "synthetic"
+    # identity.source_corpus is authoritative when the row carries it
+    # (published rows — same EDGAR/LOB override gates as identity); the
+    # class map stays the fallback for bare rows.
+    source = str(row.get("source_corpus") or "") or source
     return {
         "source": source,
         "method": method,

@@ -181,7 +181,12 @@ def audit_maud_labels(blind: pd.DataFrame, gt: pd.DataFrame) -> dict:
         n += 1
         task_counts.update(labels.keys())
         label_counts.append(len(labels))
-        mc = meta_series.iloc[i].get("maud_label_count")
+        # B1 (v9.1): `maud_label_count` is GT-only now — removed from the blind
+        # `metadata` blob and relocated to `gt_fields` (expanded to a flat GT
+        # column). Read it from the GT surface so the cross-surface check stays
+        # meaningful: GT count == blind `maud_categories` sum == upstream count.
+        # (Reading blind metadata here shipped a false 0/152 after B1.)
+        mc = gt.iloc[i].get("maud_label_count")
         cats = meta_series.iloc[i].get("maud_categories")
         try:
             cat_sum = sum(json.loads(cats).values()) if isinstance(cats, str) and cats.strip() else None
@@ -206,7 +211,7 @@ def audit_maud_labels(blind: pd.DataFrame, gt: pd.DataFrame) -> dict:
         "labels_per_row_mean": float(np.mean(label_counts)) if label_counts else None,
         "labels_per_row_min_max": (int(min(label_counts)), int(max(label_counts))) if label_counts else None,
         "task_frequency_top10": dict(task_counts.most_common(10)),
-        "metadata_count_semantics": "maud_label_count == sum(maud_categories) == upstream annotation count; >= per-task GT column size",
+        "metadata_count_semantics": "gt_fields.maud_label_count == sum(metadata.maud_categories) == upstream annotation count; >= per-task GT column size",
         "metadata_count_consistency_ok": meta_counts_ok,
         "metadata_count_checked": meta_checked,
     }

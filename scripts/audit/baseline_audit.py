@@ -133,10 +133,11 @@ def audit() -> dict:
         "configs": {
             "default": {"columns": int(frames[("default", "train")].shape[1]), "blind": True},
             "ground_truth": {
-                # The PUBLISHED config's parquet column count (4 identity +
-                # 27-key GT schema = 31). The audit-time frame additionally
-                # carries the in-memory doc_text join for content hashing —
-                # never counted here (the earlier "32" was exactly that).
+                # The PUBLISHED config's parquet column count. `gt_scalar_keys`
+                # is the current v9.1 GT scalar surface (32 keys); the audit-time
+                # frame additionally carries the in-memory doc_text join for
+                # content hashing — never counted here (the earlier "32" was
+                # exactly that).
                 "columns": int(frames[("ground_truth", "train")].shape[1]),
                 "gt_scalar_keys": len(GT_SCALAR_KEYS),
             },
