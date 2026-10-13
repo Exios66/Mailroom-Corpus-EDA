@@ -13,7 +13,7 @@ datasketch==2.0.0
 tiktoken==0.14.0
 squarify==0.4.5
 datasets==5.0.1
-polars==1.44.2
+polars==2.0.0
 huggingface_hub==1.29.0
 tqdm==4.70.1
 jupyter==1.1.1
