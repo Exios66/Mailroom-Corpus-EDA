@@ -7,13 +7,16 @@ abstract: >-
   from public sources (CUAD, MAUD, SEC EDGAR, Enron email and insurance
   sources) with stable identity, per-label provenance and a blind
   configuration that carries no labels. This repository audits the published
-  dataset and holds the helpers that build and publish revisions.
+  dataset and holds the helpers that build and publish revisions. Licensing
+  varies by component: the aggregate dataset card declares CC BY 4.0, while the
+  Enron correspondence rows keep research-use terms and must not be
+  redistributed outside research contexts or used in production or consumer
+  applications. See the dataset card for the terms of each source.
 authors:
   - family-names: Burleson
     given-names: Jack J.
 version: v9.2
 date-released: "2026-10-06"
-license: CC-BY-4.0
 repository-code: "https://github.com/Exios66/Mailroom-Corpus-EDA"
 url: "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset"
 keywords:
