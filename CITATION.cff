@@ -9,9 +9,10 @@ abstract: >-
   configuration that carries no labels. This repository audits the published
   dataset and holds the helpers that build and publish revisions. Licensing
   varies by component: the aggregate dataset card declares CC BY 4.0, while the
-  Enron correspondence rows keep research-use terms and must not be
-  redistributed outside research contexts or used in production or consumer
-  applications. See the dataset card for the terms of each source.
+  Enron correspondence subset inherits research-use terms from a source that
+  contains real personal data. Do not redistribute raw personal data outside
+  research contexts, and do not use the correspondence subset in production or
+  consumer applications. See the dataset card for the terms of each source.
 authors:
   - family-names: Burleson
     given-names: Jack J.
