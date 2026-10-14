@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use this dataset or its audit code, please cite it as below."
+type: dataset
+title: "Mailroom Dataset v1: An Evaluation and Ingress Simulation Corpus for Legal Document Triage"
+abstract: >-
+  3,302 legal and insurance documents in five classes and 55 strata, assembled
+  from public sources (CUAD, MAUD, SEC EDGAR, Enron email and insurance
+  sources) with stable identity, per-label provenance and a blind
+  configuration that carries no labels. This repository audits the published
+  dataset and holds the helpers that build and publish revisions.
+authors:
+  - family-names: Burleson
+    given-names: Jack J.
+version: v9.2
+date-released: "2026-10-06"
+license: CC-BY-4.0
+repository-code: "https://github.com/Exios66/Mailroom-Corpus-EDA"
+url: "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset"
+keywords:
+  - document classification
+  - legal NLP
+  - data engineering
+  - dataset audit
+  - provenance
+# After the DOI is minted, add it here so GitHub and Zenodo pick it up:
+# doi: 10.xxxx/xxxxx
