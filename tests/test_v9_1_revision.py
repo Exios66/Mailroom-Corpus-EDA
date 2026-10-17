@@ -12,7 +12,7 @@ import pytest
 
 from mailroom_eda import v9_1_revision as rev
 from mailroom_eda.config import REPO_ID, V8_REPO_ID
-from mailroom_eda.gt_presence import ALL_GT_FIELDS, PRESENCE_CODES
+from mailroom_eda.gt_presence import ALL_GT_FIELDS, BASE_GT_FIELDS, PRESENCE_CODES
 
 
 def _gt_row(**over) -> dict:
@@ -104,8 +104,34 @@ class TestReviseRow:
     def test_adds_gt_presence_with_closed_vocabulary(self):
         out = rev.revise_row(_gt_row())
         presence = json.loads(out["gt_fields"]["gt_presence"])
-        assert set(presence) == set(ALL_GT_FIELDS)
+        assert set(presence) == set(BASE_GT_FIELDS)
         assert set(presence.values()) <= set(PRESENCE_CODES)
+
+    def test_relaxed_law_accepts_corporate_entity_extensions(self):
+        """The v9.3 superset law: corporate rows may extend gt_presence with
+        registry entity keys; unknown keys and non-corporate extensions are
+        rejected."""
+        row = _gt_row(
+            expected="corporate_record",
+            gt_fields={"intent": "governance_rules", "subject_matter": "Bylaws of X Corp.",
+                       "keywords": "[]", "gt_presence": json.dumps({
+                           **{k: "not_applicable" for k in BASE_GT_FIELDS},
+                           "record_type": "populated", "filing_number": "not_applicable",
+                       })},
+        )
+        rev.verify_presence_codes([row])  # must not raise
+        with pytest.raises(AssertionError, match="dropped base keys"):
+            rev.verify_presence_codes([_gt_row(
+                expected="corporate_record",
+                gt_fields={"gt_presence": json.dumps({"record_type": "populated"})},
+            )])
+        with pytest.raises(AssertionError, match="entity presence keys"):
+            rev.verify_presence_codes([_gt_row(
+                gt_fields={"gt_presence": json.dumps({
+                    **{k: "not_applicable" for k in BASE_GT_FIELDS},
+                    "trustee": "populated",
+                })},
+            )])
 
     def test_ex10_row_is_pending_annotation_not_silent_empty(self):
         row = _gt_row(
@@ -187,7 +213,7 @@ class TestVerifyPresenceCodes:
     def test_passes_on_revised_rows(self):
         rows = rev.revise_rows([_gt_row(), _gt_row(filename="cuad_002.txt")])
         counts = rev.verify_presence_codes(rows)
-        assert sum(counts.values()) == len(rows) * len(ALL_GT_FIELDS)
+        assert sum(counts.values()) == len(rows) * len(BASE_GT_FIELDS)
 
     def test_fails_on_genuine_gap(self):
         row = _gt_row(

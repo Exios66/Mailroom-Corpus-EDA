@@ -51,12 +51,15 @@ from pathlib import Path
 from typing import Any
 
 from .config import CHARS_PER_TOKEN, DATA_DIR, REPO_ID
+from .corporate_presence import CORPORATE_ENTITY_KEYS
 from .dataset_export import normalize_metadata_rows, safe_jsonl_line
 from .gt_presence import (
     ALL_GT_FIELDS,
+    BASE_GT_FIELDS,
     CONTEXT_WINDOW_BANDS,
     CONTEXT_WINDOW_OVERFLOW,
     PRESENCE_CODES,
+    UNLABELED,
     context_window_band,
     row_gt_presence,
     strip_weak_indirect_signals,
@@ -254,14 +257,42 @@ def verify_zero_drift(old_rows: list[dict], new_rows: list[dict]) -> None:
 
 
 def verify_presence_codes(rows: list[dict]) -> dict[str, int]:
+    """The v9.3 superset-presence law (relaxed from the v9.1 uniform-map
+    equality so corporate rows can express the per-subclass entity regime):
+
+    * every row's ``gt_presence`` keys ⊇ ``BASE_GT_FIELDS`` (the uniform
+      v9.1/v9.2 base law — never silently drop a base cell),
+    * every key ⊆ ``ALL_GT_FIELDS`` (unknown keys are rejected outright),
+    * every code ∈ ``PRESENCE_CODES``; ``genuine_gap`` / ``unlabeled`` (the
+      internal unstated-blank sentinel) must never ship,
+    * entity keys outside a row's class are rejected (only
+      ``corporate_record`` rows may extend with the registry's entity keys).
+
+    Returns the code counts.
+    """
     counts: dict[str, int] = {c: 0 for c in PRESENCE_CODES}
+    all_fields = set(ALL_GT_FIELDS)
+    base_fields = set(BASE_GT_FIELDS)
     for row in rows:
         gt = row.get("gt_fields") or {}
         presence = json.loads(gt.get("gt_presence") or "{}")
-        assert set(presence) == set(ALL_GT_FIELDS), f"{row['filename']}: presence key set mismatch"
+        fn = row["filename"]
+        unknown = set(presence) - all_fields
+        assert not unknown, f"{fn}: unknown presence keys {sorted(unknown)}"
+        missing = base_fields - set(presence)
+        assert not missing, f"{fn}: presence map dropped base keys {sorted(missing)}"
+        if set(presence) - base_fields:
+            # Only corporate rows may carry the extended entity keys.
+            assert row.get("expected") == "corporate_record", (
+                f"{fn}: only corporate_record rows may carry entity presence keys"
+            )
+            assert set(presence) - base_fields <= (
+                set(CORPORATE_ENTITY_KEYS)
+            ), f"{fn}: presence carries non-registry extension keys"
         for code in presence.values():
-            assert code in PRESENCE_CODES, f"{row['filename']}: unknown presence code {code!r}"
-            assert code != "genuine_gap", f"{row['filename']}: genuine_gap must never ship"
+            assert code in PRESENCE_CODES, f"{fn}: unknown presence code {code!r}"
+            assert code != "genuine_gap", f"{fn}: genuine_gap must never ship"
+            assert code != UNLABELED, f"{fn}: unstated-blank cells must be absent, not '{UNLABELED}'"
             counts[code] += 1
     print(f"verify_presence_codes OK — {counts}")
     return counts

@@ -74,11 +74,44 @@ class TestClosedVocabulary:
         presence = gp.row_gt_presence(row)
         assert set(presence.values()) <= set(gp.PRESENCE_CODES) | {"genuine_gap"}
 
-    def test_row_gt_presence_uniform_keys_every_class(self):
+    def test_row_gt_presence_uniform_base_keys_every_class(self):
+        """The v9.3 superset law: every class carries the uniform BASE key
+        set; only corporate rows extend with the entity registry (and only
+        where labeled — blank entity cells drop out, the dojo unstated-blank
+        regime)."""
         for doc_class in ("contract", "merger_agreement", "corporate_record",
                           "correspondence", "insurance_claim"):
             row = _row(expected=doc_class)
-            assert tuple(sorted(gp.row_gt_presence(row))) == tuple(sorted(gp.ALL_GT_FIELDS))
+            keys = set(gp.row_gt_presence(row))
+            assert keys >= set(gp.BASE_GT_FIELDS), doc_class
+            assert keys <= set(gp.ALL_GT_FIELDS), doc_class
+            if doc_class == "corporate_record":
+                assert not (keys - set(gp.BASE_GT_FIELDS)), (
+                    "blank corporate entity fields must be absent, not coded"
+                )
+
+    def test_corporate_entity_keys_drop_when_unlabeled(self):
+        """The unstated-blank regime: blank applicable/extension entity keys
+        are omitted from the map; a populated one is present as `populated`;
+        inapplicable core keys (per the subclass) are `not_applicable`."""
+        row = _row(expected="corporate_record", expected_subclass="bylaws")
+        keys = set(gp.row_gt_presence(row))
+        # filing_number is not applicable on a bylaws subclass row
+        assert gp.classify_field("corporate_record", "filing_number", row) == "not_applicable"
+        # applicable-but-blank core (jurisdiction) and any extension key are unlabeled
+        assert gp.classify_field("corporate_record", "jurisdiction", row) == gp.UNLABELED
+        assert gp.classify_field("corporate_record", "certifying_officer", row) == gp.UNLABELED
+        # foreign-subclass extensions stay unlabeled (absent), never not_applicable
+        assert gp.classify_field("corporate_record", "trustee", row) == gp.UNLABELED
+        assert "trustee" not in keys and "jurisdiction" not in keys
+        row["record_type"] = "bylaws"
+        gp.classify_field("corporate_record", "record_type", row) == "populated"
+
+    def test_corporate_not_applicable_inapplicable_core_per_subclass(self):
+        row = _row(expected="corporate_record", expected_subclass="subsidiary_list")
+        # a schedule is not executed or filed on its own
+        for key in ("signatories", "jurisdiction", "filing_number"):
+            assert gp.classify_field("corporate_record", key, row) == "not_applicable"
 
 
 class TestNotApplicable:
