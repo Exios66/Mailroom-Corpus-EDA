@@ -163,6 +163,31 @@ CORP_SUBCLASS_INTENT: dict[str, str] = {
 }
 
 
+#: Model-visible record phrase per corporate subclass (subject_matter / keywords).
+CORP_SUBCLASS_PHRASE: dict[str, str] = {
+    "articles_of_incorporation": "Articles of incorporation",
+    "bylaws": "Bylaws",
+    "charter_amendment": "Charter amendment",
+    "board_resolution": "Board resolution",
+    "officer_certificate": "Officer certificate",
+    "powers_of_attorney": "Power of attorney",
+    "subsidiary_list": "List of subsidiaries",
+    "rights_instrument": "Rights instrument",
+    "indenture": "Indenture",
+}
+
+
+def _clean_filer(filer: object) -> str:
+    """Company name from EDGAR ``filer`` text: strip ``(CIK ...)`` and ``(TICKER)``."""
+    name = re.sub(r"\s*\(CIK\s*\d+\)", "", str(filer or ""))
+    name = re.sub(r"\s+", " ", name).strip()
+    while True:
+        stripped = re.sub(r"\s*\([A-Z][A-Z0-9.\-]{0,5}\)\s*$", "", name).strip()
+        if stripped == name:
+            return name
+        name = stripped
+
+
 def backfill_purpose_gt(rows: list[dict]) -> dict:
     """v9 purpose-GT completion on legacy rows (v8 documented gaps).
 
@@ -189,19 +214,16 @@ def backfill_purpose_gt(rows: list[dict]) -> dict:
                 gt["intent_confidence"] = "0.9"
                 gt["intent_status"] = "auto_labeled"
                 stats["corporate_intent"] += 1
+            subclass = str(r.get("expected_subclass") or "other")
+            phrase = CORP_SUBCLASS_PHRASE.get(subclass, "Corporate record")
+            company = _clean_filer(md.get("filer")) or "the registrant"
             if not str(gt.get("subject_matter") or "").strip():
-                filer = md.get("filer") or "the registrant"
-                desc = md.get("exhibit_description") or str(r.get("expected_subclass") or "")
-                gt["subject_matter"] = (
-                    f"{str(r.get('expected_subclass') or 'corporate record')} of {filer} "
-                    f"(SEC EDGAR exhibit{f': {desc}' if desc else ''})."
-                )
+                gt["subject_matter"] = f"{phrase} of {company}."
             if not str(gt.get("keywords") or "").strip():
-                kws = [str(r.get("expected_subclass") or "corporate record")]
-                for key in ("filer", "exhibit_type", "form"):
-                    if md.get(key):
-                        kws.append(str(md[key]))
-                gt["keywords"] = json.dumps(list(dict.fromkeys(kws))[:8], ensure_ascii=False)
+                # Document terms only: no exhibit number, form type, accession or CIK.
+                gt["keywords"] = json.dumps(list(dict.fromkeys([phrase, company])), ensure_ascii=False)
+            if company != "the registrant" and not str(gt.get("entity_name") or "").strip():
+                gt["entity_name"] = company
         elif cls == "correspondence":
             if not str(gt.get("subject_matter") or "").strip():
                 topic = str(gt.get("content_topic") or "").strip() or "general business"
