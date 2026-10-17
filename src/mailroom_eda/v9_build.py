@@ -181,23 +181,71 @@ _NOT_TICKERS = frozenset(
     {"UK", "US", "USA", "EU", "LLC", "LP", "LLP", "LTD", "INC", "CORP", "CO", "NV", "AG", "SA", "PLC"}
 )
 _TICKER_TAIL = re.compile(r"\s*\([A-Z][A-Z0-9.\-]{0,5}(?:\s*,\s*[A-Z][A-Z0-9.\-]{0,5})*\)\s*$")
-_STATE_TAIL = re.compile(r"\s*/[A-Z]{2}/\s*$")
+_STATE_TAIL = re.compile(r"\s*/([A-Z]{2})/\s*$")
+
+#: US state / territory postal codes (USPS) — the only ``/XX/`` tails that are
+#: stripping candidates. Foreign two-letter codes that follow the same EDGAR
+#: pattern (``/UK/``, ``/ON/``, ``/BC/``, ``/EN/`` …) are part of the name
+#: and kept.
+_STATE_CODES = frozenset(
+    {
+        "AK", "AL", "AR", "AS", "AZ", "CA", "CO", "CT", "DC", "DE", "FL",
+        "FM", "GA", "GU", "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA",
+        "MA", "MD", "ME", "MI", "MH", "MN", "MO", "MP", "MS", "MT", "NC",
+        "ND", "NE", "NH", "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA",
+        "PR", "PW", "RI", "SC", "SD", "TN", "TX", "UM", "UT", "VA", "VI",
+        "VT", "WA", "WI", "WV", "WY",
+    }
+)
+
+#: Verified CIK → EDGAR ticker for filers whose ticker collides with a
+#: ``_NOT_TICKERS`` legal-form suffix. For these filers the parenthesized
+#: tail is the ticker, not a legal form; without the CIK match the tail is
+#: kept as a name suffix. Do NOT blanket-remove these tokens from
+#: ``_NOT_TICKERS`` — other companies legitimately end in them (e.g. British
+#: AG names keep their ``(UK)`` country tails).
+_TICKER_BY_CIK: dict[int, str] = {
+    1308648: "AG",  # First Majestic Silver Corp (NYSE American: AG)
+}
+
+
+def _is_ticker_tail(tokens: set[str], cik: int) -> bool:
+    """True when a parenthesized tail's tokens are tickers, not name suffixes.
+
+    A tail with no legal-form token is always a ticker. When every token is
+    a ``_NOT_TICKERS`` legal-form suffix, the tail is kept — unless it is the
+    single verified EDGAR ticker passed via ``_TICKER_BY_CIK`` (First
+    Majestic's NYSE ``AG``, which collides with the German AG legal form).
+    """
+    if not (tokens & _NOT_TICKERS):
+        return True
+    return cik in _TICKER_BY_CIK and len(tokens) == 1 and next(iter(tokens)) == _TICKER_BY_CIK[cik]
 
 
 def _clean_filer(filer: object) -> str:
     """Company name from EDGAR ``filer`` text: strip ``(CIK ...)``, tickers and ``/ST/``.
 
-    Non-string values (NaN, ints) give ``""``; country / entity-form codes such
-    as ``(UK)`` are part of the name and kept.
+    Non-string values (NaN, ints) give ``""``. Country / entity-form codes
+    such as ``(UK)`` and foreign ``(XX)`` tails are part of the name and
+    kept; ``(CIK ...)`` and US ``/ST/`` tails are always stripped. A trailing
+    parenthesized token is stripped only when it is a real ticker — either a
+    non-legal-form token, or the filer's verified EDGAR ticker via
+    ``_TICKER_BY_CIK`` (so ``First Majestic Silver Corp (AG)`` keeps only the
+    company name, AG being its NYSE ticker, not a legal-form suffix).
     """
     if not isinstance(filer, str):
         return ""
+    m_cik = re.search(r"CIK\s*(\d+)", filer)
+    cik = int(m_cik.group(1)) if m_cik else 0
     name = re.sub(r"\s*\(CIK\s*\d+\)", "", filer)
     name = re.sub(r"\s+", " ", name).strip()
     while True:
-        stripped = _STATE_TAIL.sub("", name).strip()
+        stripped = name
+        m_state = _STATE_TAIL.search(stripped)
+        if m_state and m_state.group(1) in _STATE_CODES:
+            stripped = stripped[: m_state.start()].rstrip()
         m = _TICKER_TAIL.search(stripped)
-        if m and not (set(re.findall(r"[A-Z0-9.\-]+", m.group(0))) & _NOT_TICKERS):
+        if m and _is_ticker_tail(set(re.findall(r"[A-Z0-9.\-]+", m.group(0))), cik):
             stripped = stripped[: m.start()].strip()
         if stripped == name:
             return name
@@ -535,6 +583,13 @@ def load_draw_rows() -> list[dict]:
 
 
 def _validate_draw_row(r: dict) -> str:
+    """Validate one expansion-draw sidecar row; return an error message or ``""``.
+
+    Checks shape (filename/doc_text/expected/expected_subclass all non-empty
+    strings), class and subclass vocabularies, and that no metadata key looks
+    like a label (except the documented ``label_evidence`` holder) — the
+    §48/§49 label-leakage gate applied at load time.
+    """
     if not isinstance(r, dict):
         return "not an object"
     for key in ("filename", "doc_text", "expected", "expected_subclass"):
@@ -626,6 +681,11 @@ def verify_v8_drift(v8_rows: list[dict], enriched: list[dict]) -> None:
 
 
 def _published_v8_values() -> dict[str, dict[str, str]]:
+    """Read the published v8 identity keys (filename → document_id/source_corpus/…).
+
+    The training input for ``verify_v8_drift``: the 2,000 frozen v8 rows must
+    re-derive to these values exactly (identity.py is byte-stable for v8).
+    """
     import pandas as pd
 
     frames = [
@@ -821,6 +881,13 @@ gt = load_dataset("Lucius-Morningstar/mailroom-dataset", "ground_truth")
 
 def build_manifest_v9(rows: list[dict], counts: dict, draw_counts: dict,
                       sha_table: dict[str, str], stage_dir: Path) -> None:
+    """Write the staged-build ``manifest.txt`` (repo id, version, composition, sha256 table).
+
+    The manifest is the release provenance record for the staged v9 tree:
+    parent repo pointer (frozen v8 baseline), per-class row composition and
+    expansion draws, config row counts, the md5 split rule, and the sha256
+    of every staged file.
+    """
     comp = dict(Counter(r["expected"] for r in rows))
     split_c = dict(Counter(r["split"] for r in rows))
     (stage_dir / "manifest.txt").write_text(
@@ -846,6 +913,11 @@ def build_manifest_v9(rows: list[dict], counts: dict, draw_counts: dict,
 
 
 def verify_blind_label_free(stage_dir: Path) -> None:
+    """Assert the staged ``default`` (blind) parquet carries exactly the 4 label-free columns.
+
+    §48 law: filename, doc_text, prompt, metadata — anything else means the
+    GT collation leaked a label column into the blind config (build-fatal).
+    """
     import pandas as pd
 
     for split in ("train", "test"):
@@ -857,6 +929,13 @@ def verify_blind_label_free(stage_dir: Path) -> None:
 
 
 def verify_v9_stage(rows: list[dict], stage_dir: Path, counts: dict) -> None:
+    """Post-stage integrity gate: GT parquet must equal the built rows exactly.
+
+    Row count, unique ``document_id``, class vocabulary within
+    ``EXPECTED_SUBCLASS_BY_CLASS``, zero NaN across the identity/contract/
+    matter columns, plus the §48 blind-config scan (see
+    ``verify_blind_label_free``). Raises on any violation.
+    """
     import pandas as pd
 
     gt = pd.concat([
@@ -976,6 +1055,7 @@ def build_all(
 
 
 def main() -> int:
+    """CLI entry point: ``python -m mailroom_eda.v9_build [--stage-dir DIR] [--publish]``."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage-dir", type=Path, default=STAGE_DIR_DEFAULT)
     parser.add_argument("--publish", action="store_true")
