@@ -148,7 +148,12 @@ sibling pin, `test_mailroom_contract_fixture` and
 `test_expected_specialist_matches_live_taxonomy_yaml` cannot read
 `../llm-mailroom/src/config/taxonomy.yaml`. `llm-mailroom` `main` after
 `417d5a0814cb14f5c3834c063045c9a8c7801cfb` routes `merger_agreement` to
-`merger_agreement_specialist`; these tests expect `contracts_specialist`.
+`merger_agreement_specialist`; `eval_contract` aligns that routing as of
+2026-10-17 (live-taxonomy alignment — see the D6 amendment in
+`docs/plans/v9.2-relations-provenance-revision.md`), so these tests expect
+`merger_agreement_specialist`. The 152 published merger
+`expected_specialist` values on the Hub still read `contracts_specialist`
+until the v9.3 label revision.
 
 `run_all.py --phases P0` fetches the public
 `Lucius-Morningstar/mailroom-dataset` snapshot into gitignored `data/`

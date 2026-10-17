@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from mailroom_eda import gt_presence as gp
 from mailroom_eda import gt_quality as gq
 from mailroom_eda.config import PARQUET_DIR, REPO_REVISION, REPO_TAG
 
@@ -190,6 +191,84 @@ def test_insurance_amount_and_date_rules():
     assert ("error", "date_of_loss", "format") in codes
     assert ("error", "claimed_amount", "format") in codes
     assert ("error", "coverage_determination", "format") in codes
+
+
+def test_legacy_uniform_20_key_map_passes():
+    """Regression (v9.3 superset law): a legacy v9.1/v9.2 uniform 20-key
+    gt_presence map is LAWFUL — the v9.2-era exact-equality check would have
+    flagged nothing here, and the relaxed superset law must not either."""
+    row = _base()
+    presence = gp.row_gt_presence(gq._prepared(row))
+    assert set(presence) == set(gp.BASE_GT_FIELDS)
+    row["gt_presence"] = json.dumps(presence)
+    assert not [f for f in gq.audit_row(row) if f.field == "gt_presence"]
+    codes = _codes(row)
+    assert not [c for c in codes if c[0] == "error"]
+
+
+def _corporate_flat_row() -> dict:
+    """A bylaws row shaped the way the audit path sees it (flattened) with
+    the v9.3 staged corporate partial gt_presence map."""
+    row = {
+        "filename": "corp_001.htm",
+        "expected": "corporate_record",
+        "expected_subclass": "bylaws",
+        "doc_text": "BYLAWS OF ACME CORP ...",
+        "metadata": {"source_dataset": "sec_edgar"},
+        "split": "train",
+        "intent": "governance_rules",
+        "subject_matter": "Bylaws of ACME Corp adopted by the board.",
+        "keywords": json.dumps(["bylaws", "board", "officers"]),
+        "entity_name": "ACME Corp",
+        "record_type": "bylaws",
+        "effective_date": "",
+        "signatories": "",
+        "jurisdiction": "",
+        "filing_number": "",
+        "intent_source": "heuristic",
+        "intent_confidence": "0.9",
+        "intent_status": "auto_labeled",
+        "token_estimate": "200",
+        "context_window_band": "<=4k",
+        "gt_presence": "",
+    }
+    return row
+
+
+def test_corporate_partial_map_passes():
+    """Regression (v9.3 superset law): the staged corporate partial maps —
+    base keys + the subclass-conditional entity keys, with distinguishing
+    unlabeled cells OMITTED — pass the strict audit."""
+    row = _corporate_flat_row()
+    presence = gp.row_gt_presence(gq._prepared(row))
+    assert "entity_name" in presence and presence["entity_name"] == "populated"
+    assert "trustee" not in presence  # unstated-blank: omitted, not shipped
+    row["gt_presence"] = json.dumps(presence)
+    codes = _codes(row)
+    assert not [c for c in codes if c == ("error", "gt_presence", "gt_presence_keys")]
+    assert not [c for c in codes if c == ("error", "gt_presence", "gt_presence_drift")]
+    assert not [c for c in codes if c[0] == "error"]
+
+
+def test_unknown_presence_key_fails_corporate_row():
+    row = _corporate_flat_row()
+    presence = gp.row_gt_presence(gq._prepared(row))
+    presence["extraneous_field"] = "populated"
+    row["gt_presence"] = json.dumps(presence)
+    assert ("error", "gt_presence", "gt_presence_keys") in _codes(row)
+
+
+def test_foreign_subclass_extension_key_fails_audit_row():
+    """The subclass-conditional law is enforced on the legacy audit path too
+    (same single-sourced verdict as v9_3_revision.verify_presence_laws): a
+    bylaws row carrying an indenture-only extension key is a violation."""
+    row = _corporate_flat_row()
+    presence = gp.row_gt_presence(gq._prepared(row))
+    presence["trustee"] = "populated"  # an indenture extension, subclass 'bylaws'
+    row["gt_presence"] = json.dumps(presence)
+    finding = next(f for f in gq.audit_row(row) if f.field == "gt_presence"
+                   and f.code == "gt_presence_keys")
+    assert "foreign-subclass" in finding.detail
 
 
 @pytest.mark.skipif(
