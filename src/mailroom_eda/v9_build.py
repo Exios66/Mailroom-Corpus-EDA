@@ -177,12 +177,28 @@ CORP_SUBCLASS_PHRASE: dict[str, str] = {
 }
 
 
+_NOT_TICKERS = frozenset(
+    {"UK", "US", "USA", "EU", "LLC", "LP", "LLP", "LTD", "INC", "CORP", "CO", "NV", "AG", "SA", "PLC"}
+)
+_TICKER_TAIL = re.compile(r"\s*\([A-Z][A-Z0-9.\-]{0,5}(?:\s*,\s*[A-Z][A-Z0-9.\-]{0,5})*\)\s*$")
+_STATE_TAIL = re.compile(r"\s*/[A-Z]{2}/\s*$")
+
+
 def _clean_filer(filer: object) -> str:
-    """Company name from EDGAR ``filer`` text: strip ``(CIK ...)`` and ``(TICKER)``."""
-    name = re.sub(r"\s*\(CIK\s*\d+\)", "", str(filer or ""))
+    """Company name from EDGAR ``filer`` text: strip ``(CIK ...)``, tickers and ``/ST/``.
+
+    Non-string values (NaN, ints) give ``""``; country / entity-form codes such
+    as ``(UK)`` are part of the name and kept.
+    """
+    if not isinstance(filer, str):
+        return ""
+    name = re.sub(r"\s*\(CIK\s*\d+\)", "", filer)
     name = re.sub(r"\s+", " ", name).strip()
     while True:
-        stripped = re.sub(r"\s*\([A-Z][A-Z0-9.\-]{0,5}\)\s*$", "", name).strip()
+        stripped = _STATE_TAIL.sub("", name).strip()
+        m = _TICKER_TAIL.search(stripped)
+        if m and not (set(re.findall(r"[A-Z0-9.\-]+", m.group(0))) & _NOT_TICKERS):
+            stripped = stripped[: m.start()].strip()
         if stripped == name:
             return name
         name = stripped
@@ -204,7 +220,9 @@ def backfill_purpose_gt(rows: list[dict]) -> dict:
     stats = {"corporate_intent": 0, "correspondence_purpose": 0}
     for r in rows:
         cls = r["expected"]
-        gt = r.get("gt_fields") or {}
+        gt = r.get("gt_fields")
+        if not isinstance(gt, dict) or gt is None:
+            gt = r["gt_fields"] = {}
         md = r.get("metadata") or {}
         if cls == "corporate_record":
             if not str(gt.get("intent") or "").strip():
@@ -216,13 +234,17 @@ def backfill_purpose_gt(rows: list[dict]) -> dict:
                 stats["corporate_intent"] += 1
             subclass = str(r.get("expected_subclass") or "other")
             phrase = CORP_SUBCLASS_PHRASE.get(subclass, "Corporate record")
-            company = _clean_filer(md.get("filer")) or "the registrant"
+            company = _clean_filer(md.get("filer"))
             if not str(gt.get("subject_matter") or "").strip():
-                gt["subject_matter"] = f"{phrase} of {company}."
+                gt["subject_matter"] = (
+                    f"{phrase} of {company}" + ("" if company.endswith(".") else ".")
+                    if company
+                    else f"{phrase} of the registrant."
+                )
             if not str(gt.get("keywords") or "").strip():
                 # Document terms only: no exhibit number, form type, accession or CIK.
-                gt["keywords"] = json.dumps(list(dict.fromkeys([phrase, company])), ensure_ascii=False)
-            if company != "the registrant" and not str(gt.get("entity_name") or "").strip():
+                gt["keywords"] = json.dumps(list(dict.fromkeys([phrase, company] if company else [phrase])), ensure_ascii=False)
+            if company and not str(gt.get("entity_name") or "").strip():
                 gt["entity_name"] = company
         elif cls == "correspondence":
             if not str(gt.get("subject_matter") or "").strip():
