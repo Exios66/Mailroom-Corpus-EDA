@@ -124,6 +124,69 @@ class TestVerifyPresenceLaws:  # (b) + (c)
             v93.verify_presence_laws([row])
 
 
+class TestSubclassConditionalLaw:
+    """v9.3 hardening: a corporate row's present extension keys ⊆ entity
+    core + its OWN subclass's extension keys (registry mirror, sha-pinned);
+    foreign-subclass extensions are ABSENT; unknown subclass ⇒ core-only."""
+
+    def test_bylaws_row_with_foreign_indenture_extension_fails(self):
+        row = _corp_row(
+            gt_fields={"gt_presence": _gt_presence(
+                record_type="populated", filing_number="not_applicable", trustee="populated"
+            )}
+        )
+        assert row["expected_subclass"] == "bylaws"  # trustee is an indenture extension
+        with pytest.raises(AssertionError, match="foreign-subclass"):
+            v93.verify_presence_laws([row])
+
+    def test_bylaws_row_with_own_extension_passes(self):
+        row = _corp_row(
+            gt_fields={"gt_presence": _gt_presence(
+                record_type="populated", filing_number="not_applicable",
+                certifying_officer="populated",  # a bylaws extension key
+            )}
+        )
+        stats = v93.verify_presence_laws([row])
+        assert stats["corporate_rows"] == 1
+
+    def test_unknown_subclass_row_with_extension_fails(self):
+        # Registry-driven: an unknown expected_subclass is treated core-only.
+        row = _corp_row(
+            expected_subclass="no_such_subclass",
+            gt_fields={"gt_presence": _gt_presence(
+                record_type="populated", filing_number="not_applicable", trustee="populated"
+            )}
+        )
+        with pytest.raises(AssertionError, match="foreign-subclass"):
+            v93.verify_presence_laws([row])
+
+    def test_unknown_subclass_row_with_core_keys_passes(self):
+        row = _corp_row(
+            expected_subclass="no_such_subclass",
+            gt_fields={"gt_presence": _gt_presence(
+                record_type="populated", filing_number="not_applicable",
+                signatories="populated",  # entity-CORE key: always allowed
+            )}
+        )
+        stats = v93.verify_presence_laws([row])
+        assert stats["corporate_rows"] == 1
+
+    def test_single_sourced_with_audit_path(self):
+        # gt_quality.audit_row must reach the same verdict as the staging
+        # verifier for the same map (the law is single-sourced in
+        # gt_presence.presence_law_problems, never re-declared).
+        from mailroom_eda.gt_presence import presence_law_problems
+
+        row = _corp_row()
+        presence = json.loads(row["gt_fields"]["gt_presence"])
+        presence["trustee"] = "populated"
+        problems = presence_law_problems(presence, "corporate_record", "bylaws")
+        assert problems and "foreign-subclass" in problems[0]
+        row["gt_fields"]["gt_presence"] = json.dumps(presence)
+        with pytest.raises(AssertionError, match="foreign-subclass"):
+            v93.verify_presence_laws([row])
+
+
 class TestVerifyZeroDrift:
     def test_relabeled_corporate_changes_allowed(self):
         old = [_corp_row(), _other_row()]
@@ -299,6 +362,9 @@ class TestStagingBuildAll:
             "rows": 3302, "splits": {"train": 2979, "test": 323}, "corporate": 450,
         }
         assert result["labels_stats"]["corporate"] == 450
+        assert result["staged_parquet_stats"] == {
+            "rows": 3302, "splits": {"train": 2979, "test": 323}, "corporate": 450,
+        }
         stage = tmp_path / "stage"
         # the staged label surfaces are byte-pinned to the verified source
         import hashlib
@@ -320,3 +386,121 @@ class TestStagingBuildAll:
         for pa, pb in zip(a, b):
             if pa.is_file() and pb.is_file() and pa.name != "manifest.txt":
                 assert pa.read_bytes() == pb.read_bytes(), pa.name
+
+
+# ---------------------------------------------------------------------------
+# gate (g): staged parquet ⟷ hardened JSONL gt_fields (synthetic pair)
+# ---------------------------------------------------------------------------
+
+
+class TestStagedParquetGate:
+    """Cheap synthetic-pair unit test for the passthrough content gate: the
+    byte-copied ``parquet/ground_truth`` must carry exactly the JSONL rows'
+    ``gt_fields`` (row counts + split counts + join on filename + string
+    equality field-by-field)."""
+
+    @staticmethod
+    def _rows() -> list[dict]:
+        corr = {
+            "filename": "corr_001.txt", "expected": "correspondence",
+            "expected_subclass": "email", "split": "train",
+            "gt_fields": {"intent": "request", "gt_presence": json.dumps(
+                {"intent": "populated", "keywords": "populated"})},
+        }
+        ins = {
+            "filename": "ins_001.txt", "expected": "insurance_claim",
+            "expected_subclass": "auto", "split": "test",
+            "gt_fields": {"claim_number": "X-1", "gt_presence": json.dumps(
+                {"claim_number": "populated", "adjuster": "not_applicable"})},
+        }
+        bylaws = {
+            "filename": "corp_001.htm", "expected": "corporate_record",
+            "expected_subclass": "bylaws", "split": "train",
+            "gt_fields": {
+                "intent": "governance_rules", "record_type": "bylaws",
+                "entity_name": "ACME Corp",
+                "gt_presence": json.dumps({
+                    **{k: "not_applicable" for k in BASE_GT_FIELDS},
+                    "intent": "populated", "record_type": "populated",
+                    "entity_name": "populated", "filing_number": "not_applicable",
+                }),
+            },
+        }
+        indenture = {
+            "filename": "corp_002.htm", "expected": "corporate_record",
+            "expected_subclass": "indenture", "split": "test",
+            "gt_fields": {
+                "intent": "investor_rights", "record_type": "other",
+                "gt_presence": json.dumps({
+                    **{k: "not_applicable" for k in BASE_GT_FIELDS},
+                    "intent": "populated", "trustee": "populated",
+                    "record_type": "populated", "jurisdiction": "not_applicable",
+                }),
+            },
+        }
+        return [corr, ins, bylaws, indenture]
+
+    @staticmethod
+    def _stage_parquet(rows: list[dict], stage_dir) -> None:
+        """The staging parquet convention: gt_fields is one JSON-string
+        column (key order preserved from the writer — the gate parses, it
+        does not assume sorted keys)."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        for split in ("train", "test"):
+            part = [dict(r, gt_fields=json.dumps(r["gt_fields"], ensure_ascii=False))
+                    for r in rows if r["split"] == split]
+            gdir = stage_dir / "parquet" / "ground_truth" / split
+            gdir.mkdir(parents=True, exist_ok=True)
+            pq.write_table(
+                pa.Table.from_pylist(part),
+                gdir / f"{split}-00000-of-00001.parquet",
+            )
+
+    def test_synthetic_pair_matches(self, tmp_path):
+        rows = self._rows()
+        self._stage_parquet(rows, tmp_path)
+        # split counts differ from the 2979/323 corpus law on the synthetic
+        # pair — the gate's counts are TOTAL vs the passed rows; expect PASS.
+        stats = v93.verify_staged_parquet_gt_fields(rows, tmp_path)
+        assert stats["rows"] == 4
+        assert stats["splits"] == {"train": 2, "test": 2}
+        assert stats["corporate"] == 2
+
+    def test_tampered_field_value_fails(self, tmp_path):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        rows = self._rows()
+        self._stage_parquet(rows, tmp_path)
+        # tamper: re-write the staged train parquet with one diverged
+        # gt_fields value on the corporate row (a proper pyarrow rewrite —
+        # no byte surgery).
+        path = tmp_path / "parquet" / "ground_truth" / "train" / "train-00000-of-00001.parquet"
+        recs = pq.read_table(path).to_pylist()
+        for rec in recs:
+            if rec["filename"] == "corp_001.htm":
+                rec["gt_fields"] = rec["gt_fields"].replace("ACME Corp", "Other Corp", 1)
+                assert "Other Corp" in rec["gt_fields"]
+        pq.write_table(
+            pa.Table.from_pylist(recs, schema=pq.read_schema(path)), path
+        )
+        with pytest.raises(AssertionError, match="gt_fields"):
+            v93.verify_staged_parquet_gt_fields(rows, tmp_path)
+
+    def test_missing_jsonl_counterpart_fails(self, tmp_path):
+        rows = self._rows()
+        self._stage_parquet(rows, tmp_path)
+        pruned = [r for r in rows if r["filename"] != "corp_002.htm"]
+        with pytest.raises(AssertionError, match="no hardened JSONL counterpart"):
+            v93.verify_staged_parquet_gt_fields(pruned, tmp_path)
+
+    def test_row_count_drift_fails(self, tmp_path):
+        rows = self._rows()
+        self._stage_parquet(rows, tmp_path)
+        # an extra JSONL row with no parquet counterpart: every parquet row
+        # still joins, so only the count-drift assert catches it
+        extra = dict(rows[0], filename="extra.txt")
+        with pytest.raises(AssertionError, match="row count drift"):
+            v93.verify_staged_parquet_gt_fields([*rows, extra], tmp_path)

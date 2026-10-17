@@ -51,7 +51,12 @@ from typing import Any
 
 from .config import DATA_DIR, REPO_ID
 from .corporate_presence import relabel_rows
-from .gt_presence import ALL_GT_FIELDS, BASE_GT_FIELDS, PRESENCE_CODES
+from .gt_presence import (
+    ALL_GT_FIELDS,
+    BASE_GT_FIELDS,
+    PRESENCE_CODES,
+    presence_law_problems,
+)
 from .v9_1_revision import upsert_readme_addendum
 
 V9_3_VERSION = "v9.3"
@@ -281,8 +286,14 @@ def verify_presence_laws(rows: list[dict]) -> dict[str, Any]:
     """Gates (b) + (c): every row's presence keys sit inside the extended
     ``ALL_GT_FIELDS`` (unknown keys rejected) and contain the base keys;
     corporate rows are the only rows allowed to extend with entity keys; and
-    every shipped value is a published-vocabulary code."""
-    registry = set(ALL_GT_FIELDS)
+    every shipped value is a published-vocabulary code.
+
+    Row verdicts come from the single-sourced law
+    (``gt_presence.presence_law_problems``), which since this hardening also
+    enforces the SUBCLASS-CONDITIONAL extension law (v9.3): a corporate
+    row's present extension keys must be ⊆ the 6 entity-core keys + that
+    row's OWN subclass's extension keys (registry mirror) — foreign-subclass
+    extensions are ABSENT; unknown ``expected_subclass`` ⇒ core-only."""
     base = set(BASE_GT_FIELDS)
     corporate: dict[str, int] = {c: 0 for c in PRESENCE_CODES}
     extended_keys: set[str] = set()
@@ -290,22 +301,19 @@ def verify_presence_laws(rows: list[dict]) -> dict[str, Any]:
     for row in rows:
         presence = _presence_of(row)
         fn = row["filename"]
-        unknown = set(presence) - registry
-        assert not unknown, (
-            f"{fn}: presence keys outside ALL_GT_FIELDS: {sorted(unknown)}"
+        problems = presence_law_problems(
+            presence, row.get("expected") or "", row.get("expected_subclass")
         )
-        missing = base - set(presence)
-        assert not missing, f"{fn}: base presence keys missing: {sorted(missing)}"
+        # Explicit raise (not a bare assert): the conformance script derives
+        # gate statuses from this function's return values, and a `python -O`
+        # run strips asserts — the law must not become unenforceable there.
+        if problems:
+            raise AssertionError(
+                f"{fn}: " + "; ".join(problems)
+            )
         extension = set(presence) - base
         if extension:
-            assert row.get("expected") == "corporate_record", (
-                f"{fn}: non-corporate row carries entity presence keys"
-            )
             extended_keys |= extension
-        for code in presence.values():
-            assert code in PRESENCE_CODES, (
-                f"{fn}: code outside the published vocabulary: {code!r}"
-            )
         if row.get("expected") == "corporate_record":
             n_corporate += 1
             for code in presence.values():
@@ -321,7 +329,8 @@ def verify_presence_laws(rows: list[dict]) -> dict[str, Any]:
     print(
         f"verify_presence_laws OK — keys ⊆ {len(ALL_GT_FIELDS)}-key registry("
         f"extensions seen: {len(extended_keys)}) / ⊇ {len(BASE_GT_FIELDS)}-key base; "
-        f"corporate codes {corporate}"
+        f"subclass-conditional extensions (core + own-subclass only; "
+        f"unknown ⇒ core-only); corporate codes {corporate}"
     )
     return stats
 
@@ -442,10 +451,103 @@ def verify_raw_line_equality(new_rows: list[dict], branch_path: Path) -> dict[st
     return {"corporate": raw_corp, "non_corporate": raw_noncorp}
 
 
+def _canonical_gt_value(v: Any) -> str:
+    """Canonical string of one parsed ``gt_fields`` value (key-order-
+    insensitive for dicts/lists; strings pass through) — the comparison
+    form for the staged-parquet ⟷ JSONL field-by-field check."""
+    if isinstance(v, (dict, list)):
+        return json.dumps(v, sort_keys=True, ensure_ascii=False)
+    return "" if v is None else str(v)
+
+
+def verify_staged_parquet_gt_fields(rows: list[dict], stage_dir: Path) -> dict[str, Any]:
+    """Gate (g): the staged ``parquet/ground_truth`` bundles (byte-copies of
+    the ``corporate-labels-v9.2.1`` branch parquet — the EDA writer's bytes
+    differ at container level, so this verifies CONTENT, not bytes) carry
+    exactly the hardened JSONL ``gt_fields``:
+
+    * row count and per-split counts match the JSONL (and the v9-family
+      corpus law: 2,979 train / 323 test);
+    * every filename joins 1:1 between parquet and JSONL;
+    * every row's parsed parquet ``gt_fields`` equals the JSONL's field by
+      field — for all rows, corporate and non-corporate alike (the corporate
+      comparison is the substance: the staged maps carry the per-subclass
+      entity keys the parquet must not have lost).
+
+    Cheap (two arrow scans + dict joins); run after both payloads are laid
+    down in ``build_all`` and as conformance gate (g)."""
+    import pyarrow.parquet as pq
+
+    jsonl_by_fn = {r["filename"]: r for r in rows}
+    assert len(jsonl_by_fn) == len(rows), "duplicate JSONL filenames"
+    jsonl_splits: dict[str, int] = {}
+    for row in rows:
+        split = str(row.get("split") or "")
+        jsonl_splits[split] = jsonl_splits.get(split, 0) + 1
+    parquet_n = 0
+    parquet_splits: dict[str, int] = {}
+    corporate = 0
+    for split in ("train", "test"):
+        files = sorted(
+            (Path(stage_dir) / "parquet" / "ground_truth" / split).glob("*.parquet")
+        )
+        assert files, f"staged ground_truth parquet missing for split {split!r}"
+        for f in files:
+            table = pq.read_table(f)
+            parquet_n += table.num_rows
+            parquet_splits[split] = parquet_splits.get(split, 0) + table.num_rows
+            for rec in table.to_pylist():
+                fn = rec["filename"]
+                ref = jsonl_by_fn.get(fn)
+                assert ref is not None, (
+                    f"{fn}: staged parquet row has no hardened JSONL counterpart"
+                )
+                assert str(rec.get("split") or "") == str(ref.get("split") or ""), (
+                    f"{fn}: parquet split {rec.get('split')!r} != JSONL split "
+                    f"{ref.get('split')!r}"
+                )
+                raw = rec.get("gt_fields")
+                parquet_gt = (
+                    json.loads(raw) if isinstance(raw, str) and raw.strip() else {}
+                )
+                jsonl_gt = ref.get("gt_fields") or {}
+                assert set(parquet_gt) == set(jsonl_gt), (
+                    f"{fn}: gt_fields key set diverges between staged parquet and JSONL"
+                )
+                for key in sorted(parquet_gt):
+                    a = _canonical_gt_value(parquet_gt.get(key))
+                    b = _canonical_gt_value(jsonl_gt.get(key))
+                    assert a == b, (
+                        f"{fn}: gt_fields[{key!r}] diverges between staged parquet "
+                        f"and JSONL ({a[:60]!r} != {b[:60]!r}) — STOP"
+                    )
+                if ref.get("expected") == "corporate_record":
+                    corporate += 1
+    assert parquet_n == len(rows), (
+        f"row count drift: staged parquet {parquet_n} != JSONL {len(rows)}"
+    )
+    # Split counts must match the hardened JSONL exactly (the corpus law
+    # 2979/323 itself is verify_row_set's business; here the two payloads
+    # must agree split-for-split).
+    assert parquet_splits == jsonl_splits, (
+        f"split counts drifted vs the JSONL: {parquet_splits} != {jsonl_splits}"
+    )
+    jsonl_corporate = sum(1 for r in rows if r.get("expected") == "corporate_record")
+    assert corporate == jsonl_corporate, (
+        f"corporate row count drifted in parquet: {corporate} != {jsonl_corporate}"
+    )
+    stats = {"rows": parquet_n, "splits": parquet_splits, "corporate": corporate}
+    print(
+        f"verify_staged_parquet_gt_fields OK — {parquet_n:,} staged ground_truth "
+        f"parquet rows (splits {parquet_splits}, corporate {corporate}) match the "
+        f"hardened JSONL gt_fields field-by-field"
+    )
+    return stats
+
+
 # ---------------------------------------------------------------------------
 # manifest + card
 # ---------------------------------------------------------------------------
-
 
 def render_manifest_v9_3(old_manifest: str, sha_updates: dict[str, str], built_utc: str) -> str:
     """Rewrite the manifest header: ``revision`` line, NEW ``labels_version``
@@ -584,6 +686,10 @@ def build_all(
     staged_sha = sha256_file(stage_dir / "ground_truth_hardened.jsonl")
     assert staged_sha == BRANCH_SIDECAR_SHA256, staged_sha
 
+    # Gate (g): the byte-copied ground_truth parquet carries exactly the
+    # hardened JSONL gt_fields (content, not container bytes).
+    parquet_stats = verify_staged_parquet_gt_fields(new_rows, stage_dir)
+
     old_card = (branch_dir / "README.md").read_text(encoding="utf-8")
     addendum = render_readme_addendum(len(new_rows), presence_stats["corporate_codes"])
     new_card = upsert_readme_addendum(old_card, addendum)
@@ -610,6 +716,7 @@ def build_all(
         "labels_stats": labels_stats,
         "raw_line_stats": raw_stats,
         "presence_stats": presence_stats,
+        "staged_parquet_stats": parquet_stats,
     }
     print(f"staged v9.3 payload under {stage_dir} (labels: {LABELS_VERSION})")
     return result

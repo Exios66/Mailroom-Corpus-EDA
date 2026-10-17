@@ -5,8 +5,12 @@ Runs the v9.3 staging build over the verified sources (the ``v9.2`` base
 sidecar + the ``corporate-labels-v9.2.1`` branch payload) and proves:
 
 (a) 3,302 rows, split counts unchanged (2979 train / 323 test);
-(b) every corporate row's presence keys ⊆ the extended ``ALL_GT_FIELDS``
-    and ⊇ the 20-key ``BASE_GT_FIELDS``;
+(b) presence keys ⊇ the 20-key ``BASE_GT_FIELDS`` and ⊆ the extended
+    ``ALL_GT_FIELDS`` (57-key registry — 20 base + 37 corporate entity
+    keys); corporate-only extensions; SUBCLASS-CONDITIONAL hardening: a
+    corporate row's present extension keys ⊆ entity core + its OWN
+    subclass's extension keys (foreign-subclass extensions absent; unknown
+    subclass ⇒ core-only);
 (c) every presence value ∈ the published vocabulary
     (populated / not_applicable / schema_documented_absence / pending_annotation);
 (d) all 450 corporate rows' ``gt_fields`` byte-identical to the v9.2.1
@@ -14,9 +18,14 @@ sidecar + the ``corporate-labels-v9.2.1`` branch payload) and proves:
 (e) non-corporate rows byte-identical to v9.2.1;
 (f) the sha256 manifest regenerates (recomputed from the staged bytes,
     ``labels_version`` line present);
+(g) the staged ``parquet/ground_truth`` bundles (byte-copies of the branch
+    parquet) carry exactly the hardened JSONL ``gt_fields`` (row counts +
+    split counts + field-by-field equality per filename);
 (+ the registry parity guard: EDA mirror == live dojo
     ``SUBCLASS_SCHEMAS`` when the sibling checkout is present).
 
+Statuses are derived from the verify functions' RETURN VALUES, so a
+``python -O`` run (assert statements stripped) still grades FAIL on drift.
 Exit code 0 iff every gate passes. Sources can be overridden:
 
     python scripts/audit/verify_v9_3_conformance.py \
@@ -37,7 +46,6 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import mailroom_eda.corporate_presence as cp  # noqa: E402
 import mailroom_eda.v9_3_revision as v93  # noqa: E402
-from mailroom_eda.gt_presence import ALL_GT_FIELDS, BASE_GT_FIELDS  # noqa: E402
 
 
 def _sha(path: Path) -> str:
@@ -125,15 +133,15 @@ def verify_registry_parity() -> str:
     if str(dojo) not in sys.path:
         sys.path.insert(0, str(dojo))
     try:
-        from llm_dojo_scoring.corporate_record_schema import SUBCLASS_SCHEMAS as SS
+        from llm_dojo_scoring.corporate_record_schema import SUBCLASS_SCHEMAS as ss_subclass_schemas
         from llm_dojo_scoring.corporate_record_schema import (
             ENTITY_CORE_FIELDS as ss_entity_core,
             RECORD_TYPES as ss_record_types,
         )
     except Exception:
-        SS = None, None, None  # deps unavailable in this interpreter — fall through
-    if SS[0] is not None:
-        SS, ss_record_types, ss_entity_core = SS
+        # deps unavailable in this interpreter — fall through to the venv probe
+        ss_subclass_schemas = ss_record_types = ss_entity_core = None
+    if ss_subclass_schemas is not None:
         facets = {
             "record_types": list(ss_record_types),
             "entity_core": list(ss_entity_core),
@@ -144,7 +152,7 @@ def verify_registry_parity() -> str:
                     "applicable": sorted(sch.core_applicable),
                     "entities": [e.key for e in sch.entities],
                 }
-                for sub, sch in SS.items()
+                for sub, sch in ss_subclass_schemas.items()
             },
         }
         out = _compare_dojo_facets(facets)
@@ -192,18 +200,34 @@ def main() -> int:
         va = "FAIL"
     results.append(("(a) row set", va, f"{len(new_rows):,} rows, splits {dict(splits)}, corporate {corp}"))
 
-    # (b) + (c) — re-assert explicitly against the registry
-    v93.verify_presence_laws(new_rows)
+    # (b) + (c) — capture the verifier's RETURN values and derive the
+    # statuses from data (never hard-coded): a `python -O` run strips the
+    # verifier's law checks, so the stats must stand on their own.
+    presence_stats = v93.verify_presence_laws(new_rows)
+    ok_b = (
+        presence_stats["rows"] == len(new_rows)
+        and presence_stats["corporate_rows"] == corp
+        and corp == 450
+        and set(presence_stats["extension_keys_seen"]) <= set(cp.CORPORATE_ENTITY_KEYS)
+        and presence_stats["all_gt_fields"] > presence_stats["base_gt_fields"]
+    )
+    vb = "PASS" if ok_b else "FAIL"
+    ok_c = all(
+        code in v93.PRESENCE_CODES for code in presence_stats["corporate_codes"]
+    )
+    vc = "PASS" if ok_c else "FAIL"
     results.append((
         "(b) presence key set",
-        "PASS",
-        f"⊆ {len(ALL_GT_FIELDS)}-key ALL_GT_FIELDS (37 corporate entity keys), "
-        f"⊇ {len(BASE_GT_FIELDS)}-key base; unknown keys rejected",
+        vb,
+        f"⊇ {presence_stats['base_gt_fields']}-key BASE_GT_FIELDS (floor) / "
+        f"⊆ {presence_stats['all_gt_fields']}-key ALL_GT_FIELDS (ceiling); "
+        f"Subset law honoured: extensions corporate-only (37 registry entity keys) AND subclass-conditional"
+        f" — core + own-subclass only, foreign extensions absent, unknown subclass ⇒ core-only",
     ))
     results.append((
         "(c) presence vocabulary",
-        "PASS",
-        f"codes shipped on corporate rows: {result['presence_stats']['corporate_codes']}"
+        vc,
+        f"codes shipped on corporate rows: {presence_stats['corporate_codes']}"
         " — populated / not_applicable / schema_documented_absence / pending_annotation only",
     ))
 
@@ -237,6 +261,23 @@ def main() -> int:
         f"{len(table)} sha rows recomputed from the staged bytes"
         + (f"; misses {misses}" if misses else "")
         + f"; labels_version present, dataset version untouched: {labels_ok}",
+    ))
+
+    # (g) the byte-copied staged parquet carries the hardened JSONL gt_fields
+    # (content gate over the passthrough payload: row counts + split counts +
+    # join on filename + field-by-field equality).
+    pq_stats = v93.verify_staged_parquet_gt_fields(new_rows, stage)
+    ok_g = (
+        pq_stats["rows"] == len(new_rows)
+        and pq_stats["splits"] == {"train": 2979, "test": 323}
+        and pq_stats["corporate"] == 450
+    )
+    results.append((
+        "(g) staged parquet ⟷ JSONL gt_fields",
+        "PASS" if ok_g else "FAIL",
+        f"{pq_stats['rows']:,} rows (splits {pq_stats['splits']}, corporate "
+        f"{pq_stats['corporate']}): every filename joins and every parsed "
+        f"gt_fields value matches field-by-field",
     ))
 
     # (+) registry parity with the live dojo module

@@ -48,7 +48,12 @@ blank-and-undocumented cells are *omitted* (the dojo scorer-side
 unstated-blank ⇒ unlabeled regime — the absent key is the published
 representation of "unlabeled"). The internal ``unlabeled`` sentinel value
 must never ship; ``verify_presence_codes`` (v9_1_revision) enforces both
-directions.
+directions, and the subclass-conditional hardening (a corporate row's
+present extension keys must sit inside the entity-core keys + the row's OWN
+subclass extension keys — foreign-subclass extensions ABSENT; unknown
+subclass ⇒ core-only) lives in :func:`presence_law_problems` — the
+single-sourced key-set law that ``v9_3_revision.verify_presence_laws`` and
+the legacy audit (``gt_quality.audit_row``) both consume.
 """
 from __future__ import annotations
 
@@ -315,6 +320,69 @@ def row_gt_presence(row: dict[str, Any]) -> dict[str, str]:
         for key in keys
         if (code := classify_field(doc_class, key, row)) != UNLABELED
     }
+
+
+def presence_law_problems(
+    presence: dict[str, str],
+    doc_class: str,
+    expected_subclass: str | None = None,
+) -> list[str]:
+    """The published presence key-set law for ONE parsed ``gt_presence`` map.
+
+    Single-sourced here so every consumer derives the same verdict (the
+    v9.3 audit path ``gt_quality.audit_row`` and the staging verifier
+    ``v9_3_revision.verify_presence_laws`` both call this; neither
+    re-declares the rule — ``gt_presence`` is the single source of the
+    presence classification, provenance law, AND the key-set law).
+
+    Superset law (relaxed from the v9.1 uniform-map equality so the
+    corporate per-subclass entity regime is expressible):
+
+    * keys ⊇ ``BASE_GT_FIELDS`` — the 20-key uniform v9.1/v9.2 base, a
+      required floor that is never silently dropped;
+    * keys ⊆ ``ALL_GT_FIELDS`` — keys outside the registry are rejected
+      outright;
+    * extension keys beyond the base are corporate-only (``corporate_record``
+      rows may carry the entity keys, no other class may);
+    * subclass-conditional law (v9.3 hardening): on corporate rows the
+      present extension keys must sit inside the 6 ``ENTITY_CORE`` keys plus
+      that row's OWN subclass's extension keys — a foreign subclass's
+      extension key present in a row's map is a violation; an unknown
+      ``expected_subclass`` restricts a row to core keys only;
+    * every code ∈ ``PRESENCE_CODES`` — ``genuine_gap`` and the internal
+      ``unlabeled`` (unstated-blank) sentinel never ship.
+
+    Returns the problem list (empty = lawful). Row context (filename) is
+    the caller's concern; messages are stable phrases asserted by tests.
+    """
+    problems: list[str] = []
+    registry = set(ALL_GT_FIELDS)
+    base = set(BASE_GT_FIELDS)
+    keys = set(presence)
+    unknown = sorted(keys - registry)
+    if unknown:
+        problems.append(f"presence keys outside ALL_GT_FIELDS: {unknown}")
+    missing = sorted(base - keys)
+    if missing:
+        problems.append(f"base presence keys missing: {missing}")
+    extension = keys - base
+    if extension:
+        if doc_class != "corporate_record":
+            problems.append("non-corporate row carries entity presence keys")
+        else:
+            # v9.3 subclass-conditional hardening: core keys + the row's OWN
+            # subclass extension keys; unknown subclass ⇒ core-only.
+            own = CORPORATE_ENTITY_KEYS_BY_SUBCLASS.get(expected_subclass or "", ())
+            foreign = sorted(extension - set(CORPORATE_ENTITY_CORE_KEYS) - set(own))
+            if foreign:
+                problems.append(
+                    f"foreign-subclass extension keys (subclass "
+                    f"{(expected_subclass or '')!r}): {foreign}"
+                )
+    bad_codes = sorted({code for code in presence.values() if code not in PRESENCE_CODES})
+    if bad_codes:
+        problems.append(f"codes outside the published vocabulary: {bad_codes}")
+    return problems
 
 
 #: Metadata keys that are label-*derived aggregate counts* (weak indirect

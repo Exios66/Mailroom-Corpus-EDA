@@ -5,6 +5,22 @@ left alone. Every other label is checked for structure, formatting, and a
 small set of quality rules (closed vocabularies, thin templates, low-confidence
 review flags).
 
+Since the v9.3 corporate presence-layer revision (staging branch
+``feat/v9.3-staging-corporate-presence``) the ``gt_presence`` key-set check
+is the SUPERSET law, not the v9.2-era exact uniform-map equality: keys ⊇
+``BASE_GT_FIELDS`` (the 20-key uniform base, never dropped), keys ⊆
+``ALL_GT_FIELDS`` (the 57-key registry — 20 base + 37 corporate entity
+keys), extensions beyond the base only on ``corporate_record`` rows, every
+code ∈ the published vocabulary, and (v9.3 hardening) a corporate row's
+extension keys are subclass-conditional (entity-core + the row's OWN
+subclass's extension keys; foreign-subclass extensions absent; unknown
+subclass ⇒ core-only). The verdict for one map comes from
+``gt_presence.presence_law_problems`` — the single-sourced law — so this
+module never re-declares the rule; see ``v9_3_revision.verify_presence_laws``
+for the staging-side equivalent. Legacy v9.1/v9.2 payloads (uniform 20-key
+maps) and the staged v9.3 corporate partial maps are both lawful under the
+relaxation.
+
 Unfinished work — the spend queue — is only ``pending_annotation`` and
 format/structure errors. Heuristic provenance and thin subjects are reported
 so a later chunk can upgrade them; they are not unfinished labels.
@@ -24,9 +40,11 @@ from mailroom_eda.config import REPO_DATA_REVISION, REPO_ID, REPO_REVISION, REPO
 from mailroom_eda.gt_presence import (
     ALL_GT_FIELDS,
     FIELD_KEYS_BY_CLASS,
+    UNLABELED,
     classify_field,
     context_window_band,
     is_populated,
+    presence_law_problems,
 )
 from mailroom_eda.identity import source_corpus
 from mailroom_eda.v8_build import (
@@ -324,12 +342,23 @@ def audit_row(row: dict[str, Any]) -> list[Finding]:
             _add(findings, prepared, "gt_presence", "error",
                  "bad_gt_presence", "gt_presence is not JSON")
         if isinstance(presence, dict):
-            if set(presence) != set(ALL_GT_FIELDS):
+            # v9.3 superset law (single-sourced; also enforces the
+            # subclass-conditional extension hardening on corporate rows).
+            problems = presence_law_problems(
+                presence, doc_class, prepared.get("expected_subclass")
+            )
+            if problems:
                 _add(findings, prepared, "gt_presence", "error",
-                     "gt_presence_keys", "gt_presence keys are not the uniform field set")
+                     "gt_presence_keys", "; ".join(problems))
             else:
-                for key in ALL_GT_FIELDS:
+                # Drift check over the map's OWN keys (the superset law lets
+                # corporate rows omit unstated-blank entity cells — classify
+                # returns the UNLABELED sentinel for those, and the absent
+                # key IS the published representation, so they are not drift).
+                for key in presence:
                     live = classify_field(doc_class, key, prepared)
+                    if live == UNLABELED:
+                        continue  # absent key == unlabeled: equal by law
                     if presence.get(key) != live:
                         _add(
                             findings, prepared, key, "error", "gt_presence_drift",
