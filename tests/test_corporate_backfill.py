@@ -21,7 +21,9 @@ def test_clean_filer_strips_cik_and_ticker():
 
 
 def test_backfill_writes_grounded_labels_without_provenance_ids():
-    """Generated fields carry only grounded document terms — no EDGAR/exhibit tokens."""
+    """Spot-check on the synthetic row: document terms like "EDGAR"
+    (absent from subject_matter) and exhibit tokens (absent from keywords) —
+    this asserts these fixtures only, not a global non-leak guarantee."""
     rows = [_row()]
     vb.backfill_purpose_gt(rows)
     gt = rows[0]["gt_fields"]
@@ -80,6 +82,79 @@ def test_clean_filer_edge_cases():
     assert vb._clean_filer("Pfizer (UK) (CIK 1)") == "Pfizer (UK)"
     assert vb._clean_filer("Berkshire Hathaway Inc (BRK-A, BRK-B) (CIK 1)") == "Berkshire Hathaway Inc"
     assert vb._clean_filer("SOURCE ENERGY CORP /UT/") == "SOURCE ENERGY CORP"
+
+
+def test_clean_filer_conservative_tails_are_kept_intentionally():
+    """Pinned conservative behaviors — kept tails are intended, not gaps.
+
+    Verified-ticker stripping currently handles single-token uppercase tails
+    backed by a CIK ( "(CIK n)" inline or an authoritative metadata cik) and
+    the _TICKER_BY_CIK registry only:
+
+    - Multi-token uppercase tails like "(AG, AG-PR)" are KEPT even when a
+      token is the filer's verified ticker: stripping requires exactly one
+      token, so an ambiguous tail never loses name material.
+    - Lowercase tails like "(ag)" never match the uppercase-only tail regex
+      and are KEPT regardless of CIK backing.
+    """
+    # multi-token: strip path requires len(tokens) == 1 — "(AG, AG-PR)" stays
+    assert (
+        vb._clean_filer("First Majestic Silver Corp (AG, AG-PR) (CIK 0001308648)")
+        == "First Majestic Silver Corp (AG, AG-PR)"
+    )
+    # lowercase-only tails fall outside _TICKER_TAIL entirely — kept
+    assert (
+        vb._clean_filer("First Majestic Silver Corp (ag) (CIK 0001308648)")
+        == "First Majestic Silver Corp (ag)"
+    )
+    # the kept tails flow through the backfill verbatim (conservative by design)
+    rows = [_row(subclass="rights_instrument", filer="First Majestic Silver Corp (ag)")]
+    vb.backfill_purpose_gt(rows)
+    gt = rows[0]["gt_fields"]
+    assert gt["entity_name"] == "First Majestic Silver Corp (ag)"
+    assert gt["subject_matter"] == "Rights instrument of First Majestic Silver Corp (ag)."
+
+
+def test_metadata_cik_enables_verified_ticker_disambiguation_without_inline_cik():
+    """The row's separate metadata ``cik`` key reaches _clean_filer.
+
+    When the filer string lacks "(CIK n)" (cik parses to 0), an authoritative
+    metadata CIK still lets the verified _TICKER_BY_CIK match strip "(AG)":
+    """
+    md_cik = {"cik": 1308648}
+    assert vb._row_metadata_cik(md_cik) == 1308648
+    assert vb._row_metadata_cik({"cik": "1308648"}) == 1308648
+    assert vb._row_metadata_cik({"cik": ""}) is None
+    assert vb._row_metadata_cik({"cik": None}) is None
+    assert vb._row_metadata_cik({"cik": True}) is None  # booleans are not CIKs
+    assert vb._row_metadata_cik({}) is None
+    # the same filer that leaked "(AG)" under the legacy string-only parse
+    # is cleaned when the metadata CIK is present...
+    assert vb._clean_filer("First Majestic Silver Corp (AG)", cik=1308648) == "First Majestic Silver Corp"
+    rows = [_row(subclass="rights_instrument", filer="First Majestic Silver Corp (AG)")]
+    rows[0]["metadata"]["cik"] = "1308648"
+    vb.backfill_purpose_gt(rows)
+    gt = rows[0]["gt_fields"]
+    assert gt["entity_name"] == "First Majestic Silver Corp"
+    assert gt["subject_matter"] == "Rights instrument of First Majestic Silver Corp."
+    assert gt["keywords"] == '["Rights instrument", "First Majestic Silver Corp"]'
+
+
+def test_clean_filer_without_any_cik_keeps_legal_form_tail_and_leak_is_explicit():
+    """Documented conservative limitation, pinned: with no CIK anywhere —
+    no "(CIK n)" in the filer string and no separate metadata ``cik`` key —
+    _clean_filer parses cik 0 and cannot verify an "(AG)" ticker, so the
+    legal-form-looking tail is KEPT. That tail then intentionally leaks into
+    the three generated backfill fields (entity_name / subject_matter /
+    keywords); we pin the behavior here so any silent tightening (or a
+    future data-driven change) surfaces in CI instead of shipping quietly.
+    """
+    rows = [_row(subclass="rights_instrument", filer="Some Holdings Corp (AG)")]
+    vb.backfill_purpose_gt(rows)
+    gt = rows[0]["gt_fields"]
+    assert gt["entity_name"] == "Some Holdings Corp (AG)"
+    assert gt["subject_matter"] == "Rights instrument of Some Holdings Corp (AG)."
+    assert gt["keywords"] == '["Rights instrument", "Some Holdings Corp (AG)"]'
 
 
 def test_backfill_empty_company_writes_no_placeholder_keyword_or_entity():
