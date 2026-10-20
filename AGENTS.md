@@ -4,10 +4,11 @@ Exploratory data analysis (and the centralized HF upload helpers) for the
 [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
 corpus (v1, canonically **v9** of the mailroom corpus family) — **3,302** legal
 documents across 5 doc_types (insurance_claim, merger_agreement, contract,
-correspondence, corporate_record), 55 strata. Pinned at tip `ed7576b6…`
-(the v9.1 quality revision — mailroom-issues#196 Phase B; zero row/identity/
-content drift from the v9 tip `46a4d3c2…` it revises); standalone successor
-of the frozen v8 `mailroom-corpus` baseline (2,000 rows, `eafe1ab4` — never
+correspondence, corporate_record), 55 strata. Canonical Hub tag **`v9.2`**
+(`670e8bc6…`, docs/card pin on the data commit `d49f60a4…` — relations &
+provenance revision; zero row/identity/content drift from the v9.1 tip
+`bc9eab28…` / data `ed7576b6…` it revises); standalone successor of the
+frozen v8 `mailroom-corpus` baseline (2,000 rows, `eafe1ab4` — never
 destroyed).
 
 Mirror of the standalone `Exios66/Mailroom-Corpus-EDA` repo; in the monorepo
@@ -120,27 +121,91 @@ runs used to clobber the full-corpus summary with phase-partial stats.)
 
 The default Cloud Agent image ships Python 3.12 without `python3.12-venv`, so
 `python3 -m venv` fails until that package is installed (`ensurepip` is
-missing). Use a repo-local `.venv`:
+missing). Use a repo-local `.venv`. Cloud Agent `install` starts at the
+workspace root, not this checkout, so locate `Mailroom-Corpus-EDA` first
+(typically `/agent/repos/Mailroom-Corpus-EDA`). The checkout parent is not
+always writable; create the sibling taxonomy clone with `sudo` before
+`git init`.
 
 ```bash
+sudo apt-get update
 sudo apt-get install -y python3.12-venv
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt 'pytest>=8.0'
+sudo mkdir -p ../llm-mailroom
+sudo chown "$(id -u):$(id -g)" ../llm-mailroom
+git init ../llm-mailroom
+git -C ../llm-mailroom remote get-url origin >/dev/null 2>&1 || git -C ../llm-mailroom remote add origin https://github.com/Exios66/llm-mailroom.git
+git -C ../llm-mailroom fetch --depth 1 origin 417d5a0814cb14f5c3834c063045c9a8c7801cfb
+git -C ../llm-mailroom checkout --force --detach FETCH_HEAD
 .venv/bin/python -m pytest tests/
 .venv/bin/python run_all.py --phases P0
+.venv/bin/python scripts/audit/coverage_matrix.py --check
 ```
 
-`pytest` is a dev extra and is absent from `requirements.txt`. `run_all.py --phases P0`
-fetches the public `Lucius-Morningstar/mailroom-dataset` snapshot into gitignored
-`data/`; the full-corpus tests skip until that snapshot exists. Publishing
-needs `HF_TOKEN`. Reading the public snapshot does not.
+`pytest` is a dev extra and is absent from `requirements.txt`. Without the
+sibling pin, `test_mailroom_contract_fixture` and
+`test_expected_specialist_matches_live_taxonomy_yaml` cannot read
+`../llm-mailroom/src/config/taxonomy.yaml`. `llm-mailroom` `main` after
+`417d5a0814cb14f5c3834c063045c9a8c7801cfb` routes `merger_agreement` to
+`merger_agreement_specialist`; these tests expect `contracts_specialist`.
 
-§64 / §59 tests read `../llm-mailroom/src/config/taxonomy.yaml` (a sibling of
-this checkout). Pin that clone to `417d5a0814cb14f5c3834c063045c9a8c7801cfb`.
-`llm-mailroom` `main` after that commit routes `merger_agreement` to
-`merger_agreement_specialist`, and these tests expect `contracts_specialist`.
+`run_all.py --phases P0` fetches the public
+`Lucius-Morningstar/mailroom-dataset` snapshot into gitignored `data/`
+(3,302 rows at the v9.2 data commit `d49f60a4`). Publishing needs `HF_TOKEN`.
+Reading the public snapshot does not. Full-corpus tests skip until that
+snapshot exists. `tests/test_contract.py::test_mailroom_contract_snapshot`
+asserts the v9.2 schema (35 top-level columns; 34-key `gt_fields` union) and
+registers the five quality-revision meta keys (`clause_count`, `maud_label_count`,
+`gt_presence`, `token_estimate`, `context_window_band`) via `GT_META_KEYS`,
+so the §64 checker skips them instead of failing on the B2/B4 additions.
+`scripts/audit/coverage_matrix.py --check` is the read-only corpus audit.
+
+## HF facts (verified 2026-10-06, dataset v1 / corpus v9.2 quality revision)
+
+Code-only revision of the v9.1 tip below (relations & provenance
+completion; plan doc `docs/plans/v9.2-relations-provenance-revision.md`).
+No new document sourcing; zero row-set/identity/content drift
+(`document_id`, `content_sha256`, `doc_text`, every metadata key
+byte-identical). Built + published by `mailroom_eda.v9_2_revision` /
+`scripts/build/build_v9_2_quality_revision.py`.
+
+- Repo: `Lucius-Morningstar/mailroom-dataset`, tag `v9.2`, docs/card commit
+  `670e8bc6f8d82221f741d5da479ee88bed8cac4a`, data commit
+  `d49f60a402ccc090617db58a8593aa971d63a2ff` (revises v9.1 tip `bc9eab28…` /
+  data `ed7576b6…` below; same 3,302 rows, train 2,979 / test 323).
+- **C1 — annotation provenance SSOT**: published `annotation_method` now
+  carries all six §20 regimes instead of only `source_native` + `synthetic`
+  — `verified_join` 162 · `llm_zero_shot` 637 · `human_annotated` 96 ·
+  `synthetic` 1,100 · `heuristic` 646 · `source_native` 661. `annotation_source`
+  aligns to the published `source_corpus` (SEC EDGAR EX-10 contracts move to
+  `sec_edgar`; CUAD 600→509, EDGAR 450→541); `annotation_model` =
+  `deepseek-chat` on the 637 LLM rows, `annotation_reviewer` = `human` on
+  the 96 manual rows.
+- **C2 — `_published` removal**: the undocumented build-internal `_published`
+  migration column no longer ships; GT parquet is now **35** top-level
+  columns (was 36). The nested `gt_fields` union is **34** keys (32 scalar +
+  2 matter lists: `relationships`, `related_document_ids`). Staging rejects
+  any `_`-prefixed key.
+- **C3 — relations completion**: `related_document_ids` is now populated on
+  the 23 heuristic matter rows (9 subject threads, all-pairs `document_id`
+  targets); the nested `gt_fields.relationships` / `related_document_ids`
+  mirrors are canonical copies of the top-level columns (the permanent-`[]`
+  split-brain is gone).
+- **C4 — `source_revision` override gate** extended to SEC EDGAR EX-10
+  contracts, aligning with `source_corpus` (zero live effect today).
+- **C5 — GT registry single-sourced**: `release_sections.GT_SCALAR_KEYS`
+  (32) / `LEGACY_V7_GT_KEYS` (27) replace three stale inline 27-key lists.
+- Workstream S (bundles/streams/fixtures column overlay) is **deferred to
+  v9.3** (decision D8).
+- `config.py` now pins `REPO_TAG="v9.2"`, `REPO_REVISION=670e8bc6…`,
+  `REPO_DATA_REVISION=d49f60a4…`.
 
 ## HF facts (verified 2026-09-26, dataset v1 / corpus v9.1 quality revision)
+
+The v9.1 facts below describe the tip the v9.2 revision above revises in
+place (same repo, same 3,302 rows) — kept for the pre-C-series schema
+(36-column GT parquet, `_published`-bearing, single-regime provenance).
 
 Code-only revision of the v9 tip below (mailroom-issues#196 Phase B —
 "Modal + LLM-ingestion formatting"; plan doc

@@ -19,6 +19,8 @@ filename-set agreement), the split rule (md5(filename) % 10 → test) is
 byte-exact with zero mismatches, and all annotation offsets validate (CUAD
 13,753/13,753 span matches = 100%).
 
+| Document Class | Count | Percentage | Dataset Sources |
+| --- | ---: | ---: | --- |
 | insurance_claim | 1,100 | 33.3% | bdr-ai-org/insurance-motor-claims-decision-v1; cms-de-synpuf-2008-2010-sample1; feihuangfh/INSURBIAS |
 | contract | 600 | 18.2% | cuad_v1 |
 | correspondence | 1,000 | 30.3% | cmu_enron_maildir |

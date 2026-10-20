@@ -243,3 +243,70 @@ def test_subject_thread_ids_stable_across_processes(snapshot_rows, snapshot_meta
     assert result.returncode == 0, result.stderr[-2000:]
     there = [tuple(pair) for pair in json.loads(result.stdout.strip().splitlines()[-1])]
     assert here == there, "thread ids re-keyed across processes (salted hash?)"
+
+
+# --------------------------------------- v9.2 C3 relation producer + mirrors
+
+def test_subject_threads_related_ids_all_pairs():
+    rows = [
+        _subj("s1", "Q3 numbers", date="2001-05-01"),
+        _subj("s2", "Re: Q3 numbers", date="2001-05-03"),
+        _subj("s3", "Fwd: Q3 numbers", date="2001-05-05"),
+    ]
+    groups = {g["filename"]: g for g in mt.heuristic_subject_threads(rows)}
+    assert groups["s1"]["related_document_ids"] == ["s2", "s3"]  # filename fallback
+    assert groups["s3"]["related_document_ids"] == ["s1", "s2"]
+
+
+def test_related_ids_prefers_document_id_and_drops_empty():
+    members = [
+        {"filename": "a", "document_id": "DOC-a"},
+        {"filename": "b"},          # no document_id -> filename fallback
+        {"filename": ""},           # neither -> never emitted
+    ]
+    assert mt._related_ids(members, 1) == ["DOC-a"]
+    assert mt._related_ids(members, 0) == ["b"]
+
+
+def test_source_native_threads_carry_related_ids():
+    rows = [
+        _corr("m1", "<a@x>", custodian="k", date="2001-05-01"),
+        _corr("m2", "<b@x>", in_reply_to="<a@x>", custodian="k", date="2001-05-02"),
+    ]
+    groups = {g["filename"]: g for g in mt.source_native_threads(rows)}
+    assert groups["m1"]["related_document_ids"] == ["m2"]
+    assert groups["m2"]["related_document_ids"] == ["m1"]
+
+
+def test_enrich_rows_syncs_gt_fields_mirrors():
+    rows = [
+        {**_subj("m1", "Q3 numbers", date="2001-05-01"),
+         "gt_fields": {"relationships": "[]", "related_document_ids": "[]"}},
+        {**_subj("m2", "Re: Q3 numbers", date="2001-05-02"),
+         "gt_fields": {"relationships": "[]", "related_document_ids": "[]"}},
+    ]
+    out = {r["filename"]: r for r in mt.enrich_rows(rows)}
+    assert json.loads(out["m1"]["gt_fields"]["related_document_ids"]) == ["m2"]
+    assert json.loads(out["m2"]["gt_fields"]["relationships"]) == ["responds_to"]
+
+
+def test_live_snapshot_relation_ids_resolve_and_symmetric(
+    snapshot_rows, snapshot_metadata
+):
+    """v9.2 C3: every heuristic matter row carries all-pairs document_id
+    targets that resolve, and the relation graph is symmetric."""
+    corr = [r for r in snapshot_rows if r.get("expected") == "correspondence"]
+    rows = [{**r, "metadata": snapshot_metadata.get(r["filename"])} for r in corr]
+    out = mt.enrich_rows(rows)
+    known = {r["document_id"] for r in out if r.get("document_id")}
+    assigned = [r for r in out if r["matter_construction"]]
+    assert len(assigned) == 23, len(assigned)
+    rel: dict[str, set[str]] = {}
+    for row in assigned:
+        targets = [str(x) for x in row["related_document_ids"]]
+        assert targets, row["filename"]
+        assert set(targets) <= known, row["filename"]
+        rel[str(row["document_id"])] = set(targets)
+    for doc, targets in rel.items():
+        for t in targets:
+            assert doc in rel.get(t, set()), (doc, t)

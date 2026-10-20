@@ -135,8 +135,16 @@ def enrich_row(row: dict[str, Any]) -> dict[str, Any]:
     out["source_revision"] = str(row.get("source_revision") or "")
     if not out["source_revision"]:
         md = row.get("metadata") or {}
-        if (str(row.get("expected") or "") == "insurance_claim"
-                and "cms-de-synpuf" not in str(md.get("source_dataset") or "")):
+        doc_class = str(row.get("expected") or "")
+        source_dataset = str(md.get("source_dataset") or "")
+        # Copy a per-row feeder revision only where the source comes from
+        # that feeder's own draw (same override gates as source_corpus):
+        # insurance LOB rows (non-CMS) and SEC EDGAR EX-10 contracts.
+        override = (
+            (doc_class == "insurance_claim" and "cms-de-synpuf" not in source_dataset)
+            or (doc_class == "contract" and source_dataset == "sec_edgar")
+        )
+        if override:
             out["source_revision"] = str(md.get("source_revision") or "")
     out["content_sha256"] = content_sha256(str(row.get("doc_text") or ""))
     out["normalized_text_sha256"] = normalized_text_sha256(str(row.get("doc_text") or ""))

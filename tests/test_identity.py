@@ -85,3 +85,28 @@ def test_source_provenance_fields(fixture_rows):
 
 def test_source_corpus_unknown_for_unexpected_class():
     assert source_corpus({"expected": "court_opinion"}) == "unknown"
+
+
+def test_source_revision_copied_for_override_sources():
+    """v9.2 C4: a feeder revision is copied only where the source is that
+    feeder's own draw (insurance LOB + SEC EDGAR EX-10), never for CUAD."""
+    row = {"filename": "ex10_1.txt", "expected": "contract",
+           "metadata": {"source_dataset": "sec_edgar", "source_revision": "abc123"}}
+    assert enrich_rows([row])[0]["source_revision"] == "abc123"
+    row = {"filename": "cuad_1.txt", "expected": "contract",
+           "metadata": {"source_dataset": "theatticusproject/cuad",
+                        "source_revision": "abc123"}}
+    assert enrich_rows([row])[0]["source_revision"] == ""
+    row = {"filename": "gnotheia_1.txt", "expected": "insurance_claim",
+           "metadata": {"source_dataset": "gratex/GNOTHEIA-synthetic-insurance-dataset",
+                        "source_revision": "rev9"}}
+    assert enrich_rows([row])[0]["source_revision"] == "rev9"
+
+
+def test_source_revision_already_present_is_preserved():
+    """A top-level per-row revision is preserved verbatim even for a class
+    that would otherwise fall back to '' (CUAD)."""
+    row = {"filename": "cuad_1.txt", "expected": "contract",
+           "source_revision": "pinned",
+           "metadata": {"source_dataset": "theatticusproject/cuad"}}
+    assert enrich_rows([row])[0]["source_revision"] == "pinned"

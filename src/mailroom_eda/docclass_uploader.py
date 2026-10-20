@@ -17,28 +17,15 @@ from .dataset_export import (
     safe_jsonl_line,
 )
 from .hf_interface import get_hf_api, upload_folder, sha256_file
+from .release_sections import GT_SCALAR_KEYS, LEGACY_V7_GT_KEYS  # noqa: F401
 
 
 REPAIRABLE_BLIND_KEYS = {"expected_doc_type", "expected_subclass"}
 HARD_LEAK_KEYS = {"ground_truth", "intent", "subject_matter", "keywords", "expected"}
 
-GT_SCALAR_KEYS = [
-    "label_evidence", "content_topic", "topic_evidence",
-    "sentiment_score", "sentiment_label", "sentiment_evidence",
-    "claim_number", "policy_number", "insurer", "insured_party",
-    "claim_type", "date_of_loss", "date_filed", "claimed_amount",
-    "adjuster", "damages_description", "coverage_determination",
-    "denial_reasons", "supporting_documents",
-    "cuad_clause_labels", "maud_clause_labels",
-    "intent", "subject_matter", "keywords",
-    "intent_source", "intent_confidence", "intent_status",
-    # v9.1 quality revision (mailroom-issues#196 Phase B), live on the Hub as
-    # of tip ed7576b6: weak-indirect signals moved out of blind metadata
-    # (B1) + row-level presence codes and token/context bands (B2/B4) — see
-    # mailroom_eda.gt_presence / mailroom_eda.v9_1_revision.
-    "clause_count", "maud_label_count", "gt_presence",
-    "token_estimate", "context_window_band",
-]
+# `GT_SCALAR_KEYS` is re-exported from `release_sections` (the single source
+# for the current v9 surface); `LEGACY_V7_GT_KEYS` is the frozen 27-key v7/v8
+# surface this v7-era publisher stages explicitly (it targets V8_REPO_ID).
 
 PURPOSE_GT_KEYS = ("intent", "subject_matter", "keywords")
 
@@ -351,7 +338,7 @@ def publish_docclass(
     print(f"Loaded {len(rows)} v7 rows")
     print(f"composition: parent {PARENT_ROWS} + corr {corr_n(rows)} + ins {ins_n(rows)}")
 
-    counts = stage_parquet(rows, stage_dir)
+    counts = stage_parquet(rows, stage_dir, gt_scalar_keys=list(LEGACY_V7_GT_KEYS))
     file_stats = stage_original_files(stage_dir, files_dir) if files_dir else {"n": 0, "bytes": 0, "by_class": {}}
 
     append_stats = {

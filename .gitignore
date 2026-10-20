@@ -13,8 +13,8 @@ htmlcov/
 .DS_Store
 Thumbs.db
 *.log
-dist/
-build/
+/dist/
+/build/
 .env
 .env.*
 !.env.example

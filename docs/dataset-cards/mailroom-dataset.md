@@ -80,13 +80,15 @@ and **never** contains a label column. All ground truth lives in the
 `ground_truth` config, joined on `filename`. An LLM processing the blind
 config cannot see labels, intent, expected classes, or clause annotations.
 
-> **v8-inherited metadata aggregates**: 509 v8 contract rows carry a
-> `clause_count` and 152 v8 merger rows a `maud_label_count` integer inside
-> their `metadata` blob (inherited verbatim from `mailroom-corpus` v8 to
-> preserve zero identity drift). These are label-*derived aggregate counts*,
-> not labels, and are not present in any v9 expansion row. Consumers that
-> require strict label-free metadata may treat them as weak indirect signals;
-> they cannot be stripped without violating the zero-drift mandate.
+> **v8-inherited metadata aggregates (resolved in v9.1)**: 509 v8 contract
+> rows once carried a `clause_count` and 152 v8 merger rows a
+> `maud_label_count` integer inside their `metadata` blob (inherited verbatim
+> from `mailroom-corpus` v8 to preserve zero identity drift). These are
+> label-*derived aggregate counts* and leaked a weak "this document has
+> labeled clauses" signal into the blind config, so the v9.1 quality revision
+> (B1) relocated them out of `metadata`: they are now **GT-only** in
+> `gt_fields.clause_count` / `gt_fields.maud_label_count` and never appear on
+> the blind surface.
 
 > **GT completeness**: every expected ground-truth field is populated for all
 > 3,302 rows — `label_evidence` is derived from the CUAD/MAUD clause
@@ -122,7 +124,7 @@ Expansion draws (deterministic, sha256-within-stratum):
 | Config | Rows | Contents |
 |---|---:|---|
 | `default` (blind) | 3,302 | filename, doc_text, prompt, metadata — **zero labels by construction** |
-| `ground_truth` | 3,302 | labels (27-key schema), identity/hashes, evaluation contract, matter/group |
+| `ground_truth` | 3,302 | labels (`gt_fields` JSON: 34-key union — 32 scalar + 2 matter lists), identity/hashes, evaluation contract, matter/group |
 | `bundles` | 50 | §14 synthetic bundle families over real anchors (flagged `synthetic_constructed`) |
 | `streams` | 62 | §27–29 interleaved ingress stream (`RUN-SIM-001`) with distractors |
 | `fixtures` | 32 | §68–§72A recovery/adversarial fixtures (calibration quartet, arbiter, failure stages) |

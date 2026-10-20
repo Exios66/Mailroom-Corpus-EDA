@@ -23,6 +23,29 @@ MATTER_SCALARS = (
 )
 MATTER_LISTS = ("relationships", "related_document_ids")
 
+#: The CURRENT published ``gt_fields`` scalar surface (v9.1 tip, 32 keys).
+#: Single source for every current-generation stager/publisher;
+#: ``docclass_uploader.GT_SCALAR_KEYS`` re-exports it for compatibility.
+GT_SCALAR_KEYS = (
+    # --- v7 core (27) ---
+    "label_evidence", "content_topic", "topic_evidence",
+    "sentiment_score", "sentiment_label", "sentiment_evidence",
+    "claim_number", "policy_number", "insurer", "insured_party",
+    "claim_type", "date_of_loss", "date_filed", "claimed_amount",
+    "adjuster", "damages_description", "coverage_determination",
+    "denial_reasons", "supporting_documents",
+    "cuad_clause_labels", "maud_clause_labels",
+    "intent", "subject_matter", "keywords",
+    "intent_source", "intent_confidence", "intent_status",
+    # --- v9.1 quality revision (5) ---
+    "clause_count", "maud_label_count", "gt_presence",
+    "token_estimate", "context_window_band",
+)
+
+#: The frozen v7/v8 publish surface (27 keys). Legacy/archive CLIs pin this
+#: explicitly so replaying an old build can never pick up v9 fields.
+LEGACY_V7_GT_KEYS = GT_SCALAR_KEYS[:27]
+
 #: The live card section owned by the §84 hardened release (HUB-022/HUB-032).
 #: `upsert_section` replaces it in place; the anchor heading below must exist
 #: exactly once on the live card. The legacy heading is the pre-reconciliation
