@@ -11,6 +11,7 @@ import pandas as pd
 
 from .config import TABLE_DIR, split_rule
 from .download import load_default, load_ground_truth, load_jsonl
+from .gt_presence import is_populated
 
 
 def _meta_series(blind: pd.DataFrame) -> pd.DataFrame:
@@ -121,10 +122,20 @@ def audit_schema(blind: pd.DataFrame, gt: pd.DataFrame) -> dict:
 
 
 def metadata_coverage(blind: pd.DataFrame, gt: pd.DataFrame) -> pd.DataFrame:
+    """Per-doc_type fill rate for every metadata key.
+
+    Metadata is cast-safe (KANBAN-076): every row carries the full key
+    union, with '' (or the JSON no-item markers '[]'/'{}') standing in for
+    "not applicable to this row" -- never a real ``NaN``. Coverage must
+    therefore be measured with the corpus-wide populated/absent rule
+    (``gt_presence.is_populated``), not ``.notna()``, which is true for an
+    empty string and would report ~100% fill on every field regardless of
+    whether it actually carries a value.
+    """
     meta = _meta_series(blind)
     cov = pd.concat([gt["expected"].rename("doc_type"), meta], axis=1)
     tbl = cov.set_index("doc_type").groupby(level=0).apply(
-        lambda g: g.notna().mean().T
+        lambda g: g.map(is_populated).mean().T
     )
     return tbl
 
