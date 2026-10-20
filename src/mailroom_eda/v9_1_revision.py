@@ -51,16 +51,14 @@ from pathlib import Path
 from typing import Any
 
 from .config import CHARS_PER_TOKEN, DATA_DIR, REPO_ID
-from .corporate_presence import CORPORATE_ENTITY_KEYS
 from .dataset_export import normalize_metadata_rows, safe_jsonl_line
 from .gt_presence import (
-    ALL_GT_FIELDS,
-    BASE_GT_FIELDS,
     CONTEXT_WINDOW_BANDS,
     CONTEXT_WINDOW_OVERFLOW,
     PRESENCE_CODES,
     UNLABELED,
     context_window_band,
+    presence_law_problems,
     row_gt_presence,
     strip_weak_indirect_signals,
 )
@@ -271,24 +269,17 @@ def verify_presence_codes(rows: list[dict]) -> dict[str, int]:
     Returns the code counts.
     """
     counts: dict[str, int] = {c: 0 for c in PRESENCE_CODES}
-    all_fields = set(ALL_GT_FIELDS)
-    base_fields = set(BASE_GT_FIELDS)
     for row in rows:
         gt = row.get("gt_fields") or {}
         presence = json.loads(gt.get("gt_presence") or "{}")
         fn = row["filename"]
-        unknown = set(presence) - all_fields
-        assert not unknown, f"{fn}: unknown presence keys {sorted(unknown)}"
-        missing = base_fields - set(presence)
-        assert not missing, f"{fn}: presence map dropped base keys {sorted(missing)}"
-        if set(presence) - base_fields:
-            # Only corporate rows may carry the extended entity keys.
-            assert row.get("expected") == "corporate_record", (
-                f"{fn}: only corporate_record rows may carry entity presence keys"
-            )
-            assert set(presence) - base_fields <= (
-                set(CORPORATE_ENTITY_KEYS)
-            ), f"{fn}: presence carries non-registry extension keys"
+        # Key-set law is single-sourced (unknown / dropped-base / non-corporate
+        # extension / foreign-subclass extension keys).
+        problems = presence_law_problems(
+            presence, row.get("expected") or "", row.get("expected_subclass")
+        )
+        if problems:
+            raise AssertionError(f"{fn}: " + "; ".join(problems))
         for code in presence.values():
             assert code in PRESENCE_CODES, f"{fn}: unknown presence code {code!r}"
             assert code != "genuine_gap", f"{fn}: genuine_gap must never ship"

@@ -15,8 +15,9 @@ STAGING release on branch `feat/v9.3-staging-corporate-presence` (draft plan:
 test 323, corporate 450), every identity/content column and every populated
 label value byte-identical. Nothing here pushes tags or the HF Hub; the
 staged payload waits for the promotion run. Formal gates:
-`scripts/audit/verify_v9_3_conformance.py` (a–f all PASS; pytest 250 passed,
-15 skipped).
+`scripts/audit/verify_v9_3_conformance.py` (a–g all PASS plus the registry
+parity guard, skippable via `--skip-registry`; pytest 264 passed, 18 skipped —
+the skips are the full-corpus tests that wait on the `data/` snapshot).
 
 - **gt_presence key-set law unfrozen (the label-presence layer).** The
   uniform-law assertion `set(presence) == set(ALL_GT_FIELDS)` is relaxed to

@@ -250,6 +250,26 @@ def test_corporate_partial_map_passes():
     assert not [c for c in codes if c[0] == "error"]
 
 
+def test_omitted_extension_key_is_drift_but_legacy_base_map_is_lawful():
+    """A v9.3-shaped corporate map (has a key beyond BASE_GT_FIELDS) must not
+    silently omit a key the live classifier labels populated / not_applicable;
+    a legacy base-only map is exempt from the omission check."""
+    row = _corporate_flat_row()
+    full = gp.row_gt_presence(gq._prepared(row))
+    ext = {k: v for k, v in full.items() if k not in gp.BASE_GT_FIELDS}
+    assert "entity_name" in ext  # populated extension key, present in the full map
+    omitted = {k: v for k, v in full.items() if k != "entity_name"}
+    assert set(omitted) - set(gp.BASE_GT_FIELDS)  # still v9.3-shaped
+    row["gt_presence"] = json.dumps(omitted)
+    assert ("error", "entity_name", "gt_presence_drift") in _codes(row)
+    # the intact map is clean
+    row["gt_presence"] = json.dumps(full)
+    assert not [c for c in _codes(row) if c[2] == "gt_presence_drift"]
+    # legacy base-only map on the same row: no omission finding
+    row["gt_presence"] = json.dumps({k: v for k, v in full.items() if k in gp.BASE_GT_FIELDS})
+    assert not [c for c in _codes(row) if c[2] == "gt_presence_drift"]
+
+
 def test_unknown_presence_key_fails_corporate_row():
     row = _corporate_flat_row()
     presence = gp.row_gt_presence(gq._prepared(row))

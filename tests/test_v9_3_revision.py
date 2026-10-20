@@ -379,13 +379,22 @@ class TestStagingBuildAll:
         assert card.count("## v9.3 corporate presence-layer labels (2026-10-17)") == 1
 
     def test_build_is_deterministic(self, tmp_path):
-        r1 = v93.build_all(tmp_path / "a", base_path=str(BASE_SIDECAR))
-        r2 = v93.build_all(tmp_path / "b", base_path=str(BASE_SIDECAR))
-        a = sorted((tmp_path / "a").rglob("*"))
-        b = sorted((tmp_path / "b").rglob("*"))
-        for pa, pb in zip(a, b):
-            if pa.is_file() and pb.is_file() and pa.name != "manifest.txt":
-                assert pa.read_bytes() == pb.read_bytes(), pa.name
+        v93.build_all(tmp_path / "a", base_path=str(BASE_SIDECAR))
+        v93.build_all(tmp_path / "b", base_path=str(BASE_SIDECAR))
+
+        def _files(root):
+            return {
+                p.relative_to(root) for p in root.rglob("*") if p.is_file()
+            }
+
+        a_files, b_files = _files(tmp_path / "a"), _files(tmp_path / "b")
+        assert a_files == b_files
+        for rel in sorted(a_files):
+            if rel.name == "manifest.txt":
+                continue
+            assert (tmp_path / "a" / rel).read_bytes() == (
+                tmp_path / "b" / rel
+            ).read_bytes(), str(rel)
 
 
 # ---------------------------------------------------------------------------

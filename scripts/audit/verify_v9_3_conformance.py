@@ -29,7 +29,7 @@ Statuses are derived from the verify functions' RETURN VALUES, so a
 Exit code 0 iff every gate passes. Sources can be overridden:
 
     python scripts/audit/verify_v9_3_conformance.py \
-        --base-path /tmp/gt92/hardened.jsonl --verify-registry
+        --base-path /tmp/gt92/hardened.jsonl
 """
 from __future__ import annotations
 
@@ -171,9 +171,16 @@ def main() -> int:
     parser.add_argument("--base-path", default=None,
                         help="sha-verified v9.2 base sidecar (required unless present in data/v9_3)")
     parser.add_argument("--branch-dir", type=Path, default=None)
-    parser.add_argument("--verify-registry", action="store_true", default=True)
+    parser.add_argument("--skip-registry", action="store_true",
+                        help="skip the (+) registry parity guard against the live dojo module")
     args = parser.parse_args()
 
+    # Scratch stage dir is always removed, even when the build or a gate raises.
+    with tempfile.TemporaryDirectory(prefix="v9_3_conformance_") as tmp:
+        return _run(args, Path(tmp))
+
+
+def _run(args: argparse.Namespace, stage: Path) -> int:
     base_path = args.base_path or (v93.BASE_SNAPSHOT_DIR / "ground_truth_hardened.jsonl")
     base_path = Path(base_path)
     if not base_path.is_file():
@@ -183,7 +190,6 @@ def main() -> int:
 
     # Run the staging build (which internally runs every gate) into a scratch
     # stage dir, then assert the gate artifacts explicitly per letter.
-    stage = Path(tempfile.mkdtemp(prefix="v9_3_conformance_"))
     result = v93.build_all(stage, branch_dir=args.branch_dir, base_path=str(base_path))
     branch_dir = Path(args.branch_dir) if args.branch_dir else v93.BRANCH_SNAPSHOT_DIR
 
@@ -281,7 +287,8 @@ def main() -> int:
     ))
 
     # (+) registry parity with the live dojo module
-    results.append(("(+) registry parity", verify_registry_parity(), cp.DOJO_REV))
+    if not args.skip_registry:
+        results.append(("(+) registry parity", verify_registry_parity(), cp.DOJO_REV))
 
     # staged artifact sanity: sidecar sha equals the pinned branch sha
     staged_sha = _sha(stage / "ground_truth_hardened.jsonl")

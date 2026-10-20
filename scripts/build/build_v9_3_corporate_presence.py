@@ -27,8 +27,9 @@ _b = Path(__file__).resolve()
 while not (_b / "_bootstrap.py").is_file():
     _b = _b.parent
 sys.path.insert(0, str(_b))
+from _bootstrap import ROOT  # noqa: E402,F401
 
-from mailroom_eda.v9_3_revision import *  # noqa: F401,F403
+from mailroom_eda.v9_3_revision import *  # noqa: E402,F401,F403
 from mailroom_eda import v9_3_revision  # noqa: E402
 
 

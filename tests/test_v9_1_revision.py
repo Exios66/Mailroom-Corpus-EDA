@@ -120,13 +120,22 @@ class TestReviseRow:
                        })},
         )
         rev.verify_presence_codes([row])  # must not raise
-        with pytest.raises(AssertionError, match="dropped base keys"):
+        with pytest.raises(AssertionError, match="base presence keys missing"):
             rev.verify_presence_codes([_gt_row(
                 expected="corporate_record",
                 gt_fields={"gt_presence": json.dumps({"record_type": "populated"})},
             )])
         with pytest.raises(AssertionError, match="entity presence keys"):
             rev.verify_presence_codes([_gt_row(
+                gt_fields={"gt_presence": json.dumps({
+                    **{k: "not_applicable" for k in BASE_GT_FIELDS},
+                    "trustee": "populated",
+                })},
+            )])
+        # foreign-subclass extension on a corporate row (single-sourced law)
+        with pytest.raises(AssertionError, match="foreign-subclass"):
+            rev.verify_presence_codes([_gt_row(
+                expected="corporate_record", expected_subclass="bylaws",
                 gt_fields={"gt_presence": json.dumps({
                     **{k: "not_applicable" for k in BASE_GT_FIELDS},
                     "trustee": "populated",

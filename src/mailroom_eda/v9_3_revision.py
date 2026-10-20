@@ -479,7 +479,8 @@ def verify_staged_parquet_gt_fields(rows: list[dict], stage_dir: Path) -> dict[s
     import pyarrow.parquet as pq
 
     jsonl_by_fn = {r["filename"]: r for r in rows}
-    assert len(jsonl_by_fn) == len(rows), "duplicate JSONL filenames"
+    if len(jsonl_by_fn) != len(rows):
+        raise AssertionError("duplicate JSONL filenames")
     jsonl_splits: dict[str, int] = {}
     for row in rows:
         split = str(row.get("split") or "")
@@ -491,7 +492,10 @@ def verify_staged_parquet_gt_fields(rows: list[dict], stage_dir: Path) -> dict[s
         files = sorted(
             (Path(stage_dir) / "parquet" / "ground_truth" / split).glob("*.parquet")
         )
-        assert files, f"staged ground_truth parquet missing for split {split!r}"
+        if not files:
+            raise AssertionError(
+                f"staged ground_truth parquet missing for split {split!r}"
+            )
         for f in files:
             table = pq.read_table(f)
             parquet_n += table.num_rows
@@ -499,43 +503,50 @@ def verify_staged_parquet_gt_fields(rows: list[dict], stage_dir: Path) -> dict[s
             for rec in table.to_pylist():
                 fn = rec["filename"]
                 ref = jsonl_by_fn.get(fn)
-                assert ref is not None, (
-                    f"{fn}: staged parquet row has no hardened JSONL counterpart"
-                )
-                assert str(rec.get("split") or "") == str(ref.get("split") or ""), (
-                    f"{fn}: parquet split {rec.get('split')!r} != JSONL split "
-                    f"{ref.get('split')!r}"
-                )
+                if ref is None:
+                    raise AssertionError(
+                        f"{fn}: staged parquet row has no hardened JSONL counterpart"
+                    )
+                if str(rec.get("split") or "") != str(ref.get("split") or ""):
+                    raise AssertionError(
+                        f"{fn}: parquet split {rec.get('split')!r} != JSONL split "
+                        f"{ref.get('split')!r}"
+                    )
                 raw = rec.get("gt_fields")
                 parquet_gt = (
                     json.loads(raw) if isinstance(raw, str) and raw.strip() else {}
                 )
                 jsonl_gt = ref.get("gt_fields") or {}
-                assert set(parquet_gt) == set(jsonl_gt), (
-                    f"{fn}: gt_fields key set diverges between staged parquet and JSONL"
-                )
+                if set(parquet_gt) != set(jsonl_gt):
+                    raise AssertionError(
+                        f"{fn}: gt_fields key set diverges between staged parquet and JSONL"
+                    )
                 for key in sorted(parquet_gt):
                     a = _canonical_gt_value(parquet_gt.get(key))
                     b = _canonical_gt_value(jsonl_gt.get(key))
-                    assert a == b, (
-                        f"{fn}: gt_fields[{key!r}] diverges between staged parquet "
-                        f"and JSONL ({a[:60]!r} != {b[:60]!r}) — STOP"
-                    )
+                    if a != b:
+                        raise AssertionError(
+                            f"{fn}: gt_fields[{key!r}] diverges between staged parquet "
+                            f"and JSONL ({a[:60]!r} != {b[:60]!r}) — STOP"
+                        )
                 if ref.get("expected") == "corporate_record":
                     corporate += 1
-    assert parquet_n == len(rows), (
-        f"row count drift: staged parquet {parquet_n} != JSONL {len(rows)}"
-    )
+    if parquet_n != len(rows):
+        raise AssertionError(
+            f"row count drift: staged parquet {parquet_n} != JSONL {len(rows)}"
+        )
     # Split counts must match the hardened JSONL exactly (the corpus law
     # 2979/323 itself is verify_row_set's business; here the two payloads
     # must agree split-for-split).
-    assert parquet_splits == jsonl_splits, (
-        f"split counts drifted vs the JSONL: {parquet_splits} != {jsonl_splits}"
-    )
+    if parquet_splits != jsonl_splits:
+        raise AssertionError(
+            f"split counts drifted vs the JSONL: {parquet_splits} != {jsonl_splits}"
+        )
     jsonl_corporate = sum(1 for r in rows if r.get("expected") == "corporate_record")
-    assert corporate == jsonl_corporate, (
-        f"corporate row count drifted in parquet: {corporate} != {jsonl_corporate}"
-    )
+    if corporate != jsonl_corporate:
+        raise AssertionError(
+            f"corporate row count drifted in parquet: {corporate} != {jsonl_corporate}"
+        )
     stats = {"rows": parquet_n, "splits": parquet_splits, "corporate": corporate}
     print(
         f"verify_staged_parquet_gt_fields OK — {parquet_n:,} staged ground_truth "

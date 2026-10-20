@@ -105,7 +105,7 @@ class TestClosedVocabulary:
         assert gp.classify_field("corporate_record", "trustee", row) == gp.UNLABELED
         assert "trustee" not in keys and "jurisdiction" not in keys
         row["record_type"] = "bylaws"
-        gp.classify_field("corporate_record", "record_type", row) == "populated"
+        assert gp.classify_field("corporate_record", "record_type", row) == "populated"
 
     def test_corporate_not_applicable_inapplicable_core_per_subclass(self):
         row = _row(expected="corporate_record", expected_subclass="subsidiary_list")

@@ -39,12 +39,14 @@ from typing import Any, Iterable
 from mailroom_eda.config import REPO_DATA_REVISION, REPO_ID, REPO_REVISION, REPO_TAG
 from mailroom_eda.gt_presence import (
     ALL_GT_FIELDS,
+    BASE_GT_FIELDS,
     FIELD_KEYS_BY_CLASS,
     UNLABELED,
     classify_field,
     context_window_band,
     is_populated,
     presence_law_problems,
+    row_gt_presence,
 )
 from mailroom_eda.identity import source_corpus
 from mailroom_eda.v8_build import (
@@ -365,6 +367,20 @@ def audit_row(row: dict[str, Any]) -> list[Finding]:
                             f"published {presence.get(key)!r} != {live!r}",
                         )
                         break
+                else:
+                    # Omission check, v9.3 extended maps only (a key beyond
+                    # BASE_GT_FIELDS marks the map as v9.3-shaped; a legacy
+                    # base-only map stays lawful). Only UNLABELED cells may
+                    # be absent — a populated / not_applicable entity key
+                    # missing from the map is drift, not "unlabeled".
+                    if set(presence) - set(BASE_GT_FIELDS):
+                        omitted = sorted(set(row_gt_presence(prepared)) - set(presence))
+                        if omitted:
+                            _add(
+                                findings, prepared, omitted[0], "error",
+                                "gt_presence_drift",
+                                f"published map omits live-classified keys {omitted}",
+                            )
 
     for field in scope_fields(prepared):
         text = prepared.get(field) or ""
