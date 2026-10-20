@@ -6,6 +6,63 @@ here in the same commit; docs-only changes declare themselves as such.
 Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 `AGENTS.md` §HF facts and the per-revision plan docs under `docs/plans/`.
 
+## v9.3 — corporate presence-layer labels (STAGING, 2026-10-17)
+
+STAGING release on branch `feat/v9.3-staging-corporate-presence` (draft plan:
+`docs/plans/v9.3-corporate-presence-revision.md`; module:
+`src/mailroom_eda/v9_3_revision.py`). **Label-only** over the published
+`corporate-labels-v9.2.1` content — the same 3,302 rows (train 2,979 /
+test 323, corporate 450), every identity/content column and every populated
+label value byte-identical. Nothing here pushes tags or the HF Hub; the
+staged payload waits for the promotion run. Formal gates:
+`scripts/audit/verify_v9_3_conformance.py` (a–g all PASS plus the registry
+parity guard, skippable via `--skip-registry`; pytest 264 passed, 18 skipped —
+the skips are the full-corpus tests that wait on the `data/` snapshot).
+
+- **gt_presence key-set law unfrozen (the label-presence layer).** The
+  uniform-law assertion `set(presence) == set(ALL_GT_FIELDS)` is relaxed to
+  the v9.3 **superset** law: every row carries the 20-key `BASE_GT_FIELDS`
+  base, keys ⊆ the 57-key `ALL_GT_FIELDS` registry ceiling, only
+  `corporate_record` rows may extend with entity keys, unknown keys and
+  non-vocabulary codes are rejected. `FIELD_KEYS_BY_CLASS["corporate_record"]`
+  grows from the 3-key trio to trio + **37** entity keys (6 core + 31
+  per-subclass extension) enumerated from
+  `llm_dojo_scoring.corporate_record_schema.SUBCLASS_SCHEMAS` (sha-pinned
+  mirror in `corporate_presence.py`; facet-parity-checked against the live
+  dojo module).
+- **The dojo unstated-blank regime is now expressible by the producer.**
+  Blank entity fields with no absence statement are UNLABELED and ship as
+  *absent keys* in `gt_presence` — never as a code. The published presence
+  vocabulary is documented verbatim from the dojo docs
+  (`llm-dojo-scoring/docs/CORPORATE_RECORD_SCHEMA.md`) and on the dataset
+  card's v9.3 section by the builder:
+
+  > The four published codes: `populated` — a real expected value for this
+  > document; `not_applicable` — the class never carries this field;
+  > `schema_documented_absence` — the field exists in the class schema but
+  > this document legitimately has none; `pending_annotation` — the label
+  > backfill has not run yet. Plus a fifth, scorer-only unstated-blank ⇒
+  > unlabeled regime: a key-entity field the dataset leaves blank *without*
+  > documenting absence is **unlabeled**, not "expected empty", and is
+  > excluded from both sides of the comparison (reported as
+  > `unlabeled_fields` on the score payload), so neither a filled nor an
+  > empty prediction is scored.
+- **EDA-side relabel equivalents.** `corporate_presence.relabel_row` is a
+  faithful, deterministic port of `corporate_record_relabel` — verified
+  450/450 **byte-identical** to the published v9.2.1 corporate rows from the
+  v9.2 base (canonical + raw-line), including the 12 subclass conflict
+  re-assignments; guarded by hard-STOP shape checks (non-corporate
+  pass-through, frozen pre-existing gt values, entity additions only).
+- **`labels_version` adopted.** The manifest now versions labels separately
+  from the dataset (`version` line unchanged — v1, canonically v9 family):
+  `labels_version: v9.3 corporate gt_presence presence-layer …`, per the
+  FAIR guidance that a label wave that doesn't change rows should not ride
+  the dataset version. Manifest `revision:` line names the presence-layer
+  change; README/manifest parquet-config rows untouched (no new configs).
+- **Precedence honesty.** No new label facts: the entity presence on the
+  450 corporate rows is exactly the v9.2.1 relabel's derivations
+  (`entity_name`/`record_type` pins, not-applicable core marks).
+
 ## v9.2 — 2026-10-06
 
 Code-only revision of the live v9.1 tip of the

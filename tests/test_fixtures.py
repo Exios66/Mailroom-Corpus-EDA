@@ -33,6 +33,20 @@ def test_classes_and_kinds_in_closed_vocabularies(suite):
             assert row["expected_post_retry_state"] in ec.POST_RETRY_STATES
 
 
+def test_review_reason_implies_review_expected(suite):
+    # A row can never carry a non-empty review_reason while claiming no
+    # review was expected (or vice versa) -- these two fields must agree,
+    # including on rows whose review_reason comes from review_reason_override
+    # rather than the base fixture_kind (e.g. the ambiguous-kind rows in
+    # failure_stage_matrix).
+    for row in suite:
+        if row["review_reason"]:
+            assert row["review_expected"] == "true", row["filename"]
+            assert row["expected_stage"] == "review", row["filename"]
+        else:
+            assert row["review_expected"] == "false", row["filename"]
+
+
 def test_quartet_covers_all_cells_once_per_class(suite):
     quartet_rows = [r for r in suite if r["calibration_cell"]]
     classes = sorted({r["expected"] for r in quartet_rows})

@@ -18,8 +18,9 @@ from .config import (
     setup_matplotlib,
 )
 from .download import load_default, load_ground_truth
+from .gt_presence import is_populated
 from .integrity import _meta_series
-from .token_budget import budget_coverage, budget_coverage_by_type, compute_token_stats, estimate_tokens, token_ecdf_by_type
+from .token_budget import budget_coverage, compute_token_stats
 
 
 def _load_all() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -89,8 +90,6 @@ def fig_token_budget_coverage(blind: pd.DataFrame, gt: pd.DataFrame) -> None:
     import matplotlib.pyplot as plt
 
     df = _text_frame(blind, gt)
-    cov = budget_coverage_by_type([{"expected": r.doc_type, "doc_text": ""} for r in df.itertuples()])
-    # rebuild properly
     rows = []
     for d in DOC_TYPES:
         if d not in df["doc_type"].values:
@@ -174,10 +173,35 @@ def fig_length_by_subclass(blind: pd.DataFrame, gt: pd.DataFrame) -> None:
 # 3.2 CUAD clause deep-dive (contracts)
 # ---------------------------------------------------------------------------
 
+def _pending_annotation_filenames(gt: pd.DataFrame, field: str) -> set:
+    """Filenames whose ``field`` is a catalogued pending-annotation gap
+    (single-sourced from ``mailroom_eda.gt_presence`` via the published
+    ``gt_presence`` column) -- never a genuine absence."""
+    if "gt_presence" not in gt.columns:
+        return set()
+    out = set()
+    for fn, raw in zip(gt["filename"], gt["gt_presence"]):
+        presence = _parse_labels(raw)
+        if presence.get(field) == "pending_annotation":
+            out.add(fn)
+    return out
+
+
 def _cuad_matrix(gt: pd.DataFrame) -> pd.DataFrame:
-    """Return (n_contracts x n_clauses) presence DataFrame + span count df."""
+    """Return (n_contracts x n_clauses) presence DataFrame + span count df.
+
+    Excludes contract rows whose ``cuad_clause_labels`` is a catalogued
+    *pending annotation* gap (issue #30: the 91 SEC EDGAR EX-10 rows the
+    clause-classification pass has not yet run over) rather than folding
+    them into the "0 spans" bucket -- an unannotated row is not evidence
+    the clause is absent, and counting it as such biases every coverage /
+    mean / co-occurrence statistic derived from this matrix downward.
+    """
+    pending = _pending_annotation_filenames(gt, "cuad_clause_labels")
     rows = []
     for _, r in gt[gt["expected"] == "contract"].iterrows():
+        if r["filename"] in pending:
+            continue
         labels = _parse_labels(r["cuad_clause_labels"])
         row = {}
         for c in CUAD_CLAUSES:
@@ -502,8 +526,11 @@ def fig_claim_subtype_fields(gt: pd.DataFrame) -> None:
         "supporting_documents",
     ]
     subtypes = claims["expected_subclass"].unique()
+    # Absence is '' / '[]' / '{}' (corpus-wide convention), never a real
+    # NaN once loaded from the cast-safe gt_fields columns -- .notna()
+    # would report ~100% fill on every field regardless of content.
     fill = pd.DataFrame({
-        st: [claims.loc[claims["expected_subclass"] == st, f].notna().mean() for f in fields]
+        st: [claims.loc[claims["expected_subclass"] == st, f].map(is_populated).mean() for f in fields]
         for st in subtypes
     }, index=fields)
 
@@ -883,7 +910,7 @@ def save_eda_tables(blind: pd.DataFrame, gt: pd.DataFrame, meta: pd.DataFrame) -
         ]
         subtypes = claims["expected_subclass"].unique()
         fill = pd.DataFrame({
-            st: [claims.loc[claims["expected_subclass"] == st, f].notna().mean() for f in fields]
+            st: [claims.loc[claims["expected_subclass"] == st, f].map(is_populated).mean() for f in fields]
             for st in subtypes
         }, index=fields)
         fill.to_csv(TABLE_DIR / "claim_field_coverage.csv")

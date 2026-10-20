@@ -222,7 +222,7 @@ def _is_ticker_tail(tokens: set[str], cik: int) -> bool:
     return cik in _TICKER_BY_CIK and len(tokens) == 1 and next(iter(tokens)) == _TICKER_BY_CIK[cik]
 
 
-def _clean_filer(filer: object) -> str:
+def _clean_filer(filer: object, cik: int | None = None) -> str:
     """Normalize an EDGAR filer name, removing CIK segments and eligible suffixes.
 
     Non-string values (NaN, ints) give ``""``. Remove numeric ``(CIK ...)``
@@ -234,11 +234,21 @@ def _clean_filer(filer: object) -> str:
     filer's verified ticker via ``_TICKER_BY_CIK`` (so
     ``First Majestic Silver Corp (AG) (CIK 0001308648)`` becomes
     ``First Majestic Silver Corp``).
+
+    Known limitation: the CIK is parsed from the same ``filer`` string by
+    default, so when ``(CIK n)`` is absent, ``cik`` is 0 and verified-ticker
+    disambiguation cannot fire — the legal-form-looking tail is kept
+    (conservative). Callers may pass an authoritative ``cik`` (the row's
+    separate metadata CIK, when present) to enable disambiguation in that
+    case; verified-ticker stripping still only handles single-token
+    uppercase tails (see the pinned conservative tests in
+    test_corporate_backfill).
     """
     if not isinstance(filer, str):
         return ""
-    m_cik = re.search(r"CIK\s*(\d+)", filer)
-    cik = int(m_cik.group(1)) if m_cik else 0
+    if cik is None:
+        m_cik = re.search(r"CIK\s*(\d+)", filer)
+        cik = int(m_cik.group(1)) if m_cik else 0
     name = re.sub(r"\s*\(CIK\s*\d+\)", "", filer)
     name = re.sub(r"\s+", " ", name).strip()
     while True:
@@ -252,6 +262,25 @@ def _clean_filer(filer: object) -> str:
         if stripped == name:
             return name
         name = stripped
+
+
+def _row_metadata_cik(md: dict) -> int | None:
+    """The row's separate metadata CIK when the schema carries one.
+
+    Some blind-metadata dicts expose ``cik`` as its own key (see
+    composition.provenance, which reads ``cik`` defensively). Returns the
+    parsed int when the value is an int or a digit string, else ``None`` —
+    the caller then falls back to parsing ``"(CIK n)"`` out of the filer
+    string (which defaults to 0 when absent, so verified-ticker
+    disambiguation cannot fire: the documented conservative limitation of
+    ``_clean_filer``).
+    """
+    v = md.get("cik")
+    if isinstance(v, int) and not isinstance(v, bool):
+        return v
+    if isinstance(v, str) and v.strip().isdigit():
+        return int(v.strip())
+    return None
 
 
 def backfill_purpose_gt(rows: list[dict]) -> dict:
@@ -296,7 +325,11 @@ def backfill_purpose_gt(rows: list[dict]) -> dict:
                 stats["corporate_intent"] += 1
             subclass = str(r.get("expected_subclass") or "other")
             phrase = CORP_SUBCLASS_PHRASE.get(subclass, "Corporate record")
-            company = _clean_filer(md.get("filer"))
+            # _clean_filer parses "(CIK n)" from the filer string; pass the
+            # row's separate metadata CIK when the schema carries one so the
+            # verified-ticker disambiguation still fires for filers without
+            # an inline "(CIK n)" (None → same string-parse behavior as before).
+            company = _clean_filer(md.get("filer"), _row_metadata_cik(md))
             if not str(gt.get("subject_matter") or "").strip():
                 gt["subject_matter"] = (
                     f"{phrase} of {company}" + ("" if company.endswith(".") else ".")
@@ -697,8 +730,10 @@ def verify_v8_drift(v8_rows: list[dict], enriched: list[dict]) -> None:
 def _published_v8_values() -> dict[str, dict[str, str]]:
     """Read the published v8 identity keys (filename → document_id/source_corpus/…).
 
-    The training input for ``verify_v8_drift``: the 2,000 frozen v8 rows must
-    re-derive to these values exactly (identity.py is byte-stable for v8).
+    The reference values ``verify_v8_drift`` compares the enriched rows
+    against: the 2,000 frozen v8 rows must re-derive to these values exactly
+    (identity.py is byte-stable for v8). The dict is attached to each v8 row
+    as its ``_published`` build-internal key (removed at staging, D4).
     """
     import pandas as pd
 
