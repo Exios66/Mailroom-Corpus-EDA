@@ -143,9 +143,10 @@ def ensure_branch_snapshot(force: bool = False) -> Path:
         local_dir=BRANCH_SNAPSHOT_DIR,
     )
     got = sha256_file(BRANCH_SNAPSHOT_DIR / "ground_truth_hardened.jsonl")
-    assert got == BRANCH_SIDECAR_SHA256, (
-        f"branch sidecar sha {got} != pinned {BRANCH_SIDECAR_SHA256}"
-    )
+    if got != BRANCH_SIDECAR_SHA256:
+        raise AssertionError(
+            f"branch sidecar sha {got} != pinned {BRANCH_SIDECAR_SHA256}"
+        )
     return BRANCH_SNAPSHOT_DIR
 
 
@@ -168,9 +169,10 @@ def download_base_snapshot(force: bool = False) -> Path:
         local_dir=BASE_SNAPSHOT_DIR,
     )
     got = sha256_file(BASE_SNAPSHOT_DIR / "ground_truth_hardened.jsonl")
-    assert got == BASE_SIDECAR_SHA256, (
-        f"v9.2 base sidecar sha {got} != pinned {BASE_SIDECAR_SHA256}"
-    )
+    if got != BASE_SIDECAR_SHA256:
+        raise AssertionError(
+            f"v9.2 base sidecar sha {got} != pinned {BASE_SIDECAR_SHA256}"
+        )
     return BASE_SNAPSHOT_DIR
 
 
@@ -181,9 +183,10 @@ def resolve_base_path(explicit: str | None = None) -> Path:
     if explicit:
         p = Path(explicit)
         got = sha256_file(p)
-        assert got == BASE_SIDECAR_SHA256, (
-            f"base sidecar {p} sha {got} != pinned v9.2 {BASE_SIDECAR_SHA256}"
-        )
+        if got != BASE_SIDECAR_SHA256:
+            raise AssertionError(
+                f"base sidecar {p} sha {got} != pinned v9.2 {BASE_SIDECAR_SHA256}"
+            )
         return p
     return download_base_snapshot() / "ground_truth_hardened.jsonl"
 
@@ -226,21 +229,27 @@ def _guard_relabel_shape(old_rows: list[dict], new_rows: list[dict]) -> None:
     ``expected_subclass`` — anything else is a hard STOP (precedence
     honesty: the labels carry only what the v9.2.1 relabel derived)."""
     old_by_fn = {r["filename"]: r for r in old_rows}
-    assert len(old_by_fn) == len(old_rows)
-    assert len({r["filename"] for r in new_rows}) == len(new_rows), "duplicate rows after relabel"
+    if len(old_by_fn) != len(old_rows):
+        raise AssertionError("duplicate filenames in old rows")
+    if len({r["filename"] for r in new_rows}) != len(new_rows):
+        raise AssertionError("duplicate rows after relabel")
     for new in new_rows:
         fn = new["filename"]
         old = old_by_fn[fn]
         if new.get("expected") != "corporate_record":
-            assert _json_digest(new) == _json_digest(old), (
-                f"{fn}: non-corporate row was modified by the relabel pass"
-            )
+            if _json_digest(new) != _json_digest(old):
+                raise AssertionError(
+                    f"{fn}: non-corporate row was modified by the relabel pass"
+                )
             continue
         for col in set(old) | set(new):
             if col == "gt_fields":
                 continue
             ok = old.get(col) == new.get(col) or col in CORPORATE_RELABEL_ROW_CHANGES
-            assert ok, f"{fn}: relabel pass changed {col!r} — outside the v9.2.1 allowlist"
+            if not ok:
+                raise AssertionError(
+                    f"{fn}: relabel pass changed {col!r} — outside the v9.2.1 allowlist"
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -263,13 +272,16 @@ def verify_row_set(rows: list[dict]) -> dict[str, int]:
         splits[row.get("split") or ""] = splits.get(row.get("split") or "", 0) + 1
         if row.get("expected") == "corporate_record":
             corporate += 1
-    assert len(rows) == EXPECTED_TOTAL_ROWS, (
-        f"row set drifted: {len(rows)} != {EXPECTED_TOTAL_ROWS}"
-    )
-    assert splits == EXPECTED_SPLIT_COUNTS, f"split counts drifted: {splits}"
-    assert corporate == EXPECTED_CORPORATE_ROWS, (
-        f"corporate row count drifted: {corporate} != {EXPECTED_CORPORATE_ROWS}"
-    )
+    if len(rows) != EXPECTED_TOTAL_ROWS:
+        raise AssertionError(
+            f"row set drifted: {len(rows)} != {EXPECTED_TOTAL_ROWS}"
+        )
+    if splits != EXPECTED_SPLIT_COUNTS:
+        raise AssertionError(f"split counts drifted: {splits}")
+    if corporate != EXPECTED_CORPORATE_ROWS:
+        raise AssertionError(
+            f"corporate row count drifted: {corporate} != {EXPECTED_CORPORATE_ROWS}"
+        )
     print(f"verify_row_set OK — {len(rows):,} rows, splits {splits}, corporate {corporate}")
     return {"rows": len(rows), "splits": splits, "corporate": corporate}
 
@@ -339,9 +351,11 @@ def verify_zero_drift(old_rows: list[dict], new_rows: list[dict]) -> None:
     """v9.3 zero-drift, base-relative: ONLY corporate rows' ``gt_fields`` +
     ``expected_subclass`` may differ from the v9.2 base (the verified v9.2.1
     repair — never removed gt keys, never changed unchanged values)."""
-    assert len(old_rows) == len(new_rows), f"{len(old_rows)} != {len(new_rows)}"
+    if len(old_rows) != len(new_rows):
+        raise AssertionError(f"{len(old_rows)} != {len(new_rows)}")
     old_by_fn = {r["filename"]: r for r in old_rows}
-    assert len(old_by_fn) == len(old_rows)
+    if len(old_by_fn) != len(old_rows):
+        raise AssertionError("duplicate filenames in old rows")
 
     def _norm(v: Any) -> Any:
         if v is None:
@@ -357,27 +371,31 @@ def verify_zero_drift(old_rows: list[dict], new_rows: list[dict]) -> None:
         for col in old:
             if col == "gt_fields" or (corporate and col == "expected_subclass"):
                 continue
-            assert _norm(old.get(col)) == _norm(new.get(col)), (
-                f"{fn}: {col!r} drifted"
-            )
+            if _norm(old.get(col)) != _norm(new.get(col)):
+                raise AssertionError(
+                    f"{fn}: {col!r} drifted"
+                )
         old_gt, new_gt = old.get("gt_fields") or {}, new.get("gt_fields") or {}
         if not corporate:
-            assert _json_digest(new_gt) == _json_digest(old_gt), (
-                f"{fn}: non-corporate gt_fields drifted"
-            )
+            if _json_digest(new_gt) != _json_digest(old_gt):
+                raise AssertionError(
+                    f"{fn}: non-corporate gt_fields drifted"
+                )
         else:
             # the relabel equivalents may ADD entity keys and rewrite ONLY the
             # relabel-owned keys (presence map + the v9.2.1 repair keys); every
             # other pre-existing value is frozen.
             for k, v in old_gt.items():
-                assert k in new_gt, (
-                    f"{fn}: corporate gt_fields[{k!r}] removed by the relabel pass"
-                )
+                if k not in new_gt:
+                    raise AssertionError(
+                        f"{fn}: corporate gt_fields[{k!r}] removed by the relabel pass"
+                    )
                 if k in RELABEL_OWNED_GT_KEYS:
                     continue
-                assert new_gt[k] == v, (
-                    f"{fn}: corporate gt_fields[{k!r}] altered by the relabel pass"
-                )
+                if new_gt[k] != v:
+                    raise AssertionError(
+                        f"{fn}: corporate gt_fields[{k!r}] altered by the relabel pass"
+                    )
     print(f"verify_zero_drift OK — {len(new_rows)} rows vs the v9.2 base, allowlist exact")
 
 
@@ -386,24 +404,28 @@ def verify_labels_equal_branch(new_rows: list[dict], branch_rows: list[dict]) ->
     ``gt_fields`` equals the v9.2.1 branch's (byte-identical values,
     insertion order proven separately); every non-corporate row is
     canonically identical row-for-row."""
-    assert len(new_rows) == len(branch_rows), (
-        f"{len(new_rows)} != {len(branch_rows)}: row count mismatch vs branch"
-    )
+    if len(new_rows) != len(branch_rows):
+        raise AssertionError(
+            f"{len(new_rows)} != {len(branch_rows)}: row count mismatch vs branch"
+        )
     branch_by_fn = {r["filename"]: r for r in branch_rows}
     corp = 0
     for row in new_rows:
         fn = row["filename"]
         ref = branch_by_fn.get(fn)
-        assert ref is not None, f"{fn}: missing from the v9.2.1 branch content"
+        if ref is None:
+            raise AssertionError(f"{fn}: missing from the v9.2.1 branch content")
         if row.get("expected") == "corporate_record":
             corp += 1
-            assert _json_digest(row["gt_fields"]) == _json_digest(ref["gt_fields"]), (
-                f"{fn}: corporate gt_fields diverges from the v9.2.1 source — STOP"
-            )
+            if _json_digest(row["gt_fields"]) != _json_digest(ref["gt_fields"]):
+                raise AssertionError(
+                    f"{fn}: corporate gt_fields diverges from the v9.2.1 source — STOP"
+                )
         else:
-            assert _json_digest(row) == _json_digest(ref), (
-                f"{fn}: non-corporate row diverges from v9.2.1 — STOP"
-            )
+            if _json_digest(row) != _json_digest(ref):
+                raise AssertionError(
+                    f"{fn}: non-corporate row diverges from v9.2.1 — STOP"
+                )
     stats = {"corporate": corp, "non_corporate": len(new_rows) - corp}
     print(
         f"verify_labels_equal_branch OK — {corp} corporate gt_fields byte-faithful to "
@@ -695,7 +717,8 @@ def build_all(
     shutil.copytree(branch_dir / "parquet", stage_dir / "parquet")
 
     staged_sha = sha256_file(stage_dir / "ground_truth_hardened.jsonl")
-    assert staged_sha == BRANCH_SIDECAR_SHA256, staged_sha
+    if staged_sha != BRANCH_SIDECAR_SHA256:
+        raise AssertionError(staged_sha)
 
     # Gate (g): the byte-copied ground_truth parquet carries exactly the
     # hardened JSONL gt_fields (content, not container bytes).
@@ -738,14 +761,19 @@ def _verify_manifest_sha_table(stage_dir: Path) -> None:
     from the staged bytes themselves (a regeneration, not a copy-paste)."""
     manifest = (stage_dir / "manifest.txt").read_text(encoding="utf-8")
     table = re.findall(r"^\s*(\S+)\s+([0-9a-f]{64})\s*$", manifest, flags=re.M)
-    assert table, "manifest sha table missing"
+    if not table:
+        raise AssertionError("manifest sha table missing")
     for rel, sha in table:
         p = stage_dir / rel
-        assert p.is_file(), f"manifest lists missing file {rel}"
+        if not p.is_file():
+            raise AssertionError(f"manifest lists missing file {rel}")
         got = sha256_file(p)
-        assert got == sha, f"{rel}: manifest sha {sha} != recomputed {got}"
-    assert f"labels_version: {LABELS_VERSION}" in manifest, "labels_version line missing"
-    assert manifest.count("labels_version") == 1, "labels_version duplicated"
+        if got != sha:
+            raise AssertionError(f"{rel}: manifest sha {sha} != recomputed {got}")
+    if f"labels_version: {LABELS_VERSION}" not in manifest:
+        raise AssertionError("labels_version line missing")
+    if manifest.count("labels_version") != 1:
+        raise AssertionError("labels_version duplicated")
     print(f"verify_manifest_sha_table OK — {len(table)} entries recompute from staged bytes")
 
 
