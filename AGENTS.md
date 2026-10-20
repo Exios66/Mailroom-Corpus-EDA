@@ -136,7 +136,7 @@ sudo mkdir -p ../llm-mailroom
 sudo chown "$(id -u):$(id -g)" ../llm-mailroom
 git init ../llm-mailroom
 git -C ../llm-mailroom remote get-url origin >/dev/null 2>&1 || git -C ../llm-mailroom remote add origin https://github.com/Exios66/llm-mailroom.git
-git -C ../llm-mailroom fetch --depth 1 origin 417d5a0814cb14f5c3834c063045c9a8c7801cfb
+git -C ../llm-mailroom fetch --depth 1 origin cb960a2c1ab323a7d9cb1ebf9e9aaf77652ca622
 git -C ../llm-mailroom checkout --force --detach FETCH_HEAD
 .venv/bin/python -m pytest tests/
 .venv/bin/python run_all.py --phases P0
@@ -146,8 +146,10 @@ git -C ../llm-mailroom checkout --force --detach FETCH_HEAD
 `pytest` is a dev extra and is absent from `requirements.txt`. Without the
 sibling pin, `test_mailroom_contract_fixture` and
 `test_expected_specialist_matches_live_taxonomy_yaml` cannot read
-`../llm-mailroom/src/config/taxonomy.yaml`. `llm-mailroom` `main` after
-`417d5a0814cb14f5c3834c063045c9a8c7801cfb` routes `merger_agreement` to
+`../llm-mailroom/src/config/taxonomy.yaml`. The pin is `llm-mailroom`
+`main` at `cb960a2c1ab323a7d9cb1ebf9e9aaf77652ca622` (2026-10-17); the
+older pin `417d5a0814cb14f5c3834c063045c9a8c7801cfb` predates the routing
+change and fails three routing tests. `main` routes `merger_agreement` to
 `merger_agreement_specialist`; `eval_contract` aligns that routing as of
 2026-10-17 (live-taxonomy alignment — see the D6 amendment in
 `docs/plans/v9.2-relations-provenance-revision.md`), so these tests expect
