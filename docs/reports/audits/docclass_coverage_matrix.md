@@ -12,6 +12,17 @@ Generated from the local pinned snapshot — 3302 rows, 5 classes, 55 class × s
 | `insurance_claim` | 1100 | 6 | `cms_desynpuf (+ GNOTHEIA, BDR, INSURBIAS)` | `insurance_claims_specialist` |
 | `merger_agreement` | 152 | 5 | `maud` | `contracts_specialist` |
 
+**Alignment note (2026-10-17, pre-alignment snapshot):** the specialist column
+above is the **pre-alignment** view — the 152 published v8/v9.2 merger rows
+still read `contracts_specialist` on the Hub. As of the feat branch
+`eval_contract` fix, `SPECIALIST_BY_CLASS["merger_agreement"]` /
+`specialist_registry()` resolve to `merger_agreement_specialist` (live
+taxonomy.yaml:367/570); regenerating this matrix against the local snapshot
+will render that value here. Aligning the published `expected_specialist`
+values is a deliberate label revision that must ride v9.3 staging, never a
+silent rebuild (plan §2 D6 amendment). History tables below are annotated,
+not rewritten.
+
 ## Field coverage per specialist (§41)
 
 Coverage is reported over **eligible rows only** (populated / eligible, eligible = populated + genuine_gap + pending_annotation). Unpopulated cells are classified `schema_documented_absence` — the v8_build/v9 conformance law says the field is empty on this row (e.g. `adjuster` on CMS/GNOTHEIA/INSURBIAS rows, `denial_reasons` on non-denied claims, `supporting_documents` on the 6 INSURBIAS bare-accident narratives that reference no supporting-document feature — issue #29), excluded from eligible (absent by design, never a coverage target) — or `pending_annotation` — a genuine, catalogued gap blocked on a dependency (`cuad_clause_labels` on the 91 SEC EDGAR EX-10 contracts — issue #30: the LLM clause pass could not run on 2026-09-13, no working provider credential; see the pending_rules entry), counted AGAINST coverage_pct — or `genuine_gap` — the field should be populated and no rule explains the absence (mailroom-issues#196 Phase B2: after issues #28/#29 the corpus reports zero undiagnosed genuine gaps; the EX-10 clause hole is now honestly `pending_annotation`, not silently folded into `schema_documented_absence`). Documented absences are tallied but never counted as gaps (issue #28).
@@ -62,6 +73,12 @@ Coverage is reported over **eligible rows only** (populated / eligible, eligible
 | `supporting_documents` | 1094 | 1094 | 6 | 0 | 0 | 100% |
 
 ### `merger_agreement` (152 rows, `contracts_specialist`)
+
+<!-- Pre-alignment value kept verbatim: the published v8/v9.2 rows route to
+contracts_specialist on the Hub. eval_contract now routes merger_agreement to
+merger_agreement_specialist (2026-10-17 live-taxonomy alignment; plan §2 D6
+amendment) — the published values change only in v9.3 staging, never a
+silent rebuild. -->
 
 | field | populated | eligible | documented-absent | pending-annotation | genuine gap | coverage |
 |---|---|---|---|---|---|---|

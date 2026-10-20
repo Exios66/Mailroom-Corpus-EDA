@@ -36,10 +36,41 @@ callers that publish data (the revision builder) MUST treat any
 ``genuine_gap`` as a hard build failure rather than shipping it — the
 audit CLI already verified (issue #28/#29/#30) that the live corpus has
 zero such cells.
+
+v9.3 corporate extension (staging branch
+``feat/v9.3-staging-corporate-presence``): ``corporate_record`` rows now
+carry the per-subclass entity keys from
+``llm_dojo_scoring.corporate_record_schema.SUBCLASS_SCHEMAS`` (mirrored,
+sha-pinned, in ``corporate_presence``). Uniformity of the map keys is
+therefore a SUPERSET law since v9.3: every row carries the
+``BASE_GT_FIELDS`` keys; corporate rows may extend with entity keys whose
+blank-and-undocumented cells are *omitted* (the dojo scorer-side
+unstated-blank ⇒ unlabeled regime — the absent key is the published
+representation of "unlabeled"). The internal ``unlabeled`` sentinel value
+must never ship; ``verify_presence_codes`` (v9_1_revision) enforces both
+directions, and the subclass-conditional hardening (a corporate row's
+present extension keys must sit inside the entity-core keys + the row's OWN
+subclass extension keys — foreign-subclass extensions ABSENT; unknown
+subclass ⇒ core-only) lives in :func:`presence_law_problems` — the
+single-sourced key-set law that ``v9_3_revision.verify_presence_laws`` and
+the legacy audit (``gt_quality.audit_row``) both consume.
 """
 from __future__ import annotations
 
 from typing import Any
+
+from .corporate_presence import (
+    CORPORATE_BASE_KEYS,
+    CORPORATE_ENTITY_CORE_KEYS,
+    CORPORATE_ENTITY_KEYS,
+    CORPORATE_PRESENCE_KEYS,
+    CORPORATE_SUBCLASS_ENTITY_KEYS,
+    core_applicable_for_subclass,
+)
+
+#: Public aliases: the per-subclass entity registry used by the audit and the
+#: extended corporate presence surface (single-sourced in corporate_presence).
+CORPORATE_ENTITY_KEYS_BY_SUBCLASS = CORPORATE_SUBCLASS_ENTITY_KEYS
 
 #: The four codes a published `gt_presence` cell may carry.
 PRESENCE_CODES = (
@@ -49,10 +80,50 @@ PRESENCE_CODES = (
     "pending_annotation",
 )
 
+#: Internal sentinel for the dojo scorer-side "unstated-blank ⇒ unlabeled"
+#: regime (docs/CORPORATE_RECORD_SCHEMA.md): a corporate entity field that is
+#: blank with no absence statement was NEVER labeled. It must never appear in
+#: a published map — :func:`row_gt_presence` DROPS it, the absent key being
+#: the representation. Not a member of PRESENCE_CODES; publishing it is a
+#: hard verify failure.
+UNLABELED = "unlabeled"
+
+#: The v9.2-era uniform key set — the BASE presence law: every published row
+#: (any class) carries these keys; corporate rows may extend them with the
+#: entity keys (``CORPORATE_PRESENCE_KEYS``). Derived: the fields the v9
+#: pipeline labeled before the v9.3 corporate extension (20 keys).
+BASE_GT_FIELDS: tuple[str, ...] = (
+    "adjuster",
+    "claim_number",
+    "claimed_amount",
+    "claim_type",
+    "content_topic",
+    "coverage_determination",
+    "cuad_clause_labels",
+    "damages_description",
+    "date_filed",
+    "date_of_loss",
+    "denial_reasons",
+    "insured_party",
+    "insurer",
+    "intent",
+    "keywords",
+    "maud_clause_labels",
+    "policy_number",
+    "sentiment_label",
+    "subject_matter",
+    "supporting_documents",
+)
+
 #: §41 field-coverage map: class -> GT columns that feed the specialist's
 #: expected_fields surface (mirrors conftest's EXTRACTION_GT_BY_CLASS +
 #: the enrichment keys). Single-sourced here; scripts/audit/coverage_matrix.py
 #: imports this constant instead of re-declaring it.
+#: v9.3: ``corporate_record`` now lists the per-subclass entity keys on top of
+#: the base trio — the per-subclass entity regime from
+#: ``llm_dojo_scoring.corporate_record_schema.SUBCLASS_SCHEMAS`` (mirrored,
+#: sha-pinned, in ``corporate_presence``). Entity fields are unlabeled-by-
+#: absence on published rows; their codes live under the same vocabulary.
 FIELD_KEYS_BY_CLASS: dict[str, tuple[str, ...]] = {
     "contract": ("cuad_clause_labels",),
     "merger_agreement": ("maud_clause_labels",),
@@ -60,7 +131,10 @@ FIELD_KEYS_BY_CLASS: dict[str, tuple[str, ...]] = {
         "intent", "subject_matter", "keywords", "sentiment_label",
         "content_topic",
     ),
-    "corporate_record": ("intent", "subject_matter", "keywords"),
+    "corporate_record": (
+        *CORPORATE_BASE_KEYS,
+        *CORPORATE_ENTITY_KEYS,
+    ),
     "insurance_claim": (
         "claim_number", "policy_number", "insurer", "insured_party",
         "claim_type", "date_of_loss", "date_filed", "claimed_amount",
@@ -70,9 +144,10 @@ FIELD_KEYS_BY_CLASS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-#: Union of every class-relevant field across all classes — the uniform key
-#: set every row's `gt_presence` map carries (cast-safe: same keys on every
-#: row regardless of class, KANBAN-076 convention).
+#: Union of every class-relevant field across all classes — the maximum key
+#: set any row's `gt_presence` map may carry. Since the v9.3 corporate
+#: extension this is a SUPERSET law: rows must carry the base keys and only
+#: class-relevant extensions (see verify_presence_codes, v9_1_revision).
 ALL_GT_FIELDS: tuple[str, ...] = tuple(
     sorted({key for keys in FIELD_KEYS_BY_CLASS.values() for key in keys})
 )
@@ -182,7 +257,14 @@ def classify_field(doc_class: str, key: str, row: dict[str, Any]) -> str:
     ``row`` must carry at minimum the field values in ``FIELD_KEYS_BY_CLASS``
     plus ``metadata`` (dict), ``doc_text`` (str), and
     ``coverage_determination`` (for the insurance denial-reasons rule).
+    Corporate entity keys (v9.3) classify under the dojo per-subclass regime
+    (``docs/CORPORATE_RECORD_SCHEMA.md``): populated beats the subclass map;
+    an inapplicable CORE key is ``not_applicable``; an applicable-but-blank
+    core key and any blank extension key is the internal ``unlabeled``
+    sentinel (dropped from published maps — unstated-blank ⇒ unlabeled).
     """
+    if doc_class == "corporate_record" and key in CORPORATE_ENTITY_KEYS:
+        return _classify_corporate_entity(key, row)
     if key not in FIELD_KEYS_BY_CLASS.get(doc_class, ()):
         return "not_applicable"
     if is_populated(row.get(key)):
@@ -196,11 +278,111 @@ def classify_field(doc_class: str, key: str, row: dict[str, Any]) -> str:
     return "genuine_gap"  # must never ship — see module docstring
 
 
+def _classify_corporate_entity(key: str, row: dict[str, Any]) -> str:
+    """Dojo-regime classification for one corporate entity cell (v9.3).
+
+    Mirrors ``corporate_record_relabel`` exactly: a stated value is a label
+    (``populated``); an inapplicable CORE key is ``not_applicable``; a blank
+    applicable core key and any blank extension key are UNLABELED (the
+    annotation never ran) and drop out of the map. Base-registry keys that
+    are not entity keys never enter here.
+    """
+    if is_populated(row.get(key)):
+        return "populated"
+    if key in CORPORATE_ENTITY_CORE_KEYS and key not in core_applicable_for_subclass(
+        row.get("expected_subclass")
+    ):
+        return "not_applicable"
+    if key in CORPORATE_ENTITY_CORE_KEYS:
+        return UNLABELED  # applicable but blank: annotation never ran
+    # extension entity of another subclass: the relabel never marks these —
+    # they stay absent (unlabeled), not not_applicable.
+    return UNLABELED
+
+
 def row_gt_presence(row: dict[str, Any]) -> dict[str, str]:
-    """The full, uniform ``field -> code`` map for one row (all classes'
-    fields; fields outside this row's class are ``not_applicable``)."""
+    """The ``field -> code`` map for one row (all classes' fields; fields
+    outside this row's class are ``not_applicable``).
+
+    v9.3 key-set law (superset): every row carries the ``BASE_GT_FIELDS``
+    keys — the uniform v9.1/v9.2 base — and CLASS-RELEVANT keys on top. Only
+    ``corporate_record`` rows iterate the extended registry surface (the
+    per-subclass entity keys), where blank-with-no-absence-statement cells
+    are UNLABELED and are OMITTED from the map rather than shipped as a code
+    (the dojo unstated-blank regime — the absent key is the published
+    representation of "not labeled"). Non-corporate rows keep exactly the
+    base map, so legacy regeneration stays byte-stable.
+    """
     doc_class = str(row.get("expected") or "")
-    return {key: classify_field(doc_class, key, row) for key in ALL_GT_FIELDS}
+    keys = ALL_GT_FIELDS if doc_class == "corporate_record" else BASE_GT_FIELDS
+    return {
+        key: code
+        for key in keys
+        if (code := classify_field(doc_class, key, row)) != UNLABELED
+    }
+
+
+def presence_law_problems(
+    presence: dict[str, str],
+    doc_class: str,
+    expected_subclass: str | None = None,
+) -> list[str]:
+    """The published presence key-set law for ONE parsed ``gt_presence`` map.
+
+    Single-sourced here so every consumer derives the same verdict (the
+    v9.3 audit path ``gt_quality.audit_row`` and the staging verifier
+    ``v9_3_revision.verify_presence_laws`` both call this; neither
+    re-declares the rule — ``gt_presence`` is the single source of the
+    presence classification, provenance law, AND the key-set law).
+
+    Superset law (relaxed from the v9.1 uniform-map equality so the
+    corporate per-subclass entity regime is expressible):
+
+    * keys ⊇ ``BASE_GT_FIELDS`` — the 20-key uniform v9.1/v9.2 base, a
+      required floor that is never silently dropped;
+    * keys ⊆ ``ALL_GT_FIELDS`` — keys outside the registry are rejected
+      outright;
+    * extension keys beyond the base are corporate-only (``corporate_record``
+      rows may carry the entity keys, no other class may);
+    * subclass-conditional law (v9.3 hardening): on corporate rows the
+      present extension keys must sit inside the 6 ``ENTITY_CORE`` keys plus
+      that row's OWN subclass's extension keys — a foreign subclass's
+      extension key present in a row's map is a violation; an unknown
+      ``expected_subclass`` restricts a row to core keys only;
+    * every code ∈ ``PRESENCE_CODES`` — ``genuine_gap`` and the internal
+      ``unlabeled`` (unstated-blank) sentinel never ship.
+
+    Returns the problem list (empty = lawful). Row context (filename) is
+    the caller's concern; messages are stable phrases asserted by tests.
+    """
+    problems: list[str] = []
+    registry = set(ALL_GT_FIELDS)
+    base = set(BASE_GT_FIELDS)
+    keys = set(presence)
+    unknown = sorted(keys - registry)
+    if unknown:
+        problems.append(f"presence keys outside ALL_GT_FIELDS: {unknown}")
+    missing = sorted(base - keys)
+    if missing:
+        problems.append(f"base presence keys missing: {missing}")
+    extension = keys - base
+    if extension:
+        if doc_class != "corporate_record":
+            problems.append("non-corporate row carries entity presence keys")
+        else:
+            # v9.3 subclass-conditional hardening: core keys + the row's OWN
+            # subclass extension keys; unknown subclass ⇒ core-only.
+            own = CORPORATE_ENTITY_KEYS_BY_SUBCLASS.get(expected_subclass or "", ())
+            foreign = sorted(extension - set(CORPORATE_ENTITY_CORE_KEYS) - set(own))
+            if foreign:
+                problems.append(
+                    f"foreign-subclass extension keys (subclass "
+                    f"{(expected_subclass or '')!r}): {foreign}"
+                )
+    bad_codes = sorted({code for code in presence.values() if code not in PRESENCE_CODES})
+    if bad_codes:
+        problems.append(f"codes outside the published vocabulary: {bad_codes}")
+    return problems
 
 
 #: Metadata keys that are label-*derived aggregate counts* (weak indirect
