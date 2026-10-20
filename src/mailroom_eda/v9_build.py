@@ -210,11 +210,11 @@ _TICKER_BY_CIK: dict[int, str] = {
 
 
 def _is_ticker_tail(tokens: set[str], cik: int) -> bool:
-    """True when a parenthesized tail's tokens are tickers, not name suffixes.
+    """True when a parenthesized tail's tokens qualify for ticker stripping.
 
-    A tail with no legal-form token is always a ticker. When every token is
-    a ``_NOT_TICKERS`` legal-form suffix, the tail is kept — unless it is the
-    single verified EDGAR ticker passed via ``_TICKER_BY_CIK`` (First
+    A tail with no token in ``_NOT_TICKERS`` is treated as a ticker. If any
+    token is in that set, the tail is kept — unless it is the single
+    verified EDGAR ticker for the filer's CIK in ``_TICKER_BY_CIK`` (First
     Majestic's NYSE ``AG``, which collides with the German AG legal form).
     """
     if not (tokens & _NOT_TICKERS):
@@ -223,15 +223,17 @@ def _is_ticker_tail(tokens: set[str], cik: int) -> bool:
 
 
 def _clean_filer(filer: object, cik: int | None = None) -> str:
-    """Company name from EDGAR ``filer`` text: strip ``(CIK ...)``, tickers and ``/ST/``.
+    """Normalize an EDGAR filer name, removing CIK segments and eligible suffixes.
 
-    Non-string values (NaN, ints) give ``""``. Country / entity-form codes
-    such as ``(UK)`` and foreign ``(XX)`` tails are part of the name and
-    kept; ``(CIK ...)`` and US ``/ST/`` tails are always stripped. A trailing
-    parenthesized token is stripped only when it is a real ticker — either a
-    non-legal-form token, or the filer's verified EDGAR ticker via
-    ``_TICKER_BY_CIK`` (so ``First Majestic Silver Corp (AG)`` keeps only the
-    company name, AG being its NYSE ticker, not a legal-form suffix).
+    Non-string values (NaN, ints) give ``""``. Remove numeric ``(CIK ...)``
+    segments and collapse whitespace. Repeatedly strip trailing ``/XX/``
+    codes in ``_STATE_CODES`` and uppercase parenthesized ticker-shaped
+    groups accepted by ``_is_ticker_tail``. Unlisted slash codes such as
+    ``/UK/`` are kept. Parenthesized country / entity-form tokens in
+    ``_NOT_TICKERS``, such as ``(UK)``, are kept unless the tail is the
+    filer's verified ticker via ``_TICKER_BY_CIK`` (so
+    ``First Majestic Silver Corp (AG) (CIK 0001308648)`` becomes
+    ``First Majestic Silver Corp``).
 
     Known limitation: the CIK is parsed from the same ``filer`` string by
     default, so when ``(CIK n)`` is absent, ``cik`` is 0 and verified-ticker
@@ -284,15 +286,27 @@ def _row_metadata_cik(md: dict) -> int | None:
 def backfill_purpose_gt(rows: list[dict]) -> dict:
     """v9 purpose-GT completion on legacy rows (v8 documented gaps).
 
-    - corporate_record: intent was 0% on all 39 v8 rows — complete via the
-      subclass → closed-vocabulary template (deterministic, zero LLM).
-    - correspondence: subject_matter/keywords were 96/350 (27%) — complete
-      from the published content_topic/topic_evidence + metadata
-      (subject/custodian/date) + doc_text head.
+    - corporate_record: complete intent via the subclass → closed-vocabulary
+      template (deterministic, zero LLM). Fill subject_matter, JSON-array
+      keywords and entity_name from the subclass phrase and cleaned filer.
+      Without a company, use "the registrant" only in subject_matter and
+      leave entity_name unfilled.
+    - correspondence: fill subject_matter from content_topic and metadata
+      subject; fill JSON-array keywords from content_topic, subclass and
+      metadata custodian/folder/date, with defaults for missing topic/subclass.
 
-    Only EMPTY fields are written (never overwrites an existing value);
-    provenance is ``heuristic`` (the §20/§43 regime, now mapped in
-    eval_contract.INTENT_SOURCE_METHOD). Returns completion stats.
+    Mutate rows in place, replacing missing or non-dict gt_fields with a
+    dict for every class. Fill only falsy or whitespace-only purpose fields;
+    filling corporate intent also sets intent_source to ``heuristic``
+    (the §20/§43 regime mapped in eval_contract.INTENT_SOURCE_METHOD),
+    intent_confidence to ``"0.9"`` and intent_status to ``auto_labeled``,
+    overwriting those provenance fields.
+
+    Return counters: corporate_intent counts newly filled intents;
+    correspondence_purpose counts correspondence rows with a truthy intent,
+    even when no fields changed. Missing expected raises KeyError.
+    AttributeError propagates if a metadata lookup is needed and truthy
+    metadata has no get method.
     """
     stats = {"corporate_intent": 0, "correspondence_purpose": 0}
     for r in rows:
