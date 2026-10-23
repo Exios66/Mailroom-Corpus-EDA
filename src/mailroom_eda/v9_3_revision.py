@@ -555,6 +555,12 @@ def verify_staged_parquet_gt_fields(rows: list[dict], stage_dir: Path) -> dict[s
                         f"{fn}: parquet split {rec.get('split')!r} != JSONL split "
                         f"{ref.get('split')!r}"
                     )
+                for column in ("expected", "expected_subclass"):
+                    if rec.get(column) != ref.get(column):
+                        raise AssertionError(
+                            f"{fn}: parquet {column} {rec.get(column)!r} != "
+                            f"JSONL {column} {ref.get(column)!r}"
+                        )
                 raw = rec.get("gt_fields")
                 parquet_gt = (
                     json.loads(raw) if isinstance(raw, str) and raw.strip() else {}
@@ -572,7 +578,7 @@ def verify_staged_parquet_gt_fields(rows: list[dict], stage_dir: Path) -> dict[s
                             f"{fn}: gt_fields[{key!r}] diverges between staged parquet "
                             f"and JSONL ({a[:60]!r} != {b[:60]!r}) — STOP"
                         )
-                if ref.get("expected") == "corporate_record":
+                if rec.get("expected") == "corporate_record":
                     corporate += 1
     if parquet_n != len(rows):
         raise AssertionError(

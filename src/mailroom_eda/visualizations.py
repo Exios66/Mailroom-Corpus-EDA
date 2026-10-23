@@ -19,7 +19,7 @@ from .config import (
 )
 from .download import load_default, load_ground_truth
 from .gt_presence import is_populated
-from .integrity import _meta_series
+from .integrity import _align_configs, _meta_series
 from .token_budget import budget_coverage, compute_token_stats
 
 
@@ -40,6 +40,7 @@ def _parse_labels(v):
 
 
 def _text_frame(blind: pd.DataFrame, gt: pd.DataFrame) -> pd.DataFrame:
+    blind, gt = _align_configs(blind, gt)
     df = pd.DataFrame({
         "filename": blind["filename"],
         "doc_type": gt["expected"],

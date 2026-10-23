@@ -108,7 +108,9 @@ def source_native_threads(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 id_to_row[mid] = row
 
         # union-find over reply edges (bounded: each row has ≤1 in_reply_to)
-        parent: dict[str, str] = {}
+        # Every known target must exist before edges are processed: parquet
+        # shard order can put a reply before its parent.
+        parent: dict[str, str] = {mid: mid for mid in id_to_row}
 
         def find(x: str) -> str:
             while parent.get(x, x) != x:

@@ -6,6 +6,14 @@ here in the same commit; docs-only changes declare themselves as such.
 Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 `AGENTS.md` §HF facts and the per-revision plan docs under `docs/plans/`.
 
+## Unreleased
+
+- DMR-091 independent source audit: join cross-config metadata, text, provenance,
+  split and MAUD reports by unique filename, rejecting ambiguous identities.
+  Verify staged parquet class/subclass routing against JSONL, and retain native
+  reply edges when a parent occurs later in input. No datasets regenerated or
+  published; existing presence/null predicates and corpus pins are unchanged.
+
 ## v9.3 — corporate presence-layer labels (STAGING, 2026-10-17)
 
 STAGING release on branch `feat/v9.3-staging-corporate-presence` (draft plan:
