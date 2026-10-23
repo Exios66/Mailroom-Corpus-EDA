@@ -477,6 +477,30 @@ class TestStagedParquetGate:
         assert stats["splits"] == {"train": 2, "test": 2}
         assert stats["corporate"] == 2
 
+    def test_duplicate_filenames_with_unchanged_counts_fail(self, tmp_path):
+        rows = self._rows()
+        # Two corporate train rows: replacing b with a preserves total,
+        # per-split and corporate counts while losing b entirely.
+        second = dict(rows[2], filename="corp_003.htm")
+        rows.append(second)
+        staged = [rows[2] if r is second else r for r in rows]
+        self._stage_parquet(staged, tmp_path)
+        with pytest.raises(AssertionError, match="duplicate parquet filename"):
+            v93.verify_staged_parquet_gt_fields(rows, tmp_path)
+
+    def test_swapped_partition_contents_fail(self, tmp_path):
+        rows = self._rows()
+        self._stage_parquet(rows, tmp_path)
+        root = tmp_path / "parquet" / "ground_truth"
+        train = root / "train" / "train-00000-of-00001.parquet"
+        test = root / "test" / "test-00000-of-00001.parquet"
+        # Equal-size partitions retain every filename and embedded split.
+        train_bytes, test_bytes = train.read_bytes(), test.read_bytes()
+        train.write_bytes(test_bytes)
+        test.write_bytes(train_bytes)
+        with pytest.raises(AssertionError, match="directory split"):
+            v93.verify_staged_parquet_gt_fields(rows, tmp_path)
+
     def test_tampered_field_value_fails(self, tmp_path):
         import pyarrow as pa
         import pyarrow.parquet as pq

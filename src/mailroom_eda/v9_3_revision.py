@@ -490,7 +490,9 @@ def verify_staged_parquet_gt_fields(rows: list[dict], stage_dir: Path) -> dict[s
 
     * row count and per-split counts match the JSONL (and the v9-family
       corpus law: 2,979 train / 323 test);
-    * every filename joins 1:1 between parquet and JSONL;
+    * every filename joins 1:1 between parquet and JSONL, with exact set
+      equality and no duplicate parquet filenames;
+    * every embedded split matches both its partition directory and JSONL;
     * every row's parsed parquet ``gt_fields`` equals the JSONL's field by
       field — for all rows, corporate and non-corporate alike (the corporate
       comparison is the substance: the staged maps carry the per-subclass
@@ -507,6 +509,7 @@ def verify_staged_parquet_gt_fields(rows: list[dict], stage_dir: Path) -> dict[s
     for row in rows:
         split = str(row.get("split") or "")
         jsonl_splits[split] = jsonl_splits.get(split, 0) + 1
+    seen_filenames: set[str] = set()
     parquet_n = 0
     parquet_splits: dict[str, int] = {}
     corporate = 0
@@ -524,6 +527,14 @@ def verify_staged_parquet_gt_fields(rows: list[dict], stage_dir: Path) -> dict[s
             parquet_splits[split] = parquet_splits.get(split, 0) + table.num_rows
             for rec in table.to_pylist():
                 fn = rec["filename"]
+                if fn in seen_filenames:
+                    raise AssertionError(f"{fn}: duplicate parquet filename")
+                seen_filenames.add(fn)
+                if str(rec.get("split") or "") != split:
+                    raise AssertionError(
+                        f"{fn}: parquet split {rec.get('split')!r} != "
+                        f"directory split {split!r}"
+                    )
                 ref = jsonl_by_fn.get(fn)
                 if ref is None:
                     raise AssertionError(
@@ -556,6 +567,12 @@ def verify_staged_parquet_gt_fields(rows: list[dict], stage_dir: Path) -> dict[s
     if parquet_n != len(rows):
         raise AssertionError(
             f"row count drift: staged parquet {parquet_n} != JSONL {len(rows)}"
+        )
+    if seen_filenames != set(jsonl_by_fn):
+        raise AssertionError(
+            "filename set drift: staged parquet filenames != hardened JSONL filenames "
+            f"(missing={sorted(set(jsonl_by_fn) - seen_filenames)!r}, "
+            f"extra={sorted(seen_filenames - set(jsonl_by_fn))!r})"
         )
     # Split counts must match the hardened JSONL exactly (the corpus law
     # 2979/323 itself is verify_row_set's business; here the two payloads

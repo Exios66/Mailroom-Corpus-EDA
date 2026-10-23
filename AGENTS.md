@@ -11,26 +11,29 @@ provenance revision; zero row/identity/content drift from the v9.1 tip
 frozen v8 `mailroom-corpus` baseline (2,000 rows, `eafe1ab4` — never
 destroyed).
 
-Mirror of the standalone `Exios66/Mailroom-Corpus-EDA` repo; in the monorepo
-it lives at `packages/mailroom-corpus-eda` as a virtual uv member (no build).
+The standalone `Exios66/Mailroom-Corpus-EDA` repository is authoritative
+for corpus acquisition, EDA, dataset labels, and centralized HF publishing.
+Digital-Mailroom consumes it at `packages/mailroom-corpus-eda` as a virtual
+uv member (no build).
 
-## Monorepo development & sync (Digital-Mailroom)
+## Source ownership & downstream imports
 
-- **Dev source of truth**: the monorepo
-  (`LLM-Mailroom-Services/Digital-Mailroom`) is where active development
-  happens; this package is the subtree mirror of `Exios66/Mailroom-Corpus-EDA`.
-- **Sync contract**: never edit the mirror from both places in one session.
-  Changes flow ONE way at a time through `scripts/sync_packages.py`
-  (monorepo root): `pull --squash` imports standalone work monorepo-ward,
-  `push` (content-only) / `push --all --patch` (release-train sweep)
-  publishes monorepo deltas upstream, `snapshot` re-baselines the cursor.
-  Never hand-edit the mirror and never push to the standalone repo
-  directly.
-- **Releases**: this package ships upstream (`Exios66/Mailroom-Corpus-EDA`)
-  as a standalone repo; its corpus releases (e.g. `mailroom-dataset` v9)
-  are published via the centralized HF helpers below and propagated
-  monorepo-ward by the sync pass. Full law: root `AGENTS.md` §Sub-package
-  sync + `docs/wiki/Sub-Package-Sync.md` + `docs/wiki/Releases.md`.
+- Author and review corpus changes in this standalone repository first.
+  Import merged standalone changes into Digital-Mailroom with its governed
+  `scripts/sync_packages.py pull --squash` workflow, then re-baseline the
+  sync cursor. Never hand-edit a downstream mirror or author the same fix
+  independently on both surfaces.
+- `Exios66/llm-dojo-scoring` owns scoring metrics and corporate schema;
+  this producer's dependency-free registry is a provenance-pinned mirror
+  with explicit parity checks, not a second source of scoring doctrine.
+- `Exios66/llm-mailroom` owns the pipeline; the standalone
+  `local-mailroom-sandbox` owns offline execution and Modal/vLLM serving;
+  `The-Mailroom` owns the visualizer. Changes to those concerns originate
+  in their respective standalone repositories before hub imports.
+- Corpus releases are published via the centralized HF helpers below.
+  Code imports do not authorize corpus rebuilds, data regeneration, or
+  publication. Digital-Mailroom import/release runbooks live in its root
+  `AGENTS.md`, `docs/wiki/Sub-Package-Sync.md`, and `docs/wiki/Releases.md`.
 
 ## Layout
 

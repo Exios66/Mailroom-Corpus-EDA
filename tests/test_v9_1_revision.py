@@ -85,6 +85,14 @@ class TestRevisesTargetV9Dataset:
 
 
 class TestReviseRow:
+    def test_subsidiary_list_preserves_inapplicable_blank_presence(self):
+        row = _gt_row(expected="corporate_record", expected_subclass="subsidiary_list",
+                      gt_fields={"record_type": "other", "signatories": "",
+                                 "jurisdiction": "", "filing_number": ""})
+        presence = json.loads(rev.revise_row(row)["gt_fields"]["gt_presence"])
+        for field in ("signatories", "jurisdiction", "filing_number"):
+            assert presence.get(field) == "not_applicable", field
+
     def test_strips_weak_indirect_signals_from_metadata(self):
         out = rev.revise_row(_gt_row())
         assert "clause_count" not in out["metadata"]
