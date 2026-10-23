@@ -93,3 +93,12 @@ def test_metadata_coverage_json_no_item_markers_count_as_absent():
     })
     cov = itg.metadata_coverage(blind, gt)
     assert cov.loc["correspondence", "tags"] == 0.5
+
+
+@pytest.mark.parametrize("second", [{}, {"tags": float("nan")}, {"tags": None}, {"tags": pd.NA}])
+def test_metadata_coverage_excludes_sparse_and_null_cells(second):
+    blind = pd.DataFrame({"filename": ["a.txt", "b.txt"],
+                          "metadata": [{"tags": "present"}, second]})
+    gt = pd.DataFrame({"filename": ["a.txt", "b.txt"],
+                       "expected": ["correspondence", "correspondence"]})
+    assert itg.metadata_coverage(blind, gt).loc["correspondence", "tags"] == 0.5

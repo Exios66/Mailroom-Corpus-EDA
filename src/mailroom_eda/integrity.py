@@ -15,7 +15,20 @@ from .gt_presence import is_populated
 
 
 def _meta_series(blind: pd.DataFrame) -> pd.DataFrame:
-    return pd.DataFrame([dict(m) for m in blind["metadata"]])
+    return pd.DataFrame([dict(m) for m in blind["metadata"]], index=blind.index)
+
+
+def _align_configs(blind: pd.DataFrame, gt: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Join independently ordered configurations by unique filename identity."""
+    for name, frame in (("default", blind), ("ground_truth", gt)):
+        if "filename" not in frame or frame["filename"].isna().any():
+            raise ValueError(f"{name}: missing/null filename identity")
+        if not frame["filename"].is_unique:
+            raise ValueError(f"{name}: duplicate filename identity")
+    if set(blind["filename"]) != set(gt["filename"]):
+        raise ValueError("default/ground_truth filename sets differ")
+    aligned = gt.set_index("filename", drop=False).loc[blind["filename"].tolist()]
+    return blind.reset_index(drop=True), aligned.reset_index(drop=True)
 
 
 def audit_config_join(blind: pd.DataFrame, gt: pd.DataFrame) -> dict:
@@ -36,6 +49,7 @@ def audit_config_join(blind: pd.DataFrame, gt: pd.DataFrame) -> dict:
 
 
 def audit_split_rule(blind: pd.DataFrame, gt: pd.DataFrame) -> dict:
+    blind, gt = _align_configs(blind, gt)
     out = {}
     for name, df in (("default", blind), ("ground_truth", gt)):
         recomputed = df["filename"].map(split_rule)
@@ -132,10 +146,12 @@ def metadata_coverage(blind: pd.DataFrame, gt: pd.DataFrame) -> pd.DataFrame:
     empty string and would report ~100% fill on every field regardless of
     whether it actually carries a value.
     """
+    blind, gt = _align_configs(blind, gt)
+    # Sparse audit inputs can still contain missing keys/NaN before casting.
     meta = _meta_series(blind)
     cov = pd.concat([gt["expected"].rename("doc_type"), meta], axis=1)
     tbl = cov.set_index("doc_type").groupby(level=0).apply(
-        lambda g: g.map(is_populated).mean().T
+        lambda g: g.astype(object).fillna("").map(is_populated).mean().T
     )
     return tbl
 
@@ -179,6 +195,7 @@ def audit_cuad_clause_offsets(blind: pd.DataFrame, gt: pd.DataFrame) -> dict:
 
 
 def audit_maud_labels(blind: pd.DataFrame, gt: pd.DataFrame) -> dict:
+    blind, gt = _align_configs(blind, gt)
     n = 0
     task_counts = Counter()
     label_counts = []
@@ -229,6 +246,7 @@ def audit_maud_labels(blind: pd.DataFrame, gt: pd.DataFrame) -> dict:
 
 
 def audit_metadata_label_consistency(blind: pd.DataFrame, gt: pd.DataFrame) -> dict:
+    blind, gt = _align_configs(blind, gt)
     meta = _meta_series(blind)
     if "expected_doc_type" not in meta.columns:
         return {"available": False}

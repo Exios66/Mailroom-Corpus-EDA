@@ -19,7 +19,7 @@ from .config import (
 )
 from .download import load_default, load_ground_truth
 from .gt_presence import is_populated
-from .integrity import _meta_series
+from .integrity import _align_configs, _meta_series
 from .token_budget import budget_coverage, compute_token_stats
 
 
@@ -40,6 +40,7 @@ def _parse_labels(v):
 
 
 def _text_frame(blind: pd.DataFrame, gt: pd.DataFrame) -> pd.DataFrame:
+    blind, gt = _align_configs(blind, gt)
     df = pd.DataFrame({
         "filename": blind["filename"],
         "doc_type": gt["expected"],
@@ -692,6 +693,11 @@ def fig_minority_strata(gt: pd.DataFrame) -> None:
 # ---------------------------------------------------------------------------
 
 def _temporal_frame(blind: pd.DataFrame, gt: pd.DataFrame, meta: pd.DataFrame) -> pd.DataFrame:
+    # The supplied metadata follows blind order; GT configs may use another
+    # shard order and unrelated indexes. Keep their filename identity paired.
+    _, gt = _align_configs(blind, gt)
+    if len(meta) != len(blind):
+        raise ValueError("metadata row count differs from blind filename count")
     rows = []
     for i, dt in enumerate(gt["expected"]):
         m = meta.iloc[i]

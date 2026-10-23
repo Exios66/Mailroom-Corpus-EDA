@@ -9,7 +9,7 @@ from scipy import stats
 
 from .config import DOC_TYPES, FIG_DIR, TABLE_DIR, TYPE_COLORS, setup_matplotlib
 from .download import load_default, load_ground_truth
-from .integrity import _meta_series, metadata_coverage
+from .integrity import _align_configs, _meta_series, metadata_coverage
 
 
 def strata_table(gt: pd.DataFrame) -> pd.DataFrame:
@@ -47,6 +47,7 @@ def imbalance_metrics(gt: pd.DataFrame) -> dict:
 
 
 def provenance(blind: pd.DataFrame, gt: pd.DataFrame) -> pd.DataFrame:
+    blind, gt = _align_configs(blind, gt)
     meta = _meta_series(blind)
     rows = []
     for dt in DOC_TYPES:
