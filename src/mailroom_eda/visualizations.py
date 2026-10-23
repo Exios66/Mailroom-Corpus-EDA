@@ -693,6 +693,11 @@ def fig_minority_strata(gt: pd.DataFrame) -> None:
 # ---------------------------------------------------------------------------
 
 def _temporal_frame(blind: pd.DataFrame, gt: pd.DataFrame, meta: pd.DataFrame) -> pd.DataFrame:
+    # The supplied metadata follows blind order; GT configs may use another
+    # shard order and unrelated indexes. Keep their filename identity paired.
+    _, gt = _align_configs(blind, gt)
+    if len(meta) != len(blind):
+        raise ValueError("metadata row count differs from blind filename count")
     rows = []
     for i, dt in enumerate(gt["expected"]):
         m = meta.iloc[i]

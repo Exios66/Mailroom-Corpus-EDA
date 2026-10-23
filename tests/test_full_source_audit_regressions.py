@@ -41,6 +41,16 @@ def test_text_and_provenance_follow_filename_identity(reordered_configs):
     assert provenance.loc["correspondence", "source_values"] == "B"
 
 
+def test_temporal_reports_follow_filename_identity(reordered_configs):
+    """Temporal charts must attach independently ordered years to their own files."""
+    blind, gt = reordered_configs
+    blind.at[9, "metadata"]["date"] = "2002-01-01"
+    blind.at[4, "metadata"]["date"] = "2001-01-01"
+    frame = visualizations._temporal_frame(blind, gt, integrity._meta_series(blind)).set_index("filename")
+    assert (frame.loc["a", "doc_type"], frame.loc["a", "year"]) == ("contract", 2001)
+    assert (frame.loc["b", "doc_type"], frame.loc["b", "year"]) == ("correspondence", 2002)
+
+
 def test_metadata_label_check_uses_filename_join(reordered_configs):
     """Correct blind routing metadata agrees despite independent indexes."""
     blind, gt = reordered_configs
