@@ -113,6 +113,42 @@ class TestLiveDojoParity:
             assert [e.key for e in sch.entities] == list(cp.CORPORATE_SUBCLASS_ENTITY_KEYS[sub])
             assert set(sch.core_applicable) == cp.SUBCLASS_CORE_APPLICABLE[sub]
 
+    @pytest.mark.parametrize("subclass", cp.SUBCLASS_ORDER)
+    @pytest.mark.parametrize("intent_source", ["", "heuristic", "human_annotated"])
+    def test_valid_relabel_semantics_match_dojo(self, subclass, intent_source):
+        dojo = self._dojo_root()
+        if dojo is None:
+            pytest.skip("llm-dojo-scoring checkout not present")
+        from llm_dojo_scoring.corporate_record_relabel import relabel_row
+        from llm_dojo_scoring.gt_metadata import parse_gt_fields
+
+        row = _row({
+            "subject_matter": f"{subclass} of ACME CORP (CIK 123) (SEC EDGAR exhibit).",
+            "keywords": '["EX-3.2", "ACME CORP"]',
+            "intent": "adjudicated_intent", "intent_source": intent_source,
+            "signatories": "[]", "jurisdiction": "", "filing_number": "",
+        }, subclass=subclass)
+        actual, actual_changes = cp.relabel_row(row)
+        expected, expected_changes = relabel_row(row)
+        assert parse_gt_fields(actual["gt_fields"]) == parse_gt_fields(expected["gt_fields"])
+        assert actual["expected_subclass"] == expected["expected_subclass"]
+        assert actual_changes == expected_changes
+
+    def test_missing_gt_payload_retains_documented_producer_boundary(self):
+        dojo = self._dojo_root()
+        if dojo is None:
+            pytest.skip("llm-dojo-scoring checkout not present")
+        from llm_dojo_scoring.corporate_record_relabel import relabel_row
+        from llm_dojo_scoring.gt_metadata import parse_gt_fields
+
+        row = _row({})
+        row["gt_fields"] = None
+        actual, changes = next(cp.relabel_rows([row]))
+        assert actual == row
+        assert changes == ["gt_unparseable"]
+        expected, _ = relabel_row(row)
+        assert parse_gt_fields(expected["gt_fields"])["record_type"] == "bylaws"
+
 
 class TestCompanyFromTemplate:
     def test_plain(self):

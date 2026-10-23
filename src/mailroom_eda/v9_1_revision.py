@@ -207,6 +207,7 @@ def revise_row(row: dict) -> dict:
     # token_estimate / context_window_band never self-reference).
     presence_probe = dict(gt)
     presence_probe["expected"] = row.get("expected")
+    presence_probe["expected_subclass"] = row.get("expected_subclass")
     presence_probe["doc_text"] = doc_text
     presence_probe["metadata"] = cleaned_metadata
     presence = row_gt_presence(presence_probe)

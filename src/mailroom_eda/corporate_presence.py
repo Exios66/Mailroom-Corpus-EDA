@@ -76,10 +76,16 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 #: Source-of-truth checkout for the pyproject-independent mirror below.
-DOJO_SCHEMA_SHA256 = "92dbfa9c4d1f78e03a095898c878a099022099e99fe364b67490f4c43fc6398f"
-DOJO_RELABEL_SHA256 = "d517e99515be2d017d35f6865b23545cc99d48c1875c747983a43267b0921658"
+DOJO_SCHEMA_SHA256 = "584c8053fbfe4ef68abcc0e382b01f5678eaba302fba1411e83efa30249c97a6"
+DOJO_RELABEL_SHA256 = "f47e75429fccc002400d985fa98588c84eba7c28ad7fedbceac921c5ad83de57"
 #: ``llm-dojo-scoring`` git revision the two sha256 pins were taken at.
-DOJO_REV = "8e6566c1d1c52efeb5ebbb57ddee90a94586f7da"
+DOJO_REV = "377d00bdef110d096fbe25e267859d6bbcc905fe"
+# Compatibility boundary: registry facets and valid-row relabel semantics
+# match this revision (tests compare parsed labels across all subclasses).
+# EDA retains native dict output/insertion order for publishing. Unlike dojo,
+# EDA treats missing/None gt_fields as unparseable: it must not derive labels
+# from a missing producer payload. This deliberate divergence is tested; the
+# source hashes identify reviewed upstream bytes, not identical implementations.
 
 RECORD_TYPES: tuple[str, ...] = (
     "articles_of_incorporation",
