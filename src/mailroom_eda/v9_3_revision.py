@@ -502,6 +502,16 @@ def verify_staged_parquet_gt_fields(rows: list[dict], stage_dir: Path) -> dict[s
     down in ``build_all`` and as conformance gate (g)."""
     import pyarrow.parquet as pq
 
+    ground_truth_root = Path(stage_dir) / "parquet" / "ground_truth"
+    allowed_parents = {ground_truth_root / "train", ground_truth_root / "test"}
+    unexpected = sorted(
+        str(path.relative_to(ground_truth_root))
+        for path in ground_truth_root.rglob("*.parquet")
+        if path.parent not in allowed_parents
+    )
+    if unexpected:
+        raise AssertionError(f"unexpected ground_truth parquet layout: {unexpected}")
+
     jsonl_by_fn = {r["filename"]: r for r in rows}
     if len(jsonl_by_fn) != len(rows):
         raise AssertionError("duplicate JSONL filenames")

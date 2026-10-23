@@ -132,10 +132,11 @@ def metadata_coverage(blind: pd.DataFrame, gt: pd.DataFrame) -> pd.DataFrame:
     empty string and would report ~100% fill on every field regardless of
     whether it actually carries a value.
     """
+    # Sparse audit inputs can still contain missing keys/NaN before casting.
     meta = _meta_series(blind)
     cov = pd.concat([gt["expected"].rename("doc_type"), meta], axis=1)
     tbl = cov.set_index("doc_type").groupby(level=0).apply(
-        lambda g: g.map(is_populated).mean().T
+        lambda g: g.astype(object).fillna("").map(is_populated).mean().T
     )
     return tbl
 

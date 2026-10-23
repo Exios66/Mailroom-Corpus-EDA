@@ -501,6 +501,37 @@ class TestStagedParquetGate:
         with pytest.raises(AssertionError, match="directory split"):
             v93.verify_staged_parquet_gt_fields(rows, tmp_path)
 
+    def test_multiple_immediate_shards_keep_exact_coverage(self, tmp_path):
+        """The layout gate permits valid sharding within train and test."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        rows = self._rows()
+        self._stage_parquet(rows, tmp_path)
+        root = tmp_path / "parquet" / "ground_truth"
+        for split in ("train", "test"):
+            original = root / split / f"{split}-00000-of-00001.parquet"
+            table = pq.read_table(original)
+            original.unlink()
+            for index, record in enumerate(table.to_pylist()):
+                pq.write_table(pa.Table.from_pylist([record], schema=table.schema),
+                               root / split / f"part-{index}.parquet")
+        assert v93.verify_staged_parquet_gt_fields(rows, tmp_path)["rows"] == 4
+
+    @pytest.mark.parametrize("relative_path", [
+        "val/extra.parquet", "train/nested/extra.parquet",
+        "test/nested/extra.parquet", "extra.parquet",
+    ])
+    def test_unscanned_ground_truth_shards_fail(self, tmp_path, relative_path):
+        import shutil
+        rows = self._rows()
+        self._stage_parquet(rows, tmp_path)
+        root = tmp_path / "parquet" / "ground_truth"
+        extra = root / relative_path
+        extra.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(root / "train" / "train-00000-of-00001.parquet", extra)
+        with pytest.raises(AssertionError, match="unexpected ground_truth parquet"):
+            v93.verify_staged_parquet_gt_fields(rows, tmp_path)
+
     def test_tampered_field_value_fails(self, tmp_path):
         import pyarrow as pa
         import pyarrow.parquet as pq
