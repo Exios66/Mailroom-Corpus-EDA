@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 176" width="1200" height="176" role="img" aria-labelledby="title desc" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<title id="title">Mailroom Corpus EDA at a glance</title><desc id="desc">3,302 — documents at v9.2 — revision-pinned corpus; 5 — document classes — 55 observed strata; P0–P6 — analysis phases — integrity → intent audit; PNG + HTML — report formats — static + interactive</desc>
+<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0b1220"/><stop offset=".55" stop-color="#151036"/><stop offset="1" stop-color="#22103a"/></linearGradient><linearGradient id="heading"><stop stop-color="#7dd3fc"/><stop offset=".5" stop-color="#c4b5fd"/><stop offset="1" stop-color="#f9a8d4"/></linearGradient><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10" fill="none" stroke="#94a3b8" stroke-width="1.5"/></marker></defs>
+<style>.cue{stroke-dasharray:6 22;animation:travel 4.5s linear 1}@keyframes travel{from{stroke-dashoffset:112}to{stroke-dashoffset:0}}@media(prefers-reduced-motion:reduce){.cue{animation:none}}</style>
+<rect width="1200" height="176" rx="24" fill="url(#bg)"/>
+<rect x=".5" y=".5" width="1199" height="175" rx="24" fill="none" stroke="#334155"/>
+<rect x="24" y="24" width="270" height="128" rx="18" fill="#111a2e" stroke="#334155"/>
+<text x="46" y="76" font-size="34" fill="#38bdf8" font-weight="800" text-anchor="start">3,302</text>
+<text x="46" y="107" font-size="19" fill="#e2e8f0" font-weight="600" text-anchor="start">documents at v9.2</text>
+<text x="46" y="132" font-size="15" fill="#94a3b8" font-weight="400" text-anchor="start">revision-pinned corpus</text>
+<rect x="318" y="24" width="270" height="128" rx="18" fill="#111a2e" stroke="#334155"/>
+<text x="340" y="76" font-size="34" fill="#c084fc" font-weight="800" text-anchor="start">5</text>
+<text x="340" y="107" font-size="19" fill="#e2e8f0" font-weight="600" text-anchor="start">document classes</text>
+<text x="340" y="132" font-size="15" fill="#94a3b8" font-weight="400" text-anchor="start">55 observed strata</text>
+<rect x="612" y="24" width="270" height="128" rx="18" fill="#111a2e" stroke="#334155"/>
+<text x="634" y="76" font-size="34" fill="#f472b6" font-weight="800" text-anchor="start">P0–P6</text>
+<text x="634" y="107" font-size="19" fill="#e2e8f0" font-weight="600" text-anchor="start">analysis phases</text>
+<text x="634" y="132" font-size="15" fill="#94a3b8" font-weight="400" text-anchor="start">integrity → intent audit</text>
+<rect x="906" y="24" width="270" height="128" rx="18" fill="#111a2e" stroke="#334155"/>
+<text x="928" y="76" font-size="34" fill="#22c55e" font-weight="800" text-anchor="start">PNG + HTML</text>
+<text x="928" y="107" font-size="19" fill="#e2e8f0" font-weight="600" text-anchor="start">report formats</text>
+<text x="928" y="132" font-size="15" fill="#94a3b8" font-weight="400" text-anchor="start">static + interactive</text>
+</svg>
