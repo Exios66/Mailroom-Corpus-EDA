@@ -148,7 +148,7 @@ Per-source documentation for the corpora integrated into [`mailroom-dataset`](ht
 
 ## HF Hub Interface
 
-The upload/publish helpers previously living in [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) are centralized here:
+The upload/publish helpers previously living in `llm-entity-extraction` (pruned from the monorepo in DMR-079; standalone repo only) are centralized here:
 
 | Module | Purpose |
 |:---|:---|
