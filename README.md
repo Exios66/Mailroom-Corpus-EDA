@@ -1,18 +1,77 @@
 <div align="center">
 
-# 📊 Mailroom-Dataset EDA
+<picture>
+  <source media="(max-width: 640px)" srcset="docs/assets/readme/hero-mobile.svg"/>
+  <img src="docs/assets/readme/hero.svg" alt="Download the pinned corpus, audit integrity and composition, render reports, and stage exports with intent coverage checks." width="100%"/>
+</picture>
 
-**Full-corpus exploratory data analysis for the mailroom-dataset (v1, canonically v9 of the mailroom corpus family) — 3,302 legal documents across 5 classes, 55 strata, with centralized HuggingFace upload helpers.**
+# Mailroom Corpus EDA
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Status](https://img.shields.io/badge/status-production-success)](reports/SUMMARY_REPORT.md)
-[![🤗 Dataset](https://img.shields.io/badge/%F0%9F%A4%97_Dataset-mailroom--dataset-fbe425?logo=huggingface&logoColor=black)](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?style=for-the-badge)](pyproject.toml)
+[![Corpus v9.2](https://img.shields.io/badge/corpus-v9.2-6C63FF?style=for-the-badge)](src/mailroom_eda/config.py)
+[![Seven phases](https://img.shields.io/badge/analysis-P0–P6-22C55E?style=for-the-badge)](run_all.py)
+[![Dataset](https://img.shields.io/badge/HF-mailroom--dataset-FFD21E?style=for-the-badge)](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
 
-<img src="reports/figures/01_type_and_subclass_distribution.png" alt="Document type and subclass distribution across the 3,302-document corpus" width="720"/>
+**[Quickstart](#quickstart)** · **[How it works](#how-it-works)** · **[Corpus](#corpus-at-a-glance)** · **[Reports](#reports)** · **[Publishing](#hf-hub-interface)**
 
 </div>
 
 ---
+
+## What this does
+
+The corpus analysis and publishing source for the Mailroom constellation:
+inspect document composition and provenance, identify quality gaps, produce
+static and interactive reports, and stage cast-safe exports through the
+centralized Hugging Face helpers.
+
+The loader pins **mailroom-dataset v9.2**: tag/card commit `670e8bc6`, data
+commit `d49f60a4`, **3,302 documents across five classes and 55 strata**.
+The pin is defined in [`src/mailroom_eda/config.py`](src/mailroom_eda/config.py);
+consumer repositories keep their own explicit revisions. The frozen v8
+[`mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
+baseline remains a separate dataset.
+
+Browse the committed [summary](reports/SUMMARY_REPORT.md) and
+[interactive report site](https://exios66.github.io/Mailroom-Corpus-EDA/)
+without rebuilding the analysis. This project is a virtual, nonbuilt uv
+member when imported into Digital-Mailroom; its source repository owns the
+analysis and publication helpers.
+
+<div align="center">
+<img src="docs/assets/readme/stats.svg" alt="Pinned v9.2 corpus: 3,302 documents, five classes, 55 strata; seven phases; PNG and interactive HTML reports." width="100%"/>
+</div>
+
+## Quickstart
+
+<a id="quick-start"></a>
+
+The project declares Python **3.12+**. Its pinned standalone
+[`requirements.txt`](requirements.txt) targets **Python 3.13**; use that
+interpreter for the reproducible setup below.
+
+```bash
+git clone https://github.com/Exios66/Mailroom-Corpus-EDA.git
+cd Mailroom-Corpus-EDA
+python3.13 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+
+# Read-only command discovery, then download the pinned public corpus.
+.venv/bin/python run_all.py --help
+.venv/bin/python run_all.py --phases P0
+
+# Full analysis writes local reports and staged exports; it does not publish.
+.venv/bin/python run_all.py
+
+# Once data exists, regenerate just the figures (comma-separated phases).
+.venv/bin/python run_all.py --phases P3,P4
+```
+
+Public corpus reads do not require `HF_TOKEN`. Publication is a separate,
+explicit operation. `data/` is gitignored; `reports/` contains committed
+canonical results. Interactive Plotly HTML includes per-render UUIDs, so
+inspect regenerated figures as scratch output rather than replacing the
+committed reports incidentally.
 
 ## Corpus at a Glance
 
@@ -41,23 +100,13 @@
 
 </div>
 
-## Quick Start
+## How it works
 
-```bash
-git clone https://github.com/Exios66/Mailroom-Corpus-EDA.git
-cd Mailroom-Corpus-EDA
+<a id="pipeline-run_allpy"></a>
 
-# 1. Install dependencies
-.venv/bin/pip install -r requirements.txt
+`run_all.py` executes seven phases. Reports and exports remain local unless
+you invoke a publishing command explicitly.
 
-# 2. Run the full pipeline (P0–P6)
-.venv/bin/python run_all.py
-
-# 3. Or run just the figures
-.venv/bin/python run_all.py --phases P3 P4
-```
-
-## Pipeline (run_all.py)
 
 <div align="center">
 
@@ -72,6 +121,9 @@ cd Mailroom-Corpus-EDA
 | **P6** | Correspondence intent coverage & provenance audit | `reports/SUMMARY_REPORT.json` |
 
 </div>
+
+Only a complete, error-free seven-phase run writes `reports/SUMMARY_REPORT.json`.
+Subset runs and `--no-interactive` leave the full summary untouched.
 
 ## Reports
 
@@ -133,11 +185,11 @@ HF_TOKEN=hf_... .venv/bin/python scripts/build/build_v9.py --publish
 > Frozen v8 tooling (build_v8 / publish_hardened / reconcile_gt_v8 /
 > publish_docclass / export_docclass) is archived under
 > `scripts/archive/v8/`; the one-time v9 EDGAR/draw sourcing lives under
-> `scripts/archive/v9-acquisition/`. See `scripts/README.md`.
+> `scripts/archive/v9-acquisition/`. See [the script index](scripts/README.md).
 
 ## Key Findings
 
-- **Merger agreements are longest**: mean ~89k chars ≈ 22k tokens (heuristic) — **max ~252k chars ≈ 63k tokens exceeds 32k/65k contexts**
+- **Merger agreements are longest**: mean ~89k chars ≈ 22k tokens (heuristic) — **max ~252k chars ≈ 63k heuristic tokens**; budget for the actual tokenizer, prompt overhead and output, and chunk long agreements where needed
 - **Insurance claims uniformly short**: ~690 chars, σ=953 — six LOB subtypes (carrier/inpatient/outpatient/pde + property/auto)
 - **Token budget**: 77% ≤4k, 90% ≤16k, 93% ≤32k, 99.8% ≤131k
 - **CUAD**: 509 annotated contracts × 41 clause types; 13,753 spans, 100% exact offset (91 v9 EX-10 contracts carry no CUAD spans)
@@ -145,16 +197,53 @@ HF_TOKEN=hf_... .venv/bin/python scripts/build/build_v9.py --publish
 - **Insurance**: 13/13 fields 100% filled; coverage determination fully populated
 - **Correspondence**: intent 100% hydrated (1,000/1,000, four provenance paths incl. v9 `heuristic`); sentiment-labeled subset
 
+## Publishing contracts
+
+All Hub writes go through `mailroom_eda.hf_interface`, `dataset_export` and
+the version-specific builders. Preserve uniform string metadata, JSONL line
+boundaries, blind-config label separation, revision pins and SHA-256 checks.
+Use the [script index](scripts/README.md) and
+[revision plans](docs/plans/) for the exact build and publish sequence;
+legacy v8 helpers target the frozen baseline, not the v9 dataset by default.
+
+## Testing and documentation
+
+```bash
+.venv/bin/python -m pip install "pytest>=8.0"
+.venv/bin/python -m pytest tests/
+```
+
+Full-corpus tests need the P0 snapshot. Taxonomy integration tests also need
+the sibling llm-mailroom checkout described in [AGENTS.md](AGENTS.md); these
+are not dependency-free tests. For the read-only corpus coverage audit:
+
+```bash
+.venv/bin/python scripts/audit/coverage_matrix.py --check
+```
+
+| Reference | Purpose |
+| :--- | :--- |
+| [Dataset cards](docs/dataset-cards/) | Sources, annotations and licenses |
+| [Summary report](reports/SUMMARY_REPORT.md) | Committed findings and corpus counts |
+| [Scripts](scripts/README.md) | Build, audit, backfill and verification commands |
+| [Agent and contributor rules](AGENTS.md) | Publishing, determinism and report policy |
+
 ---
 
 <div align="center">
 
+**[Digital-Mailroom](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)** ·
 **[llm-mailroom](https://github.com/Exios66/llm-mailroom)** ·
-**[llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction)** ·
 **[llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring)** ·
-**[Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment)** ·
-**[claims-data-eda](https://github.com/Exios66/claims-data-eda)**
+**[The-Mailroom](https://github.com/Exios66/The-Mailroom)** ·
+**[local-mailroom-sandbox](https://github.com/Exios66/local-mailroom-sandbox)** ·
+**[Mailroom-Corpus-EDA](https://github.com/Exios66/Mailroom-Corpus-EDA)** ·
+**[mailroom-ml](https://github.com/LLM-Mailroom-Services/mailroom-ml)**
 
-<sub>Built by the governed evaluation family under <a href="https://github.com/Exios66">@Exios66</a> · 2026</sub>
+<sub>The Mailroom constellation · independent source repositories, shared interfaces.</sub>
+<br/>
+<sub>Core packages integrate in Digital-Mailroom; mailroom-ml is a standalone contractor.</sub>
+<br/>
+<sub>Local artwork: <a href="docs/assets/readme/README.md">design and regeneration</a>.</sub>
 
 </div>
