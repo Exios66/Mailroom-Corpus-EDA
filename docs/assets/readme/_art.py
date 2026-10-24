@@ -253,8 +253,8 @@ def stats(items, title, mobile=False) -> str:
         cols, width, pad = 2, 640, 16
         cw = (width - pad * 2) / cols
         rows = math.ceil(n / cols)
-        height = pad * 2 + rows * 118 - 8
-        cell_h = 110
+        height = pad * 2 + rows * 138 - 12
+        cell_h = 126
     else:
         cols, width, pad = n, 1200, 20
         cw = (width - pad * 2) / cols
@@ -269,13 +269,13 @@ def stats(items, title, mobile=False) -> str:
         x = pad + col * cw
         if mobile and n % 2 and i == n - 1:
             x = (width - cw) / 2
-        y = pad + row * 118 if mobile else 20
+        y = pad + row * 138 if mobile else 20
         cx = x + cw / 2
         out.append(f'  <clipPath id="c{i}"><rect x="{num(x + 8)}" y="{y}" width="{num(cw - 16)}" height="{cell_h}" rx="16"/></clipPath>')
         out.append(f'  <rect x="{num(x + 8)}" y="{y}" width="{num(cw - 16)}" height="{cell_h}" rx="16" fill="#111a2e" stroke="{EDGE}"/>')
-        vy = y + (cell_h * 0.55 if not mobile else cell_h * 0.5)
+        vy = y + (cell_h * 0.55 if not mobile else 56)
         out.append('  ' + text(cx, vy, value, size, color, 800, 'middle'))
-        out.append('  ' + text(cx, vy + (30 if not mobile else 26), label, 14 if not mobile else 15, MUTED, anchor='middle'))
+        out.append('  ' + text(cx, vy + (30 if not mobile else 38), label, 14 if not mobile else 15, MUTED, anchor='middle'))
         out.append(f'  <rect x="{num(cx - 22)}" y="{y + cell_h - 17}" width="44" height="4" rx="2" fill="{color}"/>')
         out.append(f'  <g class="motion" clip-path="url(#c{i})"><rect x="{num(x - 60)}" y="{y}" width="60" height="{cell_h}" '
                    f'fill="url(#shine)"><animate attributeName="x" values="{num(x - 60)};{num(x + cw)};{num(x + cw)}" '
@@ -387,45 +387,63 @@ NODES = {
 REPO_KEY = {'Mailroom-Corpus-EDA': 'eda', 'mailroom-ml': 'ml', 'local-mailroom-sandbox': 'sandbox',
             'llm-mailroom': 'pipeline', 'llm-dojo-scoring': 'dojo', 'The-Mailroom': 'viz'}
 
-# (node key -> x, y, w, h) per layout, and (id, label, svg path, color, label x, label y) for edges.
+# (node key -> x, y, w, h), edge paths and padded label centres.
 LAYOUT_DESKTOP = {
-    'size': (1200, 484), 'node': {
-        'eda': (40, 70, 230, 84), 'hf': (330, 70, 240, 84), 'ml': (640, 70, 230, 84),
-        'sandbox': (80, 230, 240, 84), 'pipeline': (420, 230, 240, 84),
-        'viz': (950, 230, 210, 84), 'langfuse': (720, 230, 170, 84), 'dojo': (250, 376, 240, 84)},
+    'size': (1200, 576), 'node': {
+        'eda': (40, 84, 230, 96), 'hf': (370, 84, 240, 96), 'ml': (720, 84, 230, 96),
+        'sandbox': (80, 252, 240, 96), 'pipeline': (420, 252, 220, 96),
+        'langfuse': (720, 252, 170, 96), 'viz': (950, 252, 210, 96),
+        'dojo': (250, 414, 240, 96)},
     'edges': [
-        ('e1', 'publishes', 'M270 112 H330', SKY, 276, 100),
-        ('e2', 'pinned pull', 'M400 154 C380 190 250 190 210 230', SKY, 262, 192),
-        ('e3', 'pinned pull', 'M500 154 C520 190 530 200 540 230', SKY, 530, 188),
-        ('e4', 'trains on', 'M570 112 H640', PINK, 574, 100),
-        ('e5', 'optional fast path', 'M745 154 C735 190 650 196 620 230', PINK, 700, 186),
-        ('e6', 'executes', 'M320 272 H420', VIOLET, 340, 262),
-        ('e7', 'scores with', 'M200 314 C215 355 260 372 300 376', AMBER, 128, 356),
-        ('e8', 'scores with', 'M540 314 C530 355 480 372 440 376', AMBER, 520, 358),
-        ('e9', 'traces', 'M660 284 H720', '#fb7185', 666, 276),
-        ('e10', 'feeds', 'M890 272 H950', '#fb7185', 898, 262)],
-    'caption': 'dashed outline = external service or standalone contractor', 'head': (40, 40), 'legend': (40, 468)}
+        ('e1', 'publishes', 'M270 132 H370', SKY, 320, 122),
+        ('e2', 'pinned pull', 'M440 180 C420 218 250 212 210 252', SKY, 333, 206),
+        ('e3', 'pinned pull', 'M520 180 C530 215 530 222 530 252', SKY, 533, 206),
+        ('e4', 'trains on', 'M610 132 H720', PINK, 665, 122),
+        ('e5', 'optional fast path', 'M785 180 C770 213 650 218 620 252', PINK, 690, 206),
+        ('e6', 'executes', 'M320 300 H420', VIOLET, 370, 290),
+        ('e7', 'scores with', 'M200 348 C215 389 260 410 300 414', AMBER, 241, 374),
+        ('e8', 'scores with', 'M530 348 C520 389 480 410 440 414', AMBER, 501, 374),
+        ('e9', 'traces', 'M640 300 H720', '#fb7185', 680, 290),
+        ('e10', 'feeds', 'M890 300 H950', '#fb7185', 920, 290)],
+    'rotate': (), 'caption': 'dashed outline = external service or standalone contractor',
+    'head': (40, 40), 'legend': (40, 548)}
 LAYOUT_MOBILE = {
-    'size': (640, 750), 'node': {
-        'eda': (20, 56, 250, 80), 'hf': (330, 56, 260, 80), 'sandbox': (20, 196, 250, 80),
-        'ml': (330, 196, 260, 80), 'pipeline': (330, 336, 260, 80), 'dojo': (20, 476, 250, 80),
-        'viz': (20, 610, 250, 72), 'langfuse': (330, 610, 260, 72)},
+    'size': (640, 824), 'node': {
+        'eda': (20, 70, 230, 96), 'hf': (350, 70, 230, 96),
+        'sandbox': (20, 226, 230, 96), 'ml': (350, 226, 230, 96),
+        'pipeline': (350, 390, 230, 96), 'dojo': (20, 520, 230, 96),
+        'viz': (20, 660, 230, 96), 'langfuse': (350, 660, 230, 96)},
     'edges': [
-        ('e1', 'publishes', 'M270 96 H330', SKY, 270, 86),
-        ('e2', 'pinned pull', 'M350 136 C340 172 170 150 145 196', SKY, 150, 168),
-        ('e3', 'trains on', 'M460 136 V196', PINK, 470, 170),
-        ('e4', 'optional fast path', 'M460 276 V336', PINK, 470, 312),
-        ('e5', 'executes', 'M270 256 C300 256 300 376 330 376', VIOLET, 292, 330),
-        ('e6', 'pinned pull', 'M590 90 C640 90 640 376 590 376', SKY, 0, 0),
-        ('e7', 'scores with', 'M145 276 V476', AMBER, 155, 380),
-        ('e8', 'scores with', 'M380 416 C380 480 330 516 270 516', AMBER, 290, 548),
-        ('e9', 'traces', 'M540 416 V610', '#fb7185', 550, 520),
-        ('e10', 'feeds', 'M330 646 H270', '#fb7185', 276, 636)],
-    'caption': 'dashed = external service or contractor', 'head': (24, 36), 'legend': (24, 722)}
+        ('e1', 'publishes', 'M250 118 H350', SKY, 300, 108),
+        ('e2', 'pinned pull', 'M400 166 C390 205 180 188 140 226', SKY, 285, 186),
+        ('e3', 'trains on', 'M465 166 V226', PINK, 465, 186),
+        ('e4', 'optional fast path', 'M465 322 V390', PINK, 465, 348),
+        ('e5', 'executes', 'M250 274 C300 274 300 438 350 438', VIOLET, 300, 350),
+        ('e6', 'pinned pull', 'M580 118 C620 118 620 438 580 438', SKY, 610, 290),
+        ('e7', 'scores with', 'M135 322 V520', AMBER, 135, 420),
+        ('e8', 'scores with', 'M410 486 C410 548 320 568 250 568', AMBER, 337, 536),
+        ('e9', 'traces', 'M520 486 V660', '#fb7185', 520, 574),
+        ('e10', 'feeds', 'M350 708 H250', '#fb7185', 300, 698)],
+    'rotate': ('e6',), 'caption': 'dashed = external service or contractor',
+    'head': (24, 36), 'legend': (24, 798)}
+
+LABEL_WIDTHS = {'publishes': 80, 'pinned pull': 92, 'trains on': 76,
+                'optional fast path': 144, 'executes': 78, 'scores with': 90,
+                'traces': 60, 'feeds': 48}
+
+
+def edge_label(eid, label, x, y, rotate=False) -> str:
+    """Draw a padded opaque caption above paths and animated markers."""
+    width = LABEL_WIDTHS[label]
+    transform = f'translate({x} {y})' + (' rotate(90)' if rotate else '')
+    return (f'<g data-edge-label="{eid}" transform="{transform}">'
+            f'<rect data-callout-box="" x="{-width / 2}" y="-16" width="{width}" height="32" '
+            'rx="8" fill="#10142a"/>'
+            + text(0, 4.5, label, 13, MUTED, anchor='middle', italic=True) + '</g>')
 
 
 def constellation(current, mobile=False) -> str:
-    """Mini data-flow map of the constellation with `current` marked "you are here"."""
+    """Render a spaced data-flow map with one padded current-location badge."""
     lay = LAYOUT_MOBILE if mobile else LAYOUT_DESKTOP
     width, height = lay['size']
     here = REPO_KEY[current]
@@ -442,28 +460,30 @@ def constellation(current, mobile=False) -> str:
         dash = ' stroke-dasharray="6 6"' if color in ('#fb7185', PINK) else ''
         out.append(f'<path id="{eid}" d="{path}" stroke="{color}"{dash}/>')
     out.append('</g>')
-    out.append(f'<g font-size="12" fill="{MUTED}" font-style="italic">' + ''.join(
-        f'<text x="{lx}" y="{ly}">{esc(label)}</text>' for _, label, _, _, lx, ly in lay['edges'] if lx) + '</g>')
-    if mobile:
-        out.append(f'<text x="624" y="186" font-size="12" fill="{MUTED}" font-style="italic" transform="rotate(90 624 186)">pinned pull</text>')
-    out.append('<g>' + ''.join(particle(eid, 1.3 + (k % 4) * 0.25, (k % 5) * 0.3, color) for k, (eid, _, _, color, _, _)
-                               in enumerate(lay['edges'])) + '</g>')
+    out.append('<g data-particles="">' + ''.join(
+        particle(eid, 1.3 + (k % 4) * 0.25, (k % 5) * 0.3, color)
+        for k, (eid, _, _, color, _, _) in enumerate(lay['edges'])) + '</g>')
+    x, y, w, h = lay['node'][here]
+    out.append(pulse_ring(x, y, w, h, NODES[here][3]))
     for key, (x, y, w, h) in lay['node'].items():
         name, line1, line2, color, external = NODES[key]
         dash = ' stroke-dasharray="7 5"' if external else ''
-        is_here = key == here
-        out.append(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="14" fill="{PANEL if not is_here else "#14213d"}" '
-                   f'stroke="{color}" stroke-width="{2.6 if is_here else 2}"{dash}/>')
-        out.append(text(x + 16, y + 30, name, 15 if w < 220 else 16, INK, 700))
-        out.append(text(x + 16, y + 52, line1, 12, MUTED))
+        out.append(f'<g data-node="{key}"><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="14" '
+                   f'fill="{PANEL if key != here else "#14213d"}" stroke="{color}" stroke-width="2"{dash}/>')
+        out.append(text(x + 16, y + 34, name, 15 if w < 220 else 16, INK, 700))
+        out.append(text(x + 16, y + 58, line1, 12, MUTED))
         if line2:
-            out.append(text(x + 16, y + 68, line2, 12, DIM))
-        if is_here:
-            out.append(pulse_ring(x, y, w, h, color))
-            out.append(f'<rect x="{x + 10}" y="{y - 11}" width="88" height="22" rx="11" fill="{color}"/>')
-            out.append(text(x + 54, y + 4, 'YOU ARE HERE', 10, '#0b1220', 800, 'middle', spacing=1))
+            out.append(text(x + 16, y + 78, line2, 12, DIM))
+        out.append('</g>')
+    for eid, label, _, _, lx, ly in lay['edges']:
+        out.append(edge_label(eid, label, lx, ly, eid in lay['rotate']))
+    x, y, w, h = lay['node'][here]
+    out.append(f'<g data-current-badge="{here}"><rect x="{x + 12}" y="{y - 20}" width="136" height="34" '
+               f'rx="15" fill="{NODES[here][3]}"/>')
+    out.append(text(x + 80, y + 2, 'YOU ARE HERE', 12, '#0b1220', 800, 'middle', spacing=1))
+    out.append('</g>')
     lx, ly = lay['legend']
-    out.append(text(lx, ly, lay['caption'], 12, DIM))
+    out.append(text(lx, ly, lay['caption'], 12, DIM, extra=' data-legend=""'))
     out.append(svg_close())
     return '\n'.join(out)
 

@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>README layout regression</title>
+<style>body{font:16px/1.5 system-ui;max-width:70rem;margin:2rem auto;padding:0 1rem}pre{white-space:pre-wrap}strong{color:#166534}</style>
+<h1>README layout regression</h1><p>Checks actual browser glyph bounds, callout padding, card/badge clearance, paint order and mobile stat spacing. Serve this repository over HTTP; opening through file:// cannot fetch adjacent SVGs.</p><pre id="results">Running…</pre>
+<script src="layout-check.js"></script><script>
+(async()=>{
+ const rows=[];
+ for(const name of ['constellation.svg','constellation-mobile.svg']){
+  const response=await fetch(name);if(!response.ok)throw Error(name+': '+response.status);
+  const source=await response.text();
+  for(const time of [0,0.7,1.5,3])rows.push({name,time,errors:await checkConstellation(source,time)});
+ }
+ const response=await fetch('stats-mobile.svg');if(!response.ok)throw Error('stats-mobile.svg: '+response.status);
+ rows.push({name:'stats-mobile.svg',errors:await checkStats(await response.text())});
+ window.layoutResults=rows;window.layoutPassed=rows.every(r=>!r.errors.length);
+ document.body.dataset.result=window.layoutPassed?'pass':'fail';
+ document.getElementById('results').textContent=(window.layoutPassed?'PASS':'FAIL')+'\n'+JSON.stringify(rows,null,2);
+ if(!window.layoutPassed)console.error('README layout regression failed',rows);
+})().catch(error=>{window.layoutPassed=false;document.body.dataset.result='fail';document.getElementById('results').textContent='FAIL: '+error;console.error(error)});
+</script>
