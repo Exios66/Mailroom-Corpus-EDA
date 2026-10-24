@@ -29,7 +29,8 @@ swaps in the mobile twin.
 ## How it is built
 
 - [`_art.py`](_art.py) is the shared kit. It is **identical in every constellation
-  repository** (llm-mailroom, llm-dojo-scoring, Mailroom-Corpus-EDA, mailroom-ml);
+  repository** (llm-mailroom, llm-dojo-scoring, Mailroom-Corpus-EDA,
+  mailroom-ml, The-Mailroom and local-mailroom-sandbox);
   change it in all of them or in none.
 - `generate.py` holds only this repository's labels, scene and source-backed facts.
 - Meaning lives in static elements. Everything that merely moves (twinkling stars,
@@ -46,3 +47,23 @@ swaps in the mobile twin.
 3. Look at the SVGs in a browser at desktop and phone width, and check that no text
    overflows its card.
 4. Commit the sources and the regenerated SVGs together; `--check` must pass.
+
+## Label-layout regression
+
+After regeneration, serve the repository from its root:
+
+```bash
+python3 -m http.server 8008 --bind 127.0.0.1
+```
+
+Open `http://127.0.0.1:8008/docs/assets/readme/layout-check.html`. The page
+must report **PASS**. It uses actual browser glyph bounds, including rotated
+labels, to check padded callouts, card/badge/canvas clearances, particle paint
+order, and mobile stat spacing. It samples the diagrams at 0, 0.7, 1.5 and
+3 seconds. No browser packages or network services are required beyond the
+local HTTP server. Keep `layout-check.js` identical with the shared kit.
+
+DMR-110 reserves 12px canvas margins and opaque connector captions, enlarges
+the current-location pill to 136×34 with 12px text, and keeps particles behind
+all labels. Review the maps at 320px and 375px rendered widths as well as at
+native size; the test measures SVG coordinates, not the reader's zoom.

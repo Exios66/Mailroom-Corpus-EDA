@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 750" width="640" height="750" role="img" aria-labelledby="t d" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 824" width="640" height="824" role="img" aria-labelledby="t d" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
   <title id="t">Mailroom-Corpus-EDA in the Mailroom constellation</title>
   <desc id="d">Data-flow map of the Mailroom constellation with Mailroom-Corpus-EDA highlighted. mailroom-corpus-eda publishes mailroom-dataset to the Hugging Face Hub; the sandbox and the pipeline pull the pinned tag; the sandbox executes the pipeline; both score with llm-dojo-scoring; the pipeline sends traces to Langfuse, which feeds The-Mailroom visualizer; mailroom-ml trains on the dataset and offers an optional fast path to the pipeline.</desc>
   <defs>
@@ -9,58 +9,75 @@
     <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
   </defs>
   <style>@media (prefers-reduced-motion: reduce){.motion{display:none}}</style>
-  <rect width="640" height="750" rx="24" fill="url(#bg)"/>
-  <rect x=".5" y=".5" width="639" height="749" rx="24" fill="none" stroke="#1f2a44"/>
+  <rect width="640" height="824" rx="24" fill="url(#bg)"/>
+  <rect x=".5" y=".5" width="639" height="823" rx="24" fill="none" stroke="#1f2a44"/>
 
 <text x="24" y="36" font-size="12" fill="#8b9bb4" font-weight="700" letter-spacing="2">THE CONSTELLATION · HOW DATA MOVES</text>
 <g fill="none" stroke-width="2.2" stroke-linecap="round">
-<path id="e1" d="M270 96 H330" stroke="#38bdf8"/>
-<path id="e2" d="M350 136 C340 172 170 150 145 196" stroke="#38bdf8"/>
-<path id="e3" d="M460 136 V196" stroke="#f472b6" stroke-dasharray="6 6"/>
-<path id="e4" d="M460 276 V336" stroke="#f472b6" stroke-dasharray="6 6"/>
-<path id="e5" d="M270 256 C300 256 300 376 330 376" stroke="#a78bfa"/>
-<path id="e6" d="M590 90 C640 90 640 376 590 376" stroke="#38bdf8"/>
-<path id="e7" d="M145 276 V476" stroke="#f59e0b"/>
-<path id="e8" d="M380 416 C380 480 330 516 270 516" stroke="#f59e0b"/>
-<path id="e9" d="M540 416 V610" stroke="#fb7185" stroke-dasharray="6 6"/>
-<path id="e10" d="M330 646 H270" stroke="#fb7185" stroke-dasharray="6 6"/>
+<path id="e1" d="M250 118 H350" stroke="#38bdf8"/>
+<path id="e2" d="M400 166 C390 205 180 188 140 226" stroke="#38bdf8"/>
+<path id="e3" d="M465 166 V226" stroke="#f472b6" stroke-dasharray="6 6"/>
+<path id="e4" d="M465 322 V390" stroke="#f472b6" stroke-dasharray="6 6"/>
+<path id="e5" d="M250 274 C300 274 300 438 350 438" stroke="#a78bfa"/>
+<path id="e6" d="M580 118 C620 118 620 438 580 438" stroke="#38bdf8"/>
+<path id="e7" d="M135 322 V520" stroke="#f59e0b"/>
+<path id="e8" d="M410 486 C410 548 320 568 250 568" stroke="#f59e0b"/>
+<path id="e9" d="M520 486 V660" stroke="#fb7185" stroke-dasharray="6 6"/>
+<path id="e10" d="M350 708 H250" stroke="#fb7185" stroke-dasharray="6 6"/>
 </g>
-<g font-size="12" fill="#94a3b8" font-style="italic"><text x="270" y="86">publishes</text><text x="150" y="168">pinned pull</text><text x="470" y="170">trains on</text><text x="470" y="312">optional fast path</text><text x="292" y="330">executes</text><text x="155" y="380">scores with</text><text x="290" y="548">scores with</text><text x="550" y="520">traces</text><text x="276" y="636">feeds</text></g>
-<text x="624" y="186" font-size="12" fill="#94a3b8" font-style="italic" transform="rotate(90 624 186)">pinned pull</text>
-<g><circle class="motion" r="5" fill="#38bdf8" filter="url(#soft)"><animateMotion dur="1.3s" begin="0s" repeatCount="indefinite"><mpath href="#e1"/></animateMotion></circle><circle class="motion" r="5" fill="#38bdf8" filter="url(#soft)"><animateMotion dur="1.6s" begin="0.3s" repeatCount="indefinite"><mpath href="#e2"/></animateMotion></circle><circle class="motion" r="5" fill="#f472b6" filter="url(#soft)"><animateMotion dur="1.8s" begin="0.6s" repeatCount="indefinite"><mpath href="#e3"/></animateMotion></circle><circle class="motion" r="5" fill="#f472b6" filter="url(#soft)"><animateMotion dur="2s" begin="0.9s" repeatCount="indefinite"><mpath href="#e4"/></animateMotion></circle><circle class="motion" r="5" fill="#a78bfa" filter="url(#soft)"><animateMotion dur="1.3s" begin="1.2s" repeatCount="indefinite"><mpath href="#e5"/></animateMotion></circle><circle class="motion" r="5" fill="#38bdf8" filter="url(#soft)"><animateMotion dur="1.6s" begin="0s" repeatCount="indefinite"><mpath href="#e6"/></animateMotion></circle><circle class="motion" r="5" fill="#f59e0b" filter="url(#soft)"><animateMotion dur="1.8s" begin="0.3s" repeatCount="indefinite"><mpath href="#e7"/></animateMotion></circle><circle class="motion" r="5" fill="#f59e0b" filter="url(#soft)"><animateMotion dur="2s" begin="0.6s" repeatCount="indefinite"><mpath href="#e8"/></animateMotion></circle><circle class="motion" r="5" fill="#fb7185" filter="url(#soft)"><animateMotion dur="1.3s" begin="0.9s" repeatCount="indefinite"><mpath href="#e9"/></animateMotion></circle><circle class="motion" r="5" fill="#fb7185" filter="url(#soft)"><animateMotion dur="1.6s" begin="1.2s" repeatCount="indefinite"><mpath href="#e10"/></animateMotion></circle></g>
-<rect x="20" y="56" width="250" height="80" rx="14" fill="#14213d" stroke="#38bdf8" stroke-width="2.6"/>
-<text x="36" y="86" font-size="16" fill="#e2e8f0" font-weight="700">mailroom-corpus-eda</text>
-<text x="36" y="108" font-size="12" fill="#94a3b8">EDA + centralized HF uploads</text>
-<text x="36" y="124" font-size="12" fill="#64748b">virtual member · no build</text>
-<rect class="motion" x="20" y="56" width="250" height="80" rx="14" fill="none" stroke="#38bdf8" stroke-width="2"><animate attributeName="stroke-opacity" values=".8;0;.8" dur="2.4s" repeatCount="indefinite"/><animate attributeName="stroke-width" values="2;9;2" dur="2.4s" repeatCount="indefinite"/></rect>
-<rect x="30" y="45" width="88" height="22" rx="11" fill="#38bdf8"/>
-<text x="74" y="60" font-size="10" fill="#0b1220" font-weight="800" text-anchor="middle" letter-spacing="1">YOU ARE HERE</text>
-<rect x="330" y="56" width="260" height="80" rx="14" fill="#0f172a" stroke="#facc15" stroke-width="2" stroke-dasharray="7 5"/>
-<text x="346" y="86" font-size="16" fill="#e2e8f0" font-weight="700">HF Hub</text>
-<text x="346" y="108" font-size="12" fill="#94a3b8">mailroom-dataset · pinned tag</text>
-<text x="346" y="124" font-size="12" fill="#64748b">external service</text>
-<rect x="20" y="196" width="250" height="80" rx="14" fill="#0f172a" stroke="#a78bfa" stroke-width="2"/>
-<text x="36" y="226" font-size="16" fill="#e2e8f0" font-weight="700">local-mailroom-sandbox</text>
-<text x="36" y="248" font-size="12" fill="#94a3b8">offline/local + Modal/vLLM GPU</text>
-<text x="36" y="264" font-size="12" fill="#64748b">testing harness</text>
-<rect x="330" y="196" width="260" height="80" rx="14" fill="#0f172a" stroke="#f472b6" stroke-width="2" stroke-dasharray="7 5"/>
-<text x="346" y="226" font-size="16" fill="#e2e8f0" font-weight="700">mailroom-ml</text>
-<text x="346" y="248" font-size="12" fill="#94a3b8">ModernBERT intake classifier</text>
-<text x="346" y="264" font-size="12" fill="#64748b">standalone contractor</text>
-<rect x="330" y="336" width="260" height="80" rx="14" fill="#0f172a" stroke="#22c55e" stroke-width="2"/>
-<text x="346" y="366" font-size="16" fill="#e2e8f0" font-weight="700">llm-mailroom</text>
-<text x="346" y="388" font-size="12" fill="#94a3b8">13-node LangGraph pipeline</text>
-<text x="346" y="404" font-size="12" fill="#64748b">FastAPI producer</text>
-<rect x="20" y="476" width="250" height="80" rx="14" fill="#0f172a" stroke="#f59e0b" stroke-width="2"/>
-<text x="36" y="506" font-size="16" fill="#e2e8f0" font-weight="700">llm-dojo-scoring</text>
-<text x="36" y="528" font-size="12" fill="#94a3b8">ALL scoring engine + metrics</text>
-<text x="36" y="544" font-size="12" fill="#64748b">error analysis &amp; interpretation</text>
-<rect x="20" y="610" width="250" height="72" rx="14" fill="#0f172a" stroke="#c084fc" stroke-width="2"/>
-<text x="36" y="640" font-size="16" fill="#e2e8f0" font-weight="700">The-Mailroom</text>
-<text x="36" y="662" font-size="12" fill="#94a3b8">pixel-art visualizer</text>
-<text x="36" y="678" font-size="12" fill="#64748b">shared by pipeline + sandbox</text>
-<rect x="330" y="610" width="260" height="72" rx="14" fill="#0f172a" stroke="#fb7185" stroke-width="2" stroke-dasharray="7 5"/>
-<text x="346" y="640" font-size="16" fill="#e2e8f0" font-weight="700">Langfuse</text>
-<text x="346" y="662" font-size="12" fill="#94a3b8">external · trace store</text>
-<text x="24" y="722" font-size="12" fill="#64748b">dashed = external service or contractor</text>
+<g data-particles=""><circle class="motion" r="5" fill="#38bdf8" filter="url(#soft)"><animateMotion dur="1.3s" begin="0s" repeatCount="indefinite"><mpath href="#e1"/></animateMotion></circle><circle class="motion" r="5" fill="#38bdf8" filter="url(#soft)"><animateMotion dur="1.6s" begin="0.3s" repeatCount="indefinite"><mpath href="#e2"/></animateMotion></circle><circle class="motion" r="5" fill="#f472b6" filter="url(#soft)"><animateMotion dur="1.8s" begin="0.6s" repeatCount="indefinite"><mpath href="#e3"/></animateMotion></circle><circle class="motion" r="5" fill="#f472b6" filter="url(#soft)"><animateMotion dur="2s" begin="0.9s" repeatCount="indefinite"><mpath href="#e4"/></animateMotion></circle><circle class="motion" r="5" fill="#a78bfa" filter="url(#soft)"><animateMotion dur="1.3s" begin="1.2s" repeatCount="indefinite"><mpath href="#e5"/></animateMotion></circle><circle class="motion" r="5" fill="#38bdf8" filter="url(#soft)"><animateMotion dur="1.6s" begin="0s" repeatCount="indefinite"><mpath href="#e6"/></animateMotion></circle><circle class="motion" r="5" fill="#f59e0b" filter="url(#soft)"><animateMotion dur="1.8s" begin="0.3s" repeatCount="indefinite"><mpath href="#e7"/></animateMotion></circle><circle class="motion" r="5" fill="#f59e0b" filter="url(#soft)"><animateMotion dur="2s" begin="0.6s" repeatCount="indefinite"><mpath href="#e8"/></animateMotion></circle><circle class="motion" r="5" fill="#fb7185" filter="url(#soft)"><animateMotion dur="1.3s" begin="0.9s" repeatCount="indefinite"><mpath href="#e9"/></animateMotion></circle><circle class="motion" r="5" fill="#fb7185" filter="url(#soft)"><animateMotion dur="1.6s" begin="1.2s" repeatCount="indefinite"><mpath href="#e10"/></animateMotion></circle></g>
+<rect class="motion" x="20" y="70" width="230" height="96" rx="14" fill="none" stroke="#38bdf8" stroke-width="2"><animate attributeName="stroke-opacity" values=".8;0;.8" dur="2.4s" repeatCount="indefinite"/><animate attributeName="stroke-width" values="2;9;2" dur="2.4s" repeatCount="indefinite"/></rect>
+<g data-node="eda"><rect x="20" y="70" width="230" height="96" rx="14" fill="#14213d" stroke="#38bdf8" stroke-width="2"/>
+<text x="36" y="104" font-size="16" fill="#e2e8f0" font-weight="700">mailroom-corpus-eda</text>
+<text x="36" y="128" font-size="12" fill="#94a3b8">EDA + centralized HF uploads</text>
+<text x="36" y="148" font-size="12" fill="#64748b">virtual member · no build</text>
+</g>
+<g data-node="hf"><rect x="350" y="70" width="230" height="96" rx="14" fill="#0f172a" stroke="#facc15" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="366" y="104" font-size="16" fill="#e2e8f0" font-weight="700">HF Hub</text>
+<text x="366" y="128" font-size="12" fill="#94a3b8">mailroom-dataset · pinned tag</text>
+<text x="366" y="148" font-size="12" fill="#64748b">external service</text>
+</g>
+<g data-node="sandbox"><rect x="20" y="226" width="230" height="96" rx="14" fill="#0f172a" stroke="#a78bfa" stroke-width="2"/>
+<text x="36" y="260" font-size="16" fill="#e2e8f0" font-weight="700">local-mailroom-sandbox</text>
+<text x="36" y="284" font-size="12" fill="#94a3b8">offline/local + Modal/vLLM GPU</text>
+<text x="36" y="304" font-size="12" fill="#64748b">testing harness</text>
+</g>
+<g data-node="ml"><rect x="350" y="226" width="230" height="96" rx="14" fill="#0f172a" stroke="#f472b6" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="366" y="260" font-size="16" fill="#e2e8f0" font-weight="700">mailroom-ml</text>
+<text x="366" y="284" font-size="12" fill="#94a3b8">ModernBERT intake classifier</text>
+<text x="366" y="304" font-size="12" fill="#64748b">standalone contractor</text>
+</g>
+<g data-node="pipeline"><rect x="350" y="390" width="230" height="96" rx="14" fill="#0f172a" stroke="#22c55e" stroke-width="2"/>
+<text x="366" y="424" font-size="16" fill="#e2e8f0" font-weight="700">llm-mailroom</text>
+<text x="366" y="448" font-size="12" fill="#94a3b8">13-node LangGraph pipeline</text>
+<text x="366" y="468" font-size="12" fill="#64748b">FastAPI producer</text>
+</g>
+<g data-node="dojo"><rect x="20" y="520" width="230" height="96" rx="14" fill="#0f172a" stroke="#f59e0b" stroke-width="2"/>
+<text x="36" y="554" font-size="16" fill="#e2e8f0" font-weight="700">llm-dojo-scoring</text>
+<text x="36" y="578" font-size="12" fill="#94a3b8">ALL scoring engine + metrics</text>
+<text x="36" y="598" font-size="12" fill="#64748b">error analysis &amp; interpretation</text>
+</g>
+<g data-node="viz"><rect x="20" y="660" width="230" height="96" rx="14" fill="#0f172a" stroke="#c084fc" stroke-width="2"/>
+<text x="36" y="694" font-size="16" fill="#e2e8f0" font-weight="700">The-Mailroom</text>
+<text x="36" y="718" font-size="12" fill="#94a3b8">pixel-art visualizer</text>
+<text x="36" y="738" font-size="12" fill="#64748b">shared by pipeline + sandbox</text>
+</g>
+<g data-node="langfuse"><rect x="350" y="660" width="230" height="96" rx="14" fill="#0f172a" stroke="#fb7185" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="366" y="694" font-size="16" fill="#e2e8f0" font-weight="700">Langfuse</text>
+<text x="366" y="718" font-size="12" fill="#94a3b8">external · trace store</text>
+</g>
+<g data-edge-label="e1" transform="translate(300 108)"><rect data-callout-box="" x="-40.0" y="-16" width="80" height="32" rx="8" fill="#10142a"/><text x="0" y="4.5" font-size="13" fill="#94a3b8" text-anchor="middle" font-style="italic">publishes</text></g>
+<g data-edge-label="e2" transform="translate(285 186)"><rect data-callout-box="" x="-46.0" y="-16" width="92" height="32" rx="8" fill="#10142a"/><text x="0" y="4.5" font-size="13" fill="#94a3b8" text-anchor="middle" font-style="italic">pinned pull</text></g>
+<g data-edge-label="e3" transform="translate(465 186)"><rect data-callout-box="" x="-38.0" y="-16" width="76" height="32" rx="8" fill="#10142a"/><text x="0" y="4.5" font-size="13" fill="#94a3b8" text-anchor="middle" font-style="italic">trains on</text></g>
+<g data-edge-label="e4" transform="translate(465 348)"><rect data-callout-box="" x="-72.0" y="-16" width="144" height="32" rx="8" fill="#10142a"/><text x="0" y="4.5" font-size="13" fill="#94a3b8" text-anchor="middle" font-style="italic">optional fast path</text></g>
+<g data-edge-label="e5" transform="translate(300 350)"><rect data-callout-box="" x="-39.0" y="-16" width="78" height="32" rx="8" fill="#10142a"/><text x="0" y="4.5" font-size="13" fill="#94a3b8" text-anchor="middle" font-style="italic">executes</text></g>
+<g data-edge-label="e6" transform="translate(610 290) rotate(90)"><rect data-callout-box="" x="-46.0" y="-16" width="92" height="32" rx="8" fill="#10142a"/><text x="0" y="4.5" font-size="13" fill="#94a3b8" text-anchor="middle" font-style="italic">pinned pull</text></g>
+<g data-edge-label="e7" transform="translate(135 420)"><rect data-callout-box="" x="-45.0" y="-16" width="90" height="32" rx="8" fill="#10142a"/><text x="0" y="4.5" font-size="13" fill="#94a3b8" text-anchor="middle" font-style="italic">scores with</text></g>
+<g data-edge-label="e8" transform="translate(337 536)"><rect data-callout-box="" x="-45.0" y="-16" width="90" height="32" rx="8" fill="#10142a"/><text x="0" y="4.5" font-size="13" fill="#94a3b8" text-anchor="middle" font-style="italic">scores with</text></g>
+<g data-edge-label="e9" transform="translate(520 574)"><rect data-callout-box="" x="-30.0" y="-16" width="60" height="32" rx="8" fill="#10142a"/><text x="0" y="4.5" font-size="13" fill="#94a3b8" text-anchor="middle" font-style="italic">traces</text></g>
+<g data-edge-label="e10" transform="translate(300 698)"><rect data-callout-box="" x="-24.0" y="-16" width="48" height="32" rx="8" fill="#10142a"/><text x="0" y="4.5" font-size="13" fill="#94a3b8" text-anchor="middle" font-style="italic">feeds</text></g>
+<g data-current-badge="eda"><rect x="32" y="50" width="136" height="34" rx="15" fill="#38bdf8"/>
+<text x="100" y="72" font-size="12" fill="#0b1220" font-weight="800" text-anchor="middle" letter-spacing="1">YOU ARE HERE</text>
+</g>
+<text x="24" y="798" font-size="12" fill="#64748b" data-legend="">dashed = external service or contractor</text>
 </svg>
