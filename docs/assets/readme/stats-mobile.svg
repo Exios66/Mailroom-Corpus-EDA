@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 378" width="640" height="378" role="img" aria-labelledby="t d" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <title id="t">Mailroom-Corpus-EDA by the numbers</title>
+  <desc id="d">3,302 documents · v9.2; 5 document classes; 55 strata; 13,753 CUAD spans; P0–P6 analysis phases; 48 figures</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1220"/><stop offset=".55" stop-color="#151036"/><stop offset="1" stop-color="#22103a"/></linearGradient>
+    <linearGradient id="ttl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7dd3fc"/><stop offset=".5" stop-color="#c4b5fd"/><stop offset="1" stop-color="#f9a8d4"/></linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#a78bfa" stop-opacity=".9"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></radialGradient>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <linearGradient id="shine" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".12"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <style>@media (prefers-reduced-motion: reduce){.motion{display:none}}</style>
+  <rect width="640" height="378" rx="24" fill="url(#bg)"/>
+  <rect x=".5" y=".5" width="639" height="377" rx="24" fill="none" stroke="#1f2a44"/>
+
+  <clipPath id="c0"><rect x="24" y="16" width="288" height="110" rx="16"/></clipPath>
+  <rect x="24" y="16" width="288" height="110" rx="16" fill="#111a2e" stroke="#1f2a44"/>
+  <text x="168" y="71" font-size="46" fill="#38bdf8" font-weight="800" text-anchor="middle">3,302</text>
+  <text x="168" y="97" font-size="15" fill="#94a3b8" text-anchor="middle">documents · v9.2</text>
+  <rect x="146" y="109" width="44" height="4" rx="2" fill="#38bdf8"/>
+  <g class="motion" clip-path="url(#c0)"><rect x="-44" y="16" width="60" height="110" fill="url(#shine)"><animate attributeName="x" values="-44;320;320" keyTimes="0;.35;1" dur="5s" begin="0s" repeatCount="indefinite"/></rect></g>
+  <clipPath id="c1"><rect x="328" y="16" width="288" height="110" rx="16"/></clipPath>
+  <rect x="328" y="16" width="288" height="110" rx="16" fill="#111a2e" stroke="#1f2a44"/>
+  <text x="472" y="71" font-size="46" fill="#a78bfa" font-weight="800" text-anchor="middle">5</text>
+  <text x="472" y="97" font-size="15" fill="#94a3b8" text-anchor="middle">document classes</text>
+  <rect x="450" y="109" width="44" height="4" rx="2" fill="#a78bfa"/>
+  <g class="motion" clip-path="url(#c1)"><rect x="260" y="16" width="60" height="110" fill="url(#shine)"><animate attributeName="x" values="260;624;624" keyTimes="0;.35;1" dur="5s" begin="0.5s" repeatCount="indefinite"/></rect></g>
+  <clipPath id="c2"><rect x="24" y="134" width="288" height="110" rx="16"/></clipPath>
+  <rect x="24" y="134" width="288" height="110" rx="16" fill="#111a2e" stroke="#1f2a44"/>
+  <text x="168" y="189" font-size="46" fill="#a3e635" font-weight="800" text-anchor="middle">55</text>
+  <text x="168" y="215" font-size="15" fill="#94a3b8" text-anchor="middle">strata</text>
+  <rect x="146" y="227" width="44" height="4" rx="2" fill="#a3e635"/>
+  <g class="motion" clip-path="url(#c2)"><rect x="-44" y="134" width="60" height="110" fill="url(#shine)"><animate attributeName="x" values="-44;320;320" keyTimes="0;.35;1" dur="5s" begin="1s" repeatCount="indefinite"/></rect></g>
+  <clipPath id="c3"><rect x="328" y="134" width="288" height="110" rx="16"/></clipPath>
+  <rect x="328" y="134" width="288" height="110" rx="16" fill="#111a2e" stroke="#1f2a44"/>
+  <text x="472" y="189" font-size="46" fill="#facc15" font-weight="800" text-anchor="middle">13,753</text>
+  <text x="472" y="215" font-size="15" fill="#94a3b8" text-anchor="middle">CUAD spans</text>
+  <rect x="450" y="227" width="44" height="4" rx="2" fill="#facc15"/>
+  <g class="motion" clip-path="url(#c3)"><rect x="260" y="134" width="60" height="110" fill="url(#shine)"><animate attributeName="x" values="260;624;624" keyTimes="0;.35;1" dur="5s" begin="1.5s" repeatCount="indefinite"/></rect></g>
+  <clipPath id="c4"><rect x="24" y="252" width="288" height="110" rx="16"/></clipPath>
+  <rect x="24" y="252" width="288" height="110" rx="16" fill="#111a2e" stroke="#1f2a44"/>
+  <text x="168" y="307" font-size="46" fill="#f472b6" font-weight="800" text-anchor="middle">P0–P6</text>
+  <text x="168" y="333" font-size="15" fill="#94a3b8" text-anchor="middle">analysis phases</text>
+  <rect x="146" y="345" width="44" height="4" rx="2" fill="#f472b6"/>
+  <g class="motion" clip-path="url(#c4)"><rect x="-44" y="252" width="60" height="110" fill="url(#shine)"><animate attributeName="x" values="-44;320;320" keyTimes="0;.35;1" dur="5s" begin="2s" repeatCount="indefinite"/></rect></g>
+  <clipPath id="c5"><rect x="328" y="252" width="288" height="110" rx="16"/></clipPath>
+  <rect x="328" y="252" width="288" height="110" rx="16" fill="#111a2e" stroke="#1f2a44"/>
+  <text x="472" y="307" font-size="46" fill="#22c55e" font-weight="800" text-anchor="middle">48</text>
+  <text x="472" y="333" font-size="15" fill="#94a3b8" text-anchor="middle">figures</text>
+  <rect x="450" y="345" width="44" height="4" rx="2" fill="#22c55e"/>
+  <g class="motion" clip-path="url(#c5)"><rect x="260" y="252" width="60" height="110" fill="url(#shine)"><animate attributeName="x" values="260;624;624" keyTimes="0;.35;1" dur="5s" begin="2.5s" repeatCount="indefinite"/></rect></g>
+</svg>

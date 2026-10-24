@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 392" width="900" height="392" role="img" aria-labelledby="t d" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace">
+  <title id="t">~/Mailroom-Corpus-EDA — zsh</title>
+  <desc id="d">Animated terminal: clone, create the Python 3.13 venv, install the pinned requirements, list the commands, fetch the corpus and run the full analysis.</desc>
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0d1117"/><stop offset="1" stop-color="#161b2e"/></linearGradient></defs>
+  <rect id="cyc" width="1" height="1" fill="none"><animate id="loop" attributeName="x" from="0" to="0" dur="22.5s" begin="0s;loop.end"/></rect>
+  <rect x="1" y="1" width="898" height="390" rx="16" fill="url(#bg)" stroke="#30363d" stroke-width="2"/>
+  <rect x="1" y="1" width="898" height="44" rx="16" fill="#1c2230"/>
+  <rect x="1" y="30" width="898" height="15" fill="#1c2230"/>
+  <circle cx="30" cy="23" r="7" fill="#ff5f57"/><circle cx="54" cy="23" r="7" fill="#febc2e"/><circle cx="78" cy="23" r="7" fill="#28c840"/>
+  <text x="450" y="28" text-anchor="middle" font-size="13" fill="#8b949e">~/Mailroom-Corpus-EDA — zsh</text>
+  <clipPath id="c0"><rect x="30" y="72" height="28" width="0"><set attributeName="width" to="0" begin="loop.begin"/><animate attributeName="width" from="0" to="594.4" dur="2.48s" begin="loop.begin+0.6s" fill="freeze"/></rect></clipPath>
+  <text x="32" y="92" font-size="15" clip-path="url(#c0)"><tspan fill="#7ee787">$ </tspan><tspan fill="#e6edf3">git clone https://github.com/Exios66/Mailroom-Corpus-EDA.git</tspan></text>
+  <clipPath id="c1"><rect x="30" y="102" height="28" width="0"><set attributeName="width" to="0" begin="loop.begin"/><animate attributeName="width" from="0" to="502.4" dur="2.08s" begin="loop.begin+4s" fill="freeze"/></rect></clipPath>
+  <text x="32" y="122" font-size="15" clip-path="url(#c1)"><tspan fill="#7ee787">$ </tspan><tspan fill="#e6edf3">cd Mailroom-Corpus-EDA &amp;&amp; python3.13 -m venv .venv</tspan></text>
+  <clipPath id="c2"><rect x="30" y="132" height="28" width="0"><set attributeName="width" to="0" begin="loop.begin"/><animate attributeName="width" from="0" to="511.6" dur="2.12s" begin="loop.begin+7s" fill="freeze"/></rect></clipPath>
+  <text x="32" y="152" font-size="15" clip-path="url(#c2)"><tspan fill="#7ee787">$ </tspan><tspan fill="#e6edf3">.venv/bin/python -m pip install -r requirements.txt</tspan></text>
+  <clipPath id="c3"><rect x="30" y="162" height="28" width="0"><set attributeName="width" to="0" begin="loop.begin"/><animate attributeName="width" from="0" to="355.2" dur="1.44s" begin="loop.begin+10s" fill="freeze"/></rect></clipPath>
+  <text x="32" y="182" font-size="15" clip-path="url(#c3)"><tspan fill="#7ee787">$ </tspan><tspan fill="#e6edf3">.venv/bin/python run_all.py --help</tspan></text>
+  <clipPath id="c4"><rect x="30" y="192" height="28" width="0"><set attributeName="width" to="0" begin="loop.begin"/><animate attributeName="width" from="0" to="309.2" dur="0.35s" begin="loop.begin+12.3s" fill="freeze"/></rect></clipPath>
+  <text x="32" y="212" font-size="15" clip-path="url(#c4)" fill="#8b949e" font-style="italic">  # read-only command discovery</text>
+  <clipPath id="c5"><rect x="30" y="222" height="28" width="0"><set attributeName="width" to="0" begin="loop.begin"/><animate attributeName="width" from="0" to="401.2" dur="1.64s" begin="loop.begin+13.2s" fill="freeze"/></rect></clipPath>
+  <text x="32" y="242" font-size="15" clip-path="url(#c5)"><tspan fill="#7ee787">$ </tspan><tspan fill="#e6edf3">.venv/bin/python run_all.py --phases P0</tspan></text>
+  <clipPath id="c6"><rect x="30" y="252" height="28" width="0"><set attributeName="width" to="0" begin="loop.begin"/><animate attributeName="width" from="0" to="557.6" dur="0.35s" begin="loop.begin+15.7s" fill="freeze"/></rect></clipPath>
+  <text x="32" y="272" font-size="15" clip-path="url(#c6)" fill="#8b949e" font-style="italic">  # download the pinned public corpus · no HF_TOKEN needed</text>
+  <clipPath id="c7"><rect x="30" y="282" height="28" width="0"><set attributeName="width" to="0" begin="loop.begin"/><animate attributeName="width" from="0" to="290.8" dur="1.16s" begin="loop.begin+16.6s" fill="freeze"/></rect></clipPath>
+  <text x="32" y="302" font-size="15" clip-path="url(#c7)"><tspan fill="#7ee787">$ </tspan><tspan fill="#e6edf3">.venv/bin/python run_all.py</tspan></text>
+  <clipPath id="c8"><rect x="30" y="312" height="28" width="0"><set attributeName="width" to="0" begin="loop.begin"/><animate attributeName="width" from="0" to="649.6" dur="0.35s" begin="loop.begin+18.6s" fill="freeze"/></rect></clipPath>
+  <text x="32" y="332" font-size="15" clip-path="url(#c8)" fill="#8b949e" font-style="italic">  # full analysis: local reports and staged exports, never a publish</text>
+  <rect class="motion" x="32" y="346" width="9" height="19" fill="#e6edf3"><animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/></rect>
+</svg>

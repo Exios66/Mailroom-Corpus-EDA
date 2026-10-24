@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 484" width="1200" height="484" role="img" aria-labelledby="t d" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <title id="t">Mailroom-Corpus-EDA in the Mailroom constellation</title>
+  <desc id="d">Data-flow map of the Mailroom constellation with Mailroom-Corpus-EDA highlighted. mailroom-corpus-eda publishes mailroom-dataset to the Hugging Face Hub; the sandbox and the pipeline pull the pinned tag; the sandbox executes the pipeline; both score with llm-dojo-scoring; the pipeline sends traces to Langfuse, which feeds The-Mailroom visualizer; mailroom-ml trains on the dataset and offers an optional fast path to the pipeline.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1220"/><stop offset=".55" stop-color="#151036"/><stop offset="1" stop-color="#22103a"/></linearGradient>
+    <linearGradient id="ttl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7dd3fc"/><stop offset=".5" stop-color="#c4b5fd"/><stop offset="1" stop-color="#f9a8d4"/></linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#a78bfa" stop-opacity=".9"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></radialGradient>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
+  </defs>
+  <style>@media (prefers-reduced-motion: reduce){.motion{display:none}}</style>
+  <rect width="1200" height="484" rx="24" fill="url(#bg)"/>
+  <rect x=".5" y=".5" width="1199" height="483" rx="24" fill="none" stroke="#1f2a44"/>
+
+<text x="40" y="40" font-size="13" fill="#8b9bb4" font-weight="700" letter-spacing="3">THE CONSTELLATION · HOW DATA MOVES</text>
+<g fill="none" stroke-width="2.2" stroke-linecap="round">
+<path id="e1" d="M270 112 H330" stroke="#38bdf8"/>
+<path id="e2" d="M400 154 C380 190 250 190 210 230" stroke="#38bdf8"/>
+<path id="e3" d="M500 154 C520 190 530 200 540 230" stroke="#38bdf8"/>
+<path id="e4" d="M570 112 H640" stroke="#f472b6" stroke-dasharray="6 6"/>
+<path id="e5" d="M745 154 C735 190 650 196 620 230" stroke="#f472b6" stroke-dasharray="6 6"/>
+<path id="e6" d="M320 272 H420" stroke="#a78bfa"/>
+<path id="e7" d="M200 314 C215 355 260 372 300 376" stroke="#f59e0b"/>
+<path id="e8" d="M540 314 C530 355 480 372 440 376" stroke="#f59e0b"/>
+<path id="e9" d="M660 284 H720" stroke="#fb7185" stroke-dasharray="6 6"/>
+<path id="e10" d="M890 272 H950" stroke="#fb7185" stroke-dasharray="6 6"/>
+</g>
+<g font-size="12" fill="#94a3b8" font-style="italic"><text x="276" y="100">publishes</text><text x="262" y="192">pinned pull</text><text x="530" y="188">pinned pull</text><text x="574" y="100">trains on</text><text x="700" y="186">optional fast path</text><text x="340" y="262">executes</text><text x="128" y="356">scores with</text><text x="520" y="358">scores with</text><text x="666" y="276">traces</text><text x="898" y="262">feeds</text></g>
+<g><circle class="motion" r="5" fill="#38bdf8" filter="url(#soft)"><animateMotion dur="1.3s" begin="0s" repeatCount="indefinite"><mpath href="#e1"/></animateMotion></circle><circle class="motion" r="5" fill="#38bdf8" filter="url(#soft)"><animateMotion dur="1.6s" begin="0.3s" repeatCount="indefinite"><mpath href="#e2"/></animateMotion></circle><circle class="motion" r="5" fill="#38bdf8" filter="url(#soft)"><animateMotion dur="1.8s" begin="0.6s" repeatCount="indefinite"><mpath href="#e3"/></animateMotion></circle><circle class="motion" r="5" fill="#f472b6" filter="url(#soft)"><animateMotion dur="2s" begin="0.9s" repeatCount="indefinite"><mpath href="#e4"/></animateMotion></circle><circle class="motion" r="5" fill="#f472b6" filter="url(#soft)"><animateMotion dur="1.3s" begin="1.2s" repeatCount="indefinite"><mpath href="#e5"/></animateMotion></circle><circle class="motion" r="5" fill="#a78bfa" filter="url(#soft)"><animateMotion dur="1.6s" begin="0s" repeatCount="indefinite"><mpath href="#e6"/></animateMotion></circle><circle class="motion" r="5" fill="#f59e0b" filter="url(#soft)"><animateMotion dur="1.8s" begin="0.3s" repeatCount="indefinite"><mpath href="#e7"/></animateMotion></circle><circle class="motion" r="5" fill="#f59e0b" filter="url(#soft)"><animateMotion dur="2s" begin="0.6s" repeatCount="indefinite"><mpath href="#e8"/></animateMotion></circle><circle class="motion" r="5" fill="#fb7185" filter="url(#soft)"><animateMotion dur="1.3s" begin="0.9s" repeatCount="indefinite"><mpath href="#e9"/></animateMotion></circle><circle class="motion" r="5" fill="#fb7185" filter="url(#soft)"><animateMotion dur="1.6s" begin="1.2s" repeatCount="indefinite"><mpath href="#e10"/></animateMotion></circle></g>
+<rect x="40" y="70" width="230" height="84" rx="14" fill="#14213d" stroke="#38bdf8" stroke-width="2.6"/>
+<text x="56" y="100" font-size="16" fill="#e2e8f0" font-weight="700">mailroom-corpus-eda</text>
+<text x="56" y="122" font-size="12" fill="#94a3b8">EDA + centralized HF uploads</text>
+<text x="56" y="138" font-size="12" fill="#64748b">virtual member · no build</text>
+<rect class="motion" x="40" y="70" width="230" height="84" rx="14" fill="none" stroke="#38bdf8" stroke-width="2"><animate attributeName="stroke-opacity" values=".8;0;.8" dur="2.4s" repeatCount="indefinite"/><animate attributeName="stroke-width" values="2;9;2" dur="2.4s" repeatCount="indefinite"/></rect>
+<rect x="50" y="59" width="88" height="22" rx="11" fill="#38bdf8"/>
+<text x="94" y="74" font-size="10" fill="#0b1220" font-weight="800" text-anchor="middle" letter-spacing="1">YOU ARE HERE</text>
+<rect x="330" y="70" width="240" height="84" rx="14" fill="#0f172a" stroke="#facc15" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="346" y="100" font-size="16" fill="#e2e8f0" font-weight="700">HF Hub</text>
+<text x="346" y="122" font-size="12" fill="#94a3b8">mailroom-dataset · pinned tag</text>
+<text x="346" y="138" font-size="12" fill="#64748b">external service</text>
+<rect x="640" y="70" width="230" height="84" rx="14" fill="#0f172a" stroke="#f472b6" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="656" y="100" font-size="16" fill="#e2e8f0" font-weight="700">mailroom-ml</text>
+<text x="656" y="122" font-size="12" fill="#94a3b8">ModernBERT intake classifier</text>
+<text x="656" y="138" font-size="12" fill="#64748b">standalone contractor</text>
+<rect x="80" y="230" width="240" height="84" rx="14" fill="#0f172a" stroke="#a78bfa" stroke-width="2"/>
+<text x="96" y="260" font-size="16" fill="#e2e8f0" font-weight="700">local-mailroom-sandbox</text>
+<text x="96" y="282" font-size="12" fill="#94a3b8">offline/local + Modal/vLLM GPU</text>
+<text x="96" y="298" font-size="12" fill="#64748b">testing harness</text>
+<rect x="420" y="230" width="240" height="84" rx="14" fill="#0f172a" stroke="#22c55e" stroke-width="2"/>
+<text x="436" y="260" font-size="16" fill="#e2e8f0" font-weight="700">llm-mailroom</text>
+<text x="436" y="282" font-size="12" fill="#94a3b8">13-node LangGraph pipeline</text>
+<text x="436" y="298" font-size="12" fill="#64748b">FastAPI producer</text>
+<rect x="950" y="230" width="210" height="84" rx="14" fill="#0f172a" stroke="#c084fc" stroke-width="2"/>
+<text x="966" y="260" font-size="15" fill="#e2e8f0" font-weight="700">The-Mailroom</text>
+<text x="966" y="282" font-size="12" fill="#94a3b8">pixel-art visualizer</text>
+<text x="966" y="298" font-size="12" fill="#64748b">shared by pipeline + sandbox</text>
+<rect x="720" y="230" width="170" height="84" rx="14" fill="#0f172a" stroke="#fb7185" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="736" y="260" font-size="15" fill="#e2e8f0" font-weight="700">Langfuse</text>
+<text x="736" y="282" font-size="12" fill="#94a3b8">external · trace store</text>
+<rect x="250" y="376" width="240" height="84" rx="14" fill="#0f172a" stroke="#f59e0b" stroke-width="2"/>
+<text x="266" y="406" font-size="16" fill="#e2e8f0" font-weight="700">llm-dojo-scoring</text>
+<text x="266" y="428" font-size="12" fill="#94a3b8">ALL scoring engine + metrics</text>
+<text x="266" y="444" font-size="12" fill="#64748b">error analysis &amp; interpretation</text>
+<text x="40" y="468" font-size="12" fill="#64748b">dashed outline = external service or standalone contractor</text>
+</svg>

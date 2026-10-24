@@ -2,23 +2,29 @@
 
 <picture>
   <source media="(max-width: 640px)" srcset="docs/assets/readme/hero-mobile.svg"/>
-  <img src="docs/assets/readme/hero.svg" alt="Download the pinned corpus, audit integrity and composition, render reports, and stage exports with intent coverage checks." width="100%"/>
+  <img src="docs/assets/readme/hero.svg" alt="Mailroom Corpus EDA: a bar chart of the five document classes in the v9.2 corpus beside the seven analysis phases P0 to P6" width="100%"/>
 </picture>
 
-# Mailroom Corpus EDA
+<br/>
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?style=for-the-badge)](pyproject.toml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](pyproject.toml)
 [![Corpus v9.2](https://img.shields.io/badge/corpus-v9.2-6C63FF?style=for-the-badge)](src/mailroom_eda/config.py)
 [![Seven phases](https://img.shields.io/badge/analysis-P0–P6-22C55E?style=for-the-badge)](run_all.py)
-[![Dataset](https://img.shields.io/badge/HF-mailroom--dataset-FFD21E?style=for-the-badge)](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
+[![Dataset](https://img.shields.io/badge/🤗_HF-mailroom--dataset-FFD21E?style=for-the-badge)](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
 
-**[Quickstart](#quickstart)** · **[How it works](#how-it-works)** · **[Corpus](#corpus-at-a-glance)** · **[Reports](#reports)** · **[Publishing](#hf-hub-interface)**
+[![Hub](https://img.shields.io/badge/🏛️_hub-Digital--Mailroom-000?style=flat-square)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
+[![Report site](https://img.shields.io/badge/📈_interactive-report_site-555?style=flat-square)](https://exios66.github.io/Mailroom-Corpus-EDA/)
+[![Summary](https://img.shields.io/badge/📑_findings-SUMMARY__REPORT-555?style=flat-square)](reports/SUMMARY_REPORT.md)
+
+**[Quickstart](#quickstart)** · **[How it works](#how-it-works)** · **[Corpus](#corpus-at-a-glance)** · **[Reports](#reports)** · **[Publishing](#hf-hub-interface)** · **[Where it fits](#where-it-fits)**
 
 </div>
 
 ---
 
-## What this does
+<a id="what-this-does"></a>
+
+## 🔬 What is this?
 
 The corpus analysis and publishing source for the Mailroom constellation:
 inspect document composition and provenance, identify quality gaps, produce
@@ -39,12 +45,22 @@ member when imported into Digital-Mailroom; its source repository owns the
 analysis and publication helpers.
 
 <div align="center">
-<img src="docs/assets/readme/stats.svg" alt="Pinned v9.2 corpus: 3,302 documents, five classes, 55 strata; seven phases; PNG and interactive HTML reports." width="100%"/>
+<picture>
+  <source media="(max-width: 640px)" srcset="docs/assets/readme/stats-mobile.svg"/>
+  <img src="docs/assets/readme/stats.svg" alt="By the numbers: 3,302 documents in the v9.2 pin, five document classes, 55 strata, 13,753 CUAD spans, seven analysis phases and 48 figures" width="100%"/>
+</picture>
 </div>
 
-## Quickstart
+<a id="quickstart"></a>
 
 <a id="quick-start"></a>
+<a id="getting-started"></a>
+
+## 🚀 Quickstart
+
+<div align="center">
+<img src="docs/assets/readme/terminal.svg" alt="Animated terminal: clone, create the Python 3.13 venv, install the pinned requirements, list the commands, fetch the corpus and run the full analysis" width="90%"/>
+</div>
 
 The project declares Python **3.12+**. Its pinned standalone
 [`requirements.txt`](requirements.txt) targets **Python 3.13**; use that
@@ -73,7 +89,13 @@ canonical results. Interactive Plotly HTML includes per-render UUIDs, so
 inspect regenerated figures as scratch output rather than replacing the
 committed reports incidentally.
 
-## Corpus at a Glance
+<a id="corpus-at-a-glance"></a>
+
+## 📊 Corpus at a glance
+
+<div align="center">
+<img src="docs/assets/readme/tui.svg" alt="Terminal dashboard: the five document classes with counts and shares of the 3,302-document v9.2 corpus, beside a log of what the analysis produced" width="90%"/>
+</div>
 
 <div align="center">
 
@@ -100,9 +122,17 @@ committed reports incidentally.
 
 </div>
 
-## How it works
-
+<a id="how-it-works"></a>
 <a id="pipeline-run_allpy"></a>
+
+## 🧭 How it works
+
+<div align="center">
+<picture>
+  <source media="(max-width: 640px)" srcset="docs/assets/readme/flow-mobile.svg"/>
+  <img src="docs/assets/readme/flow.svg" alt="Seven analysis phases, P0 to P6, from fetching the pinned corpus to the correspondence intent audit, and the reports they leave under reports/ and docs/" width="100%"/>
+</picture>
+</div>
 
 `run_all.py` executes seven phases. Reports and exports remain local unless
 you invoke a publishing command explicitly.
@@ -125,7 +155,9 @@ you invoke a publishing command explicitly.
 Only a complete, error-free seven-phase run writes `reports/SUMMARY_REPORT.json`.
 Subset runs and `--no-interactive` leave the full summary untouched.
 
-## Reports
+<a id="reports"></a>
+
+## 📑 Reports
 
 | Artifact | Description |
 |:---|:---|
@@ -134,7 +166,12 @@ Subset runs and `--no-interactive` leave the full summary untouched.
 | [`reports/figures_interactive/`](reports/figures_interactive/) | 18 Plotly HTML figures |
 | [`reports/tables/`](reports/tables/) | CSV/JSON tables |
 
-## Dataset Cards
+<a id="dataset-cards"></a>
+
+## 🗂️ Dataset cards
+
+<details>
+<summary><b>The five source corpora and their cards</b></summary>
 
 Per-source documentation for the corpora integrated into [`mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset) lives in [`docs/dataset-cards/`](docs/dataset-cards/):
 
@@ -146,7 +183,11 @@ Per-source documentation for the corpora integrated into [`mailroom-dataset`](ht
 | Enron correspondence | `correspondence` | 1,000 | [View →](docs/dataset-cards/enron-correspondence.md) |
 | CMS DE-SynPUF + GNOTHEIA + BDR + INSURBIAS insurance claims | `insurance_claim` | 1,100 | [View →](docs/dataset-cards/cms-desynpuf-insurance-claims.md) |
 
-## HF Hub Interface
+</details>
+
+<a id="hf-hub-interface"></a>
+
+## 🤗 HF Hub interface
 
 The upload/publish helpers previously living in `llm-entity-extraction` (pruned from the monorepo in DMR-079; standalone repo only) are centralized here:
 
@@ -158,7 +199,9 @@ The upload/publish helpers previously living in `llm-entity-extraction` (pruned 
 | `src/mailroom_eda/intent_backfill.py` | Correspondence intent hydration (issue #5): cross-walk, Enron/AESLC sha256 join, LLM pass |
 | `src/mailroom_eda/token_budget.py` | Token estimation & budget coverage |
 
-### CLI Commands
+<a id="cli-commands"></a>
+
+### CLI commands
 
 <details>
 <summary>v9 build/publish, intent backfill & verification</summary>
@@ -187,7 +230,9 @@ HF_TOKEN=hf_... .venv/bin/python scripts/build/build_v9.py --publish
 > `scripts/archive/v8/`; the one-time v9 EDGAR/draw sourcing lives under
 > `scripts/archive/v9-acquisition/`. See [the script index](scripts/README.md).
 
-## Key Findings
+<a id="key-findings"></a>
+
+## 🔎 Key findings
 
 - **Merger agreements are longest**: mean ~89k chars ≈ 22k tokens (heuristic) — **max ~252k chars ≈ 63k heuristic tokens**; budget for the actual tokenizer, prompt overhead and output, and chunk long agreements where needed
 - **Insurance claims uniformly short**: ~690 chars, σ=953 — six LOB subtypes (carrier/inpatient/outpatient/pde + property/auto)
@@ -197,7 +242,9 @@ HF_TOKEN=hf_... .venv/bin/python scripts/build/build_v9.py --publish
 - **Insurance**: 13/13 fields 100% filled; coverage determination fully populated
 - **Correspondence**: intent 100% hydrated (1,000/1,000, four provenance paths incl. v9 `heuristic`); sentiment-labeled subset
 
-## Publishing contracts
+<a id="publishing-contracts"></a>
+
+## 📜 Publishing contracts
 
 All Hub writes go through `mailroom_eda.hf_interface`, `dataset_export` and
 the version-specific builders. Preserve uniform string metadata, JSONL line
@@ -206,7 +253,9 @@ Use the [script index](scripts/README.md) and
 [revision plans](docs/plans/) for the exact build and publish sequence;
 legacy v8 helpers target the frozen baseline, not the v9 dataset by default.
 
-## Testing and documentation
+<a id="testing-and-documentation"></a>
+
+## ✅ Testing and documentation
 
 ```bash
 .venv/bin/python -m pip install "pytest>=8.0"
@@ -228,6 +277,23 @@ are not dependency-free tests. For the read-only corpus coverage audit:
 | [Scripts](scripts/README.md) | Build, audit, backfill and verification commands |
 | [Agent and contributor rules](AGENTS.md) | Publishing, determinism and report policy |
 
+<a id="where-it-fits"></a>
+
+## 🌌 Where it fits
+
+<div align="center">
+<picture>
+  <source media="(max-width: 640px)" srcset="docs/assets/readme/constellation-mobile.svg"/>
+  <img src="docs/assets/readme/constellation.svg" alt="Data-flow map of the Mailroom constellation with Mailroom-Corpus-EDA highlighted: it publishes the dataset to the Hugging Face Hub, and consumer repositories keep their own explicit revisions" width="100%"/>
+</picture>
+</div>
+
+| | Neighbour | Relationship |
+| :---: | :--- | :--- |
+| 🏛️ | [`Digital-Mailroom`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom) | The integration hub. It imports this repository as a virtual, nonbuilt uv member |
+| 🤗 | [`mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset) | The corpus published through this repository's centralized helpers, pinned here at v9.2 |
+| 🧠 | [`llm-mailroom`](https://github.com/Exios66/llm-mailroom) | The pipeline. It keeps its own explicit dataset revision, and the taxonomy integration tests here need a sibling llm-mailroom checkout |
+| 🥋 | [`llm-dojo-scoring`](https://github.com/Exios66/llm-dojo-scoring) | The scoring engine in the same constellation; this repository does not redefine metrics |
 ---
 
 <div align="center">
@@ -240,10 +306,10 @@ are not dependency-free tests. For the read-only corpus coverage audit:
 **[Mailroom-Corpus-EDA](https://github.com/Exios66/Mailroom-Corpus-EDA)** ·
 **[mailroom-ml](https://github.com/LLM-Mailroom-Services/mailroom-ml)**
 
-<sub>The Mailroom constellation · independent source repositories, shared interfaces.</sub>
+<sub>Mailroom Corpus EDA · one of the Mailroom constellation's independent source repositories, with shared interfaces.</sub>
 <br/>
 <sub>Core packages integrate in Digital-Mailroom; mailroom-ml is a standalone contractor.</sub>
 <br/>
-<sub>Local artwork: <a href="docs/assets/readme/README.md">design and regeneration</a>.</sub>
+<sub>📊 <i>Know your corpus before you trust your model.</i> · Artwork: <a href="docs/assets/readme/README.md">design and regeneration</a></sub>
 
 </div>

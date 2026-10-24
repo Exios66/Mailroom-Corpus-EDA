@@ -1,23 +1,52 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 176" width="1200" height="176" role="img" aria-labelledby="title desc" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
-<title id="title">Mailroom Corpus EDA at a glance</title><desc id="desc">3,302 — documents at v9.2 — revision-pinned corpus; 5 — document classes — 55 observed strata; P0–P6 — analysis phases — integrity → intent audit; PNG + HTML — report formats — static + interactive</desc>
-<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0b1220"/><stop offset=".55" stop-color="#151036"/><stop offset="1" stop-color="#22103a"/></linearGradient><linearGradient id="heading"><stop stop-color="#7dd3fc"/><stop offset=".5" stop-color="#c4b5fd"/><stop offset="1" stop-color="#f9a8d4"/></linearGradient><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10" fill="none" stroke="#94a3b8" stroke-width="1.5"/></marker></defs>
-<style>.cue{stroke-dasharray:6 22;animation:travel 4.5s linear 1}@keyframes travel{from{stroke-dashoffset:112}to{stroke-dashoffset:0}}@media(prefers-reduced-motion:reduce){.cue{animation:none}}</style>
-<rect width="1200" height="176" rx="24" fill="url(#bg)"/>
-<rect x=".5" y=".5" width="1199" height="175" rx="24" fill="none" stroke="#334155"/>
-<rect x="24" y="24" width="270" height="128" rx="18" fill="#111a2e" stroke="#334155"/>
-<text x="46" y="76" font-size="34" fill="#38bdf8" font-weight="800" text-anchor="start">3,302</text>
-<text x="46" y="107" font-size="19" fill="#e2e8f0" font-weight="600" text-anchor="start">documents at v9.2</text>
-<text x="46" y="132" font-size="15" fill="#94a3b8" font-weight="400" text-anchor="start">revision-pinned corpus</text>
-<rect x="318" y="24" width="270" height="128" rx="18" fill="#111a2e" stroke="#334155"/>
-<text x="340" y="76" font-size="34" fill="#c084fc" font-weight="800" text-anchor="start">5</text>
-<text x="340" y="107" font-size="19" fill="#e2e8f0" font-weight="600" text-anchor="start">document classes</text>
-<text x="340" y="132" font-size="15" fill="#94a3b8" font-weight="400" text-anchor="start">55 observed strata</text>
-<rect x="612" y="24" width="270" height="128" rx="18" fill="#111a2e" stroke="#334155"/>
-<text x="634" y="76" font-size="34" fill="#f472b6" font-weight="800" text-anchor="start">P0–P6</text>
-<text x="634" y="107" font-size="19" fill="#e2e8f0" font-weight="600" text-anchor="start">analysis phases</text>
-<text x="634" y="132" font-size="15" fill="#94a3b8" font-weight="400" text-anchor="start">integrity → intent audit</text>
-<rect x="906" y="24" width="270" height="128" rx="18" fill="#111a2e" stroke="#334155"/>
-<text x="928" y="76" font-size="34" fill="#22c55e" font-weight="800" text-anchor="start">PNG + HTML</text>
-<text x="928" y="107" font-size="19" fill="#e2e8f0" font-weight="600" text-anchor="start">report formats</text>
-<text x="928" y="132" font-size="15" fill="#94a3b8" font-weight="400" text-anchor="start">static + interactive</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 170" width="1200" height="170" role="img" aria-labelledby="t d" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <title id="t">Mailroom-Corpus-EDA by the numbers</title>
+  <desc id="d">3,302 documents · v9.2; 5 document classes; 55 strata; 13,753 CUAD spans; P0–P6 analysis phases; 48 figures</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1220"/><stop offset=".55" stop-color="#151036"/><stop offset="1" stop-color="#22103a"/></linearGradient>
+    <linearGradient id="ttl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7dd3fc"/><stop offset=".5" stop-color="#c4b5fd"/><stop offset="1" stop-color="#f9a8d4"/></linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#a78bfa" stop-opacity=".9"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></radialGradient>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <linearGradient id="shine" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".12"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <style>@media (prefers-reduced-motion: reduce){.motion{display:none}}</style>
+  <rect width="1200" height="170" rx="24" fill="url(#bg)"/>
+  <rect x=".5" y=".5" width="1199" height="169" rx="24" fill="none" stroke="#1f2a44"/>
+
+  <clipPath id="c0"><rect x="28" y="20" width="177.3" height="130" rx="16"/></clipPath>
+  <rect x="28" y="20" width="177.3" height="130" rx="16" fill="#111a2e" stroke="#1f2a44"/>
+  <text x="116.7" y="91.5" font-size="41" fill="#38bdf8" font-weight="800" text-anchor="middle">3,302</text>
+  <text x="116.7" y="121.5" font-size="14" fill="#94a3b8" text-anchor="middle">documents · v9.2</text>
+  <rect x="94.7" y="133" width="44" height="4" rx="2" fill="#38bdf8"/>
+  <g class="motion" clip-path="url(#c0)"><rect x="-40" y="20" width="60" height="130" fill="url(#shine)"><animate attributeName="x" values="-40;213.3;213.3" keyTimes="0;.35;1" dur="5s" begin="0s" repeatCount="indefinite"/></rect></g>
+  <clipPath id="c1"><rect x="221.3" y="20" width="177.3" height="130" rx="16"/></clipPath>
+  <rect x="221.3" y="20" width="177.3" height="130" rx="16" fill="#111a2e" stroke="#1f2a44"/>
+  <text x="310" y="91.5" font-size="41" fill="#a78bfa" font-weight="800" text-anchor="middle">5</text>
+  <text x="310" y="121.5" font-size="14" fill="#94a3b8" text-anchor="middle">document classes</text>
+  <rect x="288" y="133" width="44" height="4" rx="2" fill="#a78bfa"/>
+  <g class="motion" clip-path="url(#c1)"><rect x="153.3" y="20" width="60" height="130" fill="url(#shine)"><animate attributeName="x" values="153.3;406.7;406.7" keyTimes="0;.35;1" dur="5s" begin="0.5s" repeatCount="indefinite"/></rect></g>
+  <clipPath id="c2"><rect x="414.7" y="20" width="177.3" height="130" rx="16"/></clipPath>
+  <rect x="414.7" y="20" width="177.3" height="130" rx="16" fill="#111a2e" stroke="#1f2a44"/>
+  <text x="503.3" y="91.5" font-size="41" fill="#a3e635" font-weight="800" text-anchor="middle">55</text>
+  <text x="503.3" y="121.5" font-size="14" fill="#94a3b8" text-anchor="middle">strata</text>
+  <rect x="481.3" y="133" width="44" height="4" rx="2" fill="#a3e635"/>
+  <g class="motion" clip-path="url(#c2)"><rect x="346.7" y="20" width="60" height="130" fill="url(#shine)"><animate attributeName="x" values="346.7;600;600" keyTimes="0;.35;1" dur="5s" begin="1s" repeatCount="indefinite"/></rect></g>
+  <clipPath id="c3"><rect x="608" y="20" width="177.3" height="130" rx="16"/></clipPath>
+  <rect x="608" y="20" width="177.3" height="130" rx="16" fill="#111a2e" stroke="#1f2a44"/>
+  <text x="696.7" y="91.5" font-size="41" fill="#facc15" font-weight="800" text-anchor="middle">13,753</text>
+  <text x="696.7" y="121.5" font-size="14" fill="#94a3b8" text-anchor="middle">CUAD spans</text>
+  <rect x="674.7" y="133" width="44" height="4" rx="2" fill="#facc15"/>
+  <g class="motion" clip-path="url(#c3)"><rect x="540" y="20" width="60" height="130" fill="url(#shine)"><animate attributeName="x" values="540;793.3;793.3" keyTimes="0;.35;1" dur="5s" begin="1.5s" repeatCount="indefinite"/></rect></g>
+  <clipPath id="c4"><rect x="801.3" y="20" width="177.3" height="130" rx="16"/></clipPath>
+  <rect x="801.3" y="20" width="177.3" height="130" rx="16" fill="#111a2e" stroke="#1f2a44"/>
+  <text x="890" y="91.5" font-size="41" fill="#f472b6" font-weight="800" text-anchor="middle">P0–P6</text>
+  <text x="890" y="121.5" font-size="14" fill="#94a3b8" text-anchor="middle">analysis phases</text>
+  <rect x="868" y="133" width="44" height="4" rx="2" fill="#f472b6"/>
+  <g class="motion" clip-path="url(#c4)"><rect x="733.3" y="20" width="60" height="130" fill="url(#shine)"><animate attributeName="x" values="733.3;986.7;986.7" keyTimes="0;.35;1" dur="5s" begin="2s" repeatCount="indefinite"/></rect></g>
+  <clipPath id="c5"><rect x="994.7" y="20" width="177.3" height="130" rx="16"/></clipPath>
+  <rect x="994.7" y="20" width="177.3" height="130" rx="16" fill="#111a2e" stroke="#1f2a44"/>
+  <text x="1083.3" y="91.5" font-size="41" fill="#22c55e" font-weight="800" text-anchor="middle">48</text>
+  <text x="1083.3" y="121.5" font-size="14" fill="#94a3b8" text-anchor="middle">figures</text>
+  <rect x="1061.3" y="133" width="44" height="4" rx="2" fill="#22c55e"/>
+  <g class="motion" clip-path="url(#c5)"><rect x="926.7" y="20" width="60" height="130" fill="url(#shine)"><animate attributeName="x" values="926.7;1180;1180" keyTimes="0;.35;1" dur="5s" begin="2.5s" repeatCount="indefinite"/></rect></g>
 </svg>
