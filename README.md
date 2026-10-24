@@ -22,6 +22,28 @@
 
 ---
 
+<!-- readme-v2.1 -->
+<details>
+<summary><b>📑 Contents</b></summary>
+
+- [🔬 What is this?](#what-this-does)
+- [🤔 When to reach for it](#when-to-reach-for-it)
+- [🚀 Quickstart](#quickstart)
+- [📊 Corpus at a glance](#corpus-at-a-glance)
+- [🧭 How it works](#how-it-works)
+- [📑 Reports](#reports)
+- [🗂️ Dataset cards](#dataset-cards)
+- [🤗 HF Hub interface](#hf-hub-interface)
+- [🔎 Key findings](#key-findings)
+- [📜 Publishing contracts](#publishing-contracts)
+- [✅ Testing and documentation](#testing-and-documentation)
+- [🌌 Where it fits](#where-it-fits)
+- [❓ FAQ](#faq)
+- [🙏 Built on](#built-on)
+- [🤝 Contributing, security and license](#contributing-security-and-license)
+
+</details>
+
 <a id="what-this-does"></a>
 
 ## 🔬 What is this?
@@ -50,6 +72,16 @@ analysis and publication helpers.
   <img src="docs/assets/readme/stats.svg" alt="By the numbers: 3,302 documents in the v9.2 pin, five document classes, 55 strata, 13,753 CUAD spans, seven analysis phases and 48 figures" width="100%"/>
 </picture>
 </div>
+
+<a id="when-to-reach-for-it"></a>
+
+## 🤔 When to reach for it
+
+| ✅ Reach for it when… | ↪️ Look elsewhere when… |
+| :--- | :--- |
+| You want to know what is in `mailroom-dataset` before trusting a model trained or evaluated on it | You want to train or score a model. Training lives in [mailroom-ml](https://github.com/LLM-Mailroom-Services/mailroom-ml) and metrics in [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) |
+| You need to publish to the Hugging Face Hub with cast-safe metadata, safe JSONL line boundaries and SHA-256 verification | You only want to read the data. Download the pinned revision from the Hub; public reads need no token |
+| You want reproducible figures and tables from a pinned corpus revision | You want to analyze the frozen v8 baseline. The analysis reads v9.2; v8 is the separate [`mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus) dataset, with its tooling archived under `scripts/archive/v8/` |
 
 <a id="quickstart"></a>
 
@@ -294,6 +326,71 @@ are not dependency-free tests. For the read-only corpus coverage audit:
 | 🤗 | [`mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset) | The corpus published through this repository's centralized helpers, pinned here at v9.2 |
 | 🧠 | [`llm-mailroom`](https://github.com/Exios66/llm-mailroom) | The pipeline. It keeps its own explicit dataset revision, and the taxonomy integration tests here need a sibling llm-mailroom checkout |
 | 🥋 | [`llm-dojo-scoring`](https://github.com/Exios66/llm-dojo-scoring) | The scoring engine in the same constellation; this repository does not redefine metrics |
+
+<a id="faq"></a>
+
+## ❓ FAQ
+
+<details>
+<summary><b>Do I need a Hugging Face token?</b></summary>
+
+Not to read. Public corpus reads work without `HF_TOKEN`; publication is a separate, explicit operation (for example `build_v9.py --publish`) and is the only step that needs one.
+
+</details>
+
+<details>
+<summary><b>Will running the analysis publish anything?</b></summary>
+
+No. `run_all.py` writes local reports and staged exports only. Reports and exports remain local unless you invoke a publishing command explicitly.
+
+</details>
+
+<details>
+<summary><b>Which revision does the analysis read?</b></summary>
+
+**mailroom-dataset v9.2**: tag/card commit `670e8bc6`, data commit `d49f60a4`, pinned in [`src/mailroom_eda/config.py`](src/mailroom_eda/config.py). Consumer repositories keep their own explicit revisions.
+
+</details>
+
+<details>
+<summary><b>Why did my figures change when the data did not?</b></summary>
+
+Interactive Plotly HTML embeds per-render UUIDs, so every regeneration differs byte for byte. Treat regenerated figures as scratch output rather than replacing the committed reports incidentally.
+
+</details>
+
+<details>
+<summary><b>Why are some tests skipped?</b></summary>
+
+Full-corpus tests need the P0 snapshot (`run_all.py --phases P0`), and taxonomy integration tests need a sibling llm-mailroom checkout as described in [AGENTS.md](AGENTS.md).
+
+</details>
+
+<a id="built-on"></a>
+
+## 🙏 Built on
+
+The analysis and publishing stack:
+
+| Project | What it does here |
+| :--- | :--- |
+| [pandas](https://pandas.pydata.org/) · [PyArrow](https://arrow.apache.org/docs/python/) · [NumPy](https://numpy.org/) | Parquet loading, composition tables and integrity checks |
+| [SciPy](https://scipy.org/) | Composition statistics behind the imbalance and strata analysis |
+| [Matplotlib](https://matplotlib.org/) · [seaborn](https://seaborn.pydata.org/) · [squarify](https://github.com/laserson/squarify) · [Plotly](https://plotly.com/python/) | The static PNG and interactive HTML figures |
+| [🤗 Hub client](https://github.com/huggingface/huggingface_hub) | Corpus download and the centralized publish helpers |
+| [tiktoken](https://github.com/openai/tiktoken) | Optional exact token counts (`token_budget.estimate_tokens_tiktoken`); the committed budget tables use a 4-chars-per-token heuristic |
+| The source corpora | CUAD, SEC EDGAR, MAUD, S-1 filings, Enron, CMS DE-SynPUF and the claim sets credited in the [dataset cards](docs/dataset-cards/) |
+
+<a id="contributing-security-and-license"></a>
+
+## 🤝 Contributing, security and license
+
+| | |
+| :--- | :--- |
+| **Contributing** | Read [`AGENTS.md`](AGENTS.md) for the publishing, determinism and report policy. All Hub writes go through the centralized helpers, never ad-hoc upload code. The hub [contributing guide](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/blob/main/CONTRIBUTING.md) covers the card workflow and the import into Digital-Mailroom. |
+| **Security** | Report vulnerabilities, including leaked tokens, privately as described in the hub [security policy](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/blob/main/SECURITY.md), which covers this package. |
+| **License** | No license file is published for the code yet. Each source corpus keeps its own license; see the [dataset cards](docs/dataset-cards/). |
+
 ---
 
 <div align="center">
