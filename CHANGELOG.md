@@ -14,6 +14,36 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
   reply edges when a parent occurs later in input. No datasets regenerated or
   published; existing presence/null predicates and corpus pins are unchanged.
 
+## v9.4 — dedup + label-completion (STAGING, 2026-11-04)
+
+STAGING revision over the v9.3 stage (plan `docs/plans/v9.4-dedup-label-completion.md`;
+module `src/mailroom_eda/v9_4_revision.py`). Nothing is published. Gates:
+`scripts/audit/verify_v9_4_conformance.py`, where (a)–(g) pass and (h) calibration is
+PENDING, so the payload is not publish-ready yet.
+
+- **Exact duplicates removed, 3,302 → 3,293 rows** (train 2,971 / test 322).
+  - There were 6 `content_sha256` groups: CUAD 1, MAUD 1, EX-10 1 group of 3, and
+    corporate 3 groups, one of which leaked across train and test.
+  - Rule: richest annotation, then no `(1)` copy marker, then `train`, then smallest
+    filename. Conflicting expert annotations (CUAD ADUROBIOTECH, MAUD
+    contract_148/149) are recorded in `dedup_removed.jsonl`, never merged.
+- **Placeholder hygiene**: 2,100 `"nan"` cells on 350 GNOTHEIA/BDR insurance rows are
+  set to `""`. Presence codes are unchanged (gate).
+- **CUAD labels on SEC EDGAR EX-10 (issue #30)**: 76 of the 89 pending rows are filled
+  from the sandbox SAND-045 journal (Qwen3-14B-AWQ on Modal). Every span is
+  re-verified verbatim at its offset, with a closed 41-category vocabulary, semantic
+  probes and the quality floor. 13 rows stay `pending_annotation`.
+- **Flagged intents**: a two-pass agreement rule and the Modal runbook are in place;
+  the 25 rows stay `flagged_review` until the pass runs.
+- **Calibration**: CUAD micro-F1 ≥ 0.6 against golden CUAD and intent κ ≥ 0.6 against
+  the manual labels gate publishing.
+- `dataset_info.json` for ground_truth no longer declares the removed `_published` column.
+- Gates are explicit checks that still run under `python -O`. Gate (b) allows each fill only on
+  the rows it applies to. Each journal record must name the row's `document_id`, and the
+  journal's sha256 and model are recorded. Two rebuilds produce byte-identical output.
+- Audit outputs: `docs/reports/audits/v9_4_dedup_label_audit.*`, a
+  `v9_4_label_review.*` spot-check pack, and `v9_4_queues/`.
+
 ## v9.3 — corporate presence-layer labels (STAGING, 2026-10-17)
 
 STAGING release on branch `feat/v9.3-staging-corporate-presence` (draft plan:
