@@ -118,6 +118,39 @@ def test_the_maud_override_is_pinned_to_contract_148():
     assert ov["evidence"] == {"contract_148": [57, 71], "contract_149": [0, 75]}
 
 
+def test_cross_split_near_duplicate_drops_the_test_copy():
+    """A normalized-text group spanning splits loses its test member; a train member survives."""
+    rows = [_row("t.htm", "s1", split="test", norm="n1"), _row("a.htm", "s2", split="train", norm="n1"),
+            _row("b.htm", "s3", split="train", norm="n1"), _row("x.htm", "s4", split="test", norm="n9")]
+    (g,) = v94.plan_near_dup_test_drops(rows, expected=frozenset({"t.htm"}))
+    assert g.kind == v94.NEAR_DUP_KIND and g.survivor_basis == "cross_split_near_duplicate"
+    assert g.survivor == "a.htm" and g.removed == ["t.htm"]
+    assert g.content_sha256 == "s2" and g.normalized_text_sha256 == "n1"
+    assert g.conflict_fields == []  # differing text bytes are not a label conflict
+
+
+def test_same_split_near_duplicates_are_kept():
+    """Near-duplicates inside one split stay (report-only); nothing is dropped."""
+    rows = [_row("a.htm", "s1", split="train", norm="n1"), _row("b.htm", "s2", split="train", norm="n1"),
+            _row("c.htm", "s3", split="test", norm="n2"), _row("d.htm", "s4", split="test", norm="n2")]
+    assert v94.plan_near_dup_test_drops(rows, expected=frozenset()) == []
+
+
+def test_only_exact_copies_lend_journal_records():
+    """A survivor may borrow a removed exact copy's CUAD record, never a near-duplicate's."""
+    exact = v94.DedupGroup(content_sha256="s1", survivor="a", removed=["b"])
+    near = v94.DedupGroup(content_sha256="s1", survivor="a", removed=["t"], kind=v94.NEAR_DUP_KIND)
+    assert v94.journal_aliases([exact, near]) == {"a": ["b"]}
+
+
+def test_near_duplicate_drop_set_is_pinned():
+    """A drop set that differs from the pin raises instead of silently dropping other rows."""
+    rows = [_row("t.htm", "s1", split="test", norm="n1"), _row("a.htm", "s2", split="train", norm="n1")]
+    with pytest.raises(AssertionError, match="pinned"):
+        v94.plan_near_dup_test_drops(rows)
+    assert v94.EXPECTED_NEAR_DUP_TEST_DROPS == {"0000950137-06-011083_n08078exv3w03.htm"}
+
+
 def test_maud_evidence_alignment_ignores_punctuation_and_skips_short_fragments():
     """Excerpts match through quote/space normalization, split on <omitted>, and dedupe fragments."""
     text = "Section 2.1  “Merger Consideration” means $10.00 in cash per Share, without interest, payable."
@@ -573,7 +606,10 @@ def test_end_to_end_stage_passes_gates(tmp_path):
     """A fresh stage from v9.3 passes gates (a)-(g), and tampering makes the gates fail."""
     stage = tmp_path / "stage"
     report = v94.build_all(stage, use_cuad_journal=False, write_audit=False)
-    assert report["dedup"]["stats"]["rows"] == v94.EXPECTED_BASE_ROWS - v94.EXPECTED_REMOVED_ROWS
+    n_near = len(v94.EXPECTED_NEAR_DUP_TEST_DROPS)
+    assert report["dedup"]["stats"]["rows"] == v94.EXPECTED_BASE_ROWS - v94.EXPECTED_REMOVED_ROWS - n_near
+    assert report["dedup"]["stats"]["splits"] == {"train": 2971, "test": 321}
+    assert not any(g["cross_split"] for g in report["near_duplicates"])
     assert report["placeholders"]["cells"] > 0
     result = v94.verify_stage(stage, v94.BASE_STAGE_DIR)
     assert all(v.startswith("PASS") for k, v in result["gates"].items() if k != "h_calibration")
@@ -592,6 +628,19 @@ def test_end_to_end_stage_passes_gates(tmp_path):
     dpath.write_text("".join(json.dumps(g) + "\n" for g in groups), encoding="utf-8")
     with pytest.raises(AssertionError, match="upstream-defect override"):
         v94.verify_stage(stage, v94.BASE_STAGE_DIR)
+    dpath.write_text(dedup_original, encoding="utf-8")
+
+    # the cross-split EX-3 test copy is gone, and gate (a) re-derives why it may be
+    (drop,) = v94.EXPECTED_NEAR_DUP_TEST_DROPS
+    assert drop not in names
+    (near,) = [g for g in map(json.loads, dedup_original.splitlines()) if g["kind"] == v94.NEAR_DUP_KIND]
+    assert near["removed"] == [drop] and near["survivor_basis"] == "cross_split_near_duplicate"
+    for tamper, msg in ((dict(near, normalized_text_sha256="0" * 64), "normalized text differs"),
+                        (dict(near, kind=v94.EXACT_KIND), "not a byte-identical copy")):
+        dpath.write_text("".join(json.dumps(tamper if g["kind"] == v94.NEAR_DUP_KIND else g) + "\n"
+                                 for g in map(json.loads, dedup_original.splitlines())), encoding="utf-8")
+        with pytest.raises(AssertionError, match=msg):
+            v94.verify_stage(stage, v94.BASE_STAGE_DIR)
     dpath.write_text(dedup_original, encoding="utf-8")
 
     # the report is bound to the staged bytes

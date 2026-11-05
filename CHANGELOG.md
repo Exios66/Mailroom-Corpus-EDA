@@ -21,7 +21,7 @@ module `src/mailroom_eda/v9_4_revision.py`). Nothing is published. Gates:
 `scripts/audit/verify_v9_4_conformance.py`, where (a)–(g) pass and (h) calibration is
 PENDING, so the payload is not publish-ready yet.
 
-- **Exact duplicates removed, 3,302 → 3,293 rows** (train 2,971 / test 322).
+- **Duplicates removed, 3,302 → 3,292 rows** (train 2,971 / test 321).
   - There were 6 `content_sha256` groups: CUAD 1, MAUD 1, EX-10 1 group of 3, and
     corporate 3 groups, one of which leaked across train and test.
   - Rule: richest annotation, then no `(1)` copy marker, then `train`, then smallest
@@ -59,8 +59,12 @@ PENDING, so the payload is not publish-ready yet.
   byte-identical copy of a staged survivor; gate (d) recomputes presence instead of
   trusting the stored map; the report is bound to a digest of the staged files. Staging
   refuses a target that overlaps the v9.3 input. Two rebuilds produce byte-identical output.
-- Near-duplicates (3 normalized-text groups) are reported, not removed; one EX-3
-  group crosses train/test and needs a decision (plan §5).
+- **Cross-split near-duplicate dropped from test**: EX-3 board resolution
+  `0000950137-06-011083_n08078exv3w03.htm` matches two train rows after whitespace
+  normalization (2 characters differ, labels identical). It is removed as a
+  `near_duplicate_test_drop` record (pinned; gate (a) recomputes the normalized hash
+  and checks test → train). It never lends a CUAD journal record. The remaining 3
+  same-split near-duplicate groups are reported only.
 - Audit outputs: `docs/reports/audits/v9_4_dedup_label_audit.*`, a
   `v9_4_label_review.*` spot-check pack, and `v9_4_queues/`.
 - Operator runbook for the GPU steps (calibrate first, then label, then re-stage):

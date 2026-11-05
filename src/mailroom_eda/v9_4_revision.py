@@ -7,12 +7,15 @@ payload (``data/v9_3/stage``, built by
 
 What this revision changes, in order:
 
-1. **Exact-duplicate removal (row-set change, 3,302 -> 3,293).** Rows that
+1. **Duplicate removal (row-set change, 3,302 -> 3,292).** Rows that
    share a ``content_sha256`` collapse to one deterministic survivor (see
-   :func:`survivor_sort_key`). Survivors are byte-identical to their v9.3
-   lines. The removed copies, the survivor each one folded into, and any
-   label conflict between the copies are recorded in ``dedup_removed.jsonl``
-   (shipped in the payload) and the audit report.
+   :func:`survivor_sort_key`). Then a test row whose normalized text equals a
+   train row's is dropped (:func:`plan_near_dup_test_drops`): it would leak
+   training text into test, and the md5 split rule forbids moving it.
+   Survivors are byte-identical to their v9.3 lines. The removed rows, the
+   survivor each one folded into, and any label conflict between the copies
+   are recorded in ``dedup_removed.jsonl`` (shipped in the payload) and the
+   audit report.
 2. **Placeholder hygiene.** The literal strings ``"nan"`` / ``"None"`` /
    ``"null"`` inside ``gt_fields`` become ``""`` (the cast-safe absence
    convention). The 3 CMS outpatient ``"N/A"`` dates are a deliberate
@@ -59,6 +62,7 @@ from typing import Any, Iterable, Mapping, Sequence
 from .config import DATA_DIR, ROOT
 from .dataset_export import assign_split, safe_jsonl_line
 from .gt_presence import presence_law_problems, row_gt_presence
+from .identity import normalized_text_sha256
 
 PLAN_REF = "docs/plans/v9.4-dedup-label-completion.md"
 LABELS_VERSION = "v9.4 dedup + label-completion"
@@ -95,6 +99,13 @@ SANDBOX_JOURNAL_CANDIDATES = (
 EXPECTED_BASE_ROWS = 3302
 #: Tripwire, not a parameter: the v9.3 stage has 6 sha groups / 9 extra copies.
 EXPECTED_REMOVED_ROWS = 9
+#: Test rows dropped because their normalized text equals a train row's (plan
+#: §5): a board resolution whose test copy differs from its two train siblings by
+#: 2 characters in the signature block, with identical labels. Pinned, so a
+#: changed base fails the build instead of silently dropping something else.
+EXPECTED_NEAR_DUP_TEST_DROPS = frozenset({"0000950137-06-011083_n08078exv3w03.htm"})
+EXACT_KIND = "exact"
+NEAR_DUP_KIND = "near_duplicate_test_drop"
 
 PLACEHOLDER_STRINGS = frozenset({"nan", "None", "null"})
 COPY_MARKER_RE = re.compile(r"\(\d+\)(?=\.[A-Za-z0-9]+$)")
@@ -218,11 +229,16 @@ UPSTREAM_DEFECT_SURVIVORS: dict[str, dict[str, Any]] = {
 
 @dataclass
 class DedupGroup:
-    """One set of byte-identical rows: the survivor kept, the copies removed.
+    """One removal record: the survivor kept and the rows removed.
 
-    ``survivor_basis`` is ``"rule"`` (:func:`survivor_sort_key`) or
-    ``"upstream_defect"`` (:data:`UPSTREAM_DEFECT_SURVIVORS`), and
-    ``survivor_note`` says why for the latter.
+    ``kind`` is ``"exact"`` (byte-identical copies sharing ``content_sha256``)
+    or ``"near_duplicate_test_drop"`` (test rows whose normalized text equals
+    the train survivor's; ``content_sha256`` is then the survivor's and
+    ``normalized_text_sha256`` the shared normalized hash).
+    ``survivor_basis`` is ``"rule"`` (:func:`survivor_sort_key`),
+    ``"upstream_defect"`` (:data:`UPSTREAM_DEFECT_SURVIVORS`) or
+    ``"cross_split_near_duplicate"``; ``survivor_note`` says why for the
+    latter two.
     """
 
     content_sha256: str
@@ -232,6 +248,8 @@ class DedupGroup:
     conflict_fields: list[str] = field(default_factory=list)
     survivor_basis: str = "rule"
     survivor_note: str = ""
+    kind: str = EXACT_KIND
+    normalized_text_sha256: str = ""
 
     @property
     def label_conflict(self) -> bool:
@@ -331,6 +349,7 @@ def plan_dedup(
             basis, note = "upstream_defect", str(ov["note"])
         groups.append(DedupGroup(
             content_sha256=sha,
+            normalized_text_sha256=str(ordered[0].get("normalized_text_sha256") or ""),
             survivor=str(ordered[0]["filename"]),
             removed=[str(m["filename"]) for m in ordered[1:]],
             members=[
@@ -349,6 +368,62 @@ def plan_dedup(
             survivor_basis=basis,
             survivor_note=note,
         ))
+    return groups
+
+
+_NEAR_DUP_TEXT_KEYS = frozenset({"content_sha256", "doc_text"})
+
+
+def plan_near_dup_test_drops(
+    rows: Sequence[Mapping[str, Any]],
+    expected: frozenset[str] | None = EXPECTED_NEAR_DUP_TEST_DROPS,
+) -> list[DedupGroup]:
+    """Plan dropping test rows whose normalized text equals a train row's.
+
+    Run on the exact-dedup survivors. For every ``normalized_text_sha256``
+    group with members in both splits, the test members are removed and the
+    best train member (:func:`survivor_sort_key`) is recorded as survivor.
+    Groups within one split are left alone (report-only near-duplicates).
+    Raise ``AssertionError`` when ``expected`` is given and the planned drops
+    differ from it.
+    """
+    by_fn = {str(r["filename"]): r for r in rows}
+    groups = []
+    for g in near_duplicate_groups(rows):
+        if not g["cross_split"]:
+            continue
+        members = [by_fn[m["filename"]] for m in g["members"]]
+        train = sorted((m for m in members if m["split"] == "train"), key=survivor_sort_key)
+        test = sorted(m["filename"] for m in members if m["split"] == "test")
+        surv = train[0]
+        groups.append(DedupGroup(
+            content_sha256=str(surv["content_sha256"]),
+            normalized_text_sha256=g["normalized_text_sha256"],
+            survivor=str(surv["filename"]),
+            removed=test,
+            members=[
+                {
+                    "filename": m["filename"],
+                    "document_id": m.get("document_id", ""),
+                    "split": m.get("split", ""),
+                    "expected": m.get("expected", ""),
+                    "expected_subclass": m.get("expected_subclass", ""),
+                    "source_corpus": m.get("source_corpus", ""),
+                    "content_sha256": m.get("content_sha256", ""),
+                }
+                for m in [surv] + [by_fn[fn] for fn in test]
+            ],
+            # the texts differ by whitespace by construction; only labels count as a conflict
+            conflict_fields=[f for f in label_conflict_fields([surv] + [by_fn[fn] for fn in test])
+                             if f not in _NEAR_DUP_TEXT_KEYS],
+            survivor_basis="cross_split_near_duplicate",
+            survivor_note=("the test copy's text equals a train row's after normalization, so keeping "
+                           "it would leak training text into test; the md5 split rule forbids moving it"),
+            kind=NEAR_DUP_KIND,
+        ))
+    planned = {fn for g in groups for fn in g.removed}
+    if expected is not None and planned != set(expected):
+        raise AssertionError(f"near-duplicate test drops {sorted(planned)} != pinned {sorted(expected)}")
     return groups
 
 
@@ -375,6 +450,19 @@ def maud_evidence_alignment(text: str, excerpts: Iterable[str], *, min_chars: in
             seen.add(frag)
             found += frag[:200] in hay
     return found, len(seen)
+
+
+def journal_aliases(groups: Iterable[DedupGroup]) -> dict[str, list[str]]:
+    """survivor filename -> removed filenames whose journal record it may use.
+
+    Only exact (byte-identical) copies qualify: their spans sit at the same
+    offsets. A near-duplicate's text differs, so its record is never borrowed.
+    """
+    aliases: dict[str, list[str]] = defaultdict(list)
+    for g in groups:
+        if g.kind == EXACT_KIND:
+            aliases[g.survivor].extend(g.removed)
+    return dict(aliases)
 
 
 def removed_index(groups: Iterable[DedupGroup]) -> dict[str, str]:
@@ -407,14 +495,21 @@ def dangling_references(
 
 def verify_dedup(base_rows: Sequence[Mapping], kept_rows: Sequence[Mapping],
                  groups: Sequence[DedupGroup]) -> dict[str, Any]:
-    """Validate the removal count, surviving hashes, filenames, and splits.
+    """Validate the removal counts, surviving hashes, filenames, and splits.
+
+    Expects exactly :data:`EXPECTED_REMOVED_ROWS` exact removals and the pinned
+    :data:`EXPECTED_NEAR_DUP_TEST_DROPS`.
 
     Return row, class, and split counts. Raise ``AssertionError`` when a
     deduplication or split check fails.
     """
     removed = removed_index(groups)
-    if len(removed) != EXPECTED_REMOVED_ROWS:
-        raise AssertionError(f"expected {EXPECTED_REMOVED_ROWS} removals, planned {len(removed)}")
+    exact = removed_index(g for g in groups if g.kind == EXACT_KIND)
+    near = removed_index(g for g in groups if g.kind == NEAR_DUP_KIND)
+    if len(exact) != EXPECTED_REMOVED_ROWS:
+        raise AssertionError(f"expected {EXPECTED_REMOVED_ROWS} exact removals, planned {len(exact)}")
+    if set(near) != set(EXPECTED_NEAR_DUP_TEST_DROPS):
+        raise AssertionError(f"near-duplicate test drops {sorted(near)} != pinned")
     if len(kept_rows) != len(base_rows) - len(removed):
         raise AssertionError("row count does not equal base minus removed")
     shas = Counter(r["content_sha256"] for r in kept_rows)
@@ -1117,11 +1212,12 @@ def render_audit_md(report: Mapping[str, Any]) -> str:
         f"Input: v9.3 stage ({EXPECTED_BASE_ROWS:,} rows). Output: {d['stats']['rows']:,} rows. "
         f"Generated by `src/mailroom_eda/v9_4_revision.py` (plan `{PLAN_REF}`).",
         "",
-        "## Exact duplicates removed",
+        "## Duplicates removed",
         "",
         "Survivor rule: richest annotation, then no copy marker such as `(1)`, then the `train` "
         "split, then the smallest filename. A verified upstream defect overrides the rule "
-        "(basis `upstream_defect`, notes below).",
+        "(basis `upstream_defect`, notes below). A test row whose normalized text equals a train "
+        "row's is dropped (basis `cross_split_near_duplicate`; the sha shown is the survivor's).",
         "",
         "| content_sha256 | survivor | removed | basis | label conflict |",
         "|---|---|---|---|---|",
@@ -1141,6 +1237,10 @@ def render_audit_md(report: Mapping[str, Any]) -> str:
                       "`scripts/audit/verify_maud_duplicate.py --check`."]
     lines += ["", f"Class deltas: {d['stats']['class_deltas']}. Splits after: {d['stats']['splits']}.",
               "", "## Near duplicates (report only)", ""]
+    for g in d["groups"]:
+        if g.get("kind") == NEAR_DUP_KIND:
+            lines.append(f"- dropped from test: {', '.join(f'`{x}`' for x in g['removed'])} "
+                         f"(normalized text equals train `{g['survivor']}`)")
     if report["near_duplicates"]:
         for g in report["near_duplicates"]:
             lines.append("- " + ", ".join(f"`{m['filename']}` ({m['split']})" for m in g["members"])
@@ -1212,7 +1312,7 @@ def render_readme_addendum(report: Mapping[str, Any]) -> str:
         f"Rows: {EXPECTED_BASE_ROWS:,} -> {d['stats']['rows']:,} "
         f"(train {d['stats']['splits'].get('train', 0):,} / test {d['stats']['splits'].get('test', 0):,}). "
         f"Composition: {d['stats']['composition']}.\n\n"
-        "**Exact duplicates removed.** Rows sharing a `content_sha256` were collapsed to one "
+        "**Duplicates removed.** Rows sharing a `content_sha256` were collapsed to one "
         "survivor (richest annotation, then no `(1)` copy marker, then `train`, then smallest "
         "filename). One group had copies in both splits. Survivors are byte-identical to v9.3; "
         "`dedup_removed.jsonl` lists every removed copy and any label conflict between copies.\n\n"
@@ -1221,6 +1321,11 @@ def render_readme_addendum(report: Mapping[str, Any]) -> str:
             f"**Upstream defect.** `{g['survivor']}` is kept over {', '.join(f'`{x}`' for x in g['removed'])}: "
             f"{g['survivor_note']}. The removed row's labels did not describe its text.\n\n"
             for g in d["groups"] if g.get("survivor_basis") == "upstream_defect") +
+        "".join(
+            f"**Cross-split near-duplicate.** {', '.join(f'`{x}`' for x in g['removed'])} (test) is "
+            f"dropped: its text equals train `{g['survivor']}` after whitespace normalization, so it "
+            "would leak training text into test.\n\n"
+            for g in d["groups"] if g.get("kind") == NEAR_DUP_KIND) +
         f"**Placeholder hygiene.** {report['placeholders']['cells']} `gt_fields` cells on "
         f"{report['placeholders']['rows']} insurance rows held the string `nan`; they are now `\"\"`.\n\n"
         f"**CUAD clause labels on SEC EDGAR EX-10.** {c.get('ingested', 0)} contracts now carry "
@@ -1443,16 +1548,35 @@ def verify_stage(stage_dir: Path = STAGE_DIR_DEFAULT, base_dir: Path = BASE_STAG
     base_sha = {fn: json.loads(ln)["content_sha256"] for fn, ln in base_lines.items()}
     staged_sha = {r["filename"]: r["content_sha256"] for r in rows}
     _gate(set(staged_sha) <= set(base_sha), "staged row not in the v9.3 base")
+    base_rec = {fn: json.loads(ln) for fn, ln in base_lines.items()}
+    staged_by_fn = {r["filename"]: r for r in rows}
+    n_exact = n_near = 0
     for g in removed:
         surv = g["survivor"]
+        kind = g.get("kind", EXACT_KIND)
+        _gate(kind in (EXACT_KIND, NEAR_DUP_KIND), f"group {surv}: unknown kind {kind!r}")
         _gate(surv in staged_sha, f"survivor {surv} missing from stage")
         _gate(staged_sha[surv] == g["content_sha256"], f"survivor {surv}: sha differs from its group")
         for fn in g["removed"]:
             _gate(fn in base_sha, f"removed {fn} not in the v9.3 base")
-            _gate(base_sha[fn] == staged_sha[surv], f"removed {fn} is not a byte-identical copy of {surv}")
+            if kind == EXACT_KIND:
+                n_exact += 1
+                _gate(base_sha[fn] == staged_sha[surv], f"removed {fn} is not a byte-identical copy of {surv}")
+                continue
+            n_near += 1
+            _gate(fn in EXPECTED_NEAR_DUP_TEST_DROPS, f"near-duplicate drop {fn} is not pinned")
+            _gate(base_rec[fn]["split"] == "test", f"near-duplicate drop {fn} is not a test row")
+            _gate(staged_by_fn[surv]["split"] == "train", f"near-duplicate survivor {surv} is not in train")
+            # recomputed from the text, not read from the stored hash column
+            norm = normalized_text_sha256(base_rec[fn]["doc_text"])
+            _gate(norm == g.get("normalized_text_sha256")
+                  == normalized_text_sha256(staged_by_fn[surv]["doc_text"]),
+                  f"near-duplicate drop {fn}: normalized text differs from {surv}")
+    _gate({fn for g in removed if g.get("kind") == NEAR_DUP_KIND for fn in g["removed"]}
+          == set(EXPECTED_NEAR_DUP_TEST_DROPS), "near-duplicate test drops != pinned set")
     _gate(set(base_sha) == set(staged_sha) | removed_names, "rows vanished without a dedup record")
     gates["a_row_set"] = (f"PASS {len(rows)} rows, 0 duplicate shas, md5 split rule holds, "
-                          f"{len(removed_names)} removed rows each a byte-identical copy of a staged survivor")
+                          f"{n_exact} exact copies and {n_near} cross-split near-duplicate test rows removed")
 
     # (b) survivors unchanged except documented fills on the rows they apply to
     untouched = changed = 0
@@ -1600,6 +1724,8 @@ def build_all(
 
     # 1. dedup
     groups = plan_dedup(base_rows)
+    exact_removed = removed_index(groups)
+    groups += plan_near_dup_test_drops([r for r in base_rows if r["filename"] not in exact_removed])
     removed = removed_index(groups)
     kept = [r for r in base_rows if r["filename"] not in removed]
     removed_rows = [r for r in base_rows if r["filename"] in removed]
@@ -1610,9 +1736,9 @@ def build_all(
         raise AssertionError(f"removed rows are still referenced: {hits[:5]}")
     dedup_stats = verify_dedup(base_rows, kept, groups)
     near = near_duplicate_groups(kept)
-    aliases: dict[str, list[str]] = defaultdict(list)
-    for fn, surv in removed.items():
-        aliases[surv].append(fn)
+    if any(g["cross_split"] for g in near):
+        raise AssertionError("a near-duplicate group still crosses train/test")
+    aliases = journal_aliases(groups)
 
     touched: set[str] = set()
 

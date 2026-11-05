@@ -24,6 +24,7 @@
           "gt_fields.label_evidence"
         ],
         "content_sha256": "23255988c8f39e0b67d7ff8a2b316a17c3bf4cc0557141d6a7e6e9cc7d770ad3",
+        "kind": "exact",
         "label_conflict": true,
         "members": [
           {
@@ -45,6 +46,7 @@
             "split": "train"
           }
         ],
+        "normalized_text_sha256": "931d7dcd689f9d21b322c5325dfce2f87cb3f178fabcd322962fd8c05b59f370",
         "removed": [
           "ADUROBIOTECH,INC_06_02_2020-EX-10.7-CONSULTING AGREEMENT.PDF"
         ],
@@ -55,6 +57,7 @@
       {
         "conflict_fields": [],
         "content_sha256": "2641068097dd233b7093f35addf5e780ff444734394016b3bbe6ae265eaba165",
+        "kind": "exact",
         "label_conflict": false,
         "members": [
           {
@@ -76,6 +79,7 @@
             "split": "train"
           }
         ],
+        "normalized_text_sha256": "fa46747ad18b3eb834f7a301db25a9a799ba6c93691f7ca0edf25b8181d2f2b3",
         "removed": [
           "0000950137-04-007819_n86466a1exv4w1.txt"
         ],
@@ -86,6 +90,7 @@
       {
         "conflict_fields": [],
         "content_sha256": "6ee5f54efd4729eba5ba44869e42c853e1b3395e32ee3069fdc0efd4cf39bf79",
+        "kind": "exact",
         "label_conflict": false,
         "members": [
           {
@@ -116,6 +121,7 @@
             "split": "train"
           }
         ],
+        "normalized_text_sha256": "8f8fe248736274615a666430d6508663e0e14543426adec6af213afc1b160d65",
         "removed": [
           "0001675426-16-000031_ex-10_1.htm",
           "0001675426-16-000038_ex-10_1.htm"
@@ -132,6 +138,7 @@
           "gt_fields.maud_label_count"
         ],
         "content_sha256": "7a84e0d4d21183ede27195bbaded6976e3ef3af05e72ad05aea0a73f4ad6a96e",
+        "kind": "exact",
         "label_conflict": true,
         "members": [
           {
@@ -153,6 +160,7 @@
             "split": "train"
           }
         ],
+        "normalized_text_sha256": "293d4fc7f55cdee91e1a42f58e0b0754a01bc5be2971b181247372e97a2145d3",
         "removed": [
           "contract_149_merger_agreement.txt"
         ],
@@ -163,6 +171,7 @@
       {
         "conflict_fields": [],
         "content_sha256": "e888213d542dddedbe1471eb0b0fb14ade664c55c926e90d9be18be752ccdab7",
+        "kind": "exact",
         "label_conflict": false,
         "members": [
           {
@@ -184,6 +193,7 @@
             "split": "train"
           }
         ],
+        "normalized_text_sha256": "55e441d981c719a16f9d151cf527afd8e9de80891eba828acbdd5eace9adf674",
         "removed": [
           "0001099574-13-000016_exh31articlesofincorporation.htm"
         ],
@@ -194,6 +204,7 @@
       {
         "conflict_fields": [],
         "content_sha256": "ebf8f3646c10795eddcd404c0dea82b2a25eef49251dab83f3b46bf6f1d143e1",
+        "kind": "exact",
         "label_conflict": false,
         "members": [
           {
@@ -233,6 +244,7 @@
             "split": "test"
           }
         ],
+        "normalized_text_sha256": "e066a3cf29ae617c5b2b8e58afde9cd0245ffd98b075fddb3f6a4292571f5f0b",
         "removed": [
           "0000950137-07-001852_x08078a3exv3w03.htm",
           "0000950137-07-002206_x08078a4exv3w03.htm",
@@ -241,27 +253,60 @@
         "survivor": "0000950137-07-000990_x09498a2exv3w03.htm",
         "survivor_basis": "rule",
         "survivor_note": ""
+      },
+      {
+        "conflict_fields": [],
+        "content_sha256": "1701295500d1895380e64f13641878a0982da032b4539c05573e9ee056122c2c",
+        "kind": "near_duplicate_test_drop",
+        "label_conflict": false,
+        "members": [
+          {
+            "content_sha256": "1701295500d1895380e64f13641878a0982da032b4539c05573e9ee056122c2c",
+            "document_id": "DOC-8de72b7f93fda86c",
+            "expected": "corporate_record",
+            "expected_subclass": "board_resolution",
+            "filename": "0000950137-06-012987_i08078a2exv3w03.htm",
+            "source_corpus": "sec_edgar",
+            "split": "train"
+          },
+          {
+            "content_sha256": "afae9b3c6900144f1b92da22e67e9805e0e6a6d6b05ac7ed94b0686a3336f673",
+            "document_id": "DOC-59d072355f2c3b14",
+            "expected": "corporate_record",
+            "expected_subclass": "board_resolution",
+            "filename": "0000950137-06-011083_n08078exv3w03.htm",
+            "source_corpus": "sec_edgar",
+            "split": "test"
+          }
+        ],
+        "normalized_text_sha256": "e066a3cf29ae617c5b2b8e58afde9cd0245ffd98b075fddb3f6a4292571f5f0b",
+        "removed": [
+          "0000950137-06-011083_n08078exv3w03.htm"
+        ],
+        "survivor": "0000950137-06-012987_i08078a2exv3w03.htm",
+        "survivor_basis": "cross_split_near_duplicate",
+        "survivor_note": "the test copy's text equals a train row's after normalization, so keeping it would leak training text into test; the md5 split rule forbids moving it"
       }
     ],
     "stats": {
       "class_deltas": {
         "contract": -3,
-        "corporate_record": -5,
+        "corporate_record": -6,
         "correspondence": 0,
         "insurance_claim": 0,
         "merger_agreement": -1
       },
       "composition": {
         "contract": 597,
-        "corporate_record": 445,
+        "corporate_record": 444,
         "correspondence": 1000,
         "insurance_claim": 1100,
         "merger_agreement": 151
       },
-      "removed": 9,
-      "rows": 3293,
+      "removed": 10,
+      "rows": 3292,
       "splits": {
-        "test": 322,
+        "test": 321,
         "train": 2971
       }
     }
@@ -290,13 +335,8 @@
       "normalized_text_sha256": "3bfe4b6f049a71f42971c54666c6bc092b0b7e992a9915dd4b061642c91f5aae"
     },
     {
-      "cross_split": true,
+      "cross_split": false,
       "members": [
-        {
-          "expected": "corporate_record",
-          "filename": "0000950137-06-011083_n08078exv3w03.htm",
-          "split": "test"
-        },
         {
           "expected": "corporate_record",
           "filename": "0000950137-06-012987_i08078a2exv3w03.htm",
@@ -355,11 +395,11 @@
     "flagged_intents": 25,
     "pending_cuad": 89
   },
-  "stage_digest": "0fcfdb558d59302b6ea8454a697a1c8473691d72c25d76ac697e56f64f08d4bd",
+  "stage_digest": "2430540f0c925dd6987816ee152ee73f553875b9e9b6a63cddb569be9d09c31b",
   "staged_counts": {
-    "default/test": 322,
+    "default/test": 321,
     "default/train": 2971,
-    "ground_truth/test": 322,
+    "ground_truth/test": 321,
     "ground_truth/train": 2971
   }
 }
