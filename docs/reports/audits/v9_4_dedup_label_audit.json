@@ -48,7 +48,9 @@
         "removed": [
           "ADUROBIOTECH,INC_06_02_2020-EX-10.7-CONSULTING AGREEMENT.PDF"
         ],
-        "survivor": "ADUROBIOTECH,INC_06_02_2020-EX-10.7-CONSULTING AGREEMENT(1).PDF"
+        "survivor": "ADUROBIOTECH,INC_06_02_2020-EX-10.7-CONSULTING AGREEMENT(1).PDF",
+        "survivor_basis": "rule",
+        "survivor_note": ""
       },
       {
         "conflict_fields": [],
@@ -77,7 +79,9 @@
         "removed": [
           "0000950137-04-007819_n86466a1exv4w1.txt"
         ],
-        "survivor": "0000950137-04-007719_n86466a1exv4w1.txt"
+        "survivor": "0000950137-04-007719_n86466a1exv4w1.txt",
+        "survivor_basis": "rule",
+        "survivor_note": ""
       },
       {
         "conflict_fields": [],
@@ -116,7 +120,9 @@
           "0001675426-16-000031_ex-10_1.htm",
           "0001675426-16-000038_ex-10_1.htm"
         ],
-        "survivor": "0001627469-15-000036_ex-10_1.htm"
+        "survivor": "0001627469-15-000036_ex-10_1.htm",
+        "survivor_basis": "rule",
+        "survivor_note": ""
       },
       {
         "conflict_fields": [
@@ -129,15 +135,6 @@
         "label_conflict": true,
         "members": [
           {
-            "annotation_richness": 188,
-            "document_id": "DOC-4c27875ffea162d4",
-            "expected": "merger_agreement",
-            "expected_subclass": "other",
-            "filename": "contract_149_merger_agreement.txt",
-            "source_corpus": "maud",
-            "split": "train"
-          },
-          {
             "annotation_richness": 157,
             "document_id": "DOC-1d4c45a28e2a7b73",
             "expected": "merger_agreement",
@@ -145,12 +142,23 @@
             "filename": "contract_148_merger_agreement.txt",
             "source_corpus": "maud",
             "split": "train"
+          },
+          {
+            "annotation_richness": 188,
+            "document_id": "DOC-4c27875ffea162d4",
+            "expected": "merger_agreement",
+            "expected_subclass": "other",
+            "filename": "contract_149_merger_agreement.txt",
+            "source_corpus": "maud",
+            "split": "train"
           }
         ],
         "removed": [
-          "contract_148_merger_agreement.txt"
+          "contract_149_merger_agreement.txt"
         ],
-        "survivor": "contract_149_merger_agreement.txt"
+        "survivor": "contract_148_merger_agreement.txt",
+        "survivor_basis": "upstream_defect",
+        "survivor_note": "MAUD v1 packaged contract_149.txt as a copy of contract_148.txt; contract_149's annotations describe a different, all-cash agreement"
       },
       {
         "conflict_fields": [],
@@ -179,7 +187,9 @@
         "removed": [
           "0001099574-13-000016_exh31articlesofincorporation.htm"
         ],
-        "survivor": "0001099574-13-000003_exh32amendmentstocertificate.htm"
+        "survivor": "0001099574-13-000003_exh32amendmentstocertificate.htm",
+        "survivor_basis": "rule",
+        "survivor_note": ""
       },
       {
         "conflict_fields": [],
@@ -228,7 +238,9 @@
           "0000950137-07-002206_x08078a4exv3w03.htm",
           "0000950137-07-001855_x09498a3exv3w03.htm"
         ],
-        "survivor": "0000950137-07-000990_x09498a2exv3w03.htm"
+        "survivor": "0000950137-07-000990_x09498a2exv3w03.htm",
+        "survivor_basis": "rule",
+        "survivor_note": ""
       }
     ],
     "stats": {
@@ -343,7 +355,7 @@
     "flagged_intents": 25,
     "pending_cuad": 89
   },
-  "stage_digest": "729cb5755352f6a442b0de4875ef78dd79314e93a01947ef128695905db570e9",
+  "stage_digest": "0fcfdb558d59302b6ea8454a697a1c8473691d72c25d76ac697e56f64f08d4bd",
   "staged_counts": {
     "default/test": 322,
     "default/train": 2971,

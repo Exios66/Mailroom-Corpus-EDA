@@ -129,6 +129,7 @@ RANDOM_STATE = 42
 
 
 def sha256_file(path: Path) -> str:
+    """Hex sha256 of the file's raw bytes."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
@@ -138,10 +139,17 @@ def read_raw_lines(path: Path) -> list[str]:
 
 
 def load_jsonl(path: Path) -> list[dict]:
+    """Parse every non-empty line of a JSONL file into a dict, in file order."""
     return [json.loads(ln) for ln in read_raw_lines(path)]
 
 
 def _json_obj(value: Any) -> dict:
+    """Coerce a dict or a JSON-object string to a dict.
+
+    Return ``{}`` for anything else: empty strings, invalid JSON, or JSON that
+    is not an object. Callers use it on ``gt_fields`` cells, which v9.x stores
+    as JSON strings.
+    """
     if isinstance(value, dict):
         return value
     if isinstance(value, str) and value.strip():
@@ -154,6 +162,7 @@ def _json_obj(value: Any) -> dict:
 
 
 def presence_of(row: Mapping[str, Any]) -> dict[str, str]:
+    """The row's ``gt_presence`` map (field -> presence code) as a fresh dict, ``{}`` if absent."""
     return dict(_json_obj((row.get("gt_fields") or {}).get("gt_presence")))
 
 
@@ -182,19 +191,55 @@ def recompute_presence(row: dict) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
+#: Duplicate groups whose survivor is fixed by verified upstream evidence,
+#: overriding :func:`survivor_sort_key`. Keyed by the full ``content_sha256``.
+#:
+#: MAUD v1 (Zenodo 7500064, ``maud_v1.zip``) ships ``data/contracts/contract_149.txt``
+#: as a byte copy of ``contract_148.txt`` (Kimco Realty / Weingarten Realty, April
+#: 15, 2021): the only identical pair among its 152 contracts. MAUD's own evidence
+#: excerpts (``MAUD_{train,dev,test}.csv``) show which annotations belong to that
+#: text. 57 of 71 ``contract_148`` excerpts occur in it (Type of Consideration
+#: "Mixed Cash/Stock", correct for the deal), and 0 of 75 ``contract_149`` excerpts
+#: do (an all-cash agreement whose text MAUD never shipped). The richness rule would
+#: keep ``contract_149`` (more answers), whose labels do not describe the document.
+#: ``scripts/audit/verify_maud_duplicate.py --check`` recomputes this evidence.
+UPSTREAM_DEFECT_SURVIVORS: dict[str, dict[str, Any]] = {
+    "7a84e0d4d21183ede27195bbaded6976e3ef3af05e72ad05aea0a73f4ad6a96e": {
+        "survivor": "contract_148_merger_agreement.txt",
+        "removed": ["contract_149_merger_agreement.txt"],
+        "source": "MAUD v1, Zenodo record 7500064 (maud_v1.zip): data/contracts/contract_148.txt "
+                  "and contract_149.txt are byte-identical",
+        "note": ("MAUD v1 packaged contract_149.txt as a copy of contract_148.txt; "
+                 "contract_149's annotations describe a different, all-cash agreement"),
+        "evidence": {"contract_148": [57, 71], "contract_149": [0, 75]},
+    },
+}
+
+
 @dataclass
 class DedupGroup:
+    """One set of byte-identical rows: the survivor kept, the copies removed.
+
+    ``survivor_basis`` is ``"rule"`` (:func:`survivor_sort_key`) or
+    ``"upstream_defect"`` (:data:`UPSTREAM_DEFECT_SURVIVORS`), and
+    ``survivor_note`` says why for the latter.
+    """
+
     content_sha256: str
     survivor: str
     removed: list[str]
     members: list[dict] = field(default_factory=list)
     conflict_fields: list[str] = field(default_factory=list)
+    survivor_basis: str = "rule"
+    survivor_note: str = ""
 
     @property
     def label_conflict(self) -> bool:
+        """True when the copies carry different labels for the same text."""
         return bool(self.conflict_fields)
 
     def as_dict(self) -> dict:
+        """JSON-ready form for ``dedup_removed.jsonl`` and the audit report."""
         d = asdict(self)
         d["label_conflict"] = self.label_conflict
         return d
@@ -252,10 +297,16 @@ def label_conflict_fields(rows: Sequence[Mapping[str, Any]]) -> list[str]:
     return sorted(fields)
 
 
-def plan_dedup(rows: Sequence[Mapping[str, Any]]) -> list[DedupGroup]:
+def plan_dedup(
+    rows: Sequence[Mapping[str, Any]],
+    overrides: Mapping[str, Mapping[str, Any]] = UPSTREAM_DEFECT_SURVIVORS,
+) -> list[DedupGroup]:
     """Plan duplicate groups by content hash, choosing one survivor per group.
 
-    Raise ``AssertionError`` if any row has an empty content hash.
+    The survivor comes from :func:`survivor_sort_key` unless ``overrides``
+    names one for the group's sha (verified upstream defects). Raise
+    ``AssertionError`` if any row has an empty content hash, or if an
+    override's survivor/removed names do not match the group's members.
     """
     by_sha: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for r in rows:
@@ -269,6 +320,15 @@ def plan_dedup(rows: Sequence[Mapping[str, Any]]) -> list[DedupGroup]:
         if len(members) < 2:
             continue
         ordered = sorted(members, key=survivor_sort_key)
+        basis, note = "rule", ""
+        if sha in overrides:
+            ov = overrides[sha]
+            names = {str(m["filename"]) for m in members}
+            want = {ov["survivor"], *ov["removed"]}
+            if names != want:
+                raise AssertionError(f"override for {sha[:12]} names {sorted(want)}, group has {sorted(names)}")
+            ordered = sorted(members, key=lambda m: m["filename"] != ov["survivor"])
+            basis, note = "upstream_defect", str(ov["note"])
         groups.append(DedupGroup(
             content_sha256=sha,
             survivor=str(ordered[0]["filename"]),
@@ -286,8 +346,35 @@ def plan_dedup(rows: Sequence[Mapping[str, Any]]) -> list[DedupGroup]:
                 for m in ordered
             ],
             conflict_fields=label_conflict_fields(ordered),
+            survivor_basis=basis,
+            survivor_note=note,
         ))
     return groups
+
+
+_EVIDENCE_NORM = re.compile(r"[^a-z0-9]+")
+
+
+def maud_evidence_alignment(text: str, excerpts: Iterable[str], *, min_chars: int = 40) -> tuple[int, int]:
+    """Count how many distinct MAUD evidence excerpts occur in ``text``.
+
+    Excerpts are split on MAUD's ``<omitted>`` marker and compared with
+    punctuation, case and whitespace removed (MAUD normalizes quotes and
+    spacing); fragments shorter than ``min_chars`` after normalization are
+    skipped. Returns ``(found, total)``. A label set whose excerpts do not
+    occur in the text was annotated on a different document.
+    """
+    hay = _EVIDENCE_NORM.sub("", text.lower())
+    seen: set[str] = set()
+    found = 0
+    for ex in excerpts:
+        for piece in str(ex or "").split("<omitted>"):
+            frag = _EVIDENCE_NORM.sub("", piece.lower())
+            if len(frag) < min_chars or frag in seen:
+                continue
+            seen.add(frag)
+            found += frag[:200] in hay
+    return found, len(seen)
 
 
 def removed_index(groups: Iterable[DedupGroup]) -> dict[str, str]:
@@ -550,6 +637,7 @@ def cuad_label_evidence(labels: Mapping[str, list]) -> str:
 
 
 def is_pending_cuad(row: Mapping[str, Any]) -> bool:
+    """True when the row's presence map marks ``cuad_clause_labels`` as ``pending_annotation``."""
     return presence_of(row).get("cuad_clause_labels") == "pending_annotation"
 
 
@@ -675,6 +763,11 @@ def manual_intent_rows(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, A
 
 
 def flagged_intent_rows(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Correspondence rows whose ``intent_status`` is ``flagged_review``.
+
+    These are the only rows the intent pass may relabel (drift gate b allows
+    intent fills nowhere else).
+    """
     return [r for r in rows if r["expected"] == "correspondence"
             and r["gt_fields"].get("intent_status") == "flagged_review"]
 
@@ -765,6 +858,7 @@ def f1(tp: int, fp: int, fn: int) -> float:
 
 
 def _overlaps(a: Mapping, b: Mapping) -> bool:
+    """True when two ``{start, text}`` spans share at least one character (half-open intervals)."""
     a0, a1 = int(a["start"]), int(a["start"]) + len(a["text"])
     b0, b1 = int(b["start"]), int(b["start"]) + len(b["text"])
     return a0 < b1 and b0 < a1
@@ -865,6 +959,13 @@ def calibration_status(cuad: Mapping | None, intent: Mapping | None,
     Statuses: ``not_run``, ``incomplete``, ``model_mismatch``, ``fail``,
     ``pass`` (and ``not_needed`` for intents when no intent journal is used)."""
     def one(result, floors, label_models):
+        """Grade one calibration result against its floors.
+
+        Returns a status dict: ``not_run`` with no scored documents,
+        ``incomplete`` when fewer than the expected documents were scored,
+        ``model_mismatch`` when the scored model set differs from the label
+        models, else ``pass``/``fail`` with each metric value.
+        """
         if not result or not result.get("documents"):
             return {"status": "not_run"}
         docs, expected = int(result["documents"]), int(result.get("expected_documents") or 0)
@@ -893,6 +994,12 @@ def calibration_status(cuad: Mapping | None, intent: Mapping | None,
 
 
 def _queue_row(row: Mapping[str, Any], purpose: str) -> dict:
+    """One row of the sandbox labeling queue for ``row``.
+
+    Contracts are queued for ``cuad_clause_labels`` under the EX-10 source;
+    other rows (correspondence) are queued for ``intent``. ``purpose`` is copied
+    through, and ``ex10_remaining`` rows carry the ``pending_annotation`` code.
+    """
     gt = row.get("gt_fields") or {}
     return {
         "id": row["filename"], "filename": row["filename"], "purpose": purpose,
@@ -995,6 +1102,14 @@ def write_review_pack(rows: Sequence[Mapping[str, Any]], verdicts: Sequence[Mapp
 
 
 def render_audit_md(report: Mapping[str, Any]) -> str:
+    """Render the human-readable dedup + label-completion audit from a build report.
+
+    Covers every dedup group with its survivor basis (``rule`` or
+    ``upstream_defect``, with the defect note and how to re-derive it),
+    near-duplicates, placeholder scrubs, CUAD/intent ingestion counts,
+    calibration status and what remains pending. Deterministic for a given
+    report.
+    """
     d = report["dedup"]
     lines = [
         "# v9.4 dedup + label-completion audit",
@@ -1005,15 +1120,25 @@ def render_audit_md(report: Mapping[str, Any]) -> str:
         "## Exact duplicates removed",
         "",
         "Survivor rule: richest annotation, then no copy marker such as `(1)`, then the `train` "
-        "split, then the smallest filename.",
+        "split, then the smallest filename. A verified upstream defect overrides the rule "
+        "(basis `upstream_defect`, notes below).",
         "",
-        "| content_sha256 | survivor | removed | label conflict |",
-        "|---|---|---|---|",
+        "| content_sha256 | survivor | removed | basis | label conflict |",
+        "|---|---|---|---|---|",
     ]
     for g in d["groups"]:
         conflict = ", ".join(f"`{f}`" for f in g["conflict_fields"]) or "none"
         removed = "<br>".join(f"`{x}`" for x in g["removed"])
-        lines.append(f"| `{g['content_sha256'][:12]}` | `{g['survivor']}` | {removed} | {conflict} |")
+        lines.append(f"| `{g['content_sha256'][:12]}` | `{g['survivor']}` | {removed} | "
+                     f"{g.get('survivor_basis', 'rule')} | {conflict} |")
+    for g in d["groups"]:
+        ov = UPSTREAM_DEFECT_SURVIVORS.get(g["content_sha256"])
+        if ov:
+            ev = "; ".join(f"`{k}` {a}/{b} MAUD evidence excerpts found in the text"
+                           for k, (a, b) in ov["evidence"].items())
+            lines += ["", f"**`{g['survivor']}` kept ({g['survivor_basis']}).** {ov['note']}. "
+                      f"Source: {ov['source']}. Evidence: {ev}. Recompute with "
+                      "`scripts/audit/verify_maud_duplicate.py --check`."]
     lines += ["", f"Class deltas: {d['stats']['class_deltas']}. Splits after: {d['stats']['splits']}.",
               "", "## Near duplicates (report only)", ""]
     if report["near_duplicates"]:
@@ -1071,6 +1196,12 @@ def render_audit_md(report: Mapping[str, Any]) -> str:
 
 
 def render_readme_addendum(report: Mapping[str, Any]) -> str:
+    """Render the dataset-card section for v9.4 from a build report.
+
+    Lists each removed duplicate with its survivor, any upstream-defect
+    survivor choice, ingestion counts and calibration status, so the card
+    states exactly what changed relative to v9.3.
+    """
     d = report["dedup"]
     rows = "\n".join(
         f"| `{g['survivor']}` | {', '.join(f'`{x}`' for x in g['removed'])} |" for g in d["groups"])
@@ -1086,6 +1217,10 @@ def render_readme_addendum(report: Mapping[str, Any]) -> str:
         "filename). One group had copies in both splits. Survivors are byte-identical to v9.3; "
         "`dedup_removed.jsonl` lists every removed copy and any label conflict between copies.\n\n"
         f"| survivor | removed |\n|---|---|\n{rows}\n\n"
+        + "".join(
+            f"**Upstream defect.** `{g['survivor']}` is kept over {', '.join(f'`{x}`' for x in g['removed'])}: "
+            f"{g['survivor_note']}. The removed row's labels did not describe its text.\n\n"
+            for g in d["groups"] if g.get("survivor_basis") == "upstream_defect") +
         f"**Placeholder hygiene.** {report['placeholders']['cells']} `gt_fields` cells on "
         f"{report['placeholders']['rows']} insurance rows held the string `nan`; they are now `\"\"`.\n\n"
         f"**CUAD clause labels on SEC EDGAR EX-10.** {c.get('ingested', 0)} contracts now carry "
@@ -1101,6 +1236,13 @@ def render_readme_addendum(report: Mapping[str, Any]) -> str:
 
 def render_manifest_v9_4(old_manifest: str, sha_updates: Mapping[str, str], built_utc: str,
                          stats: Mapping[str, Any]) -> str:
+    """Rewrite the v9.3 manifest text for the v9.4 stage.
+
+    Keeps the v9.3 header lines except ``built_utc``/``revision``/
+    ``labels_version`` (re-emitted for v9.4), updates the row/split/composition
+    lines from ``stats`` and replaces sha256 entries with ``sha_updates``.
+    Raises ``StopIteration`` if ``old_manifest`` has no ``sha256`` section.
+    """
     lines = old_manifest.splitlines()
     sha_idx = next(i for i, ln in enumerate(lines) if ln.strip().rstrip(":").strip() == "sha256")
     comp = stats["composition"]
@@ -1287,7 +1429,12 @@ def verify_stage(stage_dir: Path = STAGE_DIR_DEFAULT, base_dir: Path = BASE_STAG
     removed = load_jsonl(stage_dir / "dedup_removed.jsonl")
     removed_names = {fn for g in removed for fn in g["removed"]}
 
-    # (a) row set
+    # (a) row set; evidence-backed survivors first, so a wrong copy is named as such
+    for g in removed:
+        ov = UPSTREAM_DEFECT_SURVIVORS.get(g["content_sha256"])
+        if ov is not None:
+            _gate(g["survivor"] == ov["survivor"] and sorted(g["removed"]) == sorted(ov["removed"]),
+                  f"group {g['content_sha256'][:12]}: survivor {g['survivor']} != upstream-defect override {ov['survivor']}")
     shas = Counter(r["content_sha256"] for r in rows)
     _gate(all(n == 1 for n in shas.values()), "duplicate content_sha256 in stage")
     _gate(len(rows) == len(base_lines) - len(removed_names), "row count")
@@ -1576,6 +1723,14 @@ def build_all(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """CLI entry for the v9.4 staging build; returns the process exit code.
+
+    Refuses an ``--intent-model`` outside ``APPROVED_LABEL_MODELS``. With
+    ``--run-intent-pass`` it first labels the flagged and manual-calibration
+    intents against ``VLLM_BASE_URL`` (exits if that or ``VLLM_API_KEY`` is
+    unset), then stages via :func:`build_all`. ``--publish`` is refused:
+    v9.4 is staging-only.
+    """
     ap = argparse.ArgumentParser(description="v9.4 dedup + label-completion staging build")
     ap.add_argument("--stage-dir", type=Path, default=STAGE_DIR_DEFAULT)
     ap.add_argument("--base-dir", type=Path, default=BASE_STAGE_DIR)

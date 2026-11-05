@@ -27,6 +27,13 @@ PENDING, so the payload is not publish-ready yet.
   - Rule: richest annotation, then no `(1)` copy marker, then `train`, then smallest
     filename. Conflicting expert annotations (CUAD ADUROBIOTECH, MAUD
     contract_148/149) are recorded in `dedup_removed.jsonl`, never merged.
+  - MAUD `contract_148`/`contract_149` is an upstream defect: MAUD v1 (Zenodo
+    7500064) ships `contract_149.txt` as a byte copy of `contract_148.txt`. MAUD's
+    own evidence excerpts match `contract_148` (57/71) and not `contract_149` (0/75),
+    so `contract_148` is kept by an evidence-backed override
+    (`UPSTREAM_DEFECT_SURVIVORS`, checked by gate (a)) instead of the richness rule,
+    which had kept the mislabeled copy. `scripts/audit/verify_maud_duplicate.py
+    --check` re-derives the evidence.
 - **Placeholder hygiene**: 2,100 `"nan"` cells on 350 GNOTHEIA/BDR insurance rows are
   set to `""`. Presence codes are unchanged (gate).
 - **CUAD labels on SEC EDGAR EX-10 (issue #30)**: none ingested yet; all 89 rows stay
@@ -56,6 +63,8 @@ PENDING, so the payload is not publish-ready yet.
   group crosses train/test and needs a decision (plan §5).
 - Audit outputs: `docs/reports/audits/v9_4_dedup_label_audit.*`, a
   `v9_4_label_review.*` spot-check pack, and `v9_4_queues/`.
+- Operator runbook for the GPU steps (calibrate first, then label, then re-stage):
+  `docs/runbooks/v9.4-modal-handoff.md`.
 
 ## v9.3 — corporate presence-layer labels (STAGING, 2026-10-17)
 

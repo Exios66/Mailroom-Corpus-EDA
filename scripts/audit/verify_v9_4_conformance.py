@@ -28,6 +28,10 @@ from mailroom_eda.v9_4_revision import BASE_STAGE_DIR, STAGE_DIR_DEFAULT, verify
 
 
 def main() -> int:
+    """Print each gate verdict and readiness; exit 1 only if ``--require-publish-ready`` is set and (h) is not PASS.
+
+    A failed conformance gate raises ``AssertionError`` from :func:`verify_stage`.
+    """
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--stage-dir", type=Path, default=STAGE_DIR_DEFAULT)
     ap.add_argument("--base-dir", type=Path, default=BASE_STAGE_DIR)
