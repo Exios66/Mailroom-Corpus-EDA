@@ -151,8 +151,7 @@ def presence_probe(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def recompute_presence(row: dict) -> dict[str, str]:
-    """Recompute and store ``gt_presence``. Keys keep the stored order so a
-    recompute that changes nothing changes no bytes."""
+    """Recompute presence, store it as sorted JSON in the row, and return it."""
     old = presence_of(row)
     new = row_gt_presence(presence_probe(row))
     ordered = {k: new[k] for k in old if k in new}
@@ -237,6 +236,10 @@ def label_conflict_fields(rows: Sequence[Mapping[str, Any]]) -> list[str]:
 
 
 def plan_dedup(rows: Sequence[Mapping[str, Any]]) -> list[DedupGroup]:
+    """Plan duplicate groups by content hash, choosing one survivor per group.
+
+    Raise ``AssertionError`` if any row has an empty content hash.
+    """
     by_sha: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for r in rows:
         sha = str(r.get("content_sha256") or "")
@@ -280,7 +283,7 @@ def dangling_references(
     removed_rows: Sequence[Mapping[str, Any]],
     sidecar_texts: Mapping[str, str],
 ) -> list[str]:
-    """Every place a removed filename or document_id is still referenced."""
+    """Find removed identifiers in selected row fields and sidecar text."""
     needles = {str(r["filename"]) for r in removed_rows}
     needles |= {str(r.get("document_id") or "") for r in removed_rows} - {""}
     hits = []
@@ -300,6 +303,11 @@ def dangling_references(
 
 def verify_dedup(base_rows: Sequence[Mapping], kept_rows: Sequence[Mapping],
                  groups: Sequence[DedupGroup]) -> dict[str, Any]:
+    """Validate the removal count, surviving hashes, filenames, and splits.
+
+    Return row, class, and split counts. Raise ``AssertionError`` when a
+    deduplication or split check fails.
+    """
     removed = removed_index(groups)
     if len(removed) != EXPECTED_REMOVED_ROWS:
         raise AssertionError(f"expected {EXPECTED_REMOVED_ROWS} removals, planned {len(removed)}")
@@ -434,9 +442,10 @@ def verify_cuad_labels(
 ) -> tuple[dict[str, list[dict]], list[str], list[str]]:
     """Re-verify one journal label map against the payload's own text.
 
-    Returns ``(clean_labels, dropped, problems)``. ``clean_labels`` has all
-    41 keys; each kept span satisfies ``doc_text[start:start+len] == text``.
-    ``problems`` non-empty means the row must stay ``pending_annotation``.
+    Returns ``(clean_labels, dropped, problems)``. ``clean_labels`` has every
+    key in ``vocab``; each kept span is verbatim at its character offset.
+    ``dropped`` explains discarded spans; non-empty ``problems`` means the
+    row must stay ``pending_annotation``.
     """
     allowed = set(vocab)
     clean: dict[str, list[dict]] = {name: [] for name in vocab}
@@ -535,15 +544,18 @@ def ingest_cuad_journal(
     sha_aliases: Mapping[str, Sequence[str]] | None = None,
     document_ids: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Fill ``cuad_clause_labels`` on pending EX-10 rows from a verified
-    journal. ``sha_aliases`` maps a survivor filename to the filenames of
+    """Fill pending ``cuad_clause_labels`` in place from a verified journal.
+
+    Return counts and per-row verdicts; rejected or missing records leave the
+    row pending. ``sha_aliases`` maps a survivor filename to the filenames of
     its removed byte-identical copies, whose journal record is equally valid
     for the survivor (same text, same offsets) and is used as a fallback.
 
     ``document_ids`` (filename -> published ``document_id`` for every base
     row, removed copies included) turns on the provenance check: a journal
     record must name the same ``document_id`` as the row it is filed under,
-    or it is rejected as ``failed_verification``.
+    or it is rejected as ``failed_verification``. Raise ``AssertionError``
+    if an ingested label does not recompute as populated.
     """
     folded = fold_journal(journal)
     aliases = sha_aliases or {}
@@ -613,8 +625,12 @@ def ingest_cuad_journal(
 
 def intent_decision(original: str, pass_a: Mapping, pass_b: Mapping,
                     vocab: Sequence[str]) -> tuple[bool, str, str]:
-    """Accept a relabel only when both passes agree on an in-vocabulary
-    label AND it either confirms the original or both passes are confident."""
+    """Return acceptance, label, and reason for a two-pass intent decision.
+
+    Both passes must agree on an in-vocabulary label, which must either
+    confirm the original or have confidence of at least 0.8 in both passes.
+    Invalid confidence values can raise ``ValueError`` or ``TypeError``.
+    """
     a, b = str(pass_a.get("intent") or ""), str(pass_b.get("intent") or "")
     if a not in vocab or b not in vocab:
         return False, "", "out-of-vocabulary answer"
@@ -645,7 +661,9 @@ def run_intent_pass(
 ) -> list[dict]:
     """Two passes per row against an OpenAI-compatible endpoint (the Modal
     vLLM app): pass A sees subject + body, pass B the body only. Checkpointed
-    in ``out_path``: rows already there are not re-sent."""
+    in ``out_path``: rows already there are not re-sent. Return existing and
+    newly appended records. Labeling raises ``RuntimeError`` after retries;
+    records written before a failure remain in the checkpoint."""
     from .intent_backfill import extract_subject, llm_label_one, strip_email_headers
 
     done = {r["filename"] for r in load_jsonl(out_path)} if out_path.exists() else set()
@@ -668,6 +686,12 @@ def run_intent_pass(
 
 def ingest_intent_journal(rows: list[dict], journal: Sequence[Mapping[str, Any]],
                           vocab: Sequence[str]) -> dict[str, Any]:
+    """Apply accepted two-pass decisions to flagged correspondence in place.
+
+    Return counts, per-row verdicts, and accepted model names. Missing or
+    rejected records remain flagged. Invalid confidence values can raise
+    ``ValueError`` or ``TypeError``; accepted records require both values.
+    """
     by_fn = {str(r["filename"]): r for r in journal}
     verdicts = []
     for row in rows:
@@ -706,6 +730,7 @@ def ingest_intent_journal(rows: list[dict], journal: Sequence[Mapping[str, Any]]
 
 
 def f1(tp: int, fp: int, fn: int) -> float:
+    """Return F1 rounded to four decimals, or zero when there are no true positives."""
     if tp == 0:
         return 0.0
     p, r = tp / (tp + fp), tp / (tp + fn)
@@ -726,8 +751,9 @@ def score_cuad_calibration(gold_rows: Sequence[Mapping[str, Any]],
 
     ``gold_rows`` is the fixed calibration sample; ``expected_documents`` is
     its size, so a journal that skipped documents scores as incomplete
-    instead of passing on a convenient subset. Only accepted records count:
-    a labeler reject is a miss on every gold category."""
+    instead of passing on a convenient subset. Rejected records count as
+    documents but contribute no predicted categories. Verification problems
+    do not discard otherwise valid spans from accepted records."""
     folded = fold_journal(journal)
     per: dict[str, Counter] = {n: Counter() for n in vocab}
     overlap_hits = overlap_total = docs = 0
@@ -765,6 +791,10 @@ def score_cuad_calibration(gold_rows: Sequence[Mapping[str, Any]],
 
 
 def cohen_kappa(a: Sequence[str], b: Sequence[str]) -> float:
+    """Return kappa rounded to four decimals; empty or unequal inputs return zero.
+
+    Return one when expected agreement is one.
+    """
     n = len(a)
     if n == 0 or n != len(b):
         return 0.0
@@ -776,6 +806,11 @@ def cohen_kappa(a: Sequence[str], b: Sequence[str]) -> float:
 
 def score_intent_calibration(manual_rows: Sequence[Mapping[str, Any]],
                              journal: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Score pass A intents against manual labels for rows with journal records.
+
+    Return accuracy, kappa, model names, and scored and expected row counts;
+    missing records are excluded from the metrics but counted as expected.
+    """
     by_fn = {str(r["filename"]): r for r in journal}
     gold, pred = [], []
     models: set[str] = set()
@@ -795,9 +830,10 @@ def calibration_status(cuad: Mapping | None, intent: Mapping | None,
                        *, need_intent: bool,
                        cuad_label_models: Iterable[str] | None = None,
                        intent_label_models: Iterable[str] | None = None) -> dict[str, Any]:
-    """Publish gate. A result passes only when it covers its whole sample
-    (``documents == expected_documents``), was produced by exactly the
-    model(s) that wrote the ingested labels, and clears its threshold.
+    """Evaluate calibration results and return statuses and publish readiness.
+
+    A result must cover at least its expected sample and clear its threshold.
+    When label models are non-empty, the calibration models must match them.
 
     Statuses: ``not_run``, ``incomplete``, ``model_mismatch``, ``fail``,
     ``pass`` (and ``not_needed`` for intents when none were accepted)."""
@@ -863,6 +899,7 @@ def cuad_calibration_sample(rows: Sequence[Mapping[str, Any]], n: int = CUAD_CAL
 
 
 def export_queues(rows: Sequence[Mapping[str, Any]], out_dir: Path = QUEUE_DIR) -> dict[str, int]:
+    """Write the four labeling queues as JSONL and return counts by filename."""
     out_dir.mkdir(parents=True, exist_ok=True)
     queues = {
         "ex10_remaining.jsonl": [_queue_row(r, "ex10_remaining") for r in rows
@@ -884,8 +921,12 @@ def export_queues(rows: Sequence[Mapping[str, Any]], out_dir: Path = QUEUE_DIR) 
 
 def write_review_pack(rows: Sequence[Mapping[str, Any]], verdicts: Sequence[Mapping],
                       md_path: Path, csv_path: Path, frac: float = 0.2) -> int:
-    """A deterministic random sample of newly added CUAD labels with the
-    surrounding text, for human spot-checking."""
+    """Write Markdown and CSV spot-checks of a deterministic CUAD label sample.
+
+    ``frac`` is the fraction of ingested documents to sample, rounded to the
+    nearest integer with at least one when any exist. Return the sample size;
+    ``random.sample`` raises ``ValueError`` if it exceeds the population.
+    """
     by_fn = {r["filename"]: r for r in rows}
     ingested = sorted(v["filename"] for v in verdicts if v["status"] == "ingested")
     rng = random.Random(RANDOM_STATE)
@@ -1058,8 +1099,7 @@ def render_manifest_v9_4(old_manifest: str, sha_updates: Mapping[str, str], buil
 
 
 def _fix_dataset_info(src: Path, dst: Path) -> None:
-    """Copy a config's dataset_info.json, dropping features the parquet does
-    not carry (v9.2 C2 removed `_published` but left it in dataset_info)."""
+    """Copy dataset_info.json, removing the stale v9.2 ``_published`` feature."""
     info = json.loads(src.read_text(encoding="utf-8"))
     info.get("features", {}).pop("_published", None)
     dst.write_text(json.dumps(info, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -1086,6 +1126,11 @@ def refuse_overlapping_stage(base_dir: Path, stage_dir: Path) -> None:
 
 def stage_payload(base_dir: Path, stage_dir: Path, rows: list[dict], raw_lines: Mapping[str, str],
                   touched: set[str], groups: Sequence[DedupGroup], report: Mapping[str, Any]) -> dict:
+    """Replace the stage with the revised payload and return parquet counts.
+
+    ``raw_lines`` preserves untouched rows; filenames in ``touched`` are
+    serialized anew. Raise ``SystemExit`` if the stage overlaps the base.
+    """
     from .v9_1_revision import upsert_readme_addendum
     from .v9_2_revision import stage_default_and_ground_truth, verify_blind_label_free
 
@@ -1177,7 +1222,12 @@ def drift_problems(base: Mapping[str, Any], new: Mapping[str, Any]) -> list[str]
 
 
 def verify_stage(stage_dir: Path = STAGE_DIR_DEFAULT, base_dir: Path = BASE_STAGE_DIR) -> dict[str, Any]:
-    """Re-derive every v9.4 gate from the staged bytes alone."""
+    """Verify stage conformance against the base and return gates and readiness.
+
+    Raise ``AssertionError`` on a failed conformance gate. Calibration is
+    read from the adjacent report when present and otherwise remains pending;
+    a present report must match the stage digest.
+    """
     import pandas as pd
 
     gates: dict[str, str] = {}
@@ -1293,8 +1343,10 @@ def verify_stage(stage_dir: Path = STAGE_DIR_DEFAULT, base_dir: Path = BASE_STAG
 
 
 def journal_display_path(path: Path) -> str:
-    """Path shown in reports: from the owning repository's root (the
-    directory holding ``reports/``), never this machine's layout."""
+    """Shorten paths under a ``reports`` directory for display in reports.
+
+    Paths without that component are returned as supplied.
+    """
     parts = path.resolve().parts
     if "reports" in parts:
         i = len(parts) - 1 - parts[::-1].index("reports")
@@ -1303,6 +1355,10 @@ def journal_display_path(path: Path) -> str:
 
 
 def resolve_sandbox_journal(explicit: str | None) -> Path | None:
+    """Find an explicit journal or the first existing default, if any.
+
+    Raise ``FileNotFoundError`` when an explicit path is not a file.
+    """
     if explicit:
         p = Path(explicit)
         if not p.is_file():
@@ -1323,6 +1379,14 @@ def build_all(
     write_audit: bool = True,
     publish: bool = False,
 ) -> dict[str, Any]:
+    """Build the v9.4 stage from the v9.3 base and return its audit report.
+
+    Journals optionally fill labels and supply calibration scores. The stage,
+    adjacent report and queues are written; ``write_audit`` also writes the
+    repository audit files. ``use_cuad_journal=False`` skips CUAD ingestion.
+    Raise ``SystemExit`` for publishing, a missing base, or overlapping stage;
+    validation failures raise ``AssertionError`` and file errors propagate.
+    """
     if publish:
         raise SystemExit(f"v9.4 is a STAGING revision; publishing is gated off (see {PLAN_REF})")
     base_path = base_dir / "ground_truth_hardened.jsonl"
