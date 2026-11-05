@@ -1,0 +1,407 @@
+{
+  "calibration": {
+    "cuad": {
+      "status": "not_run"
+    },
+    "intent": {
+      "status": "not_needed"
+    },
+    "publish_ready": false
+  },
+  "calibration_journals": {},
+  "cuad": {
+    "counts": {},
+    "journal_models": [],
+    "journal_sha256": "",
+    "verdicts": []
+  },
+  "cuad_calibration_detail": null,
+  "cuad_journal": "",
+  "dedup": {
+    "groups": [
+      {
+        "conflict_fields": [
+          "gt_fields.cuad_clause_labels",
+          "gt_fields.label_evidence"
+        ],
+        "content_sha256": "23255988c8f39e0b67d7ff8a2b316a17c3bf4cc0557141d6a7e6e9cc7d770ad3",
+        "kind": "exact",
+        "label_conflict": true,
+        "members": [
+          {
+            "annotation_richness": 17,
+            "document_id": "DOC-67050576826b131b",
+            "expected": "contract",
+            "expected_subclass": "Consulting Agreements",
+            "filename": "ADUROBIOTECH,INC_06_02_2020-EX-10.7-CONSULTING AGREEMENT(1).PDF",
+            "source_corpus": "theatticusproject/cuad",
+            "split": "train"
+          },
+          {
+            "annotation_richness": 15,
+            "document_id": "DOC-f5a54932794ef16e",
+            "expected": "contract",
+            "expected_subclass": "Consulting Agreements",
+            "filename": "ADUROBIOTECH,INC_06_02_2020-EX-10.7-CONSULTING AGREEMENT.PDF",
+            "source_corpus": "theatticusproject/cuad",
+            "split": "train"
+          }
+        ],
+        "normalized_text_sha256": "931d7dcd689f9d21b322c5325dfce2f87cb3f178fabcd322962fd8c05b59f370",
+        "removed": [
+          "ADUROBIOTECH,INC_06_02_2020-EX-10.7-CONSULTING AGREEMENT.PDF"
+        ],
+        "survivor": "ADUROBIOTECH,INC_06_02_2020-EX-10.7-CONSULTING AGREEMENT(1).PDF",
+        "survivor_basis": "rule",
+        "survivor_note": ""
+      },
+      {
+        "conflict_fields": [],
+        "content_sha256": "2641068097dd233b7093f35addf5e780ff444734394016b3bbe6ae265eaba165",
+        "kind": "exact",
+        "label_conflict": false,
+        "members": [
+          {
+            "annotation_richness": 5,
+            "document_id": "DOC-3a0630b88c2b1a60",
+            "expected": "corporate_record",
+            "expected_subclass": "indenture",
+            "filename": "0000950137-04-007719_n86466a1exv4w1.txt",
+            "source_corpus": "sec_edgar",
+            "split": "train"
+          },
+          {
+            "annotation_richness": 5,
+            "document_id": "DOC-fea10348281fff90",
+            "expected": "corporate_record",
+            "expected_subclass": "indenture",
+            "filename": "0000950137-04-007819_n86466a1exv4w1.txt",
+            "source_corpus": "sec_edgar",
+            "split": "train"
+          }
+        ],
+        "normalized_text_sha256": "fa46747ad18b3eb834f7a301db25a9a799ba6c93691f7ca0edf25b8181d2f2b3",
+        "removed": [
+          "0000950137-04-007819_n86466a1exv4w1.txt"
+        ],
+        "survivor": "0000950137-04-007719_n86466a1exv4w1.txt",
+        "survivor_basis": "rule",
+        "survivor_note": ""
+      },
+      {
+        "conflict_fields": [],
+        "content_sha256": "6ee5f54efd4729eba5ba44869e42c853e1b3395e32ee3069fdc0efd4cf39bf79",
+        "kind": "exact",
+        "label_conflict": false,
+        "members": [
+          {
+            "annotation_richness": 0,
+            "document_id": "DOC-3971b50580a75a16",
+            "expected": "contract",
+            "expected_subclass": "IP",
+            "filename": "0001627469-15-000036_ex-10_1.htm",
+            "source_corpus": "sec_edgar",
+            "split": "train"
+          },
+          {
+            "annotation_richness": 0,
+            "document_id": "DOC-863d0e9370ceb1b6",
+            "expected": "contract",
+            "expected_subclass": "IP",
+            "filename": "0001675426-16-000031_ex-10_1.htm",
+            "source_corpus": "sec_edgar",
+            "split": "train"
+          },
+          {
+            "annotation_richness": 0,
+            "document_id": "DOC-28f2c929af96f7ec",
+            "expected": "contract",
+            "expected_subclass": "IP",
+            "filename": "0001675426-16-000038_ex-10_1.htm",
+            "source_corpus": "sec_edgar",
+            "split": "train"
+          }
+        ],
+        "normalized_text_sha256": "8f8fe248736274615a666430d6508663e0e14543426adec6af213afc1b160d65",
+        "removed": [
+          "0001675426-16-000031_ex-10_1.htm",
+          "0001675426-16-000038_ex-10_1.htm"
+        ],
+        "survivor": "0001627469-15-000036_ex-10_1.htm",
+        "survivor_basis": "rule",
+        "survivor_note": ""
+      },
+      {
+        "conflict_fields": [
+          "expected_subclass",
+          "gt_fields.label_evidence",
+          "gt_fields.maud_clause_labels",
+          "gt_fields.maud_label_count"
+        ],
+        "content_sha256": "7a84e0d4d21183ede27195bbaded6976e3ef3af05e72ad05aea0a73f4ad6a96e",
+        "kind": "exact",
+        "label_conflict": true,
+        "members": [
+          {
+            "annotation_richness": 157,
+            "document_id": "DOC-1d4c45a28e2a7b73",
+            "expected": "merger_agreement",
+            "expected_subclass": "mixed_cash_stock",
+            "filename": "contract_148_merger_agreement.txt",
+            "source_corpus": "maud",
+            "split": "train"
+          },
+          {
+            "annotation_richness": 188,
+            "document_id": "DOC-4c27875ffea162d4",
+            "expected": "merger_agreement",
+            "expected_subclass": "other",
+            "filename": "contract_149_merger_agreement.txt",
+            "source_corpus": "maud",
+            "split": "train"
+          }
+        ],
+        "normalized_text_sha256": "293d4fc7f55cdee91e1a42f58e0b0754a01bc5be2971b181247372e97a2145d3",
+        "removed": [
+          "contract_149_merger_agreement.txt"
+        ],
+        "survivor": "contract_148_merger_agreement.txt",
+        "survivor_basis": "upstream_defect",
+        "survivor_note": "MAUD v1 packaged contract_149.txt as a copy of contract_148.txt; contract_149's annotations describe a different, all-cash agreement"
+      },
+      {
+        "conflict_fields": [],
+        "content_sha256": "e888213d542dddedbe1471eb0b0fb14ade664c55c926e90d9be18be752ccdab7",
+        "kind": "exact",
+        "label_conflict": false,
+        "members": [
+          {
+            "annotation_richness": 5,
+            "document_id": "DOC-3c328f7374a079a9",
+            "expected": "corporate_record",
+            "expected_subclass": "charter_amendment",
+            "filename": "0001099574-13-000003_exh32amendmentstocertificate.htm",
+            "source_corpus": "sec_edgar",
+            "split": "train"
+          },
+          {
+            "annotation_richness": 5,
+            "document_id": "DOC-18f682a3054d35c5",
+            "expected": "corporate_record",
+            "expected_subclass": "charter_amendment",
+            "filename": "0001099574-13-000016_exh31articlesofincorporation.htm",
+            "source_corpus": "sec_edgar",
+            "split": "train"
+          }
+        ],
+        "normalized_text_sha256": "55e441d981c719a16f9d151cf527afd8e9de80891eba828acbdd5eace9adf674",
+        "removed": [
+          "0001099574-13-000016_exh31articlesofincorporation.htm"
+        ],
+        "survivor": "0001099574-13-000003_exh32amendmentstocertificate.htm",
+        "survivor_basis": "rule",
+        "survivor_note": ""
+      },
+      {
+        "conflict_fields": [],
+        "content_sha256": "ebf8f3646c10795eddcd404c0dea82b2a25eef49251dab83f3b46bf6f1d143e1",
+        "kind": "exact",
+        "label_conflict": false,
+        "members": [
+          {
+            "annotation_richness": 5,
+            "document_id": "DOC-7ca9eefc5f17d24f",
+            "expected": "corporate_record",
+            "expected_subclass": "board_resolution",
+            "filename": "0000950137-07-000990_x09498a2exv3w03.htm",
+            "source_corpus": "sec_edgar",
+            "split": "train"
+          },
+          {
+            "annotation_richness": 5,
+            "document_id": "DOC-565a3f2fcfc0e5e7",
+            "expected": "corporate_record",
+            "expected_subclass": "board_resolution",
+            "filename": "0000950137-07-001852_x08078a3exv3w03.htm",
+            "source_corpus": "sec_edgar",
+            "split": "train"
+          },
+          {
+            "annotation_richness": 5,
+            "document_id": "DOC-ce2e65d67f477467",
+            "expected": "corporate_record",
+            "expected_subclass": "board_resolution",
+            "filename": "0000950137-07-002206_x08078a4exv3w03.htm",
+            "source_corpus": "sec_edgar",
+            "split": "train"
+          },
+          {
+            "annotation_richness": 5,
+            "document_id": "DOC-fbcdd16e24f143ac",
+            "expected": "corporate_record",
+            "expected_subclass": "board_resolution",
+            "filename": "0000950137-07-001855_x09498a3exv3w03.htm",
+            "source_corpus": "sec_edgar",
+            "split": "test"
+          }
+        ],
+        "normalized_text_sha256": "e066a3cf29ae617c5b2b8e58afde9cd0245ffd98b075fddb3f6a4292571f5f0b",
+        "removed": [
+          "0000950137-07-001852_x08078a3exv3w03.htm",
+          "0000950137-07-002206_x08078a4exv3w03.htm",
+          "0000950137-07-001855_x09498a3exv3w03.htm"
+        ],
+        "survivor": "0000950137-07-000990_x09498a2exv3w03.htm",
+        "survivor_basis": "rule",
+        "survivor_note": ""
+      },
+      {
+        "conflict_fields": [],
+        "content_sha256": "1701295500d1895380e64f13641878a0982da032b4539c05573e9ee056122c2c",
+        "kind": "near_duplicate_test_drop",
+        "label_conflict": false,
+        "members": [
+          {
+            "content_sha256": "1701295500d1895380e64f13641878a0982da032b4539c05573e9ee056122c2c",
+            "document_id": "DOC-8de72b7f93fda86c",
+            "expected": "corporate_record",
+            "expected_subclass": "board_resolution",
+            "filename": "0000950137-06-012987_i08078a2exv3w03.htm",
+            "source_corpus": "sec_edgar",
+            "split": "train"
+          },
+          {
+            "content_sha256": "afae9b3c6900144f1b92da22e67e9805e0e6a6d6b05ac7ed94b0686a3336f673",
+            "document_id": "DOC-59d072355f2c3b14",
+            "expected": "corporate_record",
+            "expected_subclass": "board_resolution",
+            "filename": "0000950137-06-011083_n08078exv3w03.htm",
+            "source_corpus": "sec_edgar",
+            "split": "test"
+          }
+        ],
+        "normalized_text_sha256": "e066a3cf29ae617c5b2b8e58afde9cd0245ffd98b075fddb3f6a4292571f5f0b",
+        "removed": [
+          "0000950137-06-011083_n08078exv3w03.htm"
+        ],
+        "survivor": "0000950137-06-012987_i08078a2exv3w03.htm",
+        "survivor_basis": "cross_split_near_duplicate",
+        "survivor_note": "the test copy's text equals a train row's after normalization, so keeping it would leak training text into test; the md5 split rule forbids moving it"
+      }
+    ],
+    "stats": {
+      "class_deltas": {
+        "contract": -3,
+        "corporate_record": -6,
+        "correspondence": 0,
+        "insurance_claim": 0,
+        "merger_agreement": -1
+      },
+      "composition": {
+        "contract": 597,
+        "corporate_record": 444,
+        "correspondence": 1000,
+        "insurance_claim": 1100,
+        "merger_agreement": 151
+      },
+      "removed": 10,
+      "rows": 3292,
+      "splits": {
+        "test": 321,
+        "train": 2971
+      }
+    }
+  },
+  "intent": {
+    "counts": {},
+    "verdicts": []
+  },
+  "intent_calibration_detail": null,
+  "intent_journal_used": false,
+  "labels_version": "v9.4 dedup + label-completion",
+  "near_duplicates": [
+    {
+      "cross_split": false,
+      "members": [
+        {
+          "expected": "correspondence",
+          "filename": "kaminski-v/_sent_mail/207.",
+          "split": "train"
+        },
+        {
+          "expected": "correspondence",
+          "filename": "kaminski-v/conferences/7.",
+          "split": "train"
+        }
+      ],
+      "normalized_text_sha256": "3bfe4b6f049a71f42971c54666c6bc092b0b7e992a9915dd4b061642c91f5aae"
+    },
+    {
+      "cross_split": false,
+      "members": [
+        {
+          "expected": "corporate_record",
+          "filename": "0000950137-06-012987_i08078a2exv3w03.htm",
+          "split": "train"
+        },
+        {
+          "expected": "corporate_record",
+          "filename": "0000950137-07-000990_x09498a2exv3w03.htm",
+          "split": "train"
+        }
+      ],
+      "normalized_text_sha256": "e066a3cf29ae617c5b2b8e58afde9cd0245ffd98b075fddb3f6a4292571f5f0b"
+    },
+    {
+      "cross_split": false,
+      "members": [
+        {
+          "expected": "correspondence",
+          "filename": "shackleton-s/deleted_items/659.",
+          "split": "train"
+        },
+        {
+          "expected": "correspondence",
+          "filename": "shapiro-r/deleted_items/908.",
+          "split": "train"
+        }
+      ],
+      "normalized_text_sha256": "e2279054186736098ebee7461fec15987e9bf18a594f79a549a04475b992ca92"
+    }
+  ],
+  "placeholders": {
+    "by_source_key": {
+      "bdr-ai-org/insurance-motor-claims-decision-v1 · content_topic": 150,
+      "bdr-ai-org/insurance-motor-claims-decision-v1 · label_evidence": 150,
+      "bdr-ai-org/insurance-motor-claims-decision-v1 · sentiment_evidence": 150,
+      "bdr-ai-org/insurance-motor-claims-decision-v1 · sentiment_label": 150,
+      "bdr-ai-org/insurance-motor-claims-decision-v1 · sentiment_score": 150,
+      "bdr-ai-org/insurance-motor-claims-decision-v1 · topic_evidence": 150,
+      "gratex/GNOTHEIA-synthetic-insurance-dataset · content_topic": 200,
+      "gratex/GNOTHEIA-synthetic-insurance-dataset · label_evidence": 200,
+      "gratex/GNOTHEIA-synthetic-insurance-dataset · sentiment_evidence": 200,
+      "gratex/GNOTHEIA-synthetic-insurance-dataset · sentiment_label": 200,
+      "gratex/GNOTHEIA-synthetic-insurance-dataset · sentiment_score": 200,
+      "gratex/GNOTHEIA-synthetic-insurance-dataset · topic_evidence": 200
+    },
+    "cells": 2100,
+    "rows": 350
+  },
+  "queues": {
+    "cuad_calibration.jsonl": 40,
+    "ex10_remaining.jsonl": 89,
+    "intents_calibration.jsonl": 96,
+    "intents_flagged.jsonl": 25
+  },
+  "remaining": {
+    "flagged_intents": 25,
+    "pending_cuad": 89
+  },
+  "stage_digest": "2430540f0c925dd6987816ee152ee73f553875b9e9b6a63cddb569be9d09c31b",
+  "staged_counts": {
+    "default/test": 321,
+    "default/train": 2971,
+    "ground_truth/test": 321,
+    "ground_truth/train": 2971
+  }
+}

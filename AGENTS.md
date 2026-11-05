@@ -46,6 +46,10 @@ uv member (no build).
   - `visualizations_interactive.py` — P4 Plotly HTML figures (18)
   - `hf_interface.py` — centralized Hub client (upload, sha256 verify)
   - `dataset_export.py` — cast-safe JSONL (KANBAN-076/088), parquet staging, manifests
+  - `v9_4_revision.py` — v9.4 STAGING: exact-dup removal, placeholder scrub,
+    verified LLM CUAD/intent label ingest (approved labeler `LABEL_MODEL` =
+    `Qwen/Qwen3-32B-FP8` only, held until it passes expert calibration)
+    (`scripts/build/build_v9_4_dedup_labels.py`, `scripts/audit/verify_v9_4_conformance.py`)
   - `docclass_uploader.py` — docclass v7 publish, surgical card render, leak guard
   - `intent_backfill.py` — correspondence intent hydration (issue #5):
     cross-walk, Enron/AESLC sha256 join, constrained LLM pass, provenance

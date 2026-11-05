@@ -14,6 +14,67 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
   reply edges when a parent occurs later in input. No datasets regenerated or
   published; existing presence/null predicates and corpus pins are unchanged.
 
+## v9.4 — dedup + label-completion (STAGING, 2026-11-04)
+
+STAGING revision over the v9.3 stage (plan `docs/plans/v9.4-dedup-label-completion.md`;
+module `src/mailroom_eda/v9_4_revision.py`). Nothing is published. Gates:
+`scripts/audit/verify_v9_4_conformance.py`, where (a)–(g) pass and (h) calibration is
+PENDING, so the payload is not publish-ready yet.
+
+- **Duplicates removed, 3,302 → 3,292 rows** (train 2,971 / test 321).
+  - There were 6 `content_sha256` groups: CUAD 1, MAUD 1, EX-10 1 group of 3, and
+    corporate 3 groups, one of which leaked across train and test.
+  - Rule: richest annotation, then no `(1)` copy marker, then `train`, then smallest
+    filename. Conflicting expert annotations (CUAD ADUROBIOTECH, MAUD
+    contract_148/149) are recorded in `dedup_removed.jsonl`, never merged.
+  - MAUD `contract_148`/`contract_149` is an upstream defect: MAUD v1 (Zenodo
+    7500064) ships `contract_149.txt` as a byte copy of `contract_148.txt`. MAUD's
+    own evidence excerpts match `contract_148` (57/71) and not `contract_149` (0/75),
+    so `contract_148` is kept by an evidence-backed override
+    (`UPSTREAM_DEFECT_SURVIVORS`, checked by gate (a)) instead of the richness rule,
+    which had kept the mislabeled copy. `scripts/audit/verify_maud_duplicate.py
+    --check` re-derives the evidence.
+- **Placeholder hygiene**: 2,100 `"nan"` cells on 350 GNOTHEIA/BDR insurance rows are
+  set to `""`. Presence codes are unchanged (gate).
+- **CUAD labels on SEC EDGAR EX-10 (issue #30)**: none ingested yet; all 89 rows stay
+  `pending_annotation`. The labeler moves to `Qwen/Qwen3-32B-FP8` on one H100, and
+  `LABEL_MODEL` makes it the only model whose journal records are read. The first
+  `Qwen/Qwen3-14B-AWQ` pass is retired: 126 of its spans failed re-verification and
+  the spot check found category mix-ups. Labels are ingested only after the model
+  passes calibration. Each span must also re-verify verbatim at an in-bounds offset,
+  use the closed 41-category vocabulary, pass the semantic probes on 12 categories
+  and the heading-only check, and meet the quality floor.
+- **Flagged intents**: a two-pass agreement rule and the Modal runbook are in place;
+  the 25 rows stay `flagged_review` until the pass runs.
+- **Calibration gates ingest, not just publishing**: CUAD presence micro-F1 ≥ 0.75
+  and micro-precision ≥ 0.80 on the fixed 40-contract golden sample; intent κ ≥ 0.75
+  on all 96 manual labels. The draft's 0.6 floors were raised because small Qwen3
+  models score 0.57–0.64. A calibration journal must cover its whole sample (else
+  `incomplete`) and come from `LABEL_MODEL` (else `model_mismatch`). Until it
+  passes, the matching label journal is held.
+- `dataset_info.json` for ground_truth no longer declares the removed `_published` column.
+- Gate (h) re-derives calibration from the scored details and re-scores each journal
+  (sha256-checked) instead of trusting the report. Gate (f) compares every ground_truth
+  column and the blind `default` config (row set, `doc_text`, 4 label-free columns).
+  Gate (g) requires the manifest to list every staged file. The blind-config check no
+  longer uses `assert`.
+- Gates are explicit checks that still run under `python -O`. Gate (b) allows each fill only on
+  the rows it applies to. Each journal record must name the row's `document_id`, and the
+  journal's sha256 and model are recorded. Gate (a) proves each removed row is a
+  byte-identical copy of a staged survivor; gate (d) recomputes presence instead of
+  trusting the stored map; the report is bound to a digest of the staged files. Staging
+  refuses a target that overlaps the v9.3 input. Two rebuilds produce byte-identical output.
+- **Cross-split near-duplicate dropped from test**: EX-3 board resolution
+  `0000950137-06-011083_n08078exv3w03.htm` matches two train rows after whitespace
+  normalization (2 characters differ, labels identical). It is removed as a
+  `near_duplicate_test_drop` record (pinned; gate (a) recomputes the normalized hash
+  and checks test → train). It never lends a CUAD journal record. The remaining 3
+  same-split near-duplicate groups are reported only.
+- Audit outputs: `docs/reports/audits/v9_4_dedup_label_audit.*`, a
+  `v9_4_label_review.*` spot-check pack, and `v9_4_queues/`.
+- Operator runbook for the GPU steps (calibrate first, then label, then re-stage):
+  `docs/runbooks/v9.4-modal-handoff.md`.
+
 ## v9.3 — corporate presence-layer labels (STAGING, 2026-10-17)
 
 STAGING release on branch `feat/v9.3-staging-corporate-presence` (draft plan:
