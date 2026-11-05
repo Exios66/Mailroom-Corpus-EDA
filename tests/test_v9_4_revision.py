@@ -487,6 +487,15 @@ def test_ingest_intent_keeps_flag_on_rejection():
     assert r2["gt_fields"]["intent_status"] == "flagged_review"
 
 
+def test_confirming_intent_without_confidence_does_not_crash():
+    """A record that confirms the original label but omits confidence is ingested at confidence 0."""
+    r = _row("m1.", expected="correspondence", intent="request", intent_status="flagged_review")
+    j = [{"filename": "m1.", "model": v94.LABEL_MODEL, "pass_a": {"intent": "request"},
+          "pass_b": {"intent": "request"}}]
+    rep = v94.ingest_intent_journal([r], j, IV)
+    assert rep["counts"] == {"accepted": 1} and r["gt_fields"]["intent_confidence"] == "0"
+
+
 def test_f1_and_kappa():
     """F1 and Cohen's kappa edge cases: no hits, perfect agreement, chance agreement."""
     assert v94.f1(0, 3, 3) == 0.0
@@ -683,3 +692,88 @@ def test_approved_journal_is_held_until_calibration_passes(tmp_path):
     assert report["cuad"]["held"].startswith("CUAD calibration not_run")
     assert report["cuad"]["counts"] == {}
     assert report["remaining"]["pending_cuad"] == 89
+
+
+@pytest.mark.skipif(not (v94.BASE_STAGE_DIR / "ground_truth_hardened.jsonl").exists(),
+                    reason="v9.3 stage not built (scripts/build/build_v9_3_corporate_presence.py)")
+def test_passing_calibration_unlocks_ingest_and_gate_h_rederives_it(tmp_path):
+    """A passing calibration journal releases the EX-10 journal to ingest; gate (h) re-scores it,
+    and a forged report status, an edited journal or a missing journal never reads as PASS."""
+    base = v94.load_jsonl(v94.BASE_STAGE_DIR / "ground_truth_hardened.jsonl")
+    stage = tmp_path / "stage"
+    v94.build_all(stage, use_cuad_journal=False, write_audit=False)
+    sample = v94.cuad_calibration_sample(v94.load_jsonl(stage / "ground_truth_hardened.jsonl"))
+    cal = tmp_path / "cal.jsonl"
+    cal.write_text("".join(json.dumps({"filename": r["filename"], "accepted": True, "model": v94.LABEL_MODEL,
+                                       "cuad_clause_labels": json.loads(r["gt_fields"]["cuad_clause_labels"])})
+                           + "\n" for r in sample))
+    pending = next(r for r in base if r["expected"] == "contract" and v94.is_pending_cuad(r))
+    journal = tmp_path / "j.jsonl"
+    journal.write_text(json.dumps({"filename": pending["filename"], "document_id": pending["document_id"],
+                                   "accepted": True, "model": v94.LABEL_MODEL,
+                                   "cuad_clause_labels": {"Made Up": []}}) + "\n")
+    report = v94.build_all(stage, cuad_journal=str(journal), cuad_calibration_journal=str(cal),
+                           write_audit=False)
+    assert report["calibration"]["cuad"]["status"] == "pass" and report["calibration"]["publish_ready"]
+    assert "held" not in report["cuad"]  # the journal was read, not held
+    assert report["cuad"]["counts"] == {"failed_verification": 1, "no_journal_record": 88}  # verified, not trusted
+    result = v94.verify_stage(stage, v94.BASE_STAGE_DIR)
+    assert result["publish_ready"] and result["gates"]["h_calibration"].startswith("PASS")
+
+    rpath = tmp_path / "v9_4_report.json"
+    rep = json.loads(rpath.read_text())
+    forged = json.loads(json.dumps(rep))
+    forged["cuad_calibration_detail"]["micro_f1"] = 0.1
+    rpath.write_text(json.dumps(forged))
+    with pytest.raises(AssertionError, match="re-derive"):
+        v94.verify_stage(stage, v94.BASE_STAGE_DIR)
+    forged = json.loads(json.dumps(rep))
+    # a consistent forgery (detail and status edited together) is caught by re-scoring the journal
+    forged["cuad_calibration_detail"]["micro_precision"] = 0.99
+    forged["calibration"]["cuad"]["micro_precision"] = 0.99
+    rpath.write_text(json.dumps(forged))
+    with pytest.raises(AssertionError, match="re-score"):
+        v94.verify_stage(stage, v94.BASE_STAGE_DIR)
+    rpath.write_text(json.dumps(rep))
+
+    original = cal.read_text()
+    cal.write_text(original + "\n")
+    with pytest.raises(AssertionError, match="changed since staging"):
+        v94.verify_stage(stage, v94.BASE_STAGE_DIR)
+    cal.unlink()
+    result = v94.verify_stage(stage, v94.BASE_STAGE_DIR)
+    assert not result["publish_ready"] and "unverified" in result["gates"]["h_calibration"]
+
+
+@pytest.mark.skipif(not (v94.BASE_STAGE_DIR / "ground_truth_hardened.jsonl").exists(),
+                    reason="v9.3 stage not built (scripts/build/build_v9_3_corporate_presence.py)")
+def test_parquet_and_manifest_gates_cover_every_column_config_and_file(tmp_path):
+    """Gate (f) checks every ground_truth column and the blind config; gate (g) needs every file listed."""
+    import pandas as pd
+
+    stage = tmp_path / "stage"
+    v94.build_all(stage, use_cuad_journal=False, write_audit=False)
+    gt = stage / "parquet" / "ground_truth" / "train" / "train-00000-of-00001.parquet"
+    blind = stage / "parquet" / "default" / "test" / "test-00000-of-00001.parquet"
+    manifest = stage / "manifest.txt"
+    saved = {p: p.read_bytes() for p in (gt, blind, manifest)}
+
+    df = pd.read_parquet(gt)
+    df.loc[0, "expected"] = "insurance_claim"
+    df.to_parquet(gt, index=False)
+    with pytest.raises(AssertionError, match="columns differ from the JSONL"):
+        v94.verify_stage(stage, v94.BASE_STAGE_DIR)
+    gt.write_bytes(saved[gt])
+
+    bf = pd.read_parquet(blind)
+    pd.concat([bf, bf.iloc[[0]].assign(filename="0000950137-06-011083_n08078exv3w03.htm")]).to_parquet(
+        blind, index=False)
+    with pytest.raises(AssertionError, match="default/test"):
+        v94.verify_stage(stage, v94.BASE_STAGE_DIR)
+    blind.write_bytes(saved[blind])
+
+    rel = "parquet/default/test/test-00000-of-00001.parquet"
+    manifest.write_text("".join(ln for ln in saved[manifest].decode().splitlines(True) if rel not in ln))
+    with pytest.raises(AssertionError, match="manifest file set differs"):
+        v94.verify_stage(stage, v94.BASE_STAGE_DIR)
+

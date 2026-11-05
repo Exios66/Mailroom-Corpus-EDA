@@ -8,6 +8,7 @@
     },
     "publish_ready": false
   },
+  "calibration_journals": {},
   "cuad": {
     "counts": {},
     "journal_models": [],
@@ -316,6 +317,7 @@
     "verdicts": []
   },
   "intent_calibration_detail": null,
+  "intent_journal_used": false,
   "labels_version": "v9.4 dedup + label-completion",
   "near_duplicates": [
     {

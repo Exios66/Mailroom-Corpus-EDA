@@ -922,7 +922,9 @@ def ingest_intent_journal(rows: list[dict], journal: Sequence[Mapping[str, Any]]
         if not ok:
             verdicts.append({"filename": row["filename"], "status": "kept_flagged", "reason": reason})
             continue
-        conf = min(float(rec["pass_a"]["confidence"]), float(rec["pass_b"]["confidence"]))
+        # same reading as intent_decision: a missing confidence counts as 0
+        conf = min(float((rec.get("pass_a") or {}).get("confidence") or 0),
+                   float((rec.get("pass_b") or {}).get("confidence") or 0))
         gt["intent"] = intent
         gt["intent_status"] = "auto_labeled"
         gt["intent_source"] = "llm_zero_shot"
@@ -1621,41 +1623,132 @@ def verify_stage(stage_dir: Path = STAGE_DIR_DEFAULT, base_dir: Path = BASE_STAG
     gates["e_cuad_verbatim"] = (f"PASS {ex10_pop} EX-10 CUAD maps re-verify verbatim at their offsets, "
                                 f"all from {LABEL_MODEL}")
 
-    # (f) parquet == jsonl
+    # (f) parquet == jsonl, every column of both configs
+    from .v9_2_revision import BLIND_COLUMNS, GT_ROW_SCHEMA_FIELDS, gt_parquet_record
+
     by_fn = {r["filename"]: r for r in rows}
-    n = 0
+    n_gt = n_blind = 0
     info = json.loads((stage_dir / "parquet" / "ground_truth" / "dataset_info.json").read_text())
     for split in ("train", "test"):
+        want = {r["filename"] for r in rows if r["split"] == split}
         df = pd.read_parquet(stage_dir / "parquet" / "ground_truth" / split / f"{split}-00000-of-00001.parquet")
-        for rec in df.to_dict("records"):
-            j = by_fn.get(rec["filename"])
-            _gate(j is not None, f"parquet row {rec['filename']} missing from JSONL")
-            _gate(json.loads(rec["gt_fields"]) == j["gt_fields"], f"{rec['filename']}: gt_fields differ")
-            _gate(rec["split"] == split == j["split"], f"{rec['filename']}: split differs")
-            n += 1
+        _gate(list(df.columns) == list(GT_ROW_SCHEMA_FIELDS), f"ground_truth/{split}: columns differ from schema")
         _gate(set(info["features"]) == set(df.columns), "dataset_info features != parquet columns")
-    _gate(n == len(rows), "parquet row count")
-    gates["f_parquet_parity"] = f"PASS {n} ground_truth parquet rows match the JSONL; dataset_info matches"
+        seen: set[str] = set()
+        for rec in df.to_dict("records"):
+            fn = rec["filename"]
+            _gate(fn in want and fn not in seen, f"ground_truth/{split}: unexpected or repeated row {fn}")
+            seen.add(fn)
+            got = {k: (list(v) if k in ("relationships", "related_document_ids") else v) for k, v in rec.items()}
+            exp = gt_parquet_record(by_fn[fn])
+            diff = sorted(k for k in exp if got.get(k) != exp[k])
+            _gate(not diff, f"ground_truth/{split} {fn}: columns differ from the JSONL: {diff}")
+        _gate(seen == want, f"ground_truth/{split}: row set differs from the JSONL")
+        n_gt += len(seen)
+        shards = sorted((stage_dir / "parquet" / "default" / split).glob("*.parquet"))
+        _gate(bool(shards), f"default/{split}: no parquet shard")
+        seen = set()
+        for shard in shards:
+            bf = pd.read_parquet(shard)
+            _gate(set(bf.columns) == BLIND_COLUMNS, f"default/{split}: blind columns {sorted(bf.columns)}")
+            for rec in bf[["filename", "doc_text"]].to_dict("records"):
+                fn = rec["filename"]
+                _gate(fn in want and fn not in seen, f"default/{split}: unexpected or repeated row {fn}")
+                seen.add(fn)
+                _gate(rec["doc_text"] == by_fn[fn]["doc_text"], f"default/{split} {fn}: doc_text differs")
+        _gate(seen == want, f"default/{split}: row set differs from the JSONL")
+        n_blind += len(seen)
+    _gate(n_gt == n_blind == len(rows), "parquet row count")
+    gates["f_parquet_parity"] = (f"PASS {n_gt} ground_truth rows equal the JSONL on every column; "
+                                 f"{n_blind} blind rows match on row set and doc_text, 4 label-free columns")
 
     # (g) manifest sha table
     manifest = (stage_dir / "manifest.txt").read_text(encoding="utf-8")
     table = re.findall(r"^\s*(\S+)\s+([0-9a-f]{64})\s*$", manifest, flags=re.M)
     _gate(bool(table), "manifest sha table missing")
     for rel, sha in table:
-        _gate(sha256_file(stage_dir / rel) == sha, f"manifest sha mismatch: {rel}")
+        _gate((stage_dir / rel).is_file() and sha256_file(stage_dir / rel) == sha, f"manifest sha mismatch: {rel}")
+    staged_files = {p.relative_to(stage_dir).as_posix() for p in stage_dir.rglob("*")
+                    if p.is_file() and p.name != "manifest.txt"}
+    listed = [rel for rel, _ in table]
+    _gate(len(listed) == len(set(listed)), "manifest lists a file twice")
+    _gate(set(listed) == staged_files,
+          f"manifest file set differs from the stage: missing {sorted(staged_files - set(listed))[:3]}, "
+          f"extra {sorted(set(listed) - staged_files)[:3]}")
     _gate(f"labels_version: {LABELS_VERSION}" in manifest, "labels_version line missing")
-    gates["g_manifest"] = f"PASS {len(table)} manifest sha entries recompute"
+    gates["g_manifest"] = f"PASS {len(table)} manifest sha entries recompute and cover every staged file"
 
     report_path = stage_dir.parent / "v9_4_report.json"
     calibration = {"publish_ready": False, "cuad": {"status": "not_run"}, "intent": {"status": "not_run"}}
+    unverified: list[str] = []
     if report_path.exists():
         rep = json.loads(report_path.read_text(encoding="utf-8"))
         _gate(rep.get("stage_digest") == stage_digest(stage_dir),
               f"{report_path.name} was not written for these staged bytes (stage digest differs)")
-        calibration = rep["calibration"]
-    gates["h_calibration"] = (f"{'PASS' if calibration['publish_ready'] else 'PENDING'} "
-                              f"cuad={calibration['cuad'].get('status')} intent={calibration['intent'].get('status')}")
-    return {"gates": gates, "publish_ready": bool(calibration["publish_ready"])}
+        calibration, unverified = rederive_calibration(rep, rows)
+    ready = bool(calibration["publish_ready"]) and not unverified
+    gates["h_calibration"] = (f"{'PASS' if ready else 'PENDING'} "
+                              f"cuad={calibration['cuad'].get('status')} intent={calibration['intent'].get('status')}"
+                              + (f" (unverified: {', '.join(unverified)})" if unverified else ""))
+    return {"gates": gates, "publish_ready": ready}
+
+
+def calibration_source(path: Path | None) -> dict[str, str] | None:
+    """Where a calibration journal came from: a portable path and its sha256.
+
+    The path is relative to the parent of this repository when the journal
+    sits under it (sibling checkouts), so the record carries no machine layout.
+    """
+    if not path:
+        return None
+    p = Path(path).resolve()
+    root = ROOT.parent.resolve()
+    shown = p.relative_to(root).as_posix() if p.is_relative_to(root) else str(path)
+    return {"path": shown, "sha256": sha256_file(p)}
+
+
+def _locate_journal(shown: str) -> Path | None:
+    """Resolve a :func:`calibration_source` path back to a file, if present."""
+    for cand in (ROOT.parent / shown, Path(shown)):
+        if cand.is_file():
+            return cand
+    return None
+
+
+def rederive_calibration(rep: Mapping[str, Any], rows: Sequence[Mapping[str, Any]]) -> tuple[dict, list[str]]:
+    """Gate (h): recompute calibration instead of trusting the report.
+
+    The status is re-derived with :func:`calibration_status` from the scored
+    details, and each detail is re-scored from its journal against the staged
+    expert rows. Raise ``AssertionError`` when the report's status, a score or
+    a journal's sha256 disagrees. A journal that is not on this machine leaves
+    that calibration unverified (returned in the list); the caller then keeps
+    publishing blocked.
+    """
+    cuad_det, intent_det = rep.get("cuad_calibration_detail"), rep.get("intent_calibration_detail")
+    status = calibration_status(cuad_det, intent_det, need_intent=bool(rep.get("intent_journal_used")),
+                                cuad_label_models=APPROVED_LABEL_MODELS,
+                                intent_label_models=APPROVED_LABEL_MODELS)
+    _gate(status == rep.get("calibration"), "report calibration status does not re-derive from its scored details")
+    sources = rep.get("calibration_journals") or {}
+    unverified: list[str] = []
+    for kind, det in (("cuad", cuad_det), ("intent", intent_det)):
+        if not det:
+            continue
+        src = sources.get(kind)
+        _gate(bool(src), f"{kind} calibration detail has no recorded journal")
+        path = _locate_journal(src["path"])
+        if path is None:
+            unverified.append(f"{kind} journal {src['path']} not found")
+            continue
+        _gate(sha256_file(path) == src["sha256"], f"{kind} calibration journal changed since staging: {src['path']}")
+        recs = [r for r in load_jsonl(path) if str(r.get("model") or "") in APPROVED_LABEL_MODELS]
+        if kind == "cuad":
+            again = score_cuad_calibration(cuad_calibration_sample(rows), recs, cuad_vocabulary(rows))
+        else:
+            again = score_intent_calibration(manual_intent_rows(rows), recs)
+        _gate(again == det, f"{kind} calibration does not re-score from its journal")
+    return status, unverified
 
 
 # ---------------------------------------------------------------------------
@@ -1819,6 +1912,11 @@ def build_all(
         "calibration": calibration,
         "cuad_calibration_detail": cuad_cal,
         "intent_calibration_detail": intent_cal,
+        "calibration_journals": {
+            k: v for k, v in (("cuad", calibration_source(cuad_calibration_journal and Path(cuad_calibration_journal))),
+                              ("intent", calibration_source(intent_calibration_journal
+                                                            and Path(intent_calibration_journal)))) if v},
+        "intent_journal_used": bool(intent_journal),
         "remaining": remaining,
     }
 

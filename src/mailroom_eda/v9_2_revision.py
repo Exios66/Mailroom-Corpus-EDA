@@ -51,7 +51,7 @@ import shutil
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from . import eval_contract as ec
 from . import matter
@@ -299,6 +299,28 @@ def verify_source_revision_unchanged(old_rows: list[dict], new_rows: list[dict])
     print("verify_source_revision_unchanged OK — 0 live drift")
 
 
+BLIND_COLUMNS = frozenset({"filename", "doc_text", "prompt", "metadata"})
+
+
+def gt_parquet_record(r: Mapping[str, Any]) -> dict[str, Any]:
+    """The ground_truth parquet record for one JSONL row (all schema columns).
+
+    Matter lists become lists of strings, ``gt_fields`` a sorted-key JSON
+    string, everything else a string with ``None`` as ``""``. Staging and the
+    v9.4 parity gate both use this, so they cannot drift apart.
+    """
+    rec: dict[str, Any] = {}
+    for name in GT_ROW_SCHEMA_FIELDS:
+        if name in MATTER_LISTS:
+            rec[name] = [str(x) for x in (r.get(name) or [])]
+        elif name == "gt_fields":
+            rec[name] = json.dumps(r.get("gt_fields") or {}, ensure_ascii=False, sort_keys=True)
+        else:
+            v = r.get(name)
+            rec[name] = "" if v is None else str(v)
+    return rec
+
+
 def stage_default_and_ground_truth(rows: list[dict], stage_dir: Path) -> dict[tuple[str, str], int]:
     """Rebuild ``parquet/default`` (blind, 4 cols) + ``parquet/ground_truth``
     (35 cols) from revised rows."""
@@ -331,18 +353,7 @@ def stage_default_and_ground_truth(rows: list[dict], stage_dir: Path) -> dict[tu
             pq.write_table(pa.Table.from_pylist(blind), bdir / f"{split}-00000-of-00001.parquet")
         counts[("default", split)] = len(blind)
 
-        gt_rows = []
-        for r in subset:
-            rec = {}
-            for name in GT_ROW_SCHEMA_FIELDS:
-                if name in MATTER_LISTS:
-                    rec[name] = [str(x) for x in (r.get(name) or [])]
-                elif name == "gt_fields":
-                    rec[name] = json.dumps(r.get("gt_fields") or {}, ensure_ascii=False, sort_keys=True)
-                else:
-                    v = r.get(name)
-                    rec[name] = "" if v is None else str(v)
-            gt_rows.append(rec)
+        gt_rows = [gt_parquet_record(r) for r in subset]
         gdir = stage_dir / "parquet" / "ground_truth" / split
         gdir.mkdir(parents=True, exist_ok=True)
         if gt_rows:
@@ -355,13 +366,15 @@ def stage_default_and_ground_truth(rows: list[dict], stage_dir: Path) -> dict[tu
 
 
 def verify_blind_label_free(stage_dir: Path) -> None:
+    """Raise ``AssertionError`` unless every blind ``default`` shard has exactly
+    the 4 label-free columns. An explicit raise, so ``python -O`` keeps it."""
     import pandas as pd
 
     for split in ("train", "test"):
         for f in sorted((stage_dir / "parquet" / "default" / split).glob("*.parquet")):
             df = pd.read_parquet(f)
-            assert set(df.columns) == {"filename", "doc_text", "prompt", "metadata"}, \
-                f"blind config leaked columns: {sorted(df.columns)}"
+            if set(df.columns) != BLIND_COLUMNS:
+                raise AssertionError(f"blind config leaked columns: {sorted(df.columns)}")
     print("verify_blind_label_free OK — blind config is exactly 4 label-free columns")
 
 

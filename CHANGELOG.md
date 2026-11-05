@@ -53,6 +53,11 @@ PENDING, so the payload is not publish-ready yet.
   `incomplete`) and come from `LABEL_MODEL` (else `model_mismatch`). Until it
   passes, the matching label journal is held.
 - `dataset_info.json` for ground_truth no longer declares the removed `_published` column.
+- Gate (h) re-derives calibration from the scored details and re-scores each journal
+  (sha256-checked) instead of trusting the report. Gate (f) compares every ground_truth
+  column and the blind `default` config (row set, `doc_text`, 4 label-free columns).
+  Gate (g) requires the manifest to list every staged file. The blind-config check no
+  longer uses `assert`.
 - Gates are explicit checks that still run under `python -O`. Gate (b) allows each fill only on
   the rows it applies to. Each journal record must name the row's `document_id`, and the
   journal's sha256 and model are recorded. Gate (a) proves each removed row is a

@@ -6,9 +6,9 @@
 (c) no nan/None/null placeholder cells in gt_fields
 (d) presence key-set law on every row, no genuine_gap
 (e) every populated EX-10 CUAD map re-verifies verbatim at its offsets
-(f) ground_truth parquet == JSONL; dataset_info features == parquet columns
-(g) manifest sha table recomputes from the staged bytes
-(h) calibration against expert labels (PENDING blocks publishing, not staging)
+(f) every ground_truth parquet column == JSONL; blind default config: row set, doc_text, 4 label-free columns
+(g) manifest sha table recomputes and lists every staged file
+(h) calibration re-derived and re-scored from its journals (PENDING blocks publishing, not staging)
 
 Exit 0 when (a)-(g) pass; ``--require-publish-ready`` also requires (h).
 """
