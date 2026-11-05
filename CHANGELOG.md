@@ -29,17 +29,22 @@ PENDING, so the payload is not publish-ready yet.
     contract_148/149) are recorded in `dedup_removed.jsonl`, never merged.
 - **Placeholder hygiene**: 2,100 `"nan"` cells on 350 GNOTHEIA/BDR insurance rows are
   set to `""`. Presence codes are unchanged (gate).
-- **CUAD labels on SEC EDGAR EX-10 (issue #30)**: 75 of the 89 pending rows are filled
-  from the sandbox SAND-045 journal (Qwen3-14B-AWQ on Modal). Every span is
-  re-verified verbatim at an in-bounds offset, with a closed 41-category vocabulary,
-  semantic probes on 12 categories, a heading-only check and the quality floor.
-  126 spans were dropped, never repaired. 14 rows stay `pending_annotation`.
+- **CUAD labels on SEC EDGAR EX-10 (issue #30)**: none ingested yet; all 89 rows stay
+  `pending_annotation`. The labeler moves to `Qwen/Qwen3-32B-FP8` on one H100, and
+  `LABEL_MODEL` makes it the only model whose journal records are read. The first
+  `Qwen/Qwen3-14B-AWQ` pass is retired: 126 of its spans failed re-verification and
+  the spot check found category mix-ups. Labels are ingested only after the model
+  passes calibration. Each span must also re-verify verbatim at an in-bounds offset,
+  use the closed 41-category vocabulary, pass the semantic probes on 12 categories
+  and the heading-only check, and meet the quality floor.
 - **Flagged intents**: a two-pass agreement rule and the Modal runbook are in place;
   the 25 rows stay `flagged_review` until the pass runs.
-- **Calibration**: CUAD micro-F1 ≥ 0.6 on the fixed 40-contract golden sample and
-  intent κ ≥ 0.6 on all 96 manual labels gate publishing. A calibration journal must
-  cover its whole sample (else `incomplete`) and come from the model that wrote the
-  ingested labels (else `model_mismatch`).
+- **Calibration gates ingest, not just publishing**: CUAD presence micro-F1 ≥ 0.75
+  and micro-precision ≥ 0.80 on the fixed 40-contract golden sample; intent κ ≥ 0.75
+  on all 96 manual labels. The draft's 0.6 floors were raised because small Qwen3
+  models score 0.57–0.64. A calibration journal must cover its whole sample (else
+  `incomplete`) and come from `LABEL_MODEL` (else `model_mismatch`). Until it
+  passes, the matching label journal is held.
 - `dataset_info.json` for ground_truth no longer declares the removed `_published` column.
 - Gates are explicit checks that still run under `python -O`. Gate (b) allows each fill only on
   the rows it applies to. Each journal record must name the row's `document_id`, and the

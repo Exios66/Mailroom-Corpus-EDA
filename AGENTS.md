@@ -47,7 +47,8 @@ uv member (no build).
   - `hf_interface.py` — centralized Hub client (upload, sha256 verify)
   - `dataset_export.py` — cast-safe JSONL (KANBAN-076/088), parquet staging, manifests
   - `v9_4_revision.py` — v9.4 STAGING: exact-dup removal, placeholder scrub,
-    verified LLM CUAD/intent label ingest + expert calibration gates
+    verified LLM CUAD/intent label ingest (approved labeler `LABEL_MODEL` =
+    `Qwen/Qwen3-32B-FP8` only, held until it passes expert calibration)
     (`scripts/build/build_v9_4_dedup_labels.py`, `scripts/audit/verify_v9_4_conformance.py`)
   - `docclass_uploader.py` — docclass v7 publish, surgical card render, leak guard
   - `intent_backfill.py` — correspondence intent hydration (issue #5):

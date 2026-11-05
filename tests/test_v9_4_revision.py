@@ -219,7 +219,7 @@ def _ex10_row(fn: str) -> dict:
 
 def test_ingest_fills_pending_and_records_provenance():
     rows = [_ex10_row("e1.htm")]
-    journal = [{"filename": "e1.htm", "accepted": True, "model": "m", "cuad_clause_labels": GOOD}]
+    journal = [{"filename": "e1.htm", "accepted": True, "model": v94.LABEL_MODEL, "cuad_clause_labels": GOOD}]
     rep = v94.ingest_cuad_journal(rows, journal, VOCAB)
     assert rep["counts"] == {"ingested": 1}
     gt = rows[0]["gt_fields"]
@@ -227,15 +227,15 @@ def test_ingest_fills_pending_and_records_provenance():
     assert gt["clause_count"] == str(len(VOCAB))
     assert gt["label_evidence"].startswith("CUAD-annotated clauses: Agreement Date")
     assert json.loads(gt["gt_presence"])["cuad_clause_labels"] == "populated"
-    assert rows[0]["annotation_method"] == "llm_zero_shot" and rows[0]["annotation_model"] == "m"
+    assert rows[0]["annotation_method"] == "llm_zero_shot" and rows[0]["annotation_model"] == v94.LABEL_MODEL
 
 
 def test_ingest_uses_removed_duplicate_record_and_skips_rejects():
     rows = [_ex10_row("keep.htm"), _ex10_row("other.htm")]
     journal = [
-        {"filename": "keep.htm", "accepted": False, "problems": ["floor"]},
-        {"filename": "gone.htm", "accepted": True, "model": "m", "cuad_clause_labels": GOOD},
-        {"filename": "other.htm", "accepted": False, "problems": ["floor"]},
+        {"filename": "keep.htm", "accepted": False, "model": v94.LABEL_MODEL, "problems": ["floor"]},
+        {"filename": "gone.htm", "accepted": True, "model": v94.LABEL_MODEL, "cuad_clause_labels": GOOD},
+        {"filename": "other.htm", "accepted": False, "model": v94.LABEL_MODEL, "problems": ["floor"]},
     ]
     rep = v94.ingest_cuad_journal(rows, journal, VOCAB, sha_aliases={"keep.htm": ["gone.htm"]})
     by = {v["filename"]: v for v in rep["verdicts"]}
@@ -246,7 +246,7 @@ def test_ingest_uses_removed_duplicate_record_and_skips_rejects():
 
 def test_ingest_rejects_journal_record_for_another_document():
     rows = [_ex10_row("e1.htm")]
-    journal = [{"filename": "e1.htm", "document_id": "DOC-other", "accepted": True, "model": "m",
+    journal = [{"filename": "e1.htm", "document_id": "DOC-other", "accepted": True, "model": v94.LABEL_MODEL,
                 "cuad_clause_labels": GOOD}]
     rep = v94.ingest_cuad_journal(rows, journal, VOCAB, document_ids={"e1.htm": "DOC-e1.htm"})
     (v,) = rep["verdicts"]
@@ -283,7 +283,7 @@ def test_stage_refuses_to_overwrite_its_base(tmp_path):
 def test_drift_allows_documented_fills_only_where_they_apply():
     base = _ex10_row("e1.htm")
     new = json.loads(json.dumps(base))
-    v94.ingest_cuad_journal([new], [{"filename": "e1.htm", "accepted": True, "model": "m",
+    v94.ingest_cuad_journal([new], [{"filename": "e1.htm", "accepted": True, "model": v94.LABEL_MODEL,
                                      "cuad_clause_labels": GOOD}], VOCAB)
     assert v94.drift_problems(base, new) == []
 
@@ -357,9 +357,9 @@ def test_intent_decision_rules():
 def test_ingest_intent_keeps_flag_on_rejection():
     r1 = _row("m1.", expected="correspondence", intent="notice", intent_status="flagged_review")
     r2 = _row("m2.", expected="correspondence", intent="notice", intent_status="flagged_review")
-    j = [{"filename": "m1.", "model": "m", "pass_a": {"intent": "request", "confidence": 0.95},
+    j = [{"filename": "m1.", "model": v94.LABEL_MODEL, "pass_a": {"intent": "request", "confidence": 0.95},
           "pass_b": {"intent": "request", "confidence": 0.85}},
-         {"filename": "m2.", "model": "m", "pass_a": {"intent": "request", "confidence": 0.95},
+         {"filename": "m2.", "model": v94.LABEL_MODEL, "pass_a": {"intent": "request", "confidence": 0.95},
           "pass_b": {"intent": "other", "confidence": 0.85}}]
     rep = v94.ingest_intent_journal([r1, r2], j, IV)
     assert rep["counts"] == {"accepted": 1, "kept_flagged": 1}
@@ -386,18 +386,31 @@ def test_cuad_calibration_scores_presence_and_overlap():
     assert res["micro_recall"] == 0.75 and res["span_overlap_rate"] == 1.0
 
 
+M = "Qwen/Qwen3-32B-FP8"
+FULL_CUAD = {"documents": 40, "expected_documents": 40, "models": [M],
+             "micro_f1": 0.8, "micro_precision": 0.85}
+
+
 def test_calibration_status_gates_publish():
     assert v94.calibration_status(None, None, need_intent=False)["publish_ready"] is False
-    full = {"documents": 40, "expected_documents": 40, "models": ["m"], "micro_f1": 0.7}
-    ok = v94.calibration_status(full, None, need_intent=False, cuad_label_models={"m"})
+    ok = v94.calibration_status(FULL_CUAD, None, need_intent=False, cuad_label_models={M})
     assert ok["publish_ready"] is True and ok["cuad"]["status"] == "pass"
-    bad = v94.calibration_status(full, {"documents": 96, "expected_documents": 96, "models": ["m"],
-                                        "cohen_kappa": 0.2}, need_intent=True)
+    bad = v94.calibration_status(FULL_CUAD, {"documents": 96, "expected_documents": 96, "models": [M],
+                                             "cohen_kappa": 0.2}, need_intent=True)
     assert bad["publish_ready"] is False and bad["intent"]["status"] == "fail"
 
 
+def test_calibration_floors_reject_a_small_model_score():
+    # the sandbox's 8B/14B-class CUAD presence F1 (0.57-0.64) cleared the old 0.6 bar
+    weak = dict(FULL_CUAD, micro_f1=0.64, micro_precision=0.9)
+    assert v94.calibration_status(weak, None, need_intent=False)["cuad"]["status"] == "fail"
+    # high recall cannot buy a pass when precision is low: wrong labels are worse than none
+    noisy = dict(FULL_CUAD, micro_f1=0.8, micro_precision=0.7)
+    assert v94.calibration_status(noisy, None, need_intent=False)["cuad"]["status"] == "fail"
+
+
 def test_calibration_needs_the_whole_sample():
-    part = {"documents": 5, "expected_documents": 40, "models": ["m"], "micro_f1": 0.9}
+    part = dict(FULL_CUAD, documents=5)
     st = v94.calibration_status(part, None, need_intent=False)
     assert st["cuad"]["status"] == "incomplete" and st["publish_ready"] is False
     # a result that does not say what it was scored against is never complete
@@ -406,9 +419,41 @@ def test_calibration_needs_the_whole_sample():
 
 
 def test_calibration_must_score_the_labeling_model():
-    full = {"documents": 40, "expected_documents": 40, "models": ["other"], "micro_f1": 0.9}
-    st = v94.calibration_status(full, None, need_intent=False, cuad_label_models={"m"})
+    other = dict(FULL_CUAD, models=["Qwen/Qwen3-14B-AWQ"])
+    st = v94.calibration_status(other, None, need_intent=False, cuad_label_models={M})
     assert st["cuad"]["status"] == "model_mismatch" and st["publish_ready"] is False
+
+
+def test_label_model_is_the_sandbox_quality_posture():
+    assert v94.LABEL_MODEL == M and v94.APPROVED_LABEL_MODELS == {M}
+    assert "Qwen/Qwen3-14B-AWQ" not in v94.APPROVED_LABEL_MODELS
+
+
+def test_ingest_ignores_records_from_unapproved_models():
+    row = _ex10_row("e1.htm")
+    journal = [{"filename": "e1.htm", "accepted": True, "model": "Qwen/Qwen3-14B-AWQ",
+                "document_id": "DOC-e1.htm", "cuad_clause_labels": GOOD}]
+    rep = v94.ingest_cuad_journal([row], journal, VOCAB)
+    assert rep["unapproved_records"] == 1 and rep["counts"] == {"no_journal_record": 1}
+    assert v94.is_pending_cuad(row)
+
+
+def test_retired_model_record_cannot_outrank_an_approved_one():
+    row = _ex10_row("e1.htm")
+    journal = [{"filename": "e1.htm", "accepted": True, "model": "Qwen/Qwen3-14B-AWQ",
+                "cuad_clause_labels": GOOD},
+               {"filename": "e1.htm", "accepted": False, "model": M, "problems": ["floor"]}]
+    rep = v94.ingest_cuad_journal([row], journal, VOCAB)
+    assert rep["counts"] == {"rejected_by_labeler": 1} and v94.is_pending_cuad(row)
+
+
+def test_intent_journal_from_unapproved_model_is_ignored():
+    r = _row("m1.", expected="correspondence", intent="request", intent_status="flagged_review")
+    j = [{"filename": "m1.", "model": "Qwen/Qwen3-14B-AWQ",
+          "pass_a": {"intent": "request", "confidence": 0.95},
+          "pass_b": {"intent": "request", "confidence": 0.95}}]
+    rep = v94.ingest_intent_journal([r], j, ("request", "notice", "other"))
+    assert rep["counts"] == {"no_journal_record": 1} and r["gt_fields"]["intent_status"] == "flagged_review"
 
 
 def test_cuad_calibration_counts_skipped_and_rejected_documents():
@@ -459,3 +504,18 @@ def test_end_to_end_stage_passes_gates(tmp_path):
     with pytest.raises(AssertionError):
         v94.verify_stage(stage, v94.BASE_STAGE_DIR)
     gt_path.write_text(original, encoding="utf-8")
+
+
+@pytest.mark.skipif(not (v94.BASE_STAGE_DIR / "ground_truth_hardened.jsonl").exists(),
+                    reason="v9.3 stage not built (scripts/build/build_v9_3_corporate_presence.py)")
+def test_approved_journal_is_held_until_calibration_passes(tmp_path):
+    base = v94.load_jsonl(v94.BASE_STAGE_DIR / "ground_truth_hardened.jsonl")
+    pending = next(r for r in base if r["expected"] == "contract" and v94.is_pending_cuad(r))
+    journal = tmp_path / "j.jsonl"
+    journal.write_text(json.dumps({"filename": pending["filename"], "document_id": pending["document_id"],
+                                   "accepted": True, "model": v94.LABEL_MODEL,
+                                   "cuad_clause_labels": {}}) + "\n")
+    report = v94.build_all(tmp_path / "stage", cuad_journal=str(journal), write_audit=False)
+    assert report["cuad"]["held"].startswith("CUAD calibration not_run")
+    assert report["cuad"]["counts"] == {}
+    assert report["remaining"]["pending_cuad"] == 89

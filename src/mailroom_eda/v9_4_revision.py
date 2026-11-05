@@ -75,10 +75,21 @@ LLM_DIR = DATA_DIR / "v9_4" / "llm_raw"
 QUEUE_DIR = DATA_DIR / "v9_4" / "queues"
 AUDIT_DIR = ROOT / "docs" / "reports" / "audits"
 
-#: Default location of the sandbox EX-10 journal (sibling checkout).
+#: The only model whose labels v9.4 will ingest: the sandbox GT labeler's
+#: posture (local-mailroom-sandbox ``gt_labeler.POSTURE``, one H100). The
+#: earlier ``Qwen/Qwen3-14B-AWQ`` journal is retired: 126 of its spans failed
+#: re-verification, and small Qwen3 CUAD presence F1 measures 0.57-0.64 in the
+#: sandbox benchmarks (SAND-032/SAND-042).
+LABEL_MODEL = "Qwen/Qwen3-32B-FP8"
+APPROVED_LABEL_MODELS = frozenset({LABEL_MODEL})
+
+#: Default location of the sandbox EX-10 journal written by the approved model
+#: (sibling checkout). The retired 14B journal lives at ``ex10-cuad-labels.jsonl``
+#: and is deliberately not discovered.
+SANDBOX_JOURNAL_NAME = "v9_4-ex10-cuad-labels-qwen3-32b.jsonl"
 SANDBOX_JOURNAL_CANDIDATES = (
-    ROOT.parent / "local-mailroom-sandbox" / "reports" / "gt-labeler" / "ex10-cuad-labels.jsonl",
-    ROOT.parent / "exios66" / "local-mailroom-sandbox" / "reports" / "gt-labeler" / "ex10-cuad-labels.jsonl",
+    ROOT.parent / "local-mailroom-sandbox" / "reports" / "gt-labeler" / SANDBOX_JOURNAL_NAME,
+    ROOT.parent / "exios66" / "local-mailroom-sandbox" / "reports" / "gt-labeler" / SANDBOX_JOURNAL_NAME,
 )
 
 EXPECTED_BASE_ROWS = 3302
@@ -101,7 +112,13 @@ MAX_CUAD_SPAN_CHARS = 4000
 MIN_PRESENT_CUAD_CATEGORIES = 4  # the labeler's floor (sandbox gt_labeler)
 
 INTENT_ACCEPT_CONFIDENCE = 0.8
-CALIBRATION_THRESHOLDS = {"cuad_category_micro_f1": 0.6, "intent_cohen_kappa": 0.6}
+#: Calibration floors. The sandbox's small Qwen3 runs score 0.57-0.64 CUAD
+#: presence F1, so 0.6 could not tell a weak labeler from a good one.
+#: Precision carries its own floor: a wrong label is worse than a missing one.
+CALIBRATION_THRESHOLDS = {
+    "cuad": {"micro_f1": 0.75, "micro_precision": 0.80},
+    "intent": {"cohen_kappa": 0.75},
+}
 CUAD_CALIBRATION_SAMPLE = 40
 RANDOM_STATE = 42
 
@@ -543,6 +560,7 @@ def ingest_cuad_journal(
     *,
     sha_aliases: Mapping[str, Sequence[str]] | None = None,
     document_ids: Mapping[str, str] | None = None,
+    approved_models: Iterable[str] = APPROVED_LABEL_MODELS,
 ) -> dict[str, Any]:
     """Fill pending ``cuad_clause_labels`` in place from a verified journal.
 
@@ -556,8 +574,14 @@ def ingest_cuad_journal(
     record must name the same ``document_id`` as the row it is filed under,
     or it is rejected as ``failed_verification``. Raise ``AssertionError``
     if an ingested label does not recompute as populated.
+
+    Records from a model outside ``approved_models`` are discarded before
+    folding, so a retired model's record can never win over (or stand in
+    for) an approved one; their count is reported as ``unapproved_records``.
     """
-    folded = fold_journal(journal)
+    approved = set(approved_models)
+    unapproved = sum(1 for r in journal if str(r.get("model") or "") not in approved)
+    folded = fold_journal([r for r in journal if str(r.get("model") or "") in approved])
     aliases = sha_aliases or {}
     verdicts = []
     for row in rows:
@@ -614,8 +638,8 @@ def ingest_cuad_journal(
             "dropped": dropped,
         })
     counts = Counter(v["status"] for v in verdicts)
-    print(f"ingest_cuad_journal — {dict(counts)}")
-    return {"counts": dict(counts), "verdicts": verdicts}
+    print(f"ingest_cuad_journal — {dict(counts)}; {unapproved} records from unapproved models ignored")
+    return {"counts": dict(counts), "verdicts": verdicts, "unapproved_records": unapproved}
 
 
 # ---------------------------------------------------------------------------
@@ -685,14 +709,17 @@ def run_intent_pass(
 
 
 def ingest_intent_journal(rows: list[dict], journal: Sequence[Mapping[str, Any]],
-                          vocab: Sequence[str]) -> dict[str, Any]:
+                          vocab: Sequence[str],
+                          approved_models: Iterable[str] = APPROVED_LABEL_MODELS) -> dict[str, Any]:
     """Apply accepted two-pass decisions to flagged correspondence in place.
 
-    Return counts, per-row verdicts, and accepted model names. Missing or
-    rejected records remain flagged. Invalid confidence values can raise
-    ``ValueError`` or ``TypeError``; accepted records require both values.
+    Only records from ``approved_models`` are read. Return counts, per-row
+    verdicts, and accepted model names. Missing or rejected records remain
+    flagged. Invalid confidence values can raise ``ValueError`` or
+    ``TypeError``; accepted records require both values.
     """
-    by_fn = {str(r["filename"]): r for r in journal}
+    approved = set(approved_models)
+    by_fn = {str(r["filename"]): r for r in journal if str(r.get("model") or "") in approved}
     verdicts = []
     for row in rows:
         gt = row["gt_fields"]
@@ -830,31 +857,30 @@ def calibration_status(cuad: Mapping | None, intent: Mapping | None,
                        *, need_intent: bool,
                        cuad_label_models: Iterable[str] | None = None,
                        intent_label_models: Iterable[str] | None = None) -> dict[str, Any]:
-    """Evaluate calibration results and return statuses and publish readiness.
-
-    A result must cover at least its expected sample and clear its threshold.
-    When label models are non-empty, the calibration models must match them.
+    """Ingest and publish gate. A result passes only when it covers its whole
+    sample (``documents == expected_documents``), was produced by exactly the
+    model(s) whose labels would be ingested, and clears every floor in
+    ``CALIBRATION_THRESHOLDS``.
 
     Statuses: ``not_run``, ``incomplete``, ``model_mismatch``, ``fail``,
-    ``pass`` (and ``not_needed`` for intents when none were accepted)."""
-    def one(result, metric, threshold, label_models):
+    ``pass`` (and ``not_needed`` for intents when no intent journal is used)."""
+    def one(result, floors, label_models):
         if not result or not result.get("documents"):
             return {"status": "not_run"}
         docs, expected = int(result["documents"]), int(result.get("expected_documents") or 0)
-        base = {"documents": docs, "expected_documents": expected, "threshold": threshold}
+        base = {"documents": docs, "expected_documents": expected, "thresholds": dict(floors)}
         if expected <= 0 or docs < expected:
             return {"status": "incomplete", **base}
         want = sorted(set(label_models or ()))
         got = sorted(set(result.get("models") or ()))
         if want and got != want:
             return {"status": "model_mismatch", "label_models": want, "calibration_models": got, **base}
-        value = result[metric]
-        return {"status": "pass" if value >= threshold else "fail", metric: value, **base}
+        values = {m: result.get(m, 0.0) for m in floors}
+        ok = all(values[m] >= t for m, t in floors.items())
+        return {"status": "pass" if ok else "fail", **values, **base}
 
-    out = {"cuad": one(cuad, "micro_f1", CALIBRATION_THRESHOLDS["cuad_category_micro_f1"],
-                       cuad_label_models)}
-    out["intent"] = (one(intent, "cohen_kappa", CALIBRATION_THRESHOLDS["intent_cohen_kappa"],
-                         intent_label_models)
+    out = {"cuad": one(cuad, CALIBRATION_THRESHOLDS["cuad"], cuad_label_models)}
+    out["intent"] = (one(intent, CALIBRATION_THRESHOLDS["intent"], intent_label_models)
                      if need_intent else {"status": "not_needed"})
     out["publish_ready"] = all(v["status"] in ("pass", "not_needed") for v in out.values()
                                if isinstance(v, dict))
@@ -1005,8 +1031,10 @@ def render_audit_md(report: Mapping[str, Any]) -> str:
     c = report["cuad"]
     lines += ["", "## CUAD clause labels on SEC EDGAR EX-10", "",
               f"Journal: `{report['cuad_journal'] or 'none'}` (sha256 `{c.get('journal_sha256', '')}`, "
-              f"models {c.get('journal_models', [])}). Every record's `document_id` must match the row "
-              f"it is filed under. Outcome: {c['counts']}.", "",
+              f"models {c.get('journal_models', [])}). Approved labeler: `{LABEL_MODEL}`; records from "
+              f"any other model are ignored ({c.get('unapproved_records', 0)} here). Labels are ingested "
+              f"only after that model passes calibration. Every record's `document_id` must match the "
+              f"row it is filed under. Outcome: {c.get('held') or c['counts'] or 'no journal'}.", "",
               "| filename | status | detail |", "|---|---|---|"]
     for v in sorted(c["verdicts"], key=lambda v: (v["status"], v["filename"])):
         if v["status"] == "ingested":
@@ -1020,10 +1048,15 @@ def render_audit_md(report: Mapping[str, Any]) -> str:
     if dropped:
         lines += ["", "Dropped spans by reason: " + ", ".join(f"{k}: {n}" for k, n in dropped.most_common())]
     i = report["intent"]
-    lines += ["", "## Flagged correspondence intents", "", f"Outcome: {i['counts'] or 'no journal'}."]
+    lines += ["", "## Flagged correspondence intents", "",
+              f"Outcome: {i.get('held') or i['counts'] or 'no journal'}."]
     cal = report["calibration"]
-    lines += ["", "## Calibration against expert labels", "",
-              f"- CUAD (category presence micro-F1 vs golden CUAD): {cal['cuad']}",
+    floors = CALIBRATION_THRESHOLDS
+    lines += ["", "## Calibration against expert labels (gates ingest and publish)", "",
+              f"Model under test: `{LABEL_MODEL}`. Floors: CUAD {floors['cuad']} on the fixed "
+              f"{CUAD_CALIBRATION_SAMPLE}-contract golden sample; intent {floors['intent']} on the "
+              "manual correspondence labels.", "",
+              f"- CUAD (category presence vs golden CUAD): {cal['cuad']}",
               f"- Intent (Cohen's kappa vs the 96 manual labels): {cal['intent']}",
               f"- **publish_ready: {cal['publish_ready']}**", ""]
     if report.get("cuad_calibration_detail"):
@@ -1056,9 +1089,10 @@ def render_readme_addendum(report: Mapping[str, Any]) -> str:
         f"**Placeholder hygiene.** {report['placeholders']['cells']} `gt_fields` cells on "
         f"{report['placeholders']['rows']} insurance rows held the string `nan`; they are now `\"\"`.\n\n"
         f"**CUAD clause labels on SEC EDGAR EX-10.** {c.get('ingested', 0)} contracts now carry "
-        "LLM-produced CUAD clause spans (`annotation_method = llm_zero_shot`, model in "
-        "`annotation_model`). Every span is a verbatim slice of `doc_text` at its `start` offset, "
-        "re-verified at build time. Rows that did not meet the quality floor stay "
+        f"LLM-produced CUAD clause spans from `{LABEL_MODEL}` (`annotation_method = llm_zero_shot`), "
+        "ingested only after that model passed calibration against golden CUAD. Every span is a "
+        "verbatim slice of `doc_text` at its `start` offset, re-verified at build time. Rows "
+        "without verified labels stay "
         f"`pending_annotation` ({report['remaining']['pending_cuad']}).\n\n"
         f"**Calibration.** CUAD: {cal['cuad'].get('status')}; intent: {cal['intent'].get('status')}. "
         f"Plan: `{PLAN_REF}`.\n\n"
@@ -1265,8 +1299,13 @@ def verify_stage(stage_dir: Path = STAGE_DIR_DEFAULT, base_dir: Path = BASE_STAG
             untouched += 1
             continue
         changed += 1
-        probs = drift_problems(json.loads(base_ln), r)
+        base_row = json.loads(base_ln)
+        probs = drift_problems(base_row, r)
         _gate(not probs, "; ".join(probs[:3]))
+        if r["gt_fields"].get("intent") != base_row["gt_fields"].get("intent") or (
+                r["gt_fields"].get("intent_status") != base_row["gt_fields"].get("intent_status")):
+            _gate(r.get("annotation_model") in APPROVED_LABEL_MODELS,
+                  f"{r['filename']}: intent relabeled by unapproved model {r.get('annotation_model')!r}")
     gates["b_zero_drift"] = f"PASS {untouched} rows byte-identical to v9.3, {changed} within the fill allowlist"
 
     # (c) placeholders
@@ -1297,8 +1336,11 @@ def verify_stage(stage_dir: Path = STAGE_DIR_DEFAULT, base_dir: Path = BASE_STAG
             labels = _json_obj(r["gt_fields"]["cuad_clause_labels"])
             clean, dropped, problems = verify_cuad_labels(r["doc_text"], labels, vocab)
             _gate(not dropped and not problems and clean == labels, f"{r['filename']}: {dropped or problems}")
+            _gate(r.get("annotation_model") in APPROVED_LABEL_MODELS,
+                  f"{r['filename']}: labeled by unapproved model {r.get('annotation_model')!r}")
             ex10_pop += 1
-    gates["e_cuad_verbatim"] = f"PASS {ex10_pop} EX-10 CUAD maps re-verify verbatim at their offsets"
+    gates["e_cuad_verbatim"] = (f"PASS {ex10_pop} EX-10 CUAD maps re-verify verbatim at their offsets, "
+                                f"all from {LABEL_MODEL}")
 
     # (f) parquet == jsonl
     by_fn = {r["filename"]: r for r in rows}
@@ -1381,7 +1423,9 @@ def build_all(
 ) -> dict[str, Any]:
     """Build the v9.4 stage from the v9.3 base and return its audit report.
 
-    Journals optionally fill labels and supply calibration scores. The stage,
+    Calibration journals are scored first; a label journal is ingested only
+    when its model is ``LABEL_MODEL`` and that model's calibration passed,
+    otherwise it is recorded as held. The stage,
     adjacent report and queues are written; ``write_audit`` also writes the
     repository audit files. ``use_cuad_journal=False`` skips CUAD ingestion.
     Raise ``SystemExit`` for publishing, a missing base, or overlapping stage;
@@ -1430,39 +1474,54 @@ def build_all(
                 ph_by[f"{src} · {k}"] += 1
     print(f"scrub_placeholders — {ph_rows} rows, {ph_cells} cells")
 
-    # 3. CUAD journal
+    # 3. calibration first: nothing is ingested from a model that has not
+    #    passed against expert labels
+    cuad_cal = intent_cal = None
+    if cuad_calibration_journal:
+        cuad_cal = score_cuad_calibration(
+            cuad_calibration_sample(kept),
+            [r for r in load_jsonl(Path(cuad_calibration_journal))
+             if str(r.get("model") or "") in APPROVED_LABEL_MODELS], vocab)
+    if intent_calibration_journal:
+        intent_cal = score_intent_calibration(
+            manual_intent_rows(kept),
+            [r for r in load_jsonl(Path(intent_calibration_journal))
+             if str(r.get("model") or "") in APPROVED_LABEL_MODELS])
+    calibration = calibration_status(
+        cuad_cal, intent_cal, need_intent=bool(intent_journal),
+        cuad_label_models=APPROVED_LABEL_MODELS, intent_label_models=APPROVED_LABEL_MODELS)
+
+    # 4. CUAD journal (approved model only, and only once calibration passes)
     cuad_path = resolve_sandbox_journal(cuad_journal) if use_cuad_journal else None
-    cuad_report = {"counts": {}, "verdicts": []}
+    cuad_report: dict[str, Any] = {"counts": {}, "verdicts": []}
     if cuad_path:
-        before = {r["filename"]: r["gt_fields"].get("cuad_clause_labels") for r in kept}
         journal_records = load_jsonl(cuad_path)
-        cuad_report = ingest_cuad_journal(
-            kept, journal_records, vocab, sha_aliases=aliases,
-            document_ids={r["filename"]: str(r.get("document_id") or "") for r in base_rows})
         cuad_report["journal_sha256"] = sha256_file(cuad_path)
         cuad_report["journal_models"] = sorted({str(r.get("model") or "") for r in journal_records})
-        touched |= {r["filename"] for r in kept if r["gt_fields"].get("cuad_clause_labels") != before[r["filename"]]}
+        if calibration["cuad"]["status"] == "pass":
+            before = {r["filename"]: r["gt_fields"].get("cuad_clause_labels") for r in kept}
+            cuad_report.update(ingest_cuad_journal(
+                kept, journal_records, vocab, sha_aliases=aliases,
+                document_ids={r["filename"]: str(r.get("document_id") or "") for r in base_rows}))
+            touched |= {r["filename"] for r in kept
+                        if r["gt_fields"].get("cuad_clause_labels") != before[r["filename"]]}
+        else:
+            cuad_report["held"] = f"CUAD calibration {calibration['cuad']['status']}; nothing ingested"
+            print(f"ingest_cuad_journal — held: {cuad_report['held']}")
 
-    # 4. intents
-    intent_report = {"counts": {}, "verdicts": []}
+    # 5. intents (same rule)
+    intent_report: dict[str, Any] = {"counts": {}, "verdicts": []}
     from .intent_backfill import CANONICAL_INTENTS
 
     if intent_journal:
-        before = {r["filename"]: r["gt_fields"].get("intent_status") for r in kept}
-        intent_report = ingest_intent_journal(kept, load_jsonl(Path(intent_journal)), CANONICAL_INTENTS)
-        touched |= {r["filename"] for r in kept if r["gt_fields"].get("intent_status") != before[r["filename"]]}
-
-    # 5. calibration
-    cuad_cal = intent_cal = None
-    if cuad_calibration_journal:
-        cuad_cal = score_cuad_calibration(cuad_calibration_sample(kept),
-                                          load_jsonl(Path(cuad_calibration_journal)), vocab)
-    if intent_calibration_journal:
-        intent_cal = score_intent_calibration(manual_intent_rows(kept), load_jsonl(Path(intent_calibration_journal)))
-    calibration = calibration_status(
-        cuad_cal, intent_cal, need_intent=bool(intent_report["counts"].get("accepted")),
-        cuad_label_models={v["model"] for v in cuad_report["verdicts"] if v["status"] == "ingested"},
-        intent_label_models=intent_report.get("models"))
+        if calibration["intent"]["status"] == "pass":
+            before = {r["filename"]: r["gt_fields"].get("intent_status") for r in kept}
+            intent_report = ingest_intent_journal(kept, load_jsonl(Path(intent_journal)), CANONICAL_INTENTS)
+            touched |= {r["filename"] for r in kept
+                        if r["gt_fields"].get("intent_status") != before[r["filename"]]}
+        else:
+            intent_report["held"] = f"intent calibration {calibration['intent']['status']}; nothing ingested"
+            print(f"ingest_intent_journal — held: {intent_report['held']}")
 
     remaining = {
         "pending_cuad": sum(1 for r in kept if is_pending_cuad(r)),
@@ -1520,11 +1579,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--intent-calibration-journal", default=None)
     ap.add_argument("--run-intent-pass", action="store_true",
                     help="label the flagged + manual intents now (needs VLLM_BASE_URL/VLLM_API_KEY)")
-    ap.add_argument("--intent-model", default="Qwen/Qwen3-14B-AWQ")
+    ap.add_argument("--intent-model", default=LABEL_MODEL,
+                    help=f"must be an approved labeler ({', '.join(sorted(APPROVED_LABEL_MODELS))})")
     ap.add_argument("--no-audit", action="store_true")
     ap.add_argument("--publish", action="store_true")
     args = ap.parse_args(argv)
 
+    if args.intent_model not in APPROVED_LABEL_MODELS:
+        raise SystemExit(f"--intent-model {args.intent_model!r} is not an approved labeler "
+                         f"({', '.join(sorted(APPROVED_LABEL_MODELS))})")
     if args.run_intent_pass:
         base_url = (os.environ.get("VLLM_BASE_URL") or "").rstrip("/")
         api_key = os.environ.get("VLLM_API_KEY") or ""
