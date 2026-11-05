@@ -1,6 +1,6 @@
 # v9.4 CUAD label spot-check pack
 
-A random 20% sample (15 of 76) of SEC EDGAR EX-10 contracts whose `cuad_clause_labels` were filled from the Modal LLM journal in v9.4. Every span below already passed the automatic checks (verbatim at its offset, closed CUAD vocabulary, semantic probe, quality floor). A reviewer should confirm the span is the named clause.
+A random 20% sample (15 of 75) of SEC EDGAR EX-10 contracts whose `cuad_clause_labels` were filled from the Modal LLM journal in v9.4. Every span below already passed the automatic checks (verbatim at its offset, closed CUAD vocabulary, semantic probe, quality floor). A reviewer should confirm the span is the named clause.
 
 Mark each line in the CSV `reviewer_verdict` column as `ok`, `wrong_category` or `not_a_clause`.
 
@@ -33,12 +33,8 @@ subclass: Service, model: `Qwen/Qwen3-14B-AWQ`
 | category | offset | span |
 |---|---:|---|
 | Agreement Date | 25352 | Executed as of this 29th day of August, 2006 |
-| Audit Rights | 5827 | Clearwire will be responsible for the payment of all applicable sales, use, retailers occupation, excise, property and other assessments in the nature of tax... |
-| Covenant Not To Sue | 19563 | The parties agree that where the context of any provision indicates an intent that it will survive the term of this Services Agreement then it will survive. |
 | Document Name | 223 | WIRELESS BROADBAND SYSTEM SERVICES AGREEMENT |
-| Effective Date | 21514 | Effective Date |
 | Governing Law | 15483 | The laws of the State of New York, USA, will govern the validity, performance and all matters relating to the effect of this Services Agreement and any amend... |
-| Insurance | 16976 | Clearwire and Motorola agree to comply with all applicable export laws and regulations of the United States of America or such other country of origin. |
 | Parties | 966 | between Motorola, Inc., a Delaware corporation, ("Motorola", which term will also mean, where the context requires, Motorola subsidiaries or subcontractors i... |
 | Termination For Convenience | 10840 | Either party may terminate this Services Agreement without liability by notice pursuant to Section 18 if the other makes a general assignment for the benefit... |
 
@@ -82,30 +78,14 @@ subclass: Consulting Agreements, model: `Qwen/Qwen3-14B-AWQ`
 | Parties | 3446 | THE HERTZ CORPORATION By: Name: Title: |
 | Parties | 3548 | MERRILL LYNCH GLOBAL PARTNERS,INC. By: Name: Title: |
 
-## `0001193125-05-021087_dex1060.htm`
-
-subclass: Supply, model: `Qwen/Qwen3-14B-AWQ`
-
-| category | offset | span |
-|---|---:|---|
-| Agreement Date | 254 | as of February , 2005 |
-| Document Name | 24 | AMENDMENT NO. 1 TO STOCK PURCHASE AGREEMENT |
-| Governing Law | 9540 | The corporate law of Delaware shall govern all issues concerning the relative rights of the Company and its stockholders. All other questions concerning the ... |
-| Parties | 290 | (i) Syniverse Holdings, Inc., a Delaware corporation (the “Company”), (ii) Syniverse Holdings, LLC, a Delaware limited liability company (“Holdings LLC”), an... |
-
 ## `0001193125-07-065680_dex1044.htm`
 
 subclass: License_Agreements, model: `Qwen/Qwen3-14B-AWQ`
 
 | category | offset | span |
 |---|---:|---|
-| Affiliate License-Licensee | 2780 | Licensee will **[ * ]** to assist Licensor to protect and enforce the Licensed Mark |
-| Affiliate License-Licensor | 1842 | Licensor, at its own cost, shall be responsible for maintaining and renewing trademark registrations for the Licensed Mark |
 | Agreement Date | 112 | dated as of January 31, 2007 |
-| Audit Rights | 5329 | Licensee shall provide Licensor with representative specimens of the packaging, labeling, advertising, and promotional material showing Licensee’s use of the... |
-| Covenant Not To Sue | 4852 | Licensor shall not take (or cause any other person to take) any action which will conflict with, contravene or otherwise limit or restrict the rights of the ... |
 | Document Name | 25 | TRADEMARK LICENSE AGREEMENT |
-| Insurance | 8139 | Licensor shall cooperate to the extent reasonably required by Licensee to stop such infringement or act, and, if so requested by Licensee, shall join with Li... |
 | Ip Ownership Assignment | 2318 | Licensee acknowledges that Licensor, or its affiliate, is the exclusive owner of all right title and interest in the Licensed Mark and any registration there... |
 | License Grant | 1450 | Licensor hereby grants to Licensee, and Licensee hereby accepts, an exclusive license to use the Licensed Mark in the Territory (as defined below) in connect... |
 
@@ -119,7 +99,6 @@ subclass: License_Agreements, model: `Qwen/Qwen3-14B-AWQ`
 | Document Name | 24 | AMENDED AND RESTATED LICENSE AGREEMENT |
 | Effective Date | 633 | November 1, 2006 |
 | Governing Law | 75579 | This Amended and Restated License Agreement will be governed by and interpreted in accordance with the laws of the State of New York |
-| Insurance | 83134 | Each Party shall comply with all applicable statutes, laws, regulations, enactments, directives and ordinances and all injunctions, decisions, directives, ju... |
 | License Grant | 13646 | Codexis hereby grants to Shell, under all of Codexis’ rights and interest in Program Patent Rights and Program Licensed Technology, an exclusive, worldwide, ... |
 
 ## `0001193125-12-006758_d231008dex1019.htm`
@@ -128,7 +107,6 @@ subclass: Supply, model: `Qwen/Qwen3-14B-AWQ`
 
 | category | offset | span |
 |---|---:|---|
-| Affiliate License-Licensor | 7748 | Supplier grants to Customer the right to purchase at least 10,000 tons of Product per calendar month (as ordered by Customer pursuant to Section 2.6). |
 | Agreement Date | 394 | effective October 5, 2011 (the “Effective Date”) |
 | Anti-Assignment | 34683 | Neither party may assign its rights under this Agreement to, or have its obligations assumed by, any Person without the prior written consent of the other party |
 | Audit Rights | 12208 | Customer has the right, at its own expense, to inspect and test the Product during production or storage at Supplier’s Facility. |
@@ -145,16 +123,11 @@ subclass: Consulting Agreements, model: `Qwen/Qwen3-14B-AWQ`
 
 | category | offset | span |
 |---|---:|---|
-| Affiliate License-Licensee | 18545 | Employer may assign this Employment Agreement without the consent of Executive. |
-| Affiliate License-Licensor | 18545 | Employer may assign this Employment Agreement without the consent of Executive. |
 | Agreement Date | 161 | as of March 5, 2014 |
 | Anti-Assignment | 18485 | This Employment Agreement may not be assigned by Executive. |
-| Audit Rights | 8154 | Executive will promptly disclose to Employer or its designee during Executive’s employment with Employer and for one year thereafter all Employer Inventions ... |
 | Change Of Control | 35026 | a “change of control” is intended generally to refer to the happening of any of the following: |
-| Covenant Not To Sue | 20098 | Executive will not, without Employer’s prior written consent, directly or indirectly: (i)copy or use any Confidential Information for any purpose not within ... |
 | Document Name | 66 | EMPLOYMENT AGREEMENT |
 | Governing Law | 26982 | This Employment Agreement and any dispute arising from the relationship between the Parties will be governed by and construed under and according to the laws... |
-| Insurance | 5629 | Employer will reimburse Executive promptly for reasonable, necessary, customary and usual business expenses, including travel, entertainment, parking, busine... |
 | Ip Ownership Assignment | 8821 | Executive hereby assigns to Employer all right, title and interest to all Employer Inventions, which will be the sole and exclusive property of Employer |
 | License Grant | 10247 | Executive will promptly execute, acknowledge and deliver to Employer all additional instruments or documents that Employer determines at any time to be neces... |
 | No-Solicit Of Customers | 23213 | During Executive’s employment with Employer and for a period of two (2)years from and after the termination of Executive’s employment with Employer for any r... |
@@ -170,8 +143,6 @@ subclass: Supply, model: `Qwen/Qwen3-14B-AWQ`
 
 | category | offset | span |
 |---|---:|---|
-| Affiliate License-Licensee | 863 | Limson Trading, Inc., 1300 Gezon Parkway SW, Wyoming, Michigan 49509-9300 ( |
-| Affiliate License-Licensor | 993 | The trū Shrimp Company, a Delaware corporation, on behalf of itself and its affiliates |
 | Agreement Date | 416 | December 3, 2020 |
 | Anti-Assignment | 8442 | Neither this LOI nor any rights or obligations hereunder may be assigned, delegated, or conveyed by either Party without the prior written consent of the oth... |
 | Document Name | 642 | Letter of Intent for a Definitive Supply Agreement for Purchase of Shrimp from The trū® Shrimp Company |
@@ -182,6 +153,17 @@ subclass: Supply, model: `Qwen/Qwen3-14B-AWQ`
 | Non-Transferable License | 8442 | Neither this LOI nor any rights or obligations hereunder may be assigned, delegated, or conveyed by either Party without the prior written consent of the oth... |
 | Parties | 863 | Limson Trading, Inc., 1300 Gezon Parkway SW, Wyoming, Michigan 49509-9300 ("Buyer") to purchase the Goods (as defined below) from The trū Shrimp Company, a D... |
 | Third Party Beneficiary | 7862 | Nothing herein is intended or shall be construed to confer upon any person or entity other than the Parties and their successors or assigns, any rights or re... |
+
+## `0001575872-22-000712_cm106_ex10-69.htm`
+
+subclass: Supply, model: `Qwen/Qwen3-14B-AWQ`
+
+| category | offset | span |
+|---|---:|---|
+| Agreement Date | 149 | July 12, 2022 |
+| Document Name | 66 | EXTENSION AGREEMENT |
+| Effective Date | 183 | July 6, 2022 |
+| Governing Law | 10636 | the law of the State of Nevada and the law of the United States applicable to transactions within said State |
 
 ## `0001627469-15-000036_ex-10_1.htm`
 
@@ -195,16 +177,19 @@ subclass: IP, model: `Qwen/Qwen3-14B-AWQ`
 | Parties | 140 | between Thomas DeNunzio and Exquisite Acquisition, Inc. |
 | Price Restrictions | 462 | It is expected that the offering costs and any subsequent fees to the offering or relating to the offering will not exceed this amount. |
 
-## `0001683168-18-001629_iiot_s1a3-ex1019.htm`
+## `0001654954-23-003821_lafa_ex1013.htm`
 
-subclass: Consulting Agreements, model: `Qwen/Qwen3-14B-AWQ`
+subclass: IP, model: `Qwen/Qwen3-14B-AWQ`
 
 | category | offset | span |
 |---|---:|---|
-| Affiliate License-Licensor | 761 | IIOT-OXYS, Inc. |
-| Agreement Date | 174 | October 1, 2017 |
-| Document Name | 33 | FIRST AMENDMENT TO CONSULTING AGREEMENT |
-| Effective Date | 174 | October 1, 2017 |
+| Agreement Date | 382 | December 16, 2022 |
+| Anti-Assignment | 9265 | No Party shall assign this Agreement or any part hereof without the prior written consent of the other Party |
+| Document Name | 77 | 3-D SEISMIC ACQUISTION AND DEVELOPMENT OPTION AGREEMENT |
+| Effective Date | 382 | December 16, 2022 |
+| Expiration Date | 1833 | four (4) months from the Effective Date |
+| Governing Law | 9601 | This Agreement shall be governed and construed in accordance with and pursuant to the laws of the State of Texas |
+| Non-Compete | 8921 | Optionee shall not, directly or indirectly, acquire any new oil and gas leases, top lease, or enter into any other transactions to acquire any leasehold inte... |
 
 ## `0001683168-21-002146_intorio_ex1003.htm`
 
@@ -212,10 +197,8 @@ subclass: Supply, model: `Qwen/Qwen3-14B-AWQ`
 
 | category | offset | span |
 |---|---:|---|
-| Audit Rights | 2250 | Seller agrees to cooperate with Buyer and take any and all actions necessary to transfer and perfect the ownership of the Website registration and hosting fr... |
 | Document Name | 30 | WEBSITE ASSET PURCHASE AGREEMENT |
 | Effective Date | 175 | effective on February 27, 2021 (the “Effective Date”) |
 | Minimum Commitment | 1148 | the Buyer agrees to pay Nine Thousand Dollars (US $9,000.00) to Seller within 360 days of the Effective Date |
 | Post-Termination Services | 1932 | The Seller will provide technical consulting in the area of improving/maintaining the website for the next 60 days |
-| Source Code Escrow | 2250 | Seller agrees to cooperate with Buyer and take any and all actions necessary to transfer and perfect the ownership of the Website registration and hosting fr... |
 

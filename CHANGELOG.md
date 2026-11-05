@@ -29,18 +29,26 @@ PENDING, so the payload is not publish-ready yet.
     contract_148/149) are recorded in `dedup_removed.jsonl`, never merged.
 - **Placeholder hygiene**: 2,100 `"nan"` cells on 350 GNOTHEIA/BDR insurance rows are
   set to `""`. Presence codes are unchanged (gate).
-- **CUAD labels on SEC EDGAR EX-10 (issue #30)**: 76 of the 89 pending rows are filled
+- **CUAD labels on SEC EDGAR EX-10 (issue #30)**: 75 of the 89 pending rows are filled
   from the sandbox SAND-045 journal (Qwen3-14B-AWQ on Modal). Every span is
-  re-verified verbatim at its offset, with a closed 41-category vocabulary, semantic
-  probes and the quality floor. 13 rows stay `pending_annotation`.
+  re-verified verbatim at an in-bounds offset, with a closed 41-category vocabulary,
+  semantic probes on 12 categories, a heading-only check and the quality floor.
+  126 spans were dropped, never repaired. 14 rows stay `pending_annotation`.
 - **Flagged intents**: a two-pass agreement rule and the Modal runbook are in place;
   the 25 rows stay `flagged_review` until the pass runs.
-- **Calibration**: CUAD micro-F1 ≥ 0.6 against golden CUAD and intent κ ≥ 0.6 against
-  the manual labels gate publishing.
+- **Calibration**: CUAD micro-F1 ≥ 0.6 on the fixed 40-contract golden sample and
+  intent κ ≥ 0.6 on all 96 manual labels gate publishing. A calibration journal must
+  cover its whole sample (else `incomplete`) and come from the model that wrote the
+  ingested labels (else `model_mismatch`).
 - `dataset_info.json` for ground_truth no longer declares the removed `_published` column.
 - Gates are explicit checks that still run under `python -O`. Gate (b) allows each fill only on
   the rows it applies to. Each journal record must name the row's `document_id`, and the
-  journal's sha256 and model are recorded. Two rebuilds produce byte-identical output.
+  journal's sha256 and model are recorded. Gate (a) proves each removed row is a
+  byte-identical copy of a staged survivor; gate (d) recomputes presence instead of
+  trusting the stored map; the report is bound to a digest of the staged files. Staging
+  refuses a target that overlaps the v9.3 input. Two rebuilds produce byte-identical output.
+- Near-duplicates (3 normalized-text groups) are reported, not removed; one EX-3
+  group crosses train/test and needs a decision (plan §5).
 - Audit outputs: `docs/reports/audits/v9_4_dedup_label_audit.*`, a
   `v9_4_label_review.*` spot-check pack, and `v9_4_queues/`.
 

@@ -95,6 +95,7 @@ def test_near_duplicates_report_only_differing_bytes():
     rows = [_row("a", "s1", norm="n1"), _row("b", "s2", norm="n1"), _row("c", "s3", norm="n3")]
     (g,) = v94.near_duplicate_groups(rows)
     assert [m["filename"] for m in g["members"]] == ["a", "b"]
+    assert g["cross_split"] is (len({m["split"] for m in g["members"]}) > 1)
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +167,43 @@ def test_semantic_probe_drops_wrong_category():
     assert clean["Governing Law"] == [] and any("semantic probe" in d for d in dropped)
 
 
+def test_offset_outside_document_is_dropped():
+    # DOC[-10:-7] is a real slice, so without the bounds check a negative
+    # offset would pass as "verbatim"
+    for start, text in ((-10, DOC[-10:-7]), (len(DOC) + 1, "x y")):
+        bad = json.loads(json.dumps(GOOD))
+        bad["Parties"].append({"start": start, "text": text})
+        clean, dropped, _ = v94.verify_cuad_labels(DOC, bad, VOCAB)
+        assert len(clean["Parties"]) == 1 and any("outside the document" in d for d in dropped)
+
+
+def test_heading_only_span_is_dropped():
+    doc = DOC + " Governing Law. "
+    bad = json.loads(json.dumps(GOOD))
+    bad["Governing Law"].append({"start": len(DOC) + 1, "text": "Governing Law."})
+    clean, dropped, _ = v94.verify_cuad_labels(doc, bad, VOCAB)
+    assert len(clean["Governing Law"]) == 1 and any("heading only" in d for d in dropped)
+
+
+@pytest.mark.parametrize("name,wrong,right", [
+    ("Audit Rights", "Buyer will pay all applicable sales taxes.",
+     "Licensor may audit the books and records of Licensee."),
+    ("Insurance", "Employer will reimburse reasonable business expenses.",
+     "Supplier shall maintain general liability insurance."),
+    ("Covenant Not To Sue", "Provisions that by their nature survive will survive.",
+     "Licensee shall not challenge or contest the validity of the Patents."),
+    ("Affiliate License-Licensee", "Licensee will assist Licensor to protect the Licensed Mark.",
+     "The license extends to Licensee's Affiliates."),
+    ("Affiliate License-Licensor", "Employer may assign this Agreement without consent.",
+     "Licensor and its Affiliates grant Licensee a license."),
+    ("Source Code Escrow", "Seller will transfer the Website registration to Buyer.",
+     "Licensor shall deposit the source code with the escrow agent."),
+])
+def test_new_semantic_probes(name, wrong, right):
+    probe = v94.SEMANTIC_PROBES[name]
+    assert not probe.search(wrong) and probe.search(right)
+
+
 def test_unknown_category_is_a_problem():
     bad = dict(GOOD, **{"Made Up": []})
     _, _, problems = v94.verify_cuad_labels(DOC, bad, VOCAB)
@@ -222,6 +260,19 @@ def test_ingest_rejects_journal_record_for_another_document():
 def test_journal_display_path_hides_machine_layout(tmp_path):
     p = tmp_path / "x" / "local-mailroom-sandbox" / "reports" / "gt-labeler" / "j.jsonl"
     assert v94.journal_display_path(p) == "local-mailroom-sandbox/reports/gt-labeler/j.jsonl"
+    # outside a reports/ tree the caller's path is kept, not reduced to a bare name
+    other = tmp_path / "elsewhere" / "j.jsonl"
+    assert v94.journal_display_path(other) == str(other)
+
+
+def test_stage_refuses_to_overwrite_its_base(tmp_path):
+    base = tmp_path / "v9_3" / "stage"
+    base.mkdir(parents=True)
+    for stage in (base, base.parent, base / "inner"):
+        with pytest.raises(SystemExit, match="overlaps the base"):
+            v94.refuse_overlapping_stage(base, stage)
+    assert base.exists()
+    v94.refuse_overlapping_stage(base, tmp_path / "v9_4" / "stage")
 
 
 # ---------------------------------------------------------------------------
@@ -337,24 +388,36 @@ def test_cuad_calibration_scores_presence_and_overlap():
 
 def test_calibration_status_gates_publish():
     assert v94.calibration_status(None, None, need_intent=False)["publish_ready"] is False
-    ok = v94.calibration_status({"documents": 5, "micro_f1": 0.7}, None, need_intent=False)
-    assert ok["publish_ready"] is True
-    bad = v94.calibration_status({"documents": 5, "micro_f1": 0.7},
-                                 {"documents": 5, "cohen_kappa": 0.2}, need_intent=True)
+    full = {"documents": 40, "expected_documents": 40, "models": ["m"], "micro_f1": 0.7}
+    ok = v94.calibration_status(full, None, need_intent=False, cuad_label_models={"m"})
+    assert ok["publish_ready"] is True and ok["cuad"]["status"] == "pass"
+    bad = v94.calibration_status(full, {"documents": 96, "expected_documents": 96, "models": ["m"],
+                                        "cohen_kappa": 0.2}, need_intent=True)
     assert bad["publish_ready"] is False and bad["intent"]["status"] == "fail"
 
 
-def test_manifest_render_updates_counts():
-    old = ("rows       : 3302 (train 2979, test 323)\ncomposition: contract 600\n"
-           "configs    : ground_truth 3302; bundles 50\nsplit_rule : md5\nbuilt_utc  : x\n"
-           "revision   : old\nlabels_version: old\nsha256     :\n  a  " + "0" * 64 + "\n")
-    stats = {"rows": 3293, "splits": {"train": 2971, "test": 322}, "composition": {"contract": 597},
-             "removed": 9}
-    out = v94.render_manifest_v9_4(old, {"b": "1" * 64}, "T", stats)
-    assert "rows       : 3293 (train 2971, test 322)" in out
-    assert "ground_truth 3293; bundles 50" in out and "composition: contract 597" in out
-    assert out.count("labels_version") == 1 and v94.LABELS_VERSION in out
-    assert "  b  " + "1" * 64 in out and "  a  " not in out
+def test_calibration_needs_the_whole_sample():
+    part = {"documents": 5, "expected_documents": 40, "models": ["m"], "micro_f1": 0.9}
+    st = v94.calibration_status(part, None, need_intent=False)
+    assert st["cuad"]["status"] == "incomplete" and st["publish_ready"] is False
+    # a result that does not say what it was scored against is never complete
+    st = v94.calibration_status({"documents": 5, "micro_f1": 0.9}, None, need_intent=False)
+    assert st["cuad"]["status"] == "incomplete"
+
+
+def test_calibration_must_score_the_labeling_model():
+    full = {"documents": 40, "expected_documents": 40, "models": ["other"], "micro_f1": 0.9}
+    st = v94.calibration_status(full, None, need_intent=False, cuad_label_models={"m"})
+    assert st["cuad"]["status"] == "model_mismatch" and st["publish_ready"] is False
+
+
+def test_cuad_calibration_counts_skipped_and_rejected_documents():
+    gold = [_row(f"g{i}.txt", expected="contract", source_corpus=v94.GOLDEN_CUAD_SOURCE, doc_text=DOC,
+                 cuad_clause_labels=json.dumps(GOOD)) for i in range(2)]
+    res = v94.score_cuad_calibration(gold, [{"filename": "g0.txt", "accepted": False, "model": "m",
+                                             "cuad_clause_labels": GOOD}], VOCAB)
+    assert res["documents"] == 1 and res["expected_documents"] == 2
+    assert res["micro_recall"] == 0.0 and res["models"] == ["m"]
 
 
 # ---------------------------------------------------------------------------
@@ -371,3 +434,28 @@ def test_end_to_end_stage_passes_gates(tmp_path):
     assert report["placeholders"]["cells"] > 0
     result = v94.verify_stage(stage, v94.BASE_STAGE_DIR)
     assert all(v.startswith("PASS") for k, v in result["gates"].items() if k != "h_calibration")
+
+    # the report is bound to the staged bytes
+    rpath = stage.parent / "v9_4_report.json"
+    rep = json.loads(rpath.read_text())
+    rpath.write_text(json.dumps(dict(rep, stage_digest="0" * 64)))
+    with pytest.raises(AssertionError, match="not written for these staged bytes"):
+        v94.verify_stage(stage, v94.BASE_STAGE_DIR)
+    rpath.write_text(json.dumps(rep))
+
+    # a stale presence map on an untouched row fails the stage (drift gate b, then the gate d recompute)
+    gt_path = stage / "ground_truth_hardened.jsonl"
+    original = gt_path.read_text(encoding="utf-8")
+    lines = original.splitlines()
+    for i, ln in enumerate(lines):
+        r = json.loads(ln)
+        pres = json.loads(r["gt_fields"]["gt_presence"])
+        if pres.get("cuad_clause_labels") == "populated" and r["source_corpus"] == v94.GOLDEN_CUAD_SOURCE:
+            pres["cuad_clause_labels"] = "pending_annotation"
+            r["gt_fields"]["gt_presence"] = json.dumps(pres, sort_keys=True)
+            lines[i] = json.dumps(r, ensure_ascii=False)
+            break
+    gt_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with pytest.raises(AssertionError):
+        v94.verify_stage(stage, v94.BASE_STAGE_DIR)
+    gt_path.write_text(original, encoding="utf-8")

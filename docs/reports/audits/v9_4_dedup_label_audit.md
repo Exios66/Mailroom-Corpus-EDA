@@ -20,7 +20,7 @@ Class deltas: {'contract': -3, 'corporate_record': -5, 'correspondence': 0, 'ins
 ## Near duplicates (report only)
 
 - `kaminski-v/_sent_mail/207.` (train), `kaminski-v/conferences/7.` (train)
-- `0000950137-06-011083_n08078exv3w03.htm` (test), `0000950137-06-012987_i08078a2exv3w03.htm` (train), `0000950137-07-000990_x09498a2exv3w03.htm` (train)
+- `0000950137-06-011083_n08078exv3w03.htm` (test), `0000950137-06-012987_i08078a2exv3w03.htm` (train), `0000950137-07-000990_x09498a2exv3w03.htm` (train) — **crosses train/test**
 - `shackleton-s/deleted_items/659.` (train), `shapiro-r/deleted_items/908.` (train)
 
 ## Placeholder strings scrubbed
@@ -42,73 +42,74 @@ Class deltas: {'contract': -3, 'corporate_record': -5, 'correspondence': 0, 'ins
 
 ## CUAD clause labels on SEC EDGAR EX-10
 
-Journal: `local-mailroom-sandbox/reports/gt-labeler/ex10-cuad-labels.jsonl` (sha256 `82bb0adde0a0549972d7169660b1d4e690fe0e68f6c388dc46209bda3dcd26fd`, models ['Qwen/Qwen3-14B-AWQ']). Every record's `document_id` must match the row it is filed under. Outcome: {'ingested': 76, 'failed_verification': 1, 'rejected_by_labeler': 12}.
+Journal: `local-mailroom-sandbox/reports/gt-labeler/ex10-cuad-labels.jsonl` (sha256 `82bb0adde0a0549972d7169660b1d4e690fe0e68f6c388dc46209bda3dcd26fd`, models ['Qwen/Qwen3-14B-AWQ']). Every record's `document_id` must match the row it is filed under. Outcome: {'ingested': 75, 'failed_verification': 2, 'rejected_by_labeler': 12}.
 
 | filename | status | detail |
 |---|---|---|
 | `0000950123-10-028441_a54842a1exv10w11w1.htm` | failed_verification | 3 present categories (floor 4) |
+| `0001683168-18-001629_iiot_s1a3-ex1019.htm` | failed_verification | 3 present categories (floor 4) |
 | `0000721748-15-000033_ncmf121214s1aex10_19.htm` | ingested | 6 categories, 6 spans, 0 dropped |
 | `0000721748-15-000083_ncmf02121510_20.htm` | ingested | 4 categories, 4 spans, 0 dropped |
-| `0000819050-20-000127_a20200608s1aexhibit1014.htm` | ingested | 18 categories, 18 spans, 0 dropped |
+| `0000819050-20-000127_a20200608s1aexhibit1014.htm` | ingested | 15 categories, 15 spans, 3 dropped |
 | `0000891020-07-000003_v25599a1exv10w31.txt` | ingested | 4 categories, 4 spans, 0 dropped |
 | `0000936392-03-001431_a92189a4exv10w38.txt` | ingested | 4 categories, 4 spans, 0 dropped |
-| `0000936392-05-000402_a12564a2exv10w17.txt` | ingested | 21 categories, 21 spans, 1 dropped |
+| `0000936392-05-000402_a12564a2exv10w17.txt` | ingested | 17 categories, 17 spans, 5 dropped |
 | `0000950123-05-003443_y68255a1exv10w22.txt` | ingested | 8 categories, 8 spans, 0 dropped |
-| `0000950123-05-012539_y06540a5exv10w3.htm` | ingested | 26 categories, 26 spans, 0 dropped |
-| `0000950123-05-012539_y06540a5exv10w5.htm` | ingested | 14 categories, 14 spans, 0 dropped |
-| `0000950123-07-005608_l25337a5exv10w4.htm` | ingested | 12 categories, 12 spans, 0 dropped |
-| `0000950123-09-046709_y01981a3exv10w15.htm` | ingested | 29 categories, 29 spans, 1 dropped |
-| `0000950134-07-005012_v25599a5exv10w55.txt` | ingested | 9 categories, 9 spans, 1 dropped |
-| `0000950135-04-002790_b49788a4exv10w5.txt` | ingested | 7 categories, 7 spans, 1 dropped |
+| `0000950123-05-012539_y06540a5exv10w3.htm` | ingested | 23 categories, 23 spans, 3 dropped |
+| `0000950123-05-012539_y06540a5exv10w5.htm` | ingested | 12 categories, 12 spans, 2 dropped |
+| `0000950123-07-005608_l25337a5exv10w4.htm` | ingested | 9 categories, 9 spans, 3 dropped |
+| `0000950123-09-046709_y01981a3exv10w15.htm` | ingested | 23 categories, 23 spans, 7 dropped |
+| `0000950134-07-005012_v25599a5exv10w55.txt` | ingested | 5 categories, 5 spans, 5 dropped |
+| `0000950135-04-002790_b49788a4exv10w5.txt` | ingested | 6 categories, 6 spans, 2 dropped |
 | `0001047469-02-008341_a2095799zex-10_12c.txt` | ingested | 4 categories, 4 spans, 1 dropped |
 | `0001047469-06-006057_a2169810zex-10_10.htm` | ingested | 7 categories, 7 spans, 0 dropped |
-| `0001047469-06-008719_a2171318zex-10_43.htm` | ingested | 12 categories, 12 spans, 2 dropped |
+| `0001047469-06-008719_a2171318zex-10_43.htm` | ingested | 8 categories, 8 spans, 6 dropped |
 | `0001047469-06-012992_a2173503zex-10_30.htm` | ingested | 6 categories, 6 spans, 0 dropped |
 | `0001047469-06-012992_a2173503zex-10_32.htm` | ingested | 5 categories, 8 spans, 0 dropped |
-| `0001047469-08-008242_a2186911zex-10_13.htm` | ingested | 12 categories, 17 spans, 0 dropped |
+| `0001047469-08-008242_a2186911zex-10_13.htm` | ingested | 11 categories, 16 spans, 1 dropped |
 | `0001047469-15-005538_a2225135zex-10_19.htm` | ingested | 5 categories, 5 spans, 0 dropped |
 | `0001104659-26-049674_tm2518736d11_ex10-4.htm` | ingested | 7 categories, 7 spans, 0 dropped |
-| `0001144204-09-019873_v145506_ex10-7.htm` | ingested | 11 categories, 11 spans, 0 dropped |
+| `0001144204-09-019873_v145506_ex10-7.htm` | ingested | 10 categories, 10 spans, 1 dropped |
 | `0001144204-13-006917_v333161_ex10-32.htm` | ingested | 4 categories, 4 spans, 0 dropped |
 | `0001144204-14-011078_v367545_ex10-51.htm` | ingested | 4 categories, 4 spans, 0 dropped |
 | `0001193125-04-040915_dex1041.htm` | ingested | 13 categories, 13 spans, 0 dropped |
 | `0001193125-04-113293_dex101.htm` | ingested | 6 categories, 6 spans, 0 dropped |
 | `0001193125-04-202829_dex10291.htm` | ingested | 7 categories, 7 spans, 0 dropped |
 | `0001193125-05-021087_dex1060.htm` | ingested | 4 categories, 4 spans, 0 dropped |
-| `0001193125-07-065680_dex1044.htm` | ingested | 9 categories, 9 spans, 1 dropped |
+| `0001193125-07-065680_dex1044.htm` | ingested | 4 categories, 4 spans, 6 dropped |
 | `0001193125-07-205683_dex1039.htm` | ingested | 4 categories, 4 spans, 0 dropped |
-| `0001193125-10-068933_dex1029.htm` | ingested | 7 categories, 7 spans, 0 dropped |
-| `0001193125-10-076663_dex104a.htm` | ingested | 6 categories, 6 spans, 0 dropped |
-| `0001193125-12-006758_d231008dex1019.htm` | ingested | 10 categories, 10 spans, 0 dropped |
-| `0001193125-12-121805_d306143dex1030.htm` | ingested | 12 categories, 12 spans, 0 dropped |
+| `0001193125-10-068933_dex1029.htm` | ingested | 5 categories, 5 spans, 2 dropped |
+| `0001193125-10-076663_dex104a.htm` | ingested | 5 categories, 5 spans, 1 dropped |
+| `0001193125-12-006758_d231008dex1019.htm` | ingested | 9 categories, 9 spans, 1 dropped |
+| `0001193125-12-121805_d306143dex1030.htm` | ingested | 11 categories, 11 spans, 1 dropped |
 | `0001193125-13-395732_d559406dex104.htm` | ingested | 5 categories, 5 spans, 0 dropped |
-| `0001193125-14-115023_d659829dex106.htm` | ingested | 18 categories, 18 spans, 1 dropped |
+| `0001193125-14-115023_d659829dex106.htm` | ingested | 13 categories, 13 spans, 6 dropped |
 | `0001193125-14-131966_d406707dex1045.htm` | ingested | 5 categories, 5 spans, 0 dropped |
-| `0001193125-14-230547_d693356dex1030.htm` | ingested | 36 categories, 63 spans, 0 dropped |
+| `0001193125-14-230547_d693356dex1030.htm` | ingested | 30 categories, 32 spans, 31 dropped |
 | `0001193125-14-242205_d623882dex1023.htm` | ingested | 10 categories, 10 spans, 0 dropped |
-| `0001193125-15-263882_d917371dex1014.htm` | ingested | 17 categories, 17 spans, 0 dropped |
+| `0001193125-15-263882_d917371dex1014.htm` | ingested | 15 categories, 15 spans, 2 dropped |
 | `0001193125-18-272192_d494258dex1011.htm` | ingested | 4 categories, 4 spans, 1 dropped |
 | `0001193125-19-189938_d727772dex1013.htm` | ingested | 4 categories, 4 spans, 1 dropped |
-| `0001193125-19-248330_d617454dex1073.htm` | ingested | 9 categories, 9 spans, 0 dropped |
-| `0001193125-20-156385_d875118dex109.htm` | ingested | 14 categories, 14 spans, 0 dropped |
-| `0001213900-12-003228_fs12012a2ex10iii_caldera.htm` | ingested | 11 categories, 11 spans, 1 dropped |
-| `0001213900-19-008324_fs12019a3ex10-22_bricktown.htm` | ingested | 9 categories, 9 spans, 0 dropped |
+| `0001193125-19-248330_d617454dex1073.htm` | ingested | 8 categories, 8 spans, 1 dropped |
+| `0001193125-20-156385_d875118dex109.htm` | ingested | 13 categories, 13 spans, 1 dropped |
+| `0001213900-12-003228_fs12012a2ex10iii_caldera.htm` | ingested | 10 categories, 10 spans, 2 dropped |
+| `0001213900-19-008324_fs12019a3ex10-22_bricktown.htm` | ingested | 7 categories, 7 spans, 2 dropped |
 | `0001213900-24-021327_ea020144601ex10-18_retic.htm` | ingested | 7 categories, 7 spans, 0 dropped |
 | `0001213900-24-021327_ea020144601ex10-20_retic.htm` | ingested | 10 categories, 10 spans, 0 dropped |
-| `0001213900-24-021327_ea020144601ex10-21_retic.htm` | ingested | 13 categories, 13 spans, 0 dropped |
-| `0001213900-25-051717_ea024476901ex10-37_natures.htm` | ingested | 11 categories, 11 spans, 0 dropped |
-| `0001213900-25-051717_ea024476901ex10-38_natures.htm` | ingested | 8 categories, 8 spans, 0 dropped |
+| `0001213900-24-021327_ea020144601ex10-21_retic.htm` | ingested | 12 categories, 12 spans, 1 dropped |
+| `0001213900-25-051717_ea024476901ex10-37_natures.htm` | ingested | 9 categories, 9 spans, 2 dropped |
+| `0001213900-25-051717_ea024476901ex10-38_natures.htm` | ingested | 6 categories, 6 spans, 2 dropped |
 | `0001368365-24-000034_ex1029letteragreementdated.htm` | ingested | 4 categories, 4 spans, 0 dropped |
 | `0001376799-08-000016_exhibit1019.htm` | ingested | 7 categories, 7 spans, 0 dropped |
 | `0001393905-18-000242_tngp_ex101.htm` | ingested | 7 categories, 7 spans, 0 dropped |
-| `0001437749-22-002169_ex_331042.htm` | ingested | 12 categories, 12 spans, 0 dropped |
-| `0001493152-15-005653_ex10-23.htm` | ingested | 7 categories, 7 spans, 0 dropped |
+| `0001437749-22-002169_ex_331042.htm` | ingested | 10 categories, 10 spans, 2 dropped |
+| `0001493152-15-005653_ex10-23.htm` | ingested | 5 categories, 5 spans, 2 dropped |
 | `0001493152-16-006927_ex10-23.htm` | ingested | 5 categories, 5 spans, 0 dropped |
 | `0001493152-17-012423_ex10-22.htm` | ingested | 7 categories, 7 spans, 0 dropped |
-| `0001493152-17-012423_ex10-25.htm` | ingested | 10 categories, 10 spans, 0 dropped |
+| `0001493152-17-012423_ex10-25.htm` | ingested | 9 categories, 9 spans, 1 dropped |
 | `0001493152-22-019482_ex10-10.htm` | ingested | 8 categories, 8 spans, 1 dropped |
-| `0001493152-23-003674_ex10-32.htm` | ingested | 18 categories, 18 spans, 0 dropped |
-| `0001493152-24-017321_ex10-19.htm` | ingested | 12 categories, 12 spans, 1 dropped |
+| `0001493152-23-003674_ex10-32.htm` | ingested | 15 categories, 15 spans, 3 dropped |
+| `0001493152-24-017321_ex10-19.htm` | ingested | 10 categories, 10 spans, 3 dropped |
 | `0001548123-19-000138_ex10-2.htm` | ingested | 9 categories, 9 spans, 0 dropped |
 | `0001564590-21-046613_sdmi-ex1025_706.htm` | ingested | 5 categories, 5 spans, 0 dropped |
 | `0001564590-21-046613_sdmi-ex1027_705.htm` | ingested | 6 categories, 6 spans, 0 dropped |
@@ -116,13 +117,12 @@ Journal: `local-mailroom-sandbox/reports/gt-labeler/ex10-cuad-labels.jsonl` (sha
 | `0001571049-13-001230_t1300651_ex10-8.htm` | ingested | 7 categories, 7 spans, 0 dropped |
 | `0001575872-22-000712_cm106_ex10-69.htm` | ingested | 4 categories, 4 spans, 0 dropped |
 | `0001627469-15-000036_ex-10_1.htm` | ingested | 5 categories, 5 spans, 0 dropped |
-| `0001628280-18-007944_exhibit1013s-1a.htm` | ingested | 7 categories, 7 spans, 0 dropped |
+| `0001628280-18-007944_exhibit1013s-1a.htm` | ingested | 6 categories, 6 spans, 1 dropped |
 | `0001628280-18-007944_exhibit1014s-1a.htm` | ingested | 5 categories, 5 spans, 0 dropped |
-| `0001628280-23-006327_exhibit1015-sx1a2.htm` | ingested | 16 categories, 16 spans, 0 dropped |
-| `0001628280-26-004091_exhibit1010-sx1a.htm` | ingested | 7 categories, 7 spans, 0 dropped |
-| `0001654954-23-003821_lafa_ex1013.htm` | ingested | 10 categories, 10 spans, 0 dropped |
-| `0001683168-18-001629_iiot_s1a3-ex1019.htm` | ingested | 4 categories, 4 spans, 0 dropped |
-| `0001683168-21-002146_intorio_ex1003.htm` | ingested | 6 categories, 6 spans, 2 dropped |
+| `0001628280-23-006327_exhibit1015-sx1a2.htm` | ingested | 15 categories, 15 spans, 1 dropped |
+| `0001628280-26-004091_exhibit1010-sx1a.htm` | ingested | 6 categories, 6 spans, 1 dropped |
+| `0001654954-23-003821_lafa_ex1013.htm` | ingested | 7 categories, 7 spans, 3 dropped |
+| `0001683168-21-002146_intorio_ex1003.htm` | ingested | 4 categories, 4 spans, 4 dropped |
 | `0000950123-11-069430_a59248a2exv10w32.htm` | rejected_by_labeler | HTTPError: HTTP Error 400: Bad Request |
 | `0001047469-05-021628_a2161868zex-10_9.htm` | rejected_by_labeler | 2 present categories; golden contracts are annotated across the clause inventory (floor 4) |
 | `0001193125-10-124434_dex1022.htm` | rejected_by_labeler | 2 present categories; golden contracts are annotated across the clause inventory (floor 4); neither Document Name nor Parties was recovered |
@@ -136,7 +136,7 @@ Journal: `local-mailroom-sandbox/reports/gt-labeler/ex10-cuad-labels.jsonl` (sha
 | `0001628280-26-042574_exhibit1010-sx1a1.htm` | rejected_by_labeler | 1 present categories; golden contracts are annotated across the clause inventory (floor 4) |
 | `0001640334-26-000472_gbux_ex106.htm` | rejected_by_labeler | neither Document Name nor Parties was recovered |
 
-Dropped spans by reason: failed semantic probe: 17
+Dropped spans by reason: failed semantic probe: 125, heading only: 1
 
 ## Flagged correspondence intents
 
@@ -150,5 +150,5 @@ Outcome: no journal.
 
 ## Remaining gaps
 
-- `cuad_clause_labels` pending_annotation: 13
+- `cuad_clause_labels` pending_annotation: 14
 - `intent_status` flagged_review: 25

@@ -10,8 +10,8 @@
   },
   "cuad": {
     "counts": {
-      "failed_verification": 1,
-      "ingested": 76,
+      "failed_verification": 2,
+      "ingested": 75,
       "rejected_by_labeler": 12
     },
     "journal_models": [
@@ -40,12 +40,12 @@
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 3,
         "filename": "0000819050-20-000127_a20200608s1aexhibit1014.htm",
         "journal_filename": "0000819050-20-000127_a20200608s1aexhibit1014.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 18,
-        "spans": 18,
+        "present_categories": 15,
+        "spans": 15,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -70,12 +70,12 @@
         "via_duplicate": false
       },
       {
-        "dropped": 1,
+        "dropped": 5,
         "filename": "0000936392-05-000402_a12564a2exv10w17.txt",
         "journal_filename": "0000936392-05-000402_a12564a2exv10w17.txt",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 21,
-        "spans": 21,
+        "present_categories": 17,
+        "spans": 17,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -90,29 +90,19 @@
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 3,
         "filename": "0000950123-05-012539_y06540a5exv10w3.htm",
         "journal_filename": "0000950123-05-012539_y06540a5exv10w3.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 26,
-        "spans": 26,
+        "present_categories": 23,
+        "spans": 23,
         "status": "ingested",
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 2,
         "filename": "0000950123-05-012539_y06540a5exv10w5.htm",
         "journal_filename": "0000950123-05-012539_y06540a5exv10w5.htm",
-        "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 14,
-        "spans": 14,
-        "status": "ingested",
-        "via_duplicate": false
-      },
-      {
-        "dropped": 0,
-        "filename": "0000950123-07-005608_l25337a5exv10w4.htm",
-        "journal_filename": "0000950123-07-005608_l25337a5exv10w4.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
         "present_categories": 12,
         "spans": 12,
@@ -120,12 +110,22 @@
         "via_duplicate": false
       },
       {
-        "dropped": 1,
+        "dropped": 3,
+        "filename": "0000950123-07-005608_l25337a5exv10w4.htm",
+        "journal_filename": "0000950123-07-005608_l25337a5exv10w4.htm",
+        "model": "Qwen/Qwen3-14B-AWQ",
+        "present_categories": 9,
+        "spans": 9,
+        "status": "ingested",
+        "via_duplicate": false
+      },
+      {
+        "dropped": 7,
         "filename": "0000950123-09-046709_y01981a3exv10w15.htm",
         "journal_filename": "0000950123-09-046709_y01981a3exv10w15.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 29,
-        "spans": 29,
+        "present_categories": 23,
+        "spans": 23,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -148,22 +148,22 @@
         "status": "rejected_by_labeler"
       },
       {
-        "dropped": 1,
+        "dropped": 5,
         "filename": "0000950134-07-005012_v25599a5exv10w55.txt",
         "journal_filename": "0000950134-07-005012_v25599a5exv10w55.txt",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 9,
-        "spans": 9,
+        "present_categories": 5,
+        "spans": 5,
         "status": "ingested",
         "via_duplicate": false
       },
       {
-        "dropped": 1,
+        "dropped": 2,
         "filename": "0000950135-04-002790_b49788a4exv10w5.txt",
         "journal_filename": "0000950135-04-002790_b49788a4exv10w5.txt",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 7,
-        "spans": 7,
+        "present_categories": 6,
+        "spans": 6,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -197,12 +197,12 @@
         "via_duplicate": false
       },
       {
-        "dropped": 2,
+        "dropped": 6,
         "filename": "0001047469-06-008719_a2171318zex-10_43.htm",
         "journal_filename": "0001047469-06-008719_a2171318zex-10_43.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 12,
-        "spans": 12,
+        "present_categories": 8,
+        "spans": 8,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -227,12 +227,12 @@
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 1,
         "filename": "0001047469-08-008242_a2186911zex-10_13.htm",
         "journal_filename": "0001047469-08-008242_a2186911zex-10_13.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 12,
-        "spans": 17,
+        "present_categories": 11,
+        "spans": 16,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -257,12 +257,12 @@
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 1,
         "filename": "0001144204-09-019873_v145506_ex10-7.htm",
         "journal_filename": "0001144204-09-019873_v145506_ex10-7.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 11,
-        "spans": 11,
+        "present_categories": 10,
+        "spans": 10,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -327,12 +327,12 @@
         "via_duplicate": false
       },
       {
-        "dropped": 1,
+        "dropped": 6,
         "filename": "0001193125-07-065680_dex1044.htm",
         "journal_filename": "0001193125-07-065680_dex1044.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 9,
-        "spans": 9,
+        "present_categories": 4,
+        "spans": 4,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -347,22 +347,22 @@
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 2,
         "filename": "0001193125-10-068933_dex1029.htm",
         "journal_filename": "0001193125-10-068933_dex1029.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 7,
-        "spans": 7,
+        "present_categories": 5,
+        "spans": 5,
         "status": "ingested",
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 1,
         "filename": "0001193125-10-076663_dex104a.htm",
         "journal_filename": "0001193125-10-076663_dex104a.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 6,
-        "spans": 6,
+        "present_categories": 5,
+        "spans": 5,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -377,22 +377,22 @@
         "status": "rejected_by_labeler"
       },
       {
-        "dropped": 0,
+        "dropped": 1,
         "filename": "0001193125-12-006758_d231008dex1019.htm",
         "journal_filename": "0001193125-12-006758_d231008dex1019.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 10,
-        "spans": 10,
+        "present_categories": 9,
+        "spans": 9,
         "status": "ingested",
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 1,
         "filename": "0001193125-12-121805_d306143dex1030.htm",
         "journal_filename": "0001193125-12-121805_d306143dex1030.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 12,
-        "spans": 12,
+        "present_categories": 11,
+        "spans": 11,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -407,12 +407,12 @@
         "via_duplicate": false
       },
       {
-        "dropped": 1,
+        "dropped": 6,
         "filename": "0001193125-14-115023_d659829dex106.htm",
         "journal_filename": "0001193125-14-115023_d659829dex106.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 18,
-        "spans": 18,
+        "present_categories": 13,
+        "spans": 13,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -427,12 +427,12 @@
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 31,
         "filename": "0001193125-14-230547_d693356dex1030.htm",
         "journal_filename": "0001193125-14-230547_d693356dex1030.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 36,
-        "spans": 63,
+        "present_categories": 30,
+        "spans": 32,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -447,12 +447,12 @@
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 2,
         "filename": "0001193125-15-263882_d917371dex1014.htm",
         "journal_filename": "0001193125-15-263882_d917371dex1014.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 17,
-        "spans": 17,
+        "present_categories": 15,
+        "spans": 15,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -486,42 +486,42 @@
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 1,
         "filename": "0001193125-19-248330_d617454dex1073.htm",
         "journal_filename": "0001193125-19-248330_d617454dex1073.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 9,
-        "spans": 9,
-        "status": "ingested",
-        "via_duplicate": false
-      },
-      {
-        "dropped": 0,
-        "filename": "0001193125-20-156385_d875118dex109.htm",
-        "journal_filename": "0001193125-20-156385_d875118dex109.htm",
-        "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 14,
-        "spans": 14,
+        "present_categories": 8,
+        "spans": 8,
         "status": "ingested",
         "via_duplicate": false
       },
       {
         "dropped": 1,
-        "filename": "0001213900-12-003228_fs12012a2ex10iii_caldera.htm",
-        "journal_filename": "0001213900-12-003228_fs12012a2ex10iii_caldera.htm",
+        "filename": "0001193125-20-156385_d875118dex109.htm",
+        "journal_filename": "0001193125-20-156385_d875118dex109.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 11,
-        "spans": 11,
+        "present_categories": 13,
+        "spans": 13,
         "status": "ingested",
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 2,
+        "filename": "0001213900-12-003228_fs12012a2ex10iii_caldera.htm",
+        "journal_filename": "0001213900-12-003228_fs12012a2ex10iii_caldera.htm",
+        "model": "Qwen/Qwen3-14B-AWQ",
+        "present_categories": 10,
+        "spans": 10,
+        "status": "ingested",
+        "via_duplicate": false
+      },
+      {
+        "dropped": 2,
         "filename": "0001213900-19-008324_fs12019a3ex10-22_bricktown.htm",
         "journal_filename": "0001213900-19-008324_fs12019a3ex10-22_bricktown.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 9,
-        "spans": 9,
+        "present_categories": 7,
+        "spans": 7,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -573,32 +573,32 @@
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 1,
         "filename": "0001213900-24-021327_ea020144601ex10-21_retic.htm",
         "journal_filename": "0001213900-24-021327_ea020144601ex10-21_retic.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 13,
-        "spans": 13,
+        "present_categories": 12,
+        "spans": 12,
         "status": "ingested",
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 2,
         "filename": "0001213900-25-051717_ea024476901ex10-37_natures.htm",
         "journal_filename": "0001213900-25-051717_ea024476901ex10-37_natures.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 11,
-        "spans": 11,
+        "present_categories": 9,
+        "spans": 9,
         "status": "ingested",
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 2,
         "filename": "0001213900-25-051717_ea024476901ex10-38_natures.htm",
         "journal_filename": "0001213900-25-051717_ea024476901ex10-38_natures.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 8,
-        "spans": 8,
+        "present_categories": 6,
+        "spans": 6,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -633,22 +633,22 @@
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 2,
         "filename": "0001437749-22-002169_ex_331042.htm",
         "journal_filename": "0001437749-22-002169_ex_331042.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 12,
-        "spans": 12,
+        "present_categories": 10,
+        "spans": 10,
         "status": "ingested",
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 2,
         "filename": "0001493152-15-005653_ex10-23.htm",
         "journal_filename": "0001493152-15-005653_ex10-23.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 7,
-        "spans": 7,
+        "present_categories": 5,
+        "spans": 5,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -673,12 +673,12 @@
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 1,
         "filename": "0001493152-17-012423_ex10-25.htm",
         "journal_filename": "0001493152-17-012423_ex10-25.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 10,
-        "spans": 10,
+        "present_categories": 9,
+        "spans": 9,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -693,22 +693,22 @@
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 3,
         "filename": "0001493152-23-003674_ex10-32.htm",
         "journal_filename": "0001493152-23-003674_ex10-32.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 18,
-        "spans": 18,
+        "present_categories": 15,
+        "spans": 15,
         "status": "ingested",
         "via_duplicate": false
       },
       {
-        "dropped": 1,
+        "dropped": 3,
         "filename": "0001493152-24-017321_ex10-19.htm",
         "journal_filename": "0001493152-24-017321_ex10-19.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 12,
-        "spans": 12,
+        "present_categories": 10,
+        "spans": 10,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -810,12 +810,12 @@
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 1,
         "filename": "0001628280-18-007944_exhibit1013s-1a.htm",
         "journal_filename": "0001628280-18-007944_exhibit1013s-1a.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 7,
-        "spans": 7,
+        "present_categories": 6,
+        "spans": 6,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -830,22 +830,22 @@
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 1,
         "filename": "0001628280-23-006327_exhibit1015-sx1a2.htm",
         "journal_filename": "0001628280-23-006327_exhibit1015-sx1a2.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 16,
-        "spans": 16,
+        "present_categories": 15,
+        "spans": 15,
         "status": "ingested",
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 1,
         "filename": "0001628280-26-004091_exhibit1010-sx1a.htm",
         "journal_filename": "0001628280-26-004091_exhibit1010-sx1a.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 7,
-        "spans": 7,
+        "present_categories": 6,
+        "spans": 6,
         "status": "ingested",
         "via_duplicate": false
       },
@@ -868,32 +868,31 @@
         "status": "rejected_by_labeler"
       },
       {
-        "dropped": 0,
+        "dropped": 3,
         "filename": "0001654954-23-003821_lafa_ex1013.htm",
         "journal_filename": "0001654954-23-003821_lafa_ex1013.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 10,
-        "spans": 10,
+        "present_categories": 7,
+        "spans": 7,
         "status": "ingested",
         "via_duplicate": false
       },
       {
-        "dropped": 0,
+        "dropped": 1,
         "filename": "0001683168-18-001629_iiot_s1a3-ex1019.htm",
         "journal_filename": "0001683168-18-001629_iiot_s1a3-ex1019.htm",
-        "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 4,
-        "spans": 4,
-        "status": "ingested",
-        "via_duplicate": false
+        "reasons": [
+          "3 present categories (floor 4)"
+        ],
+        "status": "failed_verification"
       },
       {
-        "dropped": 2,
+        "dropped": 4,
         "filename": "0001683168-21-002146_intorio_ex1003.htm",
         "journal_filename": "0001683168-21-002146_intorio_ex1003.htm",
         "model": "Qwen/Qwen3-14B-AWQ",
-        "present_categories": 6,
-        "spans": 6,
+        "present_categories": 4,
+        "spans": 4,
         "status": "ingested",
         "via_duplicate": false
       }
@@ -1147,6 +1146,7 @@
   "labels_version": "v9.4 dedup + label-completion",
   "near_duplicates": [
     {
+      "cross_split": false,
       "members": [
         {
           "expected": "correspondence",
@@ -1162,6 +1162,7 @@
       "normalized_text_sha256": "3bfe4b6f049a71f42971c54666c6bc092b0b7e992a9915dd4b061642c91f5aae"
     },
     {
+      "cross_split": true,
       "members": [
         {
           "expected": "corporate_record",
@@ -1182,6 +1183,7 @@
       "normalized_text_sha256": "e066a3cf29ae617c5b2b8e58afde9cd0245ffd98b075fddb3f6a4292571f5f0b"
     },
     {
+      "cross_split": false,
       "members": [
         {
           "expected": "correspondence",
@@ -1217,14 +1219,15 @@
   },
   "queues": {
     "cuad_calibration.jsonl": 40,
-    "ex10_remaining.jsonl": 13,
+    "ex10_remaining.jsonl": 14,
     "intents_calibration.jsonl": 96,
     "intents_flagged.jsonl": 25
   },
   "remaining": {
     "flagged_intents": 25,
-    "pending_cuad": 13
+    "pending_cuad": 14
   },
+  "stage_digest": "8807b858d3b82b07a5ff1ac02aa821b3df38d7d217dcc68af3b35e278137a5dc",
   "staged_counts": {
     "default/test": 322,
     "default/train": 2971,

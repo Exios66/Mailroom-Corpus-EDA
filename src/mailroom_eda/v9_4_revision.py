@@ -338,6 +338,7 @@ def near_duplicate_groups(rows: Sequence[Mapping[str, Any]]) -> list[dict]:
         if len({m["content_sha256"] for m in members}) > 1:
             out.append({
                 "normalized_text_sha256": key,
+                "cross_split": len({m["split"] for m in members}) > 1,
                 "members": [
                     {"filename": m["filename"], "split": m["split"], "expected": m["expected"]}
                     for m in sorted(members, key=lambda m: m["filename"])
@@ -409,9 +410,23 @@ SEMANTIC_PROBES: dict[str, re.Pattern] = {
     "Renewal Term": _DATEISH,
     "Notice Period To Terminate Renewal": _DATEISH,
     "Warranty Duration": _DATEISH,
+    "Audit Rights": re.compile(r"audit|inspect|\bbooks\b|records|examin", re.I),
+    "Insurance": re.compile(r"insur", re.I),
+    "Covenant Not To Sue": re.compile(r"\bsue\b|\bsuit|claim|challeng|contest", re.I),
+    # CUAD: a license that extends to a party's affiliates; both words needed
+    "Affiliate License-Licensee": re.compile(r"(?=.*affiliat)(?=.*licen)", re.I | re.S),
+    "Affiliate License-Licensor": re.compile(r"(?=.*affiliat)(?=.*licen)", re.I | re.S),
+    "Source Code Escrow": re.compile(r"escrow|source code", re.I),
 }
 #: Document Name must come from the opening of the filing.
 DOCUMENT_NAME_MAX_START = 5000
+_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+
+
+def is_heading_only(name: str, text: str) -> bool:
+    """A span that is just the category's own name (a section heading such
+    as ``Effective Date``) carries no clause."""
+    return _NON_ALNUM.sub("", text.lower()) == _NON_ALNUM.sub("", name.lower())
 
 
 def verify_cuad_labels(
@@ -441,14 +456,21 @@ def verify_cuad_labels(
                 dropped.append(f"{name}: span is not an object")
                 continue
             text, start = span.get("text"), span.get("start")
-            if not isinstance(text, str) or not isinstance(start, int) or len(text.strip()) < 2:
+            if (not isinstance(text, str) or not isinstance(start, int) or isinstance(start, bool)
+                    or len(text.strip()) < 2):
                 dropped.append(f"{name}: malformed span")
+                continue
+            if start < 0 or start + len(text) > len(doc_text):
+                dropped.append(f"{name}: offset {start} outside the document")
                 continue
             if doc_text[start:start + len(text)] != text:
                 dropped.append(f"{name}: not verbatim at offset {start}")
                 continue
             if len(text) > MAX_CUAD_SPAN_CHARS:
                 dropped.append(f"{name}: span longer than {MAX_CUAD_SPAN_CHARS} chars")
+                continue
+            if is_heading_only(name, text):
+                dropped.append(f"{name}: heading only")
                 continue
             probe = SEMANTIC_PROBES.get(name)
             if probe is not None and not probe.search(text):
@@ -671,10 +693,11 @@ def ingest_intent_journal(rows: list[dict], journal: Sequence[Mapping[str, Any]]
         row["annotation_confidence"] = f"{conf:g}"
         recompute_presence(row)
         verdicts.append({"filename": row["filename"], "status": "accepted", "intent": intent,
-                         "reason": reason})
+                         "reason": reason, "model": row["annotation_model"]})
     counts = Counter(v["status"] for v in verdicts)
     print(f"ingest_intent_journal — {dict(counts)}")
-    return {"counts": dict(counts), "verdicts": verdicts}
+    return {"counts": dict(counts), "verdicts": verdicts,
+            "models": sorted({v["model"] for v in verdicts if v["status"] == "accepted"})}
 
 
 # ---------------------------------------------------------------------------
@@ -699,17 +722,25 @@ def score_cuad_calibration(gold_rows: Sequence[Mapping[str, Any]],
                            journal: Sequence[Mapping[str, Any]],
                            vocab: Sequence[str]) -> dict[str, Any]:
     """Category-presence P/R/F1 of the model against expert CUAD labels,
-    plus how often a true-positive category's spans overlap a gold span."""
+    plus how often a true-positive category's spans overlap a gold span.
+
+    ``gold_rows`` is the fixed calibration sample; ``expected_documents`` is
+    its size, so a journal that skipped documents scores as incomplete
+    instead of passing on a convenient subset. Only accepted records count:
+    a labeler reject is a miss on every gold category."""
     folded = fold_journal(journal)
     per: dict[str, Counter] = {n: Counter() for n in vocab}
     overlap_hits = overlap_total = docs = 0
+    models: set[str] = set()
     for row in gold_rows:
         rec = folded.get(row["filename"])
         if rec is None:
             continue
         docs += 1
+        models.add(str(rec.get("model") or ""))
         gold = _json_obj(row["gt_fields"].get("cuad_clause_labels"))
-        pred, _, _ = verify_cuad_labels(row["doc_text"], _json_obj(rec.get("cuad_clause_labels")), vocab)
+        raw_pred = _json_obj(rec.get("cuad_clause_labels")) if rec.get("accepted") else {}
+        pred, _, _ = verify_cuad_labels(row["doc_text"], raw_pred, vocab)
         for name in vocab:
             g, p = bool(gold.get(name)), bool(pred.get(name))
             per[name]["tp" if g and p else "fp" if p else "fn" if g else "tn"] += 1
@@ -723,6 +754,8 @@ def score_cuad_calibration(gold_rows: Sequence[Mapping[str, Any]],
     by_cat = {n: {**dict(c), "f1": f1(c["tp"], c["fp"], c["fn"])} for n, c in per.items()}
     return {
         "documents": docs,
+        "expected_documents": len(gold_rows),
+        "models": sorted(models),
         "micro_f1": f1(tp, fp, fn),
         "micro_precision": round(tp / (tp + fp), 4) if tp + fp else 0.0,
         "micro_recall": round(tp / (tp + fn), 4) if tp + fn else 0.0,
@@ -745,27 +778,47 @@ def score_intent_calibration(manual_rows: Sequence[Mapping[str, Any]],
                              journal: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     by_fn = {str(r["filename"]): r for r in journal}
     gold, pred = [], []
+    models: set[str] = set()
     for row in manual_rows:
         rec = by_fn.get(row["filename"])
         if rec is None:
             continue
+        models.add(str(rec.get("model") or ""))
         gold.append(str(row["gt_fields"].get("intent") or ""))
         pred.append(str((rec.get("pass_a") or {}).get("intent") or ""))
     acc = round(sum(g == p for g, p in zip(gold, pred)) / len(gold), 4) if gold else 0.0
-    return {"documents": len(gold), "accuracy": acc, "cohen_kappa": cohen_kappa(gold, pred)}
+    return {"documents": len(gold), "expected_documents": len(manual_rows), "models": sorted(models),
+            "accuracy": acc, "cohen_kappa": cohen_kappa(gold, pred)}
 
 
 def calibration_status(cuad: Mapping | None, intent: Mapping | None,
-                       *, need_intent: bool) -> dict[str, Any]:
-    def one(result, metric, threshold):
+                       *, need_intent: bool,
+                       cuad_label_models: Iterable[str] | None = None,
+                       intent_label_models: Iterable[str] | None = None) -> dict[str, Any]:
+    """Publish gate. A result passes only when it covers its whole sample
+    (``documents == expected_documents``), was produced by exactly the
+    model(s) that wrote the ingested labels, and clears its threshold.
+
+    Statuses: ``not_run``, ``incomplete``, ``model_mismatch``, ``fail``,
+    ``pass`` (and ``not_needed`` for intents when none were accepted)."""
+    def one(result, metric, threshold, label_models):
         if not result or not result.get("documents"):
             return {"status": "not_run"}
+        docs, expected = int(result["documents"]), int(result.get("expected_documents") or 0)
+        base = {"documents": docs, "expected_documents": expected, "threshold": threshold}
+        if expected <= 0 or docs < expected:
+            return {"status": "incomplete", **base}
+        want = sorted(set(label_models or ()))
+        got = sorted(set(result.get("models") or ()))
+        if want and got != want:
+            return {"status": "model_mismatch", "label_models": want, "calibration_models": got, **base}
         value = result[metric]
-        return {"status": "pass" if value >= threshold else "fail", metric: value,
-                "threshold": threshold, "documents": result["documents"]}
+        return {"status": "pass" if value >= threshold else "fail", metric: value, **base}
 
-    out = {"cuad": one(cuad, "micro_f1", CALIBRATION_THRESHOLDS["cuad_category_micro_f1"])}
-    out["intent"] = (one(intent, "cohen_kappa", CALIBRATION_THRESHOLDS["intent_cohen_kappa"])
+    out = {"cuad": one(cuad, "micro_f1", CALIBRATION_THRESHOLDS["cuad_category_micro_f1"],
+                       cuad_label_models)}
+    out["intent"] = (one(intent, "cohen_kappa", CALIBRATION_THRESHOLDS["intent_cohen_kappa"],
+                         intent_label_models)
                      if need_intent else {"status": "not_needed"})
     out["publish_ready"] = all(v["status"] in ("pass", "not_needed") for v in out.values()
                                if isinstance(v, dict))
@@ -898,7 +951,8 @@ def render_audit_md(report: Mapping[str, Any]) -> str:
               "", "## Near duplicates (report only)", ""]
     if report["near_duplicates"]:
         for g in report["near_duplicates"]:
-            lines.append("- " + ", ".join(f"`{m['filename']}` ({m['split']})" for m in g["members"]))
+            lines.append("- " + ", ".join(f"`{m['filename']}` ({m['split']})" for m in g["members"])
+                         + (" — **crosses train/test**" if g.get("cross_split") else ""))
     else:
         lines.append("None: no two texts are equal after normalization without being byte-equal.")
     p = report["placeholders"]
@@ -1011,11 +1065,31 @@ def _fix_dataset_info(src: Path, dst: Path) -> None:
     dst.write_text(json.dumps(info, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def stage_digest(stage_dir: Path) -> str:
+    """sha256 over ``path  sha256`` lines of every staged file except
+    ``manifest.txt`` (whose ``built_utc`` changes per build), so the report
+    binds to the staged bytes and stays byte-identical across rebuilds."""
+    h = hashlib.sha256()
+    for p in sorted(stage_dir.rglob("*")):
+        if p.is_file() and p.name != "manifest.txt":
+            h.update(f"{p.relative_to(stage_dir).as_posix()}  {sha256_file(p)}\n".encode())
+    return h.hexdigest()
+
+
+def refuse_overlapping_stage(base_dir: Path, stage_dir: Path) -> None:
+    """``stage_payload`` deletes ``stage_dir``; refuse when that would touch
+    the v9.3 input (same directory, or one inside the other)."""
+    b, s = base_dir.resolve(), stage_dir.resolve()
+    if s == b or b.is_relative_to(s) or s.is_relative_to(b):
+        raise SystemExit(f"refusing to stage into {stage_dir}: it overlaps the base payload {base_dir}")
+
+
 def stage_payload(base_dir: Path, stage_dir: Path, rows: list[dict], raw_lines: Mapping[str, str],
                   touched: set[str], groups: Sequence[DedupGroup], report: Mapping[str, Any]) -> dict:
     from .v9_1_revision import upsert_readme_addendum
     from .v9_2_revision import stage_default_and_ground_truth, verify_blind_label_free
 
+    refuse_overlapping_stage(base_dir, stage_dir)
     if stage_dir.exists():
         shutil.rmtree(stage_dir)
     stage_dir.mkdir(parents=True)
@@ -1119,7 +1193,19 @@ def verify_stage(stage_dir: Path = STAGE_DIR_DEFAULT, base_dir: Path = BASE_STAG
     _gate(len(rows) == len(base_lines) - len(removed_names), "row count")
     _gate(not removed_names & {r["filename"] for r in rows}, "removed row present")
     _gate(all(assign_split(r["filename"]) == r["split"] for r in rows), "split rule")
-    gates["a_row_set"] = f"PASS {len(rows)} rows, 0 duplicate shas, md5 split rule holds"
+    base_sha = {fn: json.loads(ln)["content_sha256"] for fn, ln in base_lines.items()}
+    staged_sha = {r["filename"]: r["content_sha256"] for r in rows}
+    _gate(set(staged_sha) <= set(base_sha), "staged row not in the v9.3 base")
+    for g in removed:
+        surv = g["survivor"]
+        _gate(surv in staged_sha, f"survivor {surv} missing from stage")
+        _gate(staged_sha[surv] == g["content_sha256"], f"survivor {surv}: sha differs from its group")
+        for fn in g["removed"]:
+            _gate(fn in base_sha, f"removed {fn} not in the v9.3 base")
+            _gate(base_sha[fn] == staged_sha[surv], f"removed {fn} is not a byte-identical copy of {surv}")
+    _gate(set(base_sha) == set(staged_sha) | removed_names, "rows vanished without a dedup record")
+    gates["a_row_set"] = (f"PASS {len(rows)} rows, 0 duplicate shas, md5 split rule holds, "
+                          f"{len(removed_names)} removed rows each a byte-identical copy of a staged survivor")
 
     # (b) survivors unchanged except documented fills on the rows they apply to
     untouched = changed = 0
@@ -1143,12 +1229,15 @@ def verify_stage(stage_dir: Path = STAGE_DIR_DEFAULT, base_dir: Path = BASE_STAG
     probs = []
     for r in rows:
         stored = presence_of(r)
+        if row_gt_presence(presence_probe(r)) != stored:
+            probs.append(f"{r['filename']}: stored gt_presence differs from a recompute")
         probs += [f"{r['filename']}: {p}" for p in presence_law_problems(
             stored, r["expected"], r.get("expected_subclass"))]
         if "genuine_gap" in stored.values():
             probs.append(f"{r['filename']}: genuine_gap")
     _gate(not probs, "; ".join(probs[:5]))
-    gates["d_presence_law"] = "PASS presence law holds on every row; no genuine_gap"
+    gates["d_presence_law"] = ("PASS stored presence equals a recompute on every row; "
+                               "presence law holds; no genuine_gap")
 
     # (e) every populated EX-10 CUAD map is verbatim
     vocab = cuad_vocabulary(rows)
@@ -1187,8 +1276,12 @@ def verify_stage(stage_dir: Path = STAGE_DIR_DEFAULT, base_dir: Path = BASE_STAG
     gates["g_manifest"] = f"PASS {len(table)} manifest sha entries recompute"
 
     report_path = stage_dir.parent / "v9_4_report.json"
-    calibration = json.loads(report_path.read_text())["calibration"] if report_path.exists() else {
-        "publish_ready": False, "cuad": {"status": "not_run"}, "intent": {"status": "not_run"}}
+    calibration = {"publish_ready": False, "cuad": {"status": "not_run"}, "intent": {"status": "not_run"}}
+    if report_path.exists():
+        rep = json.loads(report_path.read_text(encoding="utf-8"))
+        _gate(rep.get("stage_digest") == stage_digest(stage_dir),
+              f"{report_path.name} was not written for these staged bytes (stage digest differs)")
+        calibration = rep["calibration"]
     gates["h_calibration"] = (f"{'PASS' if calibration['publish_ready'] else 'PENDING'} "
                               f"cuad={calibration['cuad'].get('status')} intent={calibration['intent'].get('status')}")
     return {"gates": gates, "publish_ready": bool(calibration["publish_ready"])}
@@ -1206,7 +1299,7 @@ def journal_display_path(path: Path) -> str:
     if "reports" in parts:
         i = len(parts) - 1 - parts[::-1].index("reports")
         return "/".join(parts[i - 1:]) if i > 0 else "/".join(parts[i:])
-    return path.name
+    return str(path)
 
 
 def resolve_sandbox_journal(explicit: str | None) -> Path | None:
@@ -1298,12 +1391,14 @@ def build_all(
     # 5. calibration
     cuad_cal = intent_cal = None
     if cuad_calibration_journal:
-        gold = [r for r in kept if r["source_corpus"] == GOLDEN_CUAD_SOURCE]
-        cuad_cal = score_cuad_calibration(gold, load_jsonl(Path(cuad_calibration_journal)), vocab)
+        cuad_cal = score_cuad_calibration(cuad_calibration_sample(kept),
+                                          load_jsonl(Path(cuad_calibration_journal)), vocab)
     if intent_calibration_journal:
         intent_cal = score_intent_calibration(manual_intent_rows(kept), load_jsonl(Path(intent_calibration_journal)))
-    calibration = calibration_status(cuad_cal, intent_cal,
-                                     need_intent=bool(intent_report["counts"].get("accepted")))
+    calibration = calibration_status(
+        cuad_cal, intent_cal, need_intent=bool(intent_report["counts"].get("accepted")),
+        cuad_label_models={v["model"] for v in cuad_report["verdicts"] if v["status"] == "ingested"},
+        intent_label_models=intent_report.get("models"))
 
     remaining = {
         "pending_cuad": sum(1 for r in kept if is_pending_cuad(r)),
@@ -1325,6 +1420,7 @@ def build_all(
 
     staged = stage_payload(base_dir, stage_dir, kept, raw_by_fn, touched, groups, report)
     report["staged_counts"] = staged
+    report["stage_digest"] = stage_digest(stage_dir)
     (stage_dir.parent / "v9_4_report.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
     queues = export_queues(kept, stage_dir.parent / "queues")
