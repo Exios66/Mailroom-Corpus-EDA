@@ -280,6 +280,17 @@ def test_stage_refuses_to_overwrite_its_base(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def test_gate_d_catches_stale_pending_over_populated_labels():
+    row = _ex10_row("e1.htm")
+    v94.ingest_cuad_journal([row], [{"filename": "e1.htm", "accepted": True, "model": v94.LABEL_MODEL,
+                                     "cuad_clause_labels": GOOD}], VOCAB)
+    assert v94.presence_gate_problems([row]) == []
+    stale = json.loads(row["gt_fields"]["gt_presence"])
+    stale["cuad_clause_labels"] = "pending_annotation"  # would make gate (e) skip the row
+    row["gt_fields"]["gt_presence"] = json.dumps(stale, sort_keys=True)
+    assert any("differs from a recompute" in p for p in v94.presence_gate_problems([row]))
+
+
 def test_drift_allows_documented_fills_only_where_they_apply():
     base = _ex10_row("e1.htm")
     new = json.loads(json.dumps(base))

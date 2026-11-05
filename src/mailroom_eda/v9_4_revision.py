@@ -1255,6 +1255,22 @@ def drift_problems(base: Mapping[str, Any], new: Mapping[str, Any]) -> list[str]
     return out
 
 
+def presence_gate_problems(rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    """Gate (d): the stored ``gt_presence`` must equal a fresh recompute (so a
+    stale ``pending_annotation`` cannot hide a populated map from gate (e)),
+    satisfy the key-set law, and contain no ``genuine_gap``."""
+    probs: list[str] = []
+    for r in rows:
+        stored = presence_of(r)
+        if row_gt_presence(presence_probe(r)) != stored:
+            probs.append(f"{r['filename']}: stored gt_presence differs from a recompute")
+        probs += [f"{r['filename']}: {p}" for p in presence_law_problems(
+            stored, r["expected"], r.get("expected_subclass"))]
+        if "genuine_gap" in stored.values():
+            probs.append(f"{r['filename']}: genuine_gap")
+    return probs
+
+
 def verify_stage(stage_dir: Path = STAGE_DIR_DEFAULT, base_dir: Path = BASE_STAGE_DIR) -> dict[str, Any]:
     """Verify stage conformance against the base and return gates and readiness.
 
@@ -1315,15 +1331,7 @@ def verify_stage(stage_dir: Path = STAGE_DIR_DEFAULT, base_dir: Path = BASE_STAG
     gates["c_placeholders"] = "PASS 0 nan/None/null cells in gt_fields"
 
     # (d) presence law
-    probs = []
-    for r in rows:
-        stored = presence_of(r)
-        if row_gt_presence(presence_probe(r)) != stored:
-            probs.append(f"{r['filename']}: stored gt_presence differs from a recompute")
-        probs += [f"{r['filename']}: {p}" for p in presence_law_problems(
-            stored, r["expected"], r.get("expected_subclass"))]
-        if "genuine_gap" in stored.values():
-            probs.append(f"{r['filename']}: genuine_gap")
+    probs = presence_gate_problems(rows)
     _gate(not probs, "; ".join(probs[:5]))
     gates["d_presence_law"] = ("PASS stored presence equals a recompute on every row; "
                                "presence law holds; no genuine_gap")
