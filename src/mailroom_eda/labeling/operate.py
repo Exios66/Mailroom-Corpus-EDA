@@ -29,7 +29,7 @@ import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Collection, Mapping, Sequence
 
 import yaml
 
@@ -449,7 +449,8 @@ def cmd_chunk(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------- sweep
 
 def sweep_plan(name: str, approvals: Sequence[Mapping[str, Any]], through: str,
-               start: str | None = None) -> tuple[list[tuple[dict[str, Any], int | None]], str]:
+               start: str | None = None, tasks: Collection[str] | None = None
+               ) -> tuple[list[tuple[dict[str, Any], int | None]], str]:
     """The chunk arms a sweep runs, in ``campaign.yaml`` order, and why it stops there.
 
     From ``start`` (default: the first chunk) through ``through``: approved chunks are
@@ -457,6 +458,9 @@ def sweep_plan(name: str, approvals: Sequence[Mapping[str, Any]], through: str,
     is not met, ends the plan. Every gate needs a human (a bake-off pick, verdicts, or a
     ``--signed-off`` read), so the plan runs a pilot or bake-off and then ends at the
     first chunk that depends on it. Nothing is ever approved here.
+
+    ``tasks`` keeps only those tasks' chunks; a chunk that cannot run then blocks only the
+    later chunks of its own task, so one document type waiting on review does not stop another.
     """
     entries = campaign(name)["chunks"]
     ids = [str(c["id"]) for c in entries]
@@ -468,7 +472,10 @@ def sweep_plan(name: str, approvals: Sequence[Mapping[str, Any]], through: str,
     last = len(ids) - 1 - ids[::-1].index(through)
     if first > last:
         raise SystemExit(f"--from {start} comes after --through {through} in campaign.yaml")
+    if tasks and not any(c["task"] in tasks for c in entries):
+        raise SystemExit(f"--task {', '.join(sorted(tasks))}: no chunk of task in campaign {name}")
     done = {str(a["chunk"]) for a in approvals}
+    blocked: dict[str, str] = {}
     counts = Counter(ids)
     plan: list[tuple[dict[str, Any], int | None]] = []
     seen: Counter = Counter()
@@ -477,14 +484,19 @@ def sweep_plan(name: str, approvals: Sequence[Mapping[str, Any]], through: str,
         seen[cid] += 1
         if i < first or i > last or cid in done or c.get("skip"):
             continue  # a ``skip:`` arm keeps its number but never runs (``cmd_chunk`` refuses it)
+        if tasks and (c["task"] not in tasks or c["task"] in blocked):
+            continue
         missing = [str(n) for n in c.get("needs") or [] if str(n) not in done]
-        if missing:
-            return plan, f"stopped at {cid}: needs chunk {', '.join(missing)} approved first"
         met, why = requires_met(c.get("requires"))
-        if not met:
-            return plan, f"stopped at {cid}: {why}"
+        stop = (f"stopped at {cid}: needs chunk {', '.join(missing)} approved first" if missing
+                else None if met else f"stopped at {cid}: {why}")
+        if stop and not tasks:
+            return plan, stop
+        if stop:
+            blocked[c["task"]] = stop
+            continue
         plan.append((c, seen[cid] if counts[cid] > 1 else None))
-    return plan, f"reached {through}"
+    return plan, "; ".join(blocked.values()) or f"reached {through}"
 
 
 def _sweep_projection(args: argparse.Namespace, plan: Sequence[tuple[Mapping[str, Any], int | None]],
@@ -516,7 +528,8 @@ def cmd_sweep(args: argparse.Namespace, *, confirm: Callable[[str], str] = input
     run_chunk = run_chunk or cmd_chunk
     auto_restore(args)
     approvals = load_approvals(args.campaign)
-    plan, why = sweep_plan(args.campaign, approvals, args.through, args.start)
+    plan, why = sweep_plan(args.campaign, approvals, args.through, args.start,
+                           set(getattr(args, "task", None) or ()) or None)
     if not plan:
         print(f"nothing to run: {why}")
         return 0
@@ -534,8 +547,20 @@ def cmd_sweep(args: argparse.Namespace, *, confirm: Callable[[str], str] = input
         reserve = models_registry().get("key_reserve_usd", 3.0)
         usable = None if rem is None else float(rem) - reserve
         print("funding: no credit limit" if usable is None else f"funding: ${usable:.2f} usable after reserve")
-        if usable is not None and usable < caps and not args.dry_run:
-            raise SystemExit(f"the sweep's caps (${caps:.2f}) exceed the key's usable credit (${usable:.2f})")
+        if usable is not None and usable < caps:
+            # run what the credit likely covers (projected cost), in order; each chunk is capped
+            # at the live credit left, checkpoints, and resumes from its journal after a top-up
+            keep, total = 0, 0.0
+            while keep < len(lines) and total + lines[keep]["projected_usd"] <= usable + 1e-9:
+                total += lines[keep]["projected_usd"]
+                keep += 1
+            if not keep:
+                raise SystemExit(f"the key's usable credit (${usable:.2f}) covers no chunk: "
+                                 f"{lines[0]['chunk']} projects ${lines[0]['projected_usd']:.2f}")
+            print(f"deferred until more credit: {', '.join(ln['chunk'] for ln in lines[keep:])}")
+            plan, lines, caps = plan[:keep], lines[:keep], sum(ln["cap_usd"] for ln in lines[:keep])
+            print(f"running {keep} arms: projected ${total:.2f} of ${usable:.2f} usable; "
+                  f"each is capped at the credit left when it starts")
     elif args.provider in ("openrouter", "mixed"):
         print("funding: not checked (OPENROUTER_API_KEY is not set)")
     if args.dry_run:
@@ -548,8 +573,17 @@ def cmd_sweep(args: argparse.Namespace, *, confirm: Callable[[str], str] = input
     for entry, arm in plan:
         label = f"{entry['id']}{f'.{arm}' if arm else ''}"
         print(f"=== sweep: chunk {label}", file=sys.stderr)
+        cap = None
+        if args.provider in ("openrouter", "mixed") and os.environ.get("OPENROUTER_API_KEY"):
+            rem = providers.key_status(providers.Backend.from_env("openrouter")).get("limit_remaining")
+            left = None if rem is None else float(rem) - models_registry().get("key_reserve_usd", 3.0)
+            if left is not None and left < 0.01:
+                print(f"sweep stopped before chunk {label}: no credit left above the reserve")
+                return 0
+            if left is not None and left < float(entry["cap_usd"]):
+                cap = round(left, 2)  # never past the reserve; a stop here resumes after a top-up
         ns = argparse.Namespace(**{**vars(args), "id": str(entry["id"]), "arm": arm, "dry_run": False,
-                                   "ack_requires": False, "cap_usd": None, "no_restore": True})
+                                   "ack_requires": False, "cap_usd": cap, "no_restore": True})
         rc = run_chunk(ns)
         if rc:
             print(f"sweep stopped: chunk {label} exited {rc}")
@@ -1913,6 +1947,8 @@ def add_commands(sub: Any) -> None:
     common(p)
     p.add_argument("--through", required=True, help="the last chunk id to run (campaign.yaml order)")
     p.add_argument("--from", dest="start", help="start at this chunk id instead of the first")
+    p.add_argument("--task", action="append", default=[],
+                   help="only this task's chunks (repeatable), e.g. --task correspondence --task corporate")
     p.add_argument("--initials")
     p.add_argument("--provider", default="openrouter", choices=(*providers.PROVIDERS, "mixed"),
                    help="mixed: --model-map swaps a campaign model for one on another provider")

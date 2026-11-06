@@ -2958,3 +2958,36 @@ def test_modal_projection_is_gpu_time_and_a_cap_below_a_cold_start_is_refused(tm
         runner.execute([rows[2]], [rows[2]], task="correspondence", set_name="pilot", chunk_spec=None,
                        models=[QWEN, DS], provider={QWEN: "modal", DS: "openrouter"}, reasoning="off",
                        initials="JB", cap_usd=0.35, max_wall_seconds=600, out_dir=tmp_path)
+
+
+def test_sweep_plan_can_focus_on_tasks_and_a_blocked_task_does_not_stop_the_others():
+    """--task keeps only those tasks' chunks; a chunk waiting on approval blocks only its own task."""
+    plan, why = operate.sweep_plan("v10", [], "9e", tasks={"correspondence"})
+    assert [str(e["id"]) for e, _ in plan] == ["7a"] and "7b" in why
+    plan, why = operate.sweep_plan("v10", [], "9e", tasks={"correspondence", "claim_checklist", "corporate"})
+    assert [str(e["id"]) for e, _ in plan] == ["7a", "8a", "9a"]
+    plan, _ = operate.sweep_plan("v10", [{"chunk": "7a"}], "9e", tasks={"correspondence"})
+    assert [str(e["id"]) for e, _ in plan] == ["7b", "7c", "7d", "7e"]
+    with pytest.raises(SystemExit, match="no chunk of task"):
+        operate.sweep_plan("v10", [], "9e", tasks={"nonsense"})
+
+
+def test_sweep_runs_the_chunks_credit_likely_covers_and_never_spends_the_reserve(tmp_path, monkeypatch, capsys):
+    """Chunks are picked by projected cost; each runs capped at the live credit left, the rest wait."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test")
+    remaining = iter([4.80, 4.80, 4.20, 3.50])  # projection, then before 7b, 7c, 7d ($3 reserve)
+    monkeypatch.setattr(providers, "key_status", lambda backend: {"limit_remaining": next(remaining)})
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [{"chunk": "7a"}])
+    monkeypatch.setattr(runner, "load_stage", lambda stage: [])
+    monkeypatch.setattr(operate, "_sweep_projection", lambda args, plan, rows: [
+        {"chunk": str(e["id"]), "task": e["task"], "set": e["set"], "documents": 1, "calls": 2,
+         "projected_usd": 0.60, "cap_usd": float(e["cap_usd"]), "reasoning": "off"} for e, _ in plan])
+    ran = []
+    assert operate.cmd_sweep(_sweep_args(tmp_path), confirm=lambda q: "yes",
+                             run_chunk=lambda ns: ran.append((ns.id, ns.cap_usd)) or 0) == 0
+    assert ran == [("7b", None), ("7c", None), ("7d", 0.50)]  # 3 x $0.60 projected fit $1.80
+    out = capsys.readouterr().out
+    assert "deferred" in out and "7e" in out
+    monkeypatch.setattr(providers, "key_status", lambda backend: {"limit_remaining": 3.50})
+    with pytest.raises(SystemExit, match="covers no chunk"):
+        operate.cmd_sweep(_sweep_args(tmp_path), confirm=lambda q: "yes", run_chunk=lambda ns: 0)
