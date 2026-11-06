@@ -622,7 +622,9 @@ def write_stage(tables: Mapping[str, Mapping[str, Any]], out: Path, *, inputs: M
     import pyarrow.parquet as pq
     from datasets import Features
 
-    out = Path(out)
+    final = Path(out)
+    # Write beside the last stage and swap at the end: an interrupted build leaves it intact.
+    out = final.with_name(final.name + ".building")
     if out.exists():
         shutil.rmtree(out)
     counts: dict[str, dict[str, int]] = {}
@@ -652,6 +654,14 @@ def write_stage(tables: Mapping[str, Mapping[str, Any]], out: Path, *, inputs: M
     manifest = {"schema": "mailroom-dataset-v10-stage/v1", "plan": PLAN_REF, "configs": list(counts),
                 "rows": counts, "inputs": dict(inputs), "files": files}
     (out / "manifest.json").write_text(json.dumps(manifest, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    old = final.with_name(final.name + ".previous")
+    if old.exists():
+        shutil.rmtree(old)
+    if final.exists():
+        final.rename(old)
+    out.rename(final)
+    if old.exists():
+        shutil.rmtree(old)
     return manifest
 
 

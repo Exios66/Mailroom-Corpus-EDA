@@ -118,12 +118,11 @@ def decode(cell: Any, type_: str) -> Any:
         return None
     if not isinstance(cell, str):
         return cell
-    if type_.startswith("entity_list") or cell[:1] in "[{":
+    if type_.startswith("entity_list"):
         try:
             return json.loads(cell)
         except json.JSONDecodeError:
-            if type_.startswith("entity_list"):
-                raise SystemExit(f"list cell is not JSON: {cell[:80]!r}") from None
+            raise SystemExit(f"list cell is not JSON: {cell[:80]!r}") from None
     if type_ == "money":
         return verify.parse_money(cell)
     return cell

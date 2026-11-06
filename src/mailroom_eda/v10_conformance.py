@@ -101,7 +101,11 @@ def gate_1(st: Stage) -> tuple[bool, str]:
     src = {r["document_id"]: r["split"] for r in st.source_rows()}
     bad = []
     for name in ("default", "routing", "source_metadata", "ground_truth"):
-        got = {r["document_id"]: s for s, rows in st.config(name).items() for r in rows}
+        pairs = [(r["document_id"], s) for s, rows in st.config(name).items() for r in rows]
+        dup = len(pairs) - len({d for d, _ in pairs})
+        if dup:
+            bad.append(f"{name}: {dup} duplicate document_id rows")
+        got = dict(pairs)
         if got != src:
             bad.append(f"{name}: {len(set(got) ^ set(src))} ids differ, "
                        f"{sum(1 for k in got if k in src and got[k] != src[k])} splits differ")
@@ -145,7 +149,8 @@ def gate_3(st: Stage) -> tuple[bool, str]:
     bad, n = [], 0
     for r in st.rows("cuad_clauses"):
         n += 1
-        if text.get(r["document_id"], "")[r["start"]:r["end"]] != r["text"]:
+        t = text.get(r["document_id"], "")
+        if not (0 <= r["start"] <= r["end"] <= len(t)) or t[r["start"]:r["end"]] != r["text"]:
             bad.append(f"cuad_clauses {r['document_id']}@{r['start']}")
     for c, rows in st.class_rows().items():
         for r in rows:
@@ -221,8 +226,8 @@ def gate_6(st: Stage) -> tuple[bool, str]:
             if k not in ng:
                 bad.append(f"{r['document_id']}: gt_fields.{k} dropped")
             elif k == "cuad_clause_labels":
-                if len(json.loads(v or "{}") if isinstance(v, str) else v or {}) != \
-                        len(json.loads(ng[k] or "{}") if isinstance(ng[k], str) else ng[k] or {}):
+                if set(json.loads(v or "{}") if isinstance(v, str) else v or {}) != \
+                        set(json.loads(ng[k] or "{}") if isinstance(ng[k], str) else ng[k] or {}):
                     bad.append(f"{r['document_id']}: cuad_clause_labels categories changed")
             elif v not in (None, "", "[]") and ng[k] != v:
                 bad.append(f"{r['document_id']}: gt_fields.{k} changed")
