@@ -31,6 +31,11 @@ from .verify import STATUSES
 
 HEAD_CHARS = 48_000
 TAIL_CHARS = 16_000
+#: CUAD sees the whole contract: the golden calibration contracts were chosen to fit 32k
+#: tokens, and a 64k-character window cut the middle out of 6 of 40 (2026-11-06). Only a
+#: document past about 100k tokens (one 616k-character EX-10 exhibit) is still windowed.
+CUAD_HEAD_CHARS = 360_000
+CUAD_TAIL_CHARS = 40_000
 MERGER_HEAD_CHARS = 24_000
 MERGER_SECTION_CHARS = 6_000
 MERGER_SECTIONS = (
@@ -213,7 +218,7 @@ def build_cuad(row: Mapping[str, Any], *, repair_problems: Sequence[str] = (),
     doc_id, filename = _ids(row)
     fam = cuad_family(row.get("expected_subclass") or "") or {}
     cats = dojo_snapshot()["cuad_categories"]
-    text, desc = window(str(row["doc_text"]))
+    text, desc = window(str(row["doc_text"]), CUAD_HEAD_CHARS, CUAD_TAIL_CHARS)
     user = prompt("cuad_user").render({
         "document_id": doc_id, "filename": filename,
         "subclass": fam.get("key") or row.get("expected_subclass") or "unknown",
@@ -235,7 +240,8 @@ def build_cuad(row: Mapping[str, Any], *, repair_problems: Sequence[str] = (),
                   "type": "object", "additionalProperties": False, "required": ["category", "text"],
                   "properties": {"category": {"type": "string", "enum": [c["name"] for c in cats]},
                                  "text": {"type": "string"}}}}}}
-    return Request("cuad", doc_id, msgs, schema, {}, prompt_bundle_sha(names, {"categories": cats}),
+    return Request("cuad", doc_id, msgs, schema, {}, prompt_bundle_sha(names, {"categories": cats,
+                                                                  "window": [CUAD_HEAD_CHARS, CUAD_TAIL_CHARS]}),
                    "repair" if repair_problems else "")
 
 

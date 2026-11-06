@@ -1579,3 +1579,20 @@ def test_ping_real_doc_sends_a_real_intent_document(tmp_path, monkeypatch, rows)
     assert all(rows[2]["doc_text"][:40] in m[-1]["content"] for m, _ in seen)
     log = export.read_journal(tmp_path / "ping.jsonl")
     assert all(r["probe"] == "real_doc:e1" and r["reasoning_tokens"] == 120 for r in log if "error" not in r)
+
+
+def test_cuad_window_sends_calibration_whole_and_caps_giants(rows):
+    """Golden CUAD calibration contracts fit 32k tokens; all of them are sent whole.
+    Only a document past 400k characters is windowed."""
+    big = {**rows[0], "doc_text": "x" * 300_000}
+    assert "the full document" in tasks.build_cuad(big).messages[1]["content"]
+    giant = {**rows[0], "doc_text": "y" * 616_016}
+    msg = tasks.build_cuad(giant).messages[1]["content"]
+    assert "the full document" not in msg and len(msg) < 410_000
+
+
+def test_cuad_window_is_part_of_the_prompt_sha(rows, monkeypatch):
+    """A cached answer made on cut-off text is never reused after the window changes."""
+    before = tasks.build_cuad(rows[0]).prompt_sha256
+    monkeypatch.setattr(tasks, "CUAD_HEAD_CHARS", 48_000)
+    assert tasks.build_cuad(rows[0]).prompt_sha256 != before
