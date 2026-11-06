@@ -219,7 +219,6 @@ def build_cuad(row: Mapping[str, Any], *, repair_problems: Sequence[str] = (),
         "subclass": fam.get("key") or row.get("expected_subclass") or "unknown",
         "family_definition": fam.get("definition") or "no family definition",
         "n_chars": f"{len(row['doc_text']):,}", "window_description": desc,
-        "salient_categories": ", ".join(fam.get("salient") or []) or "none listed",
         "category_list": "\n".join(f"- {c['name']}: {c['description']}" for c in cats),
         "doc_text_window": text,
     })

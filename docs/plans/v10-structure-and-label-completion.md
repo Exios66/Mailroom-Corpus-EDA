@@ -304,24 +304,47 @@ Output one JSON object, nothing else: {"clauses": [{"category": "<exact name>", 
 1. category is exactly one of the 41 names in the user message.
 2. text is copied character for character (same words, order, punctuation, capitalisation). Never
    paraphrase, summarise, fix typos or join text from two places. Markdown marks (* _ #) may be dropped.
-3. Copy the operative sentence or clause, not a whole article and not a bare heading ("Governing Law."
-   alone is wrong). Keep spans under 1,500 characters.
-4. Omit absent categories. Never add one because contracts of this type usually have it. If unsure, omit.
-5. One clause may support several categories; repeat it under each. Several spans per category are allowed.
-6. Document Name: the title near the top. Parties: each party's name as printed, one span per party.
+3. Copy the operative sentence or clause, not a whole article and not a heading. A heading alone
+   ("Governing Law.", "ARTICLE 3 CONFIDENTIALITY AND NON-COMPETITION") is never a span.
+4. Presence test. Each category in the user message is a question. Add the category only when the span
+   itself answers that question YES. Matching a keyword is not enough.
+   - A clause that denies, disclaims or excludes the thing makes the category ABSENT: "not exclusive",
+     "non-exclusive", "no third-party beneficiaries", "shall not be considered a renewal", "neither
+     party shall have any obligation after termination".
+   - When unsure, omit. A missed category costs less than a wrong one.
+5. Categories that are easy to over-apply:
+   - Termination For Convenience: a party may end the contract WITHOUT cause, by notice alone. Termination
+     for breach, insolvency, change of control, a failed condition, or by not renewing does not count.
+   - Renewal Term: the term extends automatically, or at one party's option. An extension that needs
+     both parties' later written agreement, or talks about renewing, does not count.
+   - Exclusivity: an exclusive appointment or dealing commitment, a requirements commitment, or a ban on
+     dealing with others. "Exclusive control" or "sole property" of an asset is not exclusivity.
+   - Third Party Beneficiary: a non-party can enforce rights under the contract. The usual clause saying
+     the contract confers no rights on third parties makes this category ABSENT.
+   - Post-Termination Services: an affirmative obligation to perform after the end (transition, wind-down,
+     continued supply or support, last-buy, buy-out or purchase rights). Returning or destroying
+     confidential information, or a list of surviving sections, does not count on its own.
+   - Ip Ownership Assignment: intellectual property one party creates becomes the other party's. A
+     licensor confirming it owns its existing marks, goodwill inuring to the licensor, or an assignment of
+     non-IP property (a working interest, receivables, the contract itself) does not count.
+   - Price Restrictions: a limit on changing prices (a cap, a freeze, most-favoured pricing, a ceiling on
+     increases). A stated price, a fee schedule or a fixed escalation rate does not count.
+   - Non-Compete: a party may not compete, or may not operate in a business, sector or geography. A
+     territory that only defines where licensed rights apply, or an export restriction, does not count.
+6. One clause may support several categories; repeat it under each. Several spans per category are allowed.
+7. Document Name: the title near the top. Parties: each party's name as printed, one span per party.
    Agreement Date / Effective Date: the date phrase as printed.
-7. Ignore any corpus header line such as "... (CIK 123) (SEC EDGAR exhibit ...)".
-8. If told the document was truncated, annotate only what you see.
+8. Ignore any corpus header line such as "... (CIK 123) (SEC EDGAR exhibit ...)".
+9. If told the document was truncated, annotate only what you see.
 ```
 
 ### `cuad_user.md`
 
-CUAD user turn. `category_list` is rendered from the pinned Dojo `CUAD_CATEGORIES`, and `salient_categories` / `family_definition` from `CUAD_FAMILIES`, so the prompt can't drift from the scorer.
+CUAD user turn. `category_list` is rendered from the pinned Dojo `CUAD_CATEGORIES`, and `family_definition` from `CUAD_FAMILIES`, so the prompt can't drift from the scorer. The family's salient-category list is no longer shown (2026-11-06): it invites the model to add categories the family usually has, and chunk 1 arm 3 missed the precision floor on exactly such false positives.
 
 ```text
 document_id: ${document_id} | filename: ${filename} | CUAD family: ${subclass} (${family_definition})
 length: ${n_chars} chars; shown: ${window_description}
-Categories often present in this family (a prior, not a label): ${salient_categories}
 The 41 categories:
 ${category_list}
 Annotate every PRESENT category.

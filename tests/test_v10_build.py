@@ -8,7 +8,8 @@ import json
 import pytest
 
 from mailroom_eda import v10_build as v10
-
+from mailroom_eda.dataset_export import assign_split
+from mailroom_eda.gt_presence import BASE_GT_FIELDS
 
 # ---------------------------------------------------------------------------
 # T1: doc_text cleanup and span remap
@@ -130,8 +131,6 @@ def test_cleanup_row_remaps_the_cuad_map_in_gt_fields():
 # T2: row derivation and typed records
 # ---------------------------------------------------------------------------
 
-from mailroom_eda.dataset_export import assign_split  # noqa: E402
-from mailroom_eda.gt_presence import BASE_GT_FIELDS  # noqa: E402
 
 MAUD_CASH = {"Type of Consideration": {"answer": "All Cash", "category": "General Information"},
              "Absence of Litigation Closing Condition": {"answer": "Pending",

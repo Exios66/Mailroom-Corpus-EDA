@@ -7,33 +7,33 @@ exact windowed prompts, typical output per call, x1.25 for retries and repairs;
 
 ## Whole campaign on one model
 
-18.4M prompt and 3.4M output tokens: every task once, each extraction task on one model.
+18.5M prompt and 3.4M output tokens: every task once, each extraction task on one model.
 
 | model | USD |
 |---|---:|
-| `openai/gpt-6-luna` | 3.55 |
-| `qwen/qwen3.8-flash` | 4.37 |
-| `z-ai/glm-5.3-flash` | 4.47 |
-| `minimax/minimax-m3.1-flash` | 4.81 |
-| `deepseek/deepseek-v4.1-flash` | 4.98 |
-| `deepseek/deepseek-v4.1-flash-1017` | 9.62 |
-| `z-ai/glm-5.3-flashx-legal` | 11.08 |
-| `google/gemini-3.5-flash-lite` | 14.05 |
-| `Qwen/Qwen3-32B-FP8` | 126.67 |
+| `openai/gpt-6-luna` | 3.56 |
+| `qwen/qwen3.8-flash` | 4.38 |
+| `z-ai/glm-5.3-flash` | 4.48 |
+| `minimax/minimax-m3.1-flash` | 4.82 |
+| `deepseek/deepseek-v4.1-flash` | 4.99 |
+| `deepseek/deepseek-v4.1-flash-1017` | 9.64 |
+| `z-ai/glm-5.3-flashx-legal` | 11.11 |
+| `google/gemini-3.5-flash-lite` | 14.08 |
+| `Qwen/Qwen3-32B-FP8` | 126.98 |
 
 ## Recommended plan, chunk by chunk
 
-Projected total **$14.68**; the chunk caps add up to **$28.90**.
+Projected total **$14.72**; the chunk caps add up to **$28.90**.
 Two-model chunks are priced for both models.
 
 | chunk | task | set | slice | docs | calls | models | reasoning | projected USD | cap USD |
 |---|---|---|---|---:|---:|---|---|---:|---:|
-| 1 | cuad | calibration | all | 40 | 40 | `glm-5.3-flashx-legal` | off | 0.33 | 0.75 |
-| 1 | cuad | calibration | all | 40 | 40 | `glm-5.3-flashx-legal` | low | 0.42 | 0.85 |
-| 1 | cuad | calibration | all | 40 | 40 | `deepseek-v4.1-flash` | off | 0.15 | 0.40 |
-| 2a | cuad | pending | 1/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.26 | 0.60 |
-| 2b | cuad | pending | 2/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.23 | 0.60 |
-| 2c | cuad | pending | 3/3 | 29 | 29 | `winner_of_1` | winner_of_1 | 0.20 | 0.60 |
+| 1 | cuad | calibration | all | 40 | 40 | `glm-5.3-flashx-legal` | off | 0.34 | 0.75 |
+| 1 | cuad | calibration | all | 40 | 40 | `glm-5.3-flashx-legal` | low | 0.43 | 0.85 |
+| 1 | cuad | calibration | all | 40 | 40 | `deepseek-v4.1-flash` | off | 0.16 | 0.40 |
+| 2a | cuad | pending | 1/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.27 | 0.60 |
+| 2b | cuad | pending | 2/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.24 | 0.60 |
+| 2c | cuad | pending | 3/3 | 29 | 29 | `winner_of_1` | winner_of_1 | 0.21 | 0.60 |
 | 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash` | off | 0.05 | 0.15 |
 | 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash` | low | 0.06 | 0.20 |
 | 4 | intent | flagged | all | 25 | 50 | `deepseek-v4.1-flash` | winner_of_3 | 0.01 | 0.10 |
