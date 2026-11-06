@@ -1254,6 +1254,10 @@ def cmd_adjudicate(args: argparse.Namespace) -> int:
                                        sandbox=getattr(args, "sandbox", None))
     path = Path(args.out) / ADJUDICATION_DIR / "open.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
+    if args.chunk and path.exists():
+        # One chunk was rebuilt: keep every other chunk's rows (and their typed verdicts).
+        keep = [r for r in export.read_csv(path) if str(r["chunk"]).split(".")[0] != str(args.chunk)]
+        items = keep + items
     export.write_csv(path, OPEN_COLUMNS, items)
     if copied:
         print(f"copied {copied} verdicts from open.csv into their chunks")

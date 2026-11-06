@@ -2447,6 +2447,21 @@ def test_adjudicate_lists_open_items_and_reads_verdicts_back(tmp_path, monkeypat
     assert copied == 1 and [i["document_id"] for i in items] == ["DOC-2"]
 
 
+def test_adjudicate_one_chunk_keeps_other_chunks_open_rows(tmp_path, monkeypatch):
+    """`adjudicate --chunk X` rewrites only X's rows in open.csv; other chunks' verdicts survive."""
+    import argparse
+    _approved_field_chunk(tmp_path, monkeypatch, ["accept", "adjudicate"])
+    other = {c: "" for c in operate.OPEN_COLUMNS}
+    other.update(chunk="9b", document_id="DOC-9", field="entity_name", reviewer_verdict="b")
+    (tmp_path / "adjudication").mkdir(parents=True, exist_ok=True)
+    export.write_csv(tmp_path / "adjudication" / "open.csv", operate.OPEN_COLUMNS, [other])
+    args = argparse.Namespace(campaign="v10", out=tmp_path, stage=tmp_path, chunk="7b", no_checkpoint=True)
+    assert operate.cmd_adjudicate(args) == 0
+    rows = export.read_csv(tmp_path / "adjudication" / "open.csv")
+    assert ("9b", "DOC-9", "b") in [(r["chunk"], r["document_id"], r["reviewer_verdict"]) for r in rows]
+    assert ("7b", "DOC-1") in [(r["chunk"], r["document_id"]) for r in rows]
+
+
 def test_resolved_gate_passes_only_with_no_open_items(tmp_path, monkeypatch):
     """Step 10 fails while anything is open or a needed chunk is unapproved, and records counts."""
     entry, _ = operate.chunk_entry("v10", "10", None)
