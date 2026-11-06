@@ -366,7 +366,7 @@ def class_record(row: Mapping[str, Any]) -> dict[str, Any]:
     for name, spec in fields.items():
         rec[name], presence[name], provenance[name] = field_cell(row, name, spec, applicable)
         lab = labels.get(name)
-        if lab is not None and presence[name] == "pending_annotation":
+        if lab is not None and (presence[name] == "pending_annotation" or getattr(lab, "override", False)):
             rec[name], presence[name], provenance[name] = _label_value(row, name, lab), lab.presence, lab.provenance
             evidence[name] = _evidence_spans(row["doc_text"], lab.evidence)
     rec["presence"] = presence
@@ -466,6 +466,34 @@ def maud_long_records(row: Mapping[str, Any]) -> list[dict[str, Any]]:
             for a in _maud_answers(_gt(row).get("maud_clause_labels"))]
 
 
+#: Legacy provenance columns an intent override rewrites (top level, then ``gt_fields``).
+OVERRIDE_TOP_KEYS = ("annotation_method", "annotation_model", "annotation_prompt_version",
+                     "annotation_confidence", "annotation_reviewer")
+OVERRIDE_GT_KEYS = ("intent_source", "intent_status", "intent_confidence")
+
+
+def override_annotation(provenance: str) -> tuple[dict[str, str], dict[str, str]]:
+    """The legacy provenance of an intent override, in the columns' existing vocabularies.
+
+    A human decision (``override:reviewer:`` or ``override:gold_correction:``) reads like
+    the corpus's other manual labels. A model-agreed relabel names its models and prompt;
+    its confidence is blank (``''`` is absence): no model reported one.
+    """
+    parts = str(provenance).split("+")
+    if parts[0].startswith(("override:reviewer:", "override:gold_correction:")):
+        return ({"annotation_method": "human_annotated", "annotation_model": "", "annotation_prompt_version": "",
+                 "annotation_confidence": "1.0", "annotation_reviewer": "human"},
+                {"intent_source": "manual", "intent_status": "manual", "intent_confidence": "1.0"})
+    cfgs = [p[len("llm:"):] for p in parts if p.startswith("llm:")]
+    if not parts[0].startswith("override:relabel:") or not cfgs:
+        raise ValueError(f"not an intent override provenance: {provenance!r}")
+    prompts = sorted({c.split("/prompt=")[1].split("/")[0] for c in cfgs if "/prompt=" in c})
+    return ({"annotation_method": "llm_zero_shot", "annotation_model": "+".join(c.split("@")[0] for c in cfgs),
+             "annotation_prompt_version": ",".join(prompts), "annotation_confidence": "",
+             "annotation_reviewer": ""},
+            {"intent_source": "llm_zero_shot", "intent_status": "auto_labeled", "intent_confidence": ""})
+
+
 def legacy_row(row: Mapping[str, Any]) -> dict[str, Any]:
     """The deprecated ``ground_truth`` row: the v9.4 shape plus the new deterministic labels.
 
@@ -495,6 +523,10 @@ def legacy_row(row: Mapping[str, Any]) -> dict[str, Any]:
             gt[key] = json.dumps(value, ensure_ascii=False, sort_keys=True) if isinstance(value, (list, dict)) \
                 else ("" if value is None else str(value))
         pres[key] = lab.presence
+        if name == "intent" and getattr(lab, "override", False):
+            top, gtp = override_annotation(lab.provenance)  # the old labeler no longer answers
+            out.update(top)
+            gt.update(gtp)
     gt["gt_presence"] = json.dumps(pres, sort_keys=True)
     return out
 

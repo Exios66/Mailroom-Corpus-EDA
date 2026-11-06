@@ -24,3 +24,100 @@ approved:
     passed: true
   approved_by: JJB
   approved_utc: '2026-11-06T17:38:07Z'
+- chunk: 4a
+  arm: null
+  task: intent
+  set: relabel
+  slice: 1/3
+  models:
+  - deepseek/deepseek-v4.1-flash-1017
+  - anthropic/claude-haiku-5.5
+  provider: openrouter
+  reasoning: 'off'
+  temperature:
+    deepseek/deepseek-v4.1-flash-1017: 0
+    anthropic/claude-haiku-5.5: null
+  prompt_sha256:
+  - 5297a08341c43b4028a662684f15cfa2598278b13061799c381a9cd2ff03a031
+  served_providers:
+  - CoreWeave
+  - DeepInfra
+  - Google
+  - InferenceNet
+  gate:
+    kind: intent_relabel
+    passed: true
+  approved_by: JJB
+  approved_utc: '2026-11-06T19:36:23Z'
+- chunk: 4b
+  arm: null
+  task: intent
+  set: relabel
+  slice: 2/3
+  models:
+  - deepseek/deepseek-v4.1-flash-1017
+  - anthropic/claude-haiku-5.5
+  provider: openrouter
+  reasoning: 'off'
+  temperature:
+    deepseek/deepseek-v4.1-flash-1017: 0
+    anthropic/claude-haiku-5.5: null
+  prompt_sha256:
+  - 5297a08341c43b4028a662684f15cfa2598278b13061799c381a9cd2ff03a031
+  served_providers:
+  - CoreWeave
+  - DeepInfra
+  - Google
+  - InferenceNet
+  gate:
+    kind: intent_relabel
+    passed: true
+  approved_by: JJB
+  approved_utc: '2026-11-06T19:36:27Z'
+- chunk: 4c
+  arm: null
+  task: intent
+  set: relabel
+  slice: 3/3
+  models:
+  - deepseek/deepseek-v4.1-flash-1017
+  - anthropic/claude-haiku-5.5
+  provider: openrouter
+  reasoning: 'off'
+  temperature:
+    deepseek/deepseek-v4.1-flash-1017: 0
+    anthropic/claude-haiku-5.5: null
+  prompt_sha256:
+  - 5297a08341c43b4028a662684f15cfa2598278b13061799c381a9cd2ff03a031
+  served_providers:
+  - CoreWeave
+  - DeepInfra
+  - Google
+  - InferenceNet
+  gate:
+    kind: intent_relabel
+    passed: true
+  approved_by: JJB
+  approved_utc: '2026-11-06T19:36:30Z'
+second_opinions:
+- chunk: '3'
+  arm: 5
+  task: intent
+  set: calibration
+  slice: null
+  models:
+  - anthropic/claude-haiku-5.5
+  provider: openrouter
+  reasoning: 'off'
+  temperature:
+    anthropic/claude-haiku-5.5: null
+  prompt_sha256:
+  - 5297a08341c43b4028a662684f15cfa2598278b13061799c381a9cd2ff03a031
+  served_providers:
+  - Google
+  gate:
+    kind: intent_kappa
+    cohen_kappa: 0.7626
+    passed: true
+  approved_by: JJB
+  approved_utc: '2026-11-06T19:40:36Z'

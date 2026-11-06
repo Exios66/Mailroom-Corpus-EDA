@@ -209,16 +209,29 @@ def gate_6(st: Stage) -> tuple[bool, str]:
 
     old = {r["document_id"]: r for r in st.source_rows()}
     allowed_top = {"doc_text", "content_sha256", "normalized_text_sha256", "expected_specialist", "gt_fields"}
+    # Recorded overrides (relabel decisions, gold corrections) may change a gold value.
+    overrides = {(r["document_id"], f): str(p) for rows in st.class_rows().values() for r in rows
+                 for f, p in (r.get("provenance") or {}).items() if str(p or "").startswith("override:")}
     bad, added = [], Counter()
     for r in st.rows("ground_truth"):
         o = old.get(r["document_id"])
         if o is None:
             continue
         orec = gt_parquet_record(o)
-        for k in set(orec) | set(r):
-            if k not in allowed_top and orec.get(k) != r.get(k):
-                bad.append(f"{r['document_id']}: {k} changed")
         og, ng = json.loads(orec["gt_fields"]), json.loads(r["gt_fields"])
+        # an intent override rewrites the legacy provenance: it must match the override exactly
+        want_top, want_gt = {}, {}
+        if (r["document_id"], "intent") in overrides:
+            want_top, want_gt = v10.override_annotation(overrides[(r["document_id"], "intent")])
+        for k in set(orec) | set(r):
+            if k in want_top:
+                if r.get(k) != want_top[k]:
+                    bad.append(f"{r['document_id']}: {k} is {r.get(k)!r}, the intent override says {want_top[k]!r}")
+            elif k not in allowed_top and orec.get(k) != r.get(k):
+                bad.append(f"{r['document_id']}: {k} changed")
+        for k, want in want_gt.items():
+            if ng.get(k) != want:
+                bad.append(f"{r['document_id']}: gt_fields.{k} is {ng.get(k)!r}, the intent override says {want!r}")
         op, np_ = (json.loads(og.get("gt_presence") or "{}"), json.loads(ng.get("gt_presence") or "{}"))
         for k, v in og.items():
             if k == "gt_presence":
@@ -229,7 +242,8 @@ def gate_6(st: Stage) -> tuple[bool, str]:
                 if set(json.loads(v or "{}") if isinstance(v, str) else v or {}) != \
                         set(json.loads(ng[k] or "{}") if isinstance(ng[k], str) else ng[k] or {}):
                     bad.append(f"{r['document_id']}: cuad_clause_labels categories changed")
-            elif v not in (None, "", "[]") and ng[k] != v:
+            elif v not in (None, "", "[]") and ng[k] != v and (r["document_id"], k) not in overrides \
+                    and k not in want_gt:
                 bad.append(f"{r['document_id']}: gt_fields.{k} changed")
         for k, code in op.items():
             if code in COVERED and np_.get(k) != code:
@@ -302,7 +316,7 @@ def gate_9(st: Stage) -> tuple[bool, str]:
         return True, "no llm labels in this build"
     bad = []
     try:
-        ingest.check_calibrated(approvals)
+        ingest.check_calibrated(approvals, operate.load_second_opinions(st.campaign))
     except SystemExit as e:
         bad.append(str(e))
     known = {ingest.configuration(m, a) for a in approvals for m in a.get("models") or []}
