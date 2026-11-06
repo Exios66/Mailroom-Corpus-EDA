@@ -28,6 +28,7 @@ from typing import Any, Callable, Mapping, Sequence
 from .derive import cuad_family as _derive_cuad_family
 from .derive import deterministic_value
 from .registry import class_fields, dojo_snapshot, prompt, prompt_bundle_sha, vocabulary
+from . import sections
 from .verify import STATUSES
 
 HEAD_CHARS = 48_000
@@ -38,26 +39,7 @@ TAIL_CHARS = 16_000
 CUAD_HEAD_CHARS = 360_000
 CUAD_TAIL_CHARS = 40_000
 MERGER_HEAD_CHARS = 24_000
-MERGER_SECTION_CHARS = 6_000
-MERGER_SECTIONS = (
-    ("Effective Time", r"effective\s+time"),
-    ("Governing Law", r"governing\s+law"),
-    ("Conversion of Shares", r"(conversion\s+of\s+(capital\s+)?(stock|shares|securities)|effect\s+on\s+capital\s+stock)"),
-    ("Termination Fee", r"termination\s+fee"),
-    ("Outside Date", r"(outside\s+date|end\s+date)"),
-    ("Brokers", r"(brokers|finders|opinion\s+of\s+financial\s+advisor)"),
-    ("Notices", r"\bnotices\b"),
-)
-_HEADING_LINE = r"(?im)^[^\S\n]*(?:section\s+)?(?:\d+(?:\.\d+)*\.?\s+)?[^\n]{0,20}%s"
 CONSIDERATION_HEAD_CHARS = 6_000
-CONSIDERATION_SECTION_CHARS = 4_000
-CONSIDERATION_SECTIONS = (
-    ("Conversion of Shares", r"(conversion\s+of\s+(capital\s+)?(stock|shares|securities)"
-                             r"|effects?\s+(of\s+the\s+mergers?\s+)?on\s+(the\s+)?(capital\s+stock|company\s+common)"
-                             r"|treatment\s+of\s+(securities|shares))"),
-    ("Merger Consideration", r"(merger\s+consideration|offer\s+price|consideration\s+for\s+the\s+(merger|offer))"),
-    ("Election", r"(election\s+procedures?|cash\s+election|stock\s+election|proration)"),
-)
 #: Tasks whose ``deterministic`` field is asked on every row, so the derivable rows serve
 #: as calibration gold for the rest.
 CALIBRATED_DETERMINISTIC = {"merger_consideration": "merger_consideration"}
@@ -87,56 +69,57 @@ def window(text: str, head: int = HEAD_CHARS, tail: int = TAIL_CHARS) -> tuple[s
             f"the first {head:,} and last {tail:,} characters (the middle is omitted)")
 
 
-def merger_window(text: str) -> tuple[str, str]:
-    """Opening pages plus the first heading-like hit of each section the fields need."""
-    if len(text) <= MERGER_HEAD_CHARS + len(MERGER_SECTIONS) * MERGER_SECTION_CHARS:
+#: The merger tasks that see a located window rather than the whole agreement.
+WINDOWED_MERGER_TASKS = frozenset({"merger_entities", "merger_consideration"})
+#: Tasks sent the whole document instead of their window (``run --full-text``; A/B only).
+FULL_TEXT_TASKS: set[str] = set()
+MERGER_WINDOW_CAP = 120_000
+CONSIDERATION_WINDOW_CAP = 40_000
+
+
+def _located_window(text: str, needs, head: int, cap: int, tail: int) -> tuple[str, str]:
+    """The opening pages, each needed section whole (``sections.locate``) and the last
+    ``tail`` characters, at most ``cap`` characters in all."""
+    if len(text) <= cap:
         return text, "the full document"
-    parts = [text[:MERGER_HEAD_CHARS]]
-    found = []
-    for label, pat in MERGER_SECTIONS:
-        m = None
-        for cand in re.finditer(_HEADING_LINE % pat, text):
-            if cand.start() >= MERGER_HEAD_CHARS:
-                m = cand
-                break
-        if m is None:
-            continue
-        start = max(MERGER_HEAD_CHARS, m.start())
-        parts.append(f"[... section located for {label} ...]\n" + text[start:start + MERGER_SECTION_CHARS])
+    budget = cap - head - tail
+    parts, found = [text[:head]], []
+    for label, excerpt in sections.locate(text, needs):
+        piece = f"[... section located for {label} ...]\n{excerpt}"
+        if budget <= 0:
+            break
+        parts.append(piece[:budget])
+        budget -= len(parts[-1]) + 2
         found.append(label)
-    parts.append("[... signature pages ...]\n" + text[-8_000:])
-    desc = (f"the first {MERGER_HEAD_CHARS:,} characters, the located sections ({', '.join(found) or 'none'})"
-            " and the signature pages")
+    if tail:
+        parts.append("[... signature pages ...]\n" + text[-tail:])
+    desc = (f"the first {head:,} characters, the located sections ({', '.join(found) or 'none'})"
+            + (" and the signature pages" if tail else ""))
     return "\n\n".join(parts), desc
+
+
+def merger_window(text: str) -> tuple[str, str]:
+    """Opening pages, each section the merger fields need (whole, with its definitions) and
+    the signature pages."""
+    if "merger_entities" in FULL_TEXT_TASKS:
+        return text, "the full document"
+    return _located_window(text, sections.MERGER_NEEDS, MERGER_HEAD_CHARS, MERGER_WINDOW_CAP, 8_000)
 
 
 def consideration_window(text: str) -> tuple[str, str]:
-    """Opening pages plus the conversion, merger-consideration and election sections.
-
-    Each section is the first heading-like hit after the opening; when no heading matches,
-    the first plain mention is used. The window stays under 20,000 characters.
-    """
-    budget = CONSIDERATION_HEAD_CHARS + len(CONSIDERATION_SECTIONS) * CONSIDERATION_SECTION_CHARS
-    if len(text) <= budget:
+    """Opening pages plus the conversion, merger-consideration and election sections."""
+    if "merger_consideration" in FULL_TEXT_TASKS:
         return text, "the full document"
-    parts = [text[:CONSIDERATION_HEAD_CHARS]]
-    found, taken = [], []
-    for label, pat in CONSIDERATION_SECTIONS:
-        m = next((c for c in re.finditer(_HEADING_LINE % pat, text) if c.start() >= CONSIDERATION_HEAD_CHARS), None)
-        if m is None:
-            m = next((c for c in re.finditer(pat, text, re.I) if c.start() >= CONSIDERATION_HEAD_CHARS), None)
-        if m is None:
-            continue
-        start = m.start()
-        if any(s <= start < s + CONSIDERATION_SECTION_CHARS for s in taken):
-            found.append(label)  # already inside an earlier excerpt
-            continue
-        taken.append(start)
-        parts.append(f"[... section located for {label} ...]\n" + text[start:start + CONSIDERATION_SECTION_CHARS])
-        found.append(label)
-    desc = (f"the first {CONSIDERATION_HEAD_CHARS:,} characters and the located sections "
-            f"({', '.join(found) or 'none'})")
-    return "\n\n".join(parts), desc
+    return _located_window(text, sections.CONSIDERATION_NEEDS, CONSIDERATION_HEAD_CHARS,
+                           CONSIDERATION_WINDOW_CAP, 0)
+
+
+def window_config(task: str) -> dict[str, Any]:
+    """What shapes a merger task's window, hashed into its prompt sha."""
+    if task in FULL_TEXT_TASKS:
+        return {"window": "full"}
+    cap = MERGER_WINDOW_CAP if task == "merger_entities" else CONSIDERATION_WINDOW_CAP
+    return {"window": {"locator": sections.VERSION, "cap": cap}}
 
 
 cuad_family = _derive_cuad_family
@@ -280,7 +263,7 @@ def build_intent(row: Mapping[str, Any], variant: str) -> Request:
 
 
 def _extraction(row: Mapping[str, Any], task: str, template: str, values: dict[str, Any],
-                text_window: tuple[str, str] | None = None) -> Request:
+                text_window: tuple[str, str] | None = None, extra_config: Mapping[str, Any] | None = None) -> Request:
     """Shared builder for the extraction tasks."""
     doc_id, _ = _ids(row)
     fields = _task_fields(row, task)
@@ -295,7 +278,8 @@ def _extraction(row: Mapping[str, Any], task: str, template: str, values: dict[s
     return Request(task, doc_id, [{"role": "system", "content": system},
                                   {"role": "user", "content": user}],
                    extraction_schema(fields), fields,
-                   prompt_bundle_sha(["extract_rules", template], _task_config(fields)))
+                   prompt_bundle_sha(["extract_rules", template],
+                                     {**_task_config(fields), **(extra_config or {})}))
 
 
 def _task_config(fields: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
@@ -349,14 +333,14 @@ def build_merger_entities(row: Mapping[str, Any]) -> Request:
     """MergerAgreementExtraction v2 entity fields (consideration is its own task)."""
     return _extraction(row, "merger_entities", "merger_entities", {
         "merger_intents": " | ".join(vocabulary("merger_intent")),
-    }, merger_window(str(row["doc_text"])))
+    }, merger_window(str(row["doc_text"])), window_config("merger_entities"))
 
 
 def build_merger_consideration(row: Mapping[str, Any]) -> Request:
     """The merger Type of Consideration label, from a window of the conversion clauses."""
     return _extraction(row, "merger_consideration", "merger_consideration", {
         "consideration_options": " | ".join(vocabulary("merger_consideration")),
-    }, consideration_window(str(row["doc_text"])))
+    }, consideration_window(str(row["doc_text"])), window_config("merger_consideration"))
 
 
 def build_correspondence(row: Mapping[str, Any]) -> Request:

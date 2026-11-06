@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 import re
 import subprocess
 import sys
@@ -693,9 +694,10 @@ def test_consideration_window_keeps_conversion_clause():
     """Consideration window keeps conversion clause."""
     filler = "Lorem ipsum dolor sit amet. " * 4000
     text = ("AGREEMENT AND PLAN OF MERGER\n" + filler + "\nARTICLE II\nEFFECT OF THE MERGER ON CAPITAL STOCK\n"
-            "Each Share shall be converted into the right to receive $10.00 in cash.\n" + filler)
+            "Section 2.1 Conversion of Shares. Each Share issued and outstanding immediately prior to the "
+            "Effective Time shall be converted into the right to receive $10.00 in cash.\n" + filler)
     win, desc = tasks.consideration_window(text)
-    assert len(win) < 20_000 and "converted into the right to receive $10.00" in win
+    assert len(win) <= tasks.CONSIDERATION_WINDOW_CAP and "converted into the right to receive $10.00" in win
     assert "Conversion of Shares" in desc
 
 
@@ -1872,3 +1874,97 @@ def test_paid_run_refuses_without_a_checkpoint_token(tmp_path, monkeypatch):
                        provider="openrouter", reasoning="off", initials="JB", cap_usd=0.01,
                        max_wall_seconds=10, out_dir=tmp_path, require_checkpoint=True,
                        chat=lambda *a, **k: pytest.fail("no call may be sent"))
+
+
+# ---------------------------------------------------------------- merger section locator
+
+FILL = ("The parties further agree to the matters set out in this paragraph. " * 20) + "\n"
+AGREEMENT = (
+    "AGREEMENT AND PLAN OF MERGER\nTABLE OF CONTENTS\nSection 8.2 Termination by Either Party 70\n"
+    "Section 8.6 Termination Fee 71\nSection 9.9 Governing Law 80\n" + FILL
+    + "ARTICLE I DEFINITIONS\nSection 1.1 Definitions.\n"
+    "“Parent Termination Fee” means $35,000,000.\n“Company Permit” has the meaning set forth in Section 4.12.\n"
+    + FILL * 30
+    + "Section 8.2 Termination by Either Party. This Agreement may be terminated if the Merger has not been "
+    "consummated on or before June 30, 2027 (the “Outside Date”).\n" + FILL
+    + "Section 8.6 Termination Fee. If this Agreement is terminated, Parent shall pay the Parent Termination Fee.\n"
+    + FILL
+    + "Section 9.9 Governing Law. This Agreement is governed by the laws of the State of Delaware.\n" + FILL
+    + "EXHIBIT A\nSection 8.6 Termination Fee. EXHIBIT COPY.\n" + FILL)
+
+
+def test_headings_skip_table_of_contents_and_later_exhibits():
+    """TOC entries and exhibit copies of a section number are not the operative section."""
+    from mailroom_eda.labeling import sections
+    fee = [h for h in sections.headings(AGREEMENT) if h.number == "8.6"]
+    assert len(fee) == 1
+    assert AGREEMENT[fee[0].start:].startswith("Section 8.6 Termination Fee. If this Agreement")
+
+
+def test_locate_takes_whole_operative_section_and_its_definition():
+    """The fee amount can live only in the definitions article; it rides with the section."""
+    from mailroom_eda.labeling import sections
+    got = dict(sections.locate(AGREEMENT, sections.MERGER_NEEDS))
+    assert "Parent shall pay the Parent Termination Fee" in got["Termination Fee"]
+    assert "$35,000,000" in got["Termination Fee"] and "EXHIBIT COPY" not in got["Termination Fee"]
+    assert "laws of the State of Delaware" in got["Governing Law"]
+
+
+def test_outside_date_found_by_inline_definition():
+    from mailroom_eda.labeling import sections
+    got = dict(sections.locate(AGREEMENT, sections.MERGER_NEEDS))
+    assert "June 30, 2027" in got["Outside Date"]
+
+
+MERGER_SIGNALS = {
+    "Conversion of Shares": r"converted into the right to receive|shall be converted",
+    "Termination Fee": r"\$\s?[\d,.]+",
+    "Governing Law": r"laws of the (state|commonwealth) of",
+    "Outside Date": r"(january|february|march|april|may|june|july|august|september|october|november|december)"
+                    r"\s+\d{1,2},\s+\d{4}|\d+\)?\s+(days|months)|\d+(st|nd|rd|th)\s+day",
+}
+
+
+def test_merger_locator_finds_every_needed_section():
+    """On the 151 real mergers every needed section is located, and the excerpts carry the
+    values the fields ask for (2026-11-06: the regex window found Conversion in 23)."""
+    import re
+    from mailroom_eda.labeling import sections
+    if not runner.DEFAULT_STAGE.exists():
+        pytest.skip("no local v9.4 stage")
+    mergers = [r for r in runner.load_stage(runner.DEFAULT_STAGE) if r["expected"] == "merger_agreement"]
+    located, signal, misses = Counter(), Counter(), []
+    for r in mergers:
+        t = str(r["doc_text"])
+        assert len(tasks.merger_window(t)[0]) <= 120_000
+        got = dict(sections.locate(t, sections.MERGER_NEEDS))
+        for need in sections.MERGER_NEEDS:
+            if need.label in got:
+                located[need.label] += 1
+                if need.label in MERGER_SIGNALS and re.search(MERGER_SIGNALS[need.label], got[need.label], re.I):
+                    signal[need.label] += 1
+                elif need.label in MERGER_SIGNALS:
+                    misses.append((need.label, r["document_id"]))
+            else:
+                misses.append((need.label, r["document_id"]))
+    print(sorted(Counter(m[0] for m in misses).items()))
+    assert all(located[n.label] >= 140 for n in sections.MERGER_NEEDS), dict(located)
+    assert all(signal[k] >= 130 for k in MERGER_SIGNALS), dict(signal)
+
+
+def test_full_text_flag_sends_the_whole_agreement_and_changes_the_sha(tmp_path, monkeypatch):
+    """`run --full-text` (the A/B arm) sends the whole merger agreement, hashes `window: full`
+    into the prompt sha so its answers are never reused as located ones, and writes to its own
+    directory."""
+    big = AGREEMENT + FILL * 600
+    row = _row("merger_agreement", None, big)
+    located = tasks.build("merger_entities", row, "")
+    assert len(located.messages[1]["content"]) < len(big)
+    monkeypatch.setattr(tasks, "FULL_TEXT_TASKS", {"merger_entities"})
+    full = tasks.build("merger_entities", row, "")
+    assert big in full.messages[1]["content"] and full.prompt_sha256 != located.prompt_sha256
+    assert runner.chunk_name("merger_entities", "pilot", None, full_text=True) == "merger_entities-pilot-fulltext"
+    with pytest.raises(SystemExit, match="full-text applies"):
+        runner.main(["run", "--task", "intent", "--set", "calibration", "--stage", str(tmp_path),
+                     "--provider", "openrouter", "--model", "deepseek/deepseek-v4.1-flash", "--dry-run",
+                     "--full-text"])

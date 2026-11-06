@@ -206,7 +206,7 @@ The v10 build refuses labels whose configuration has no passing calibration or p
   is a conservative equivalent of the GPU-hour cost (at least 1M prompt and 0.25M output
   tokens per GPU-hour), so the cap still bounds spend; `costs.md` therefore shows a
   ceiling for it, not an estimate.
-- Spend: the chunk caps add up to $29.76 and the projection is about $20.36 (`costs.md`).
+- Spend: the chunk caps add up to $29.76 and the projection is about $20.42 (`costs.md`).
 
 ## Sign-off log
 

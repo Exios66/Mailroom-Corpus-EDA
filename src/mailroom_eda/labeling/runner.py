@@ -230,13 +230,15 @@ def _probe_hint(problem: str) -> str:
             f"operative sentence that answers this YES, or drop {name} if the document has none.")
 
 
-def chunk_name(task: str, set_name: str, spec: str | None, reasoning: str = "off") -> str:
+def chunk_name(task: str, set_name: str, spec: str | None, reasoning: str = "off", *,
+               full_text: bool = False) -> str:
     """Directory name for an ad-hoc ``run`` (campaign chunks use ``operate.chunk_dir``)."""
     base = f"{task}-{set_name}"
     if spec:
         i, n = spec.split("/")
         base += f"-{i}of{n}"
-    return base if reasoning == "off" else f"{base}-reasoning-{reasoning}"
+    base = base if reasoning == "off" else f"{base}-reasoning-{reasoning}"
+    return f"{base}-fulltext" if full_text else base
 
 
 def _done(calls_path: Path, reasoning: str | None = None) -> set[tuple[str, str, str, str]]:
@@ -884,6 +886,9 @@ def _parser() -> argparse.ArgumentParser:
         if name in ("run", "review"):
             p.add_argument("--no-checkpoint", action="store_true",
                            help="do not upload output to the private HF staging repo")
+            p.add_argument("--full-text", action="store_true",
+                           help="merger tasks: send the whole agreement instead of the located window "
+                                "(the located-vs-full A/B only; output goes to a -fulltext directory)")
     from . import operate  # noqa: PLC0415
 
     operate.add_commands(sub)
@@ -895,6 +900,11 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if getattr(args, "operate", None):
         return args.operate(args)
+    full_text = getattr(args, "full_text", False)
+    if full_text:
+        if args.task not in tasks.WINDOWED_MERGER_TASKS:
+            raise SystemExit(f"--full-text applies to {sorted(tasks.WINDOWED_MERGER_TASKS)} only")
+        tasks.FULL_TEXT_TASKS.add(args.task)
     rows = load_stage(args.stage)
     if args.cmd == "costs":
         from .registry import CAMPAIGNS_DIR  # noqa: PLC0415
@@ -918,11 +928,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(estimate(picked, args.task, args.models.split(","), args.set_name), indent=1))
         return 0
     if args.cmd == "review":
-        out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, args.reasoning)
+        out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, args.reasoning, full_text=full_text)
         print(json.dumps(review(rows, args.task, out_dir, reasoning=args.reasoning), indent=1))
         return _checkpoint(args, f"review {out_dir.name}", 0)
     models = [args.model] + ([args.second_model] if args.second_model else [])
-    out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, args.reasoning)
+    out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, args.reasoning, full_text=full_text)
     rc = execute(rows, picked, task=args.task, set_name=args.set_name, chunk_spec=args.chunk, models=models,
                  provider=args.provider, reasoning=args.reasoning, initials=args.initials,
                  cap_usd=args.api_cost_cap_usd, max_wall_seconds=args.max_wall_seconds, out_dir=out_dir,
