@@ -92,13 +92,13 @@ chunks:
   - {id: "5a", task: contract_entities, set: calibration, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 0.50, gate: {kind: field_accuracy, accuracy: 0.85}, requires: "llm-dojo-scoring 0.28.0 (G1)"}
   - {id: "5b", needs: ["5a"], task: contract_entities, set: pilot, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
-     reasoning: "off", cap_usd: 0.70, gate: {kind: human_verdicts, precision: 0.90}}
+     reasoning: "off", cap_usd: 0.90, gate: {kind: human_verdicts, precision: 0.90}}
   - {id: "5c", needs: ["5b"], task: contract_entities, set: remainder, chunk: "1/3", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
-     reasoning: "off", cap_usd: 2.20, gate: {kind: agreement}}
+     reasoning: "off", cap_usd: 2.85, gate: {kind: agreement}}
   - {id: "5d", needs: ["5b"], task: contract_entities, set: remainder, chunk: "2/3", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
-     reasoning: "off", cap_usd: 2.45, gate: {kind: agreement}}
+     reasoning: "off", cap_usd: 3.05, gate: {kind: agreement}}
   - {id: "5e", needs: ["5b"], task: contract_entities, set: remainder, chunk: "3/3", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
-     reasoning: "off", cap_usd: 2.35, gate: {kind: agreement}}
+     reasoning: "off", cap_usd: 2.90, gate: {kind: agreement}}
   - {id: "6c0", task: merger_consideration, set: calibration, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 0.35, gate: {kind: consideration_accuracy, accuracy: 0.95},
      note: "the 95 mergers with the expert MAUD answer; both models must reach 0.95"}

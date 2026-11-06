@@ -80,15 +80,12 @@ def test_fields_match_pinned_dojo_types():
     for cls, types in dft.items():
         fields = reg[cls]["fields"]
         for name, spec in fields.items():
-            if spec.get("dojo") == "v2" or spec.get("subclass_entity"):
-                assert name not in types or spec.get("dojo") != "v2", (cls, name)
+            if spec.get("subclass_entity"):
                 continue
-            assert name in types, f"{cls}.{name} is neither a Dojo field nor marked dojo: v2"
+            assert "dojo" not in spec and "retype" not in spec, (cls, name)  # G1 shipped in 0.28.0
+            assert name in types, f"{cls}.{name} is not a Dojo field"
             assert spec["type"] == types[name], (cls, name, spec["type"], types[name])
-        missing = set(types) - set(fields)
-        # The parse-compat merger fields on the contract map are dropped by G1.
-        expected_missing = {"merger_consideration", "maud_clauses"} if cls == "contract" else set()
-        assert missing == expected_missing, (cls, missing)
+        assert set(types) == {n for n, s in fields.items() if not s.get("subclass_entity")}, cls
 
 
 def test_fields_have_valid_policy_and_source():
@@ -440,12 +437,12 @@ def test_run_flags_need_human_initials_cap_and_wall():
             spend.require_run_flags(**bad)
 
 
-def test_key_headroom_keeps_reserve():
-    """Key headroom keeps reserve."""
+def test_key_headroom_is_the_credit_left():
+    """Key headroom is the credit left (no reserve); a cap above it is refused."""
     assert spend.check_key_headroom({"limit_remaining": None}, 50) == float("inf")
-    assert spend.check_key_headroom({"limit_remaining": 10.0}, 5.0) == pytest.approx(7.0)
+    assert spend.check_key_headroom({"limit_remaining": 10.0}, 5.0) == pytest.approx(10.0)
     with pytest.raises(spend.SpendError):
-        spend.check_key_headroom({"limit_remaining": 4.0}, 2.0)
+        spend.check_key_headroom({"limit_remaining": 4.0}, 5.0)
 
 
 def test_budget_stops_before_the_cap():
@@ -835,7 +832,7 @@ def test_campaign_needs_order_and_output_dirs():
             assert d not in seen_dirs, d
             seen_dirs.add(d)
     # $30 plus the 904-email intent relabel the user added on 2026-11-06 (caps $1.95)
-    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 31.5
+    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 33.5  # +$1.85 of 5b-5e cap for whole-contract reading (approved 2026-11-06)
 
 
 def test_every_cap_covers_its_projection_with_headroom():
@@ -988,6 +985,7 @@ def test_field_accuracy_gate_tolerates_fields_with_no_scored_values(tmp_path, ro
 def test_chunk_refuses_external_requires_without_ack(tmp_path, monkeypatch):
     """Chunk refuses external requires without ack."""
     monkeypatch.setattr(operate, "load_approvals", lambda name: [])
+    monkeypatch.setattr(operate, "fields_registry", lambda: {"dojo_pin": {"version": "0.27.2"}})  # before G1
     import argparse
 
     args = argparse.Namespace(campaign="v10", id="5a", arm=None, dry_run=False, ack_requires=False,
@@ -2359,8 +2357,9 @@ def test_modal_check_lists_the_served_model():
 
 # ---------------------------------------------------------------- sweep
 
-def test_sweep_plan_stops_at_an_unapproved_predecessor_or_requires():
+def test_sweep_plan_stops_at_an_unapproved_predecessor_or_requires(monkeypatch):
     """The plan follows campaign order, skips approved chunks and never runs past a missing approval."""
+    monkeypatch.setattr(operate, "fields_registry", lambda: {"dojo_pin": {"version": "0.27.2"}})  # before G1
     plan, why = operate.sweep_plan("v10", [], "9e")
     assert {str(e["id"]) for e, _ in plan} == {"1"} and len(plan) == 7 and "1h" in why and "needs chunk 1" in why
     approved = [{"chunk": c} for c in ("1", "1h")]
@@ -2972,10 +2971,10 @@ def test_sweep_plan_can_focus_on_tasks_and_a_blocked_task_does_not_stop_the_othe
         operate.sweep_plan("v10", [], "9e", tasks={"nonsense"})
 
 
-def test_sweep_runs_the_chunks_credit_likely_covers_and_never_spends_the_reserve(tmp_path, monkeypatch, capsys):
+def test_sweep_runs_the_chunks_credit_likely_covers(tmp_path, monkeypatch, capsys):
     """Chunks are picked by projected cost; each runs capped at the live credit left, the rest wait."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "test")
-    remaining = iter([4.80, 4.80, 4.20, 3.50])  # projection, then before 7b, 7c, 7d ($3 reserve)
+    remaining = iter([1.80, 1.80, 1.20, 0.50])  # projection, then before 7b, 7c, 7d
     monkeypatch.setattr(providers, "key_status", lambda backend: {"limit_remaining": next(remaining)})
     monkeypatch.setattr(operate, "load_approvals", lambda name: [{"chunk": "7a"}])
     monkeypatch.setattr(runner, "load_stage", lambda stage: [])
@@ -2988,6 +2987,31 @@ def test_sweep_runs_the_chunks_credit_likely_covers_and_never_spends_the_reserve
     assert ran == [("7b", None), ("7c", None), ("7d", 0.50)]  # 3 x $0.60 projected fit $1.80
     out = capsys.readouterr().out
     assert "deferred" in out and "7e" in out
-    monkeypatch.setattr(providers, "key_status", lambda backend: {"limit_remaining": 3.50})
+    monkeypatch.setattr(providers, "key_status", lambda backend: {"limit_remaining": 0.50})
     with pytest.raises(SystemExit, match="covers no chunk"):
         operate.cmd_sweep(_sweep_args(tmp_path), confirm=lambda q: "yes", run_chunk=lambda ns: 0)
+def test_contract_entities_reads_long_contracts_in_full(rows):
+    """Contract entities see up to the CUAD window, so a 100k-character middle is read."""
+    filler = "x" * 50_000
+    row = {**rows[0], "doc_text": rows[0]["doc_text"] + filler + " PAYMENT-MIDDLE-MARKER " + filler}
+    assert "PAYMENT-MIDDLE-MARKER" in tasks.build("contract_entities", row, set_name="pilot").messages[1]["content"]
+    huge = {**rows[0], "doc_text": rows[0]["doc_text"] + "x" * 500_000}
+    assert "omitted" in tasks.build("contract_entities", huge, set_name="pilot").messages[1]["content"]
+
+
+def test_a_contract_read_in_part_records_no_absence(rows):
+    """Both models finding nothing in a windowed contract leaves the field pending, not absent."""
+    models = ["z-ai/glm-5.3-flashx-legal", "deepseek/deepseek-v4.1-flash"]
+    short = rows[0]
+    long_ = {**rows[0], "document_id": "c2", "filename": "c2.txt", "doc_text": rows[0]["doc_text"] + "x" * 500_000}
+    calls = []
+    for r in (short, long_):
+        fields = {n: {"value": None, "status": "not_found", "evidence": ""}
+                  for n in tasks._task_fields(r, "contract_entities")}
+        calls += [{"document_id": r["document_id"], "model": m, "variant": "", "provider": "openrouter", "reasoning": "off", "prompt_sha256": "p", "labeled_utc": "2026-11-06T00:00:00Z", "response": {"fields": fields}}
+                  for m in models]
+    field_rows, _ = runner.field_decisions([short, long_], calls, "contract_entities", models)
+    absent_ok = {n for n, s in tasks._task_fields(short, "contract_entities").items() if s["absence"] == "absent_ok"}
+    by = {(f["document_id"], f["field"]): f["decision"] for f in field_rows}
+    assert {by[("c1", n)] for n in absent_ok} == {"absent"}
+    assert {by[("c2", n)] for n in absent_ok} == {"unlabeled"}

@@ -633,7 +633,10 @@ def field_decisions(rows: Sequence[Mapping[str, Any]], calls: Sequence[Mapping[s
             b = results[1] if len(results) > 1 else None
             if a is None:
                 a, b = b, None
-            decision, value, reason = verify.decide(a, b, t, spec["absence"])
+            absence = spec["absence"]
+            if absence == "absent_ok" and tasks.reads_in_part(r, task):
+                absence = "evidence_only"  # the unread middle may hold it: no absence on silence
+            decision, value, reason = verify.decide(a, b, t, absence)
             counts[decision] += 1
             row = {"document_id": doc_id, "doc_class": r["expected"], "subclass": r.get("expected_subclass"),
                    "field": name, "type": t, "decision": decision, "reason": reason,

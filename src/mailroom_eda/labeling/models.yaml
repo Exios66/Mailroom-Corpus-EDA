@@ -16,7 +16,7 @@
 # prompt / completion: USD per 1M tokens used for estimates and the spend gate. They are
 # the most expensive pinned endpoint's price, so the gate's worst case is never low.
 checked: "2026-11-06"
-key_reserve_usd: 3.0
+key_reserve_usd: 0.0  # credit held back from every run; none, by the owner's call (2026-11-06)
 models:
   z-ai/glm-5.3-flashx-legal:
     provider: openrouter

@@ -645,7 +645,7 @@
     },
     {
      "description": "Territory the agent covers",
-     "informs": null,
+     "informs": "territory",
      "name": "territory"
     }
    ],
@@ -797,7 +797,7 @@
    "family_fields": [
     {
      "description": "Distribution territory",
-     "informs": null,
+     "informs": "territory",
      "name": "territory"
     },
     {
@@ -867,7 +867,7 @@
    "family_fields": [
     {
      "description": "Franchised territory",
-     "informs": null,
+     "informs": "territory",
      "name": "territory"
     },
     {
@@ -1026,7 +1026,7 @@
     },
     {
      "description": "Licensed territory",
-     "informs": null,
+     "informs": "territory",
      "name": "territory"
     },
     {
@@ -1283,7 +1283,7 @@
    "family_fields": [
     {
      "description": "Reseller territory",
-     "informs": null,
+     "informs": "territory",
      "name": "territory"
     },
     {
@@ -1515,17 +1515,23 @@
  ],
  "default_field_types": {
   "contract": {
+   "agreement_date": "date",
    "contract_value": "money",
    "cuad_clauses": "entity_list:free_text",
-   "cuad_family": "name",
+   "cuad_family": "label",
+   "dispute_forum": "name",
    "document_name": "name",
    "effective_date": "date",
+   "expiration_date": "date",
    "governing_law": "name",
-   "maud_clauses": "entity_list:free_text",
-   "merger_consideration": "name",
    "parties": "entity_list:name",
+   "party_roles": "entity_list:free_text",
+   "payment_terms": "free_text",
    "renewal_terms": "free_text",
-   "term_length": "free_text"
+   "signatories": "entity_list:name",
+   "term_length": "free_text",
+   "termination_notice_period": "free_text",
+   "territory": "free_text"
   },
   "corporate_record": {
    "effective_date": "date",
@@ -1542,22 +1548,22 @@
    "action_items": "entity_list",
    "additional_recipients": "entity_list",
    "communication_date": "date",
-   "communication_type": "name",
+   "communication_type": "label",
    "demand_amount": "money",
    "intent": "label",
    "keywords": "entity_list:name",
    "recipient": "name",
    "sender": "name",
    "subject_matter": "free_text",
-   "urgency": "name"
+   "urgency": "label"
   },
   "insurance_claim": {
    "adjuster": "name",
    "claim_checklist": "entity_list:free_text",
    "claim_number": "id",
-   "claim_type": "name",
+   "claim_type": "label",
    "claimed_amount": "money",
-   "coverage_determination": "name",
+   "coverage_determination": "label",
    "damages_description": "free_text",
    "date_filed": "date",
    "date_of_loss": "date",
@@ -1571,20 +1577,31 @@
    "supporting_documents": "entity_list"
   },
   "merger_agreement": {
+   "acquirer": "name",
    "document_name": "name",
    "effective_date": "date",
    "effective_time": "free_text",
+   "exchange_ratio": "free_text",
+   "financial_advisors": "entity_list:name",
    "governing_law": "name",
-   "intent": "name",
+   "intent": "label",
    "keywords": "entity_list:name",
+   "legal_counsel": "entity_list:name",
    "maud_clauses": "entity_list:free_text",
-   "merger_consideration": "name",
+   "merger_consideration": "label",
+   "merger_sub": "entity_list:name",
+   "outside_date": "date",
+   "parent_termination_fee": "money",
    "parties": "entity_list:name",
-   "subject_matter": "free_text"
+   "per_share_cash_amount": "money",
+   "signatories": "entity_list:name",
+   "subject_matter": "free_text",
+   "target": "name",
+   "target_termination_fee": "money"
   }
  },
- "dojo_commit": "1cd4aba76d82eea20c6e8dfcc0d760881bf84924",
- "dojo_version": "0.27.2",
+ "dojo_commit": "cab976807854129d1cfea4897dbff5b6e337a62b",
+ "dojo_version": "0.28.0",
  "maud_consideration_types": [
   "all_cash",
   "all_stock",
