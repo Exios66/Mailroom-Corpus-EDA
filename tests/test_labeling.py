@@ -1984,3 +1984,137 @@ def test_one_model_may_run_a_calibration_set_but_not_a_labeling_set():
                        models=["deepseek/deepseek-v4.1-flash"], provider="openrouter", reasoning="off",
                        initials=None, cap_usd=None, max_wall_seconds=None, out_dir=Path("/nonexistent"),
                        dry_run=True)
+
+
+# ---------------------------------------------------------------- preflight: HF write, restore, requires, Modal
+
+class _WhoamiHub(_FakeHub):
+    """A fake hub whose token is described by ``whoami``."""
+
+    def __init__(self, role, *, name="Lucius-Morningstar", orgs=(), scoped=(), private=True, exists=True):
+        super().__init__(private=private)
+        self.info = {"name": name, "orgs": list(orgs),
+                     "auth": {"accessToken": {"role": role, "fineGrained": {"scoped": list(scoped)}}}}
+        self.exists = exists
+
+    def whoami(self):
+        return self.info
+
+    def repo_info(self, repo_id, repo_type):
+        if not self.exists:
+            class RepositoryNotFoundError(Exception):
+                pass
+            raise RepositoryNotFoundError(repo_id)
+        return super().repo_info(repo_id, repo_type)
+
+
+def test_write_access_reads_the_token_role_and_namespace():
+    """Only a token that can write the staging namespace passes; an existing public repo fails."""
+    from mailroom_eda.labeling import checkpoint
+    assert checkpoint.write_access(api=_WhoamiHub("write"))[0]
+    assert not checkpoint.write_access(api=_WhoamiHub("read"))[0]
+    assert not checkpoint.write_access(api=_WhoamiHub("write", name="someone-else"))[0]
+    assert checkpoint.write_access(api=_WhoamiHub("write", name="x",
+                                                  orgs=[{"name": "Lucius-Morningstar", "roleInOrg": "write"}]))[0]
+    grant = [{"entity": {"type": "user", "name": "Lucius-Morningstar"}, "permissions": ["repo.write"]}]
+    assert checkpoint.write_access(api=_WhoamiHub("fineGrained", scoped=grant))[0]
+    assert not checkpoint.write_access(api=_WhoamiHub(
+        "fineGrained", scoped=[{"entity": {"type": "user", "name": "Lucius-Morningstar"},
+                                "permissions": ["repo.content.read"]}]))[0]
+    ok, why = checkpoint.write_access(api=_WhoamiHub("write", exists=False))
+    assert ok and "created private" in why
+    ok, why = checkpoint.write_access(api=_WhoamiHub("write", private=False))
+    assert not ok and "public" in why
+
+
+def test_paid_chunk_refuses_without_checkpoint_write_access(tmp_path, monkeypatch):
+    """A paid chunk stops before any call when its answers could not be staged."""
+    import argparse
+    from mailroom_eda.labeling import checkpoint
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [])
+    monkeypatch.setattr(checkpoint, "write_access", lambda: (False, "token role is read"))
+    args = argparse.Namespace(campaign="v10", id="1", arm=1, dry_run=False, ack_requires=False,
+                              provider="modal", model_map=[], stage=tmp_path, initials="JB",
+                              cap_usd=None, out=tmp_path, workers=1, no_checkpoint=False)
+    with pytest.raises(SystemExit, match="checkpoint not writable"):
+        operate.cmd_chunk(args)
+
+
+def test_auto_restore_fills_missing_files_and_respects_opt_out(tmp_path, monkeypatch):
+    """Commands parsed with --no-restore available pull missing staged files; opting out or no flag skips."""
+    import argparse
+    from mailroom_eda.labeling import checkpoint
+    _labels_tree(tmp_path / "labels")
+    hub = _FakeHub()
+    checkpoint.checkpoint(tmp_path / "labels", None, "x", api=hub)
+
+    def download(api, repo_id, filename, local_path):
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(hub.files[filename])
+        return local_path
+
+    monkeypatch.setattr(checkpoint.hf_interface, "download_file", download)
+    fresh = tmp_path / "fresh"
+    (fresh / "1.3_cuad-calibration").mkdir(parents=True)
+    (fresh / "1.3_cuad-calibration" / "documents.csv").write_text("local\n")
+    assert operate.auto_restore(argparse.Namespace(out=fresh), api=hub) == []  # hand-built: no flag, no restore
+    assert operate.auto_restore(argparse.Namespace(out=fresh, no_restore=True), api=hub) == []
+    wrote = operate.auto_restore(argparse.Namespace(out=fresh, no_restore=False), api=hub)
+    assert fresh / "1.3_cuad-calibration" / "calls.jsonl" in wrote
+    assert (fresh / "1.3_cuad-calibration" / "documents.csv").read_text() == "local\n"
+
+    class Broken(_FakeHub):
+        def list_repo_tree(self, **kw):
+            raise RuntimeError("offline")
+
+    assert operate.auto_restore(argparse.Namespace(out=fresh, no_restore=False), api=Broken()) == []
+    monkeypatch.setattr(checkpoint, "token_ready", lambda: False)
+    assert operate.auto_restore(argparse.Namespace(out=fresh, no_restore=False)) == []
+
+
+def test_ping_checkpoints_its_log(tmp_path, monkeypatch):
+    """A ping's log is staged right after it is written, so another machine sees the verified routes."""
+    import argparse
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-not-real")
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens):
+        return providers.Completion("{}", {"ok": True, "word": "mailroom"}, model, "P", 20, 8, 0, 0.00001,
+                                    "stop", True)
+    hub = _FakeHub()
+    args = argparse.Namespace(campaign="v10", initials="JB", cap_usd=0.05, out=tmp_path, chunks=["3"],
+                              no_checkpoint=False, checkpoint_api=hub)
+    assert operate.cmd_ping(args, chat=chat, key_status=lambda b: {"limit_remaining": None}) == 0
+    assert "labels/ping.jsonl" in hub.files and hub.commits == ["checkpoint: ping by JB"]
+
+
+def test_requires_is_met_by_the_dojo_pin(monkeypatch):
+    """llm-dojo-scoring X.Y.Z is met once fields.yaml pins at least that Dojo version."""
+    import mailroom_eda.labeling.operate as op
+    monkeypatch.setattr(op, "fields_registry", lambda: {"dojo_pin": {"version": "0.27.2"}})
+    assert not op.requires_met("llm-dojo-scoring 0.28.0 (G1)")[0]
+    assert op.requires_met(None)[0]
+    assert not op.requires_met("some other release")[0]
+    monkeypatch.setattr(op, "fields_registry", lambda: {"dojo_pin": {"version": "0.28.0"}})
+    assert op.requires_met("llm-dojo-scoring 0.28.0 (G1)")[0]
+    monkeypatch.setattr(op, "fields_registry", lambda: {"dojo_pin": {"version": "0.30.1"}})
+    assert op.requires_met("llm-dojo-scoring 0.28.0 (G1)")[0]
+    lines = op.next_chunks("v10", [{"chunk": c} for c in ("1", "2a", "2b", "2c", "3", "4")])
+    assert not any("external" in line for line in lines)
+
+
+def test_modal_check_lists_the_served_model():
+    """The Modal check needs both env vars, an app URL, and the models.yaml model on /v1/models."""
+    want = operate.modal_models()
+    env = {"VLLM_BASE_URL": "https://ws--vllm-serve.modal.run", "VLLM_API_KEY": "test-token-not-real"}
+    seen = {}
+
+    def fetch(url, headers):
+        seen.update(url=url, headers=headers)
+        return {"data": [{"id": m} for m in want]}
+
+    ok, msg = operate.modal_check(env, fetch=fetch)
+    assert ok and seen["url"].endswith(".modal.run/v1/models") and "test-token-not-real" not in msg
+    ok, msg = operate.modal_check({"VLLM_BASE_URL": env["VLLM_BASE_URL"]}, fetch=fetch)
+    assert not ok and "MODAL_VLLM_API_TOKEN" in msg
+    assert not operate.modal_check(env, fetch=lambda url, headers: {"data": [{"id": "other"}]})[0]
+    assert not operate.modal_check({**env, "VLLM_BASE_URL": "https://example.com"}, fetch=fetch)[0]

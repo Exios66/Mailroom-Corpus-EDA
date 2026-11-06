@@ -953,7 +953,8 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
             initials: str | None, cap_usd: float | None, max_wall_seconds: float | None, out_dir: Path,
             dry_run: bool = False, workers: int = 4, chunk_id: str | None = None,
             chat=providers.chat, key_status=providers.key_status,
-            reuse_from: Sequence[Path] | None = None, require_checkpoint: bool = False) -> int:
+            reuse_from: Sequence[Path] | None = None, require_checkpoint: bool = False,
+            ack_requires: str | None = None) -> int:
     """Validate, project, gate the spend, run and review one chunk. Returns an exit code
     (0 done, 2 stopped at the cap or wall, 3 finished with failed calls to re-run).
 
@@ -993,7 +994,8 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
         "chunk": chunk_id, "task": task, "set": set_name, "slice": chunk_spec, "models": list(models),
         "provider": provider, "reasoning": reasoning, "initials": initials, "api_cost_cap_usd": cap_usd,
         "max_wall_seconds": max_wall_seconds, "workers": workers, "documents": len(picked),
-        "projection": proj, "started_utc": _now()})
+        "projection": proj, **({"ack_requires": ack_requires} if ack_requires else {}),
+        "started_utc": _now()})
     result = run_chunk(picked, task=task, models=models, backend=backend, reasoning=reasoning,
                        budget=budget, out_dir=out_dir, vocab=cuad_vocab(rows) if task == "cuad" else (),
                        chat=chat, workers=workers, progress=lambda m: print(m, file=sys.stderr),

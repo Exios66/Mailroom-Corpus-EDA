@@ -21,8 +21,10 @@ import hashlib
 import json
 import os
 import random
+import re
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
@@ -101,6 +103,28 @@ def auto_checkpoint(args: argparse.Namespace, why: str, rc: int = 0, *, api: Any
         return rc or 4
     print(f"checkpointed {res['files']} files to {res['repo']} (verified)", file=sys.stderr)
     return rc
+
+
+def auto_restore(args: argparse.Namespace, *, api: Any = None) -> list[Path]:
+    """Pull staged files missing from ``args.out`` before a command reads it (never overwrites).
+
+    Runs only when the command was parsed with ``--no-restore`` available and not given
+    (a hand-built ``Namespace`` without the attribute skips it). No token, or a staging
+    repo that does not exist yet, prints one line and carries on.
+    """
+    if getattr(args, "no_restore", True):
+        return []
+    if api is None and not checkpoint.token_ready():
+        print("restore skipped: no HF token", file=sys.stderr)
+        return []
+    try:
+        wrote = checkpoint.restore(Path(args.out), api=api)
+    except Exception as exc:  # noqa: BLE001 - restore is a convenience; the command still runs
+        print(f"restore skipped: {type(exc).__name__}: {str(exc)[:160]}", file=sys.stderr)
+        return []
+    if wrote:
+        print(f"restored {len(wrote)} missing files from {checkpoint.STAGING_REPO}", file=sys.stderr)
+    return wrote
 
 
 def cmd_checkpoint(args: argparse.Namespace) -> int:
@@ -196,6 +220,31 @@ def provider_models(models: Sequence[str], provider: str, model_map: Sequence[st
     return out
 
 
+REQUIRES_RE = re.compile(r"^\s*llm-dojo-scoring\s+(\d+(?:\.\d+)*)\b")
+
+
+def _version(text: str) -> tuple[int, ...]:
+    """``"0.28.0"`` -> ``(0, 28, 0)``."""
+    return tuple(int(x) for x in text.split("."))
+
+
+def requires_met(requires: str | None) -> tuple[bool, str]:
+    """Whether a chunk's external ``requires:`` has landed.
+
+    ``"llm-dojo-scoring X.Y.Z ..."`` is met once ``fields.yaml`` ``dojo_pin.version`` is at
+    least X.Y.Z (the Dojo snapshot test ties that pin to the vendored scorer). Anything
+    else cannot be checked here and stays unmet until ``--ack-requires``.
+    """
+    if not requires:
+        return True, "no external requirement"
+    m = REQUIRES_RE.match(str(requires))
+    if not m:
+        return False, f"{requires!r} is not machine-checkable"
+    have = str(fields_registry()["dojo_pin"]["version"])
+    ok = _version(have) >= _version(m[1])
+    return ok, f"dojo_pin is llm-dojo-scoring {have}; {requires!r} {'met' if ok else 'not met'}"
+
+
 def next_chunks(name: str, approvals: Sequence[Mapping[str, Any]]) -> list[str]:
     """Lines naming the next runnable chunk and any chunk held by an external ``requires``."""
     done = {str(a["chunk"]) for a in approvals}
@@ -204,7 +253,7 @@ def next_chunks(name: str, approvals: Sequence[Mapping[str, Any]]) -> list[str]:
         cid = str(c["id"])
         if cid in done or not all(str(n) in done for n in c.get("needs") or []):
             continue
-        if c.get("requires"):
+        if c.get("requires") and not requires_met(c["requires"])[0]:
             if cid not in held:
                 held.append(cid)
             continue
@@ -252,13 +301,17 @@ def ping_problems(log: Sequence[Mapping[str, Any]], routes: Sequence[tuple[str, 
 def cmd_chunk(args: argparse.Namespace) -> int:
     """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
+    auto_restore(args)
     models, reasoning = resolve(args.campaign, entry)
     for need in entry.get("needs") or []:
         if not any(str(a["chunk"]) == str(need) for a in load_approvals(args.campaign)):
             raise SystemExit(f"chunk {entry['id']} starts after chunk {need} is approved")
-    if entry.get("requires") and not args.dry_run and not args.ack_requires:
-        raise SystemExit(f"chunk {entry['id']} requires {entry['requires']}; once that has landed, "
-                         f"re-run with --ack-requires")
+    met, why = requires_met(entry.get("requires"))
+    if not met and not args.dry_run:
+        if not args.ack_requires:
+            raise SystemExit(f"chunk {entry['id']} requires {entry['requires']} ({why}); bump the Dojo pin "
+                             f"once it has landed, or re-run with --ack-requires")
+        print(f"WARNING: --ack-requires overrides: {why}", file=sys.stderr)
     if args.provider == "openrouter" and not args.dry_run:
         log = args.out / "ping.jsonl"
         probs = ping_problems(export.read_journal(log) if log.exists() else [],
@@ -266,6 +319,11 @@ def cmd_chunk(args: argparse.Namespace) -> int:
         if probs:
             raise SystemExit("route not verified; run `labeling ping --initials XX` first:\n  "
                              + "\n  ".join(probs))
+    if not args.dry_run and not getattr(args, "no_checkpoint", False):
+        ok, why = checkpoint.write_access()
+        if not ok:
+            raise SystemExit(f"checkpoint not writable ({why}); paid answers must survive a lost checkout. "
+                             "Fix the token, or pass --no-checkpoint")
     if args.provider != "openrouter":
         models = provider_models(models, args.provider, args.model_map)
     rows = runner.load_stage(args.stage)
@@ -278,7 +336,8 @@ def cmd_chunk(args: argparse.Namespace) -> int:
         max_wall_seconds=float(entry.get("max_wall_seconds") or camp["max_wall_seconds"]),
         out_dir=chunk_dir(args.out, entry, arm), dry_run=args.dry_run, workers=args.workers,
         chunk_id=f"{entry['id']}{f'.{arm}' if arm else ''}",
-        require_checkpoint=not getattr(args, "no_checkpoint", False))
+        require_checkpoint=not getattr(args, "no_checkpoint", False),
+        **({"ack_requires": why} if not met and args.ack_requires and not args.dry_run else {}))
     return rc if args.dry_run else auto_checkpoint(args, f"chunk {entry['id']}{f'.{arm}' if arm else ''} run", rc)
 
 
@@ -531,6 +590,7 @@ def unreasoned_providers(calls: Sequence[Mapping[str, Any]], reasoning: str) -> 
 def cmd_gate(args: argparse.Namespace) -> int:
     """Score a chunk's gate; with --approve, record a pass in approved.yaml."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
+    auto_restore(args)
     res = gate_result(args.campaign, entry, arm, args.out, args.stage, signed_off=args.signed_off)
     if res["provider"] != args.provider:
         raise SystemExit(f"--provider {args.provider}, but chunk {entry['id']} ran on {res['provider']} "
@@ -568,6 +628,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     """One line per chunk arm: calls answered, spend, gate, approval."""
+    auto_restore(args)
     camp = campaign(args.campaign)
     approved = {str(a["chunk"]): a for a in load_approvals(args.campaign)}
     seen: Counter = Counter()
@@ -699,6 +760,7 @@ def _stage_check(stage: Path, name: str) -> tuple[bool, str]:
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Run every readiness check and print PASS/FAIL lines. Makes no paid call."""
     results: list[tuple[str, bool, str]] = []
+    auto_restore(args)
 
     def check(name: str, fn: Callable[[], tuple[bool, str]]) -> None:
         """Run one doctor check and record its result."""
@@ -754,6 +816,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     funding: list[float | None] = []
     check("OpenRouter key", key)
+    check("HF checkpoint write access", checkpoint.write_access)
+    if os.environ.get("VLLM_BASE_URL") or getattr(args, "modal", False):
+        check("Modal vLLM endpoint", modal_check)
     approvals = load_approvals(args.campaign)
     if funding:
         check("funding", lambda: funding_status(
@@ -766,6 +831,36 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     for line in next_chunks(args.campaign, approvals):
         print(line)
     return 0 if all(ok for _, ok, _ in results) else 1
+
+
+def modal_models() -> list[str]:
+    """The models.yaml entries served by the sandbox's Modal vLLM app."""
+    return sorted(m for m, s in models_registry()["models"].items() if s.get("provider") == "modal")
+
+
+def modal_check(env: Mapping[str, str] | None = None,
+                fetch: Callable[..., Any] = _get_json) -> tuple[bool, str]:
+    """``VLLM_BASE_URL``/``VLLM_API_KEY`` are set and a free ``GET /v1/models`` lists the Modal model.
+
+    ``VLLM_API_KEY`` is the value the sandbox deploys as ``MODAL_VLLM_API_TOKEN``; the key
+    is sent but never printed. Generates nothing, so it costs only the endpoint's idle time.
+    """
+    env = os.environ if env is None else env
+    missing = [n for n in ("VLLM_BASE_URL", "VLLM_API_KEY") if not env.get(n)]
+    if missing:
+        return False, (f"{' and '.join(missing)} not set (VLLM_API_KEY is the value deployed as "
+                       "MODAL_VLLM_API_TOKEN)")
+    backend = providers.Backend.from_env("modal", env)
+    host = urllib.parse.urlparse(backend.base_url).hostname or ""
+    if not host.endswith(".modal.run") and host not in ("localhost", "127.0.0.1"):
+        return False, f"VLLM_BASE_URL host {host!r} is not a *.modal.run app URL"
+    data = fetch(f"{backend.base_url}/models", headers={"Authorization": f"Bearer {backend.api_key}"})
+    served = sorted(str(m.get("id")) for m in (data or {}).get("data") or [])
+    want = modal_models()
+    lacking = [m for m in want if m not in served]
+    if lacking:
+        return False, f"endpoint serves {served or 'nothing'}; models.yaml expects {lacking}"
+    return True, f"{backend.base_url} serves {', '.join(want)}"
 
 
 PING_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["ok", "word"],
@@ -837,7 +932,12 @@ def cmd_ping(args: argparse.Namespace, chat=providers.chat, key_status=providers
                   f"schema={'strict' if comp.used_schema else 'json_object fallback'} "
                   f"reasoning_tokens={comp.reasoning_tokens} ${cost:.6f}")
     print(f"spent ${budget.spent_usd:.6f}")
-    return 1 if failures else 0
+    rc = 1 if failures else 0
+    # a hand-built Namespace without the flag (tests, internal callers) does not stage
+    if not log.exists() or getattr(args, "no_checkpoint", True):
+        return rc
+    # the ping log gates every paid chunk on any machine, so it is staged like an answer
+    return auto_checkpoint(args, f"ping by {args.initials}", rc, api=getattr(args, "checkpoint_api", None))
 
 
 # ---------------------------------------------------------------- argparse
@@ -931,6 +1031,8 @@ def add_commands(sub: Any) -> None:
         p.add_argument("--campaign", default="v10")
         p.add_argument("--stage", type=Path, default=runner.DEFAULT_STAGE)
         p.add_argument("--out", type=Path, default=runner.DEFAULT_OUT)
+        p.add_argument("--no-restore", action="store_true",
+                       help=f"do not first pull staged files missing locally from {checkpoint.STAGING_REPO}")
 
     p = sub.add_parser("chunk", help="run one campaign chunk as campaign.yaml defines it")
     common(p)
@@ -980,6 +1082,8 @@ def add_commands(sub: Any) -> None:
 
     p = sub.add_parser("doctor", help="every readiness check (no paid call)")
     common(p)
+    p.add_argument("--modal", action="store_true",
+                   help="also check the Modal vLLM endpoint (on by default when VLLM_BASE_URL is set)")
     p.set_defaults(operate=cmd_doctor)
 
     p = sub.add_parser("check-class", help="validate a proposed new document class folder (offline)")
@@ -996,5 +1100,7 @@ def add_commands(sub: Any) -> None:
                    help="ping with one real intent-calibration document instead of the tiny prompt")
     p.add_argument("--chunk", action="append", dest="chunks", default=None,
                    help="ping only the routes these chunks use (repeatable; default: every chunk)")
+    p.add_argument("--no-checkpoint", action="store_true",
+                   help="do not stage ping.jsonl to the private HF repo (other machines will not see it)")
     p.set_defaults(operate=cmd_ping)
 
