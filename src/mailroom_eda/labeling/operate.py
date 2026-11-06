@@ -21,8 +21,10 @@ import hashlib
 import json
 import os
 import random
+import re
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
@@ -31,7 +33,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
-from . import checkpoint, derive, export, providers, runner, spend, tasks, verify
+from . import checkpoint, derive, export, interim, providers, runner, spend, tasks, verify
 from .registry import CAMPAIGNS_DIR, campaign, dojo_snapshot, fields_registry, models_registry
 
 ROOT = runner.ROOT
@@ -52,9 +54,12 @@ def _now() -> str:
 
 def chunk_entries(name: str, chunk_id: str) -> list[dict[str, Any]]:
     """All arms of one chunk id, in campaign order."""
-    entries = [c for c in campaign(name)["chunks"] if str(c["id"]) == str(chunk_id)]
+    camp = campaign(name)
+    entries = [c for c in camp["chunks"] if str(c["id"]) == str(chunk_id)] \
+        or [c for c in camp.get("steps") or [] if str(c["id"]) == str(chunk_id)]
     if not entries:
-        ids = sorted({str(c["id"]) for c in campaign(name)["chunks"]}, key=lambda x: (len(x), x))
+        ids = sorted({str(c["id"]) for c in camp["chunks"] + (camp.get("steps") or [])},
+                     key=lambda x: (len(x), x))
         raise SystemExit(f"no chunk {chunk_id!r} in campaign {name}; chunks: {', '.join(ids)}")
     return entries
 
@@ -101,6 +106,38 @@ def auto_checkpoint(args: argparse.Namespace, why: str, rc: int = 0, *, api: Any
         return rc or 4
     print(f"checkpointed {res['files']} files to {res['repo']} (verified)", file=sys.stderr)
     return rc
+
+
+def auto_restore(args: argparse.Namespace, *, api: Any = None) -> list[Path]:
+    """Pull staged files missing from ``args.out`` before a command reads it (never overwrites).
+
+    Runs only when the command was parsed with ``--no-restore`` available and not given
+    (a hand-built ``Namespace`` without the attribute skips it). No token, or a staging
+    repo that does not exist yet, prints one line and carries on.
+    """
+    if getattr(args, "no_restore", True):
+        return []
+    if api is None and not checkpoint.token_ready():
+        print("restore skipped: no HF token", file=sys.stderr)
+        return []
+    try:
+        wrote = checkpoint.restore(Path(args.out), api=api)
+    except Exception as exc:  # noqa: BLE001 - restore is a convenience; the command still runs
+        print(f"restore skipped: {type(exc).__name__}: {str(exc)[:160]}", file=sys.stderr)
+        return []
+    if wrote:
+        print(f"restored {len(wrote)} missing files from {checkpoint.STAGING_REPO}", file=sys.stderr)
+    return wrote
+
+
+def load_interim(args: argparse.Namespace, rows: Sequence[Mapping[str, Any]]) -> "interim.Overlay | None":
+    """The sandbox overlay for ``rows`` when ``args.sandbox`` holds one (else ``None``, one line)."""
+    sandbox = getattr(args, "sandbox", None)
+    pinned = (campaign(getattr(args, "campaign", "v10")).get("interim_overlay") or {}).get("manifest_sha256")
+    overlay = interim.load(sandbox, rows, manifest_sha256=pinned)
+    if overlay is None and sandbox is not None:
+        print(f"interim cross-check skipped: no {interim.INTERIM_DIR} under {sandbox}", file=sys.stderr)
+    return overlay
 
 
 def cmd_checkpoint(args: argparse.Namespace) -> int:
@@ -196,15 +233,44 @@ def provider_models(models: Sequence[str], provider: str, model_map: Sequence[st
     return out
 
 
+REQUIRES_RE = re.compile(r"^\s*llm-dojo-scoring\s+(\d+(?:\.\d+)*)\b")
+
+
+def _version(text: str) -> tuple[int, ...]:
+    """``"0.28.0"`` -> ``(0, 28, 0)``."""
+    return tuple(int(x) for x in text.split("."))
+
+
+def requires_met(requires: str | None) -> tuple[bool, str]:
+    """Whether a chunk's external ``requires:`` has landed.
+
+    ``"llm-dojo-scoring X.Y.Z ..."`` is met once ``fields.yaml`` ``dojo_pin.version`` is at
+    least X.Y.Z (the Dojo snapshot test ties that pin to the vendored scorer). Anything
+    else cannot be checked here and stays unmet until ``--ack-requires``.
+    """
+    if not requires:
+        return True, "no external requirement"
+    m = REQUIRES_RE.match(str(requires))
+    if not m:
+        return False, f"{requires!r} is not machine-checkable"
+    have = str(fields_registry()["dojo_pin"]["version"])
+    ok = _version(have) >= _version(m[1])
+    return ok, f"dojo_pin is llm-dojo-scoring {have}; {requires!r} {'met' if ok else 'not met'}"
+
+
 def next_chunks(name: str, approvals: Sequence[Mapping[str, Any]]) -> list[str]:
     """Lines naming the next runnable chunk and any chunk held by an external ``requires``."""
     done = {str(a["chunk"]) for a in approvals}
     lines, held = [], []
-    for c in campaign(name)["chunks"]:
+    entries = campaign(name)["chunks"]
+    # A chunk every entry of which is skipped (e.g. superseded) is never offered as next.
+    skipped = {str(c["id"]) for c in entries
+               if all(e.get("skip") for e in entries if str(e["id"]) == str(c["id"]))}
+    for c in entries:
         cid = str(c["id"])
-        if cid in done or not all(str(n) in done for n in c.get("needs") or []):
+        if cid in done or cid in skipped or not all(str(n) in done for n in c.get("needs") or []):
             continue
-        if c.get("requires"):
+        if c.get("requires") and not requires_met(c["requires"])[0]:
             if cid not in held:
                 held.append(cid)
             continue
@@ -212,6 +278,11 @@ def next_chunks(name: str, approvals: Sequence[Mapping[str, Any]]) -> list[str]:
             lines.append(f"next chunk: {cid} ({c['task']} / {c['set']}); `labeling chunk {cid} --dry-run` shows it")
     if held:
         lines.append(f"waiting on an external release (requires:): {', '.join(held)}")
+    for st in campaign(name).get("steps") or []:
+        sid = str(st["id"])
+        if not lines and sid not in done and all(str(n) in done for n in st.get("needs") or []):
+            hint = " (`labeling adjudicate` lists what is open)" if st["task"] == "adjudication" else ""
+            lines.append(f"next step: {sid} ({st['task']}); `labeling gate {sid}` scores it{hint}")
     return lines
 
 
@@ -273,13 +344,17 @@ def cmd_chunk(args: argparse.Namespace) -> int:
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
     if entry.get("skip"):
         raise SystemExit(f"chunk {entry['id']} arm {arm} is skipped: {entry['skip']}")
+    auto_restore(args)
     models, reasoning = resolve(args.campaign, entry)
     for need in entry.get("needs") or []:
         if not any(str(a["chunk"]) == str(need) for a in load_approvals(args.campaign)):
             raise SystemExit(f"chunk {entry['id']} starts after chunk {need} is approved")
-    if entry.get("requires") and not args.dry_run and not args.ack_requires:
-        raise SystemExit(f"chunk {entry['id']} requires {entry['requires']}; once that has landed, "
-                         f"re-run with --ack-requires")
+    met, why = requires_met(entry.get("requires"))
+    if not met and not args.dry_run:
+        if not args.ack_requires:
+            raise SystemExit(f"chunk {entry['id']} requires {entry['requires']} ({why}); bump the Dojo pin "
+                             f"once it has landed, or re-run with --ack-requires")
+        print(f"WARNING: --ack-requires overrides: {why}", file=sys.stderr)
     if args.provider == "openrouter" and not args.dry_run:
         log = args.out / "ping.jsonl"
         probs = ping_problems(export.read_journal(log) if log.exists() else [],
@@ -287,6 +362,11 @@ def cmd_chunk(args: argparse.Namespace) -> int:
         if probs:
             raise SystemExit("route not verified; run `labeling ping --initials XX` first:\n  "
                              + "\n  ".join(probs))
+    if not args.dry_run and not getattr(args, "no_checkpoint", False):
+        ok, why = checkpoint.write_access()
+        if not ok:
+            raise SystemExit(f"checkpoint not writable ({why}); paid answers must survive a lost checkout. "
+                             "Fix the token, or pass --no-checkpoint")
     if args.provider != "openrouter":
         models = provider_models(models, args.provider, args.model_map)
     rows = runner.load_stage(args.stage)
@@ -302,8 +382,122 @@ def cmd_chunk(args: argparse.Namespace) -> int:
         max_wall_seconds=float(entry.get("max_wall_seconds") or camp["max_wall_seconds"]),
         out_dir=chunk_dir(args.out, entry, arm), dry_run=args.dry_run, workers=args.workers,
         chunk_id=f"{entry['id']}{f'.{arm}' if arm else ''}",
-        require_checkpoint=not getattr(args, "no_checkpoint", False))
+        require_checkpoint=not getattr(args, "no_checkpoint", False),
+        **({"ack_requires": why} if not met and args.ack_requires and not args.dry_run else {}))
     return rc if args.dry_run else auto_checkpoint(args, f"chunk {entry['id']}{f'.{arm}' if arm else ''} run", rc)
+
+
+# ---------------------------------------------------------------- sweep
+
+def sweep_plan(name: str, approvals: Sequence[Mapping[str, Any]], through: str,
+               start: str | None = None) -> tuple[list[tuple[dict[str, Any], int | None]], str]:
+    """The chunk arms a sweep runs, in ``campaign.yaml`` order, and why it stops there.
+
+    From ``start`` (default: the first chunk) through ``through``: approved chunks are
+    skipped, as are arms marked ``skip:``; the first chunk whose ``needs`` are not all approved, or whose ``requires``
+    is not met, ends the plan. Every gate needs a human (a bake-off pick, verdicts, or a
+    ``--signed-off`` read), so the plan runs a pilot or bake-off and then ends at the
+    first chunk that depends on it. Nothing is ever approved here.
+    """
+    entries = campaign(name)["chunks"]
+    ids = [str(c["id"]) for c in entries]
+    if through not in ids:
+        raise SystemExit(f"--through {through}: no such chunk in campaign {name}")
+    if start is not None and start not in ids:
+        raise SystemExit(f"--from {start}: no such chunk in campaign {name}")
+    first = ids.index(start) if start else 0
+    last = len(ids) - 1 - ids[::-1].index(through)
+    if first > last:
+        raise SystemExit(f"--from {start} comes after --through {through} in campaign.yaml")
+    done = {str(a["chunk"]) for a in approvals}
+    counts = Counter(ids)
+    plan: list[tuple[dict[str, Any], int | None]] = []
+    seen: Counter = Counter()
+    for i, c in enumerate(entries):
+        cid = ids[i]
+        seen[cid] += 1
+        if i < first or i > last or cid in done or c.get("skip"):
+            continue  # a ``skip:`` arm keeps its number but never runs (``cmd_chunk`` refuses it)
+        missing = [str(n) for n in c.get("needs") or [] if str(n) not in done]
+        if missing:
+            return plan, f"stopped at {cid}: needs chunk {', '.join(missing)} approved first"
+        met, why = requires_met(c.get("requires"))
+        if not met:
+            return plan, f"stopped at {cid}: {why}"
+        plan.append((c, seen[cid] if counts[cid] > 1 else None))
+    return plan, f"reached {through}"
+
+
+def _sweep_projection(args: argparse.Namespace, plan: Sequence[tuple[Mapping[str, Any], int | None]],
+                      rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """One projection line per planned arm (no network)."""
+    out = []
+    for entry, arm in plan:
+        models, reasoning = resolve(args.campaign, entry)
+        if args.provider != "openrouter":
+            models = provider_models(models, args.provider, args.model_map)
+        picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
+        proj = runner.estimate(picked, entry["task"], models, entry["set"])
+        out.append({"chunk": f"{entry['id']}{f'.{arm}' if arm else ''}", "task": entry["task"],
+                    "set": entry["set"], "documents": proj["documents"], "calls": proj["calls"],
+                    "projected_usd": round(sum(proj["cost_usd"].values()), 4),
+                    "cap_usd": float(entry["cap_usd"]), "reasoning": reasoning, "models": models})
+    return out
+
+
+def cmd_sweep(args: argparse.Namespace, *, confirm: Callable[[str], str] = input,
+              run_chunk: Callable[[argparse.Namespace], int] | None = None) -> int:
+    """Run every runnable chunk through ``--through`` after one combined dry run and one ``yes``.
+
+    Each arm goes through ``cmd_chunk`` (its own cap, wall limit, ping and checkpoint
+    checks). The sweep stops at the first chunk that needs an unapproved one (so after a
+    pilot or bake-off, whose gate a human decides), an unmet ``requires``, or the first
+    non-zero exit (2 cap/wall, 3 failed calls, 4
+    checkpoint). It never approves: ``labeling gate --approve`` stays a human step.
+    """
+    run_chunk = run_chunk or cmd_chunk
+    auto_restore(args)
+    approvals = load_approvals(args.campaign)
+    plan, why = sweep_plan(args.campaign, approvals, args.through, args.start)
+    if not plan:
+        print(f"nothing to run: {why}")
+        return 0
+    lines = _sweep_projection(args, plan, runner.load_stage(args.stage))
+    width = max(len(ln["chunk"]) for ln in lines)
+    for ln in lines:
+        print(f"{ln['chunk']:<{width}}  {ln['task']:<20} {ln['set']:<12} docs={ln['documents']:<5} "
+              f"calls={ln['calls']:<5} projected=${ln['projected_usd']:.2f} cap=${ln['cap_usd']:.2f} "
+              f"reasoning={ln['reasoning']}")
+    proj = sum(ln["projected_usd"] for ln in lines)
+    caps = sum(ln["cap_usd"] for ln in lines)
+    print(f"{len(lines)} arms: projected ${proj:.2f}, caps ${caps:.2f}; {why}")
+    if args.provider == "openrouter" and os.environ.get("OPENROUTER_API_KEY"):
+        rem = providers.key_status(providers.Backend.from_env("openrouter")).get("limit_remaining")
+        reserve = models_registry().get("key_reserve_usd", 3.0)
+        usable = None if rem is None else float(rem) - reserve
+        print("funding: no credit limit" if usable is None else f"funding: ${usable:.2f} usable after reserve")
+        if usable is not None and usable < caps and not args.dry_run:
+            raise SystemExit(f"the sweep's caps (${caps:.2f}) exceed the key's usable credit (${usable:.2f})")
+    elif args.provider == "openrouter":
+        print("funding: not checked (OPENROUTER_API_KEY is not set)")
+    if args.dry_run:
+        return 0
+    if not args.initials or not spend.INITIALS_RE.match(args.initials):
+        raise SystemExit("a sweep needs --initials (a human's 2-6 capital letters)")
+    if confirm(f"run these {len(lines)} arms (caps ${caps:.2f})? type yes: ").strip() != "yes":
+        print("not confirmed; nothing ran")
+        return 1
+    for entry, arm in plan:
+        label = f"{entry['id']}{f'.{arm}' if arm else ''}"
+        print(f"=== sweep: chunk {label}", file=sys.stderr)
+        ns = argparse.Namespace(**{**vars(args), "id": str(entry["id"]), "arm": arm, "dry_run": False,
+                                   "ack_requires": False, "cap_usd": None, "no_restore": True})
+        rc = run_chunk(ns)
+        if rc:
+            print(f"sweep stopped: chunk {label} exited {rc}")
+            return rc
+    print(f"sweep done: {why}. Score and approve each chunk with `labeling gate <id> --approve`.")
+    return 0
 
 
 # ---------------------------------------------------------------- gates
@@ -586,10 +780,12 @@ def gate_intent_relabel(picked: Sequence[Mapping[str, Any]], out_dir: Path, mode
 
 
 def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path, stage: Path,
-                signed_off: bool = False) -> dict[str, Any]:
+                signed_off: bool = False, sandbox: Path | None = None) -> dict[str, Any]:
     """Score one chunk arm's gate from its output directory (offline)."""
     from .. import v9_4_revision as v94  # noqa: PLC0415
 
+    if entry["gate"]["kind"] == "resolved":
+        return gate_resolved(name, entry, out, stage, sandbox=sandbox)
     out_dir = chunk_dir(out, entry, arm)
     if not (out_dir / "calls.jsonl").exists():
         raise SystemExit(f"{out_dir} has no calls.jsonl; run `labeling chunk {entry['id']}` first")
@@ -600,7 +796,8 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
     started = [r for r in export.read_journal(out_dir / "runs.jsonl") if r.get("started_utc") and r.get("models")]
     if started:  # score the models the chunk actually ran (e.g. the mapped Modal model)
         models, provider = list(started[-1]["models"]), str(started[-1].get("provider") or provider)
-    runner.review(rows, entry["task"], out_dir, reasoning=reasoning)
+    overlay = load_interim(argparse.Namespace(sandbox=sandbox, campaign=name), rows)
+    reviewed = runner.review(rows, entry["task"], out_dir, reasoning=reasoning, interim=overlay)
     gate = dict(entry["gate"])
     kind = gate.pop("kind")
     if kind == "cuad_f1":
@@ -645,6 +842,8 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
                spent_usd=round(sum(c.get("cost_usd") or 0 for c in every), 4),
                answer_cost_usd=round(sum(c.get("reused_cost_usd") or c.get("cost_usd") or 0 for c in current), 4),
                scored_utc=_now())
+    if overlay is not None:  # informational: never part of passed
+        res["interim"] = {**reviewed.get("interim", {}), "manifest_sha256": overlay.manifest_sha256}
     outside = pin_violations(current, reasoning)
     if outside:
         res.update(passed=False, served_outside_pin=outside)
@@ -965,6 +1164,108 @@ def cmd_inspect(args: argparse.Namespace) -> int:
     (d / "inspect.md").write_text(md, encoding="utf-8")
     print(d / "inspect.md")
     return 0
+# ---------------------------------------------------------------- adjudication (step 10)
+
+ADJUDICATION_DIR = "adjudication"
+OPEN_COLUMNS = ("chunk", *export.FIELD_COLUMNS)
+#: chunk tasks whose output is cuad-labels/intent-labels, not fields.csv
+NON_FIELD_TASKS = {"cuad", "intent"}
+
+
+def _merge_open_verdicts(chunk_out: Path, label: str, open_rows: Mapping[tuple[str, str, str], Mapping[str, str]]
+                         ) -> int:
+    """Copy reviewer columns filled in ``adjudication/open.csv`` into the chunk's adjudication.csv."""
+    path = chunk_out / "adjudication.csv"
+    if not path.exists():
+        return 0
+    rows = export.read_csv(path)
+    changed = 0
+    for r in rows:
+        o = open_rows.get((label, r["document_id"], r["field"]))
+        if o and any(o.get(c) for c in runner.REVIEWER_COLUMNS) \
+                and any(o.get(c, "") != r.get(c, "") for c in runner.REVIEWER_COLUMNS):
+            r.update({c: o.get(c, "") for c in runner.REVIEWER_COLUMNS})
+            changed += 1
+    if changed:
+        export.write_csv(path, export.FIELD_COLUMNS, rows)
+    return changed
+
+
+def adjudication_items(name: str, out: Path, stage: Path, *, only: str | None = None,
+                       rows: Sequence[Mapping[str, Any]] | None = None,
+                       sandbox: Path | None = None) -> tuple[list[dict[str, Any]], int]:
+    """Every field of an approved chunk still at ``final_decision == adjudicate``.
+
+    Verdicts already typed into ``adjudication/open.csv`` are first copied into each
+    chunk's ``adjudication.csv``; then ``runner.review`` rebuilds the chunk (it keeps the
+    reviewer columns), so a verdict entered in either place counts. Returns the open rows
+    and how many verdicts were copied.
+    """
+    rows = runner.load_stage(stage) if rows is None else rows
+    open_path = Path(out) / ADJUDICATION_DIR / "open.csv"
+    typed = {(r["chunk"], r["document_id"], r["field"]): r
+             for r in (export.read_csv(open_path) if open_path.exists() else [])}
+    items: list[dict[str, Any]] = []
+    copied = 0
+    overlay = load_interim(argparse.Namespace(sandbox=sandbox, campaign=name), rows) if sandbox else None
+    for a in load_approvals(name):
+        cid = str(a["chunk"])
+        if only and cid != str(only):
+            continue
+        entry, arm = chunk_entry(name, cid, a.get("arm"))
+        if "models" not in entry or entry["task"] in NON_FIELD_TASKS:
+            continue
+        label = f"{cid}{f'.{arm}' if arm else ''}"
+        d = chunk_dir(Path(out), entry, arm)
+        if not (d / "calls.jsonl").exists():
+            raise SystemExit(f"approved chunk {label}: {d} has no calls.jsonl; restore it first "
+                             "(`labeling checkpoint --restore`)")
+        copied += _merge_open_verdicts(d, label, typed)
+        runner.review(rows, entry["task"], d, reasoning=a.get("reasoning"), interim=overlay)
+        items += [{"chunk": label, **f} for f in export.read_csv(d / "fields.csv")
+                  if f.get("final_decision") == "adjudicate"]
+    return items, copied
+
+
+def gate_resolved(name: str, entry: Mapping[str, Any], out: Path, stage: Path,
+                  sandbox: Path | None = None) -> dict[str, Any]:
+    """Step gate: every ``needs`` chunk is approved and none has an open adjudication item."""
+    done = {str(a["chunk"]) for a in load_approvals(name)}
+    unapproved = [str(n) for n in entry.get("needs") or [] if str(n) not in done]
+    items, _ = adjudication_items(name, out, stage, sandbox=sandbox)
+    per_chunk = dict(Counter(i["chunk"] for i in items))
+    res = {"kind": "resolved", "open_items": len(items), "per_chunk": per_chunk,
+           "per_field": dict(Counter(f"{i['chunk']}/{i['field']}" for i in items)),
+           "unapproved_needs": unapproved, "passed": not items and not unapproved,
+           "how": "fill reviewer_verdict in adjudication/open.csv, then `labeling adjudicate` and re-gate",
+           "chunk": entry["id"], "arm": None, "task": entry["task"], "models": [], "provider": "none",
+           "reasoning": "none", "prompt_sha256": [], "served_providers": [], "spent_usd": 0.0,
+           "scored_utc": _now()}
+    d = Path(out) / ADJUDICATION_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "gate.json").write_text(json.dumps(res, indent=1) + "\n", encoding="utf-8")
+    return res
+
+
+def cmd_adjudicate(args: argparse.Namespace) -> int:
+    """Rebuild every approved field chunk and list its open items in ``adjudication/open.csv``."""
+    auto_restore(args)
+    items, copied = adjudication_items(args.campaign, args.out, args.stage, only=args.chunk,
+                                       sandbox=getattr(args, "sandbox", None))
+    path = Path(args.out) / ADJUDICATION_DIR / "open.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if args.chunk and path.exists():
+        # One chunk was rebuilt: keep every other chunk's rows (and their typed verdicts).
+        keep = [r for r in export.read_csv(path) if str(r["chunk"]).split(".")[0] != str(args.chunk)]
+        items = keep + items
+    export.write_csv(path, OPEN_COLUMNS, items)
+    if copied:
+        print(f"copied {copied} verdicts from open.csv into their chunks")
+    per = Counter((i["chunk"], i["field"]) for i in items)
+    for (chunk, field), n in sorted(per.items()):
+        print(f"{chunk:<6} {field:<32} {n:>5} open")
+    print(f"{len(items)} open items -> {path}")
+    return auto_checkpoint(args, f"adjudicate ({len(items)} open)")
 
 
 def pin_violations(calls: Sequence[Mapping[str, Any]], reasoning: str) -> list[str]:
@@ -1020,8 +1321,10 @@ def bakeoff_guard(name: str, entry: Mapping[str, Any], res: Mapping[str, Any], o
 def cmd_gate(args: argparse.Namespace) -> int:
     """Score a chunk's gate; with --approve, record a pass in approved.yaml."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
-    res = gate_result(args.campaign, entry, arm, args.out, args.stage, signed_off=args.signed_off)
-    if res["provider"] != args.provider:
+    auto_restore(args)
+    res = gate_result(args.campaign, entry, arm, args.out, args.stage, signed_off=args.signed_off,
+                      sandbox=getattr(args, "sandbox", None))
+    if res["kind"] != "resolved" and res["provider"] != args.provider:
         raise SystemExit(f"--provider {args.provider}, but chunk {entry['id']} ran on {res['provider']} "
                          f"(runs.jsonl); the gate scores the models the chunk ran")
     print(json.dumps(res, indent=1))
@@ -1058,6 +1361,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     """One line per chunk arm: calls answered, spend, gate, approval."""
+    auto_restore(args)
     camp = campaign(args.campaign)
     approved = {str(a["chunk"]): a for a in load_approvals(args.campaign)}
     seen: Counter = Counter()
@@ -1080,6 +1384,15 @@ def cmd_status(args: argparse.Namespace) -> int:
         label = f"{cid}{f'.{arm}' if arm else ''}"
         print(f"{label:<6} {entry['task']:<18} {entry['set']:<12} {entry.get('chunk') or 'all':<5} "
               f"{ok:>9} {spent:>8.4f} {entry['cap_usd']:>6.2f}  {state}")
+    for st in camp.get("steps") or []:
+        sid = str(st["id"])
+        gate_path = Path(args.out) / ADJUDICATION_DIR / "gate.json" if st["task"] == "adjudication" else None
+        gate = json.loads(gate_path.read_text()) if gate_path and gate_path.exists() else None
+        state = ("gate passed" if gate and gate["passed"] else
+                 f"gate failed ({gate.get('open_items', '?')} open)" if gate else "not scored")
+        if sid in approved:
+            state += f"; approved by {approved[sid]['approved_by']}"
+        print(f"{sid:<6} {st['task']:<18} {st.get('set', ''):<12} {'':<5} {'':>9} {'':>8} {'':>6}  {state}")
     return 0
 
 
@@ -1189,6 +1502,7 @@ def _stage_check(stage: Path, name: str) -> tuple[bool, str]:
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Run every readiness check and print PASS/FAIL lines. Makes no paid call."""
     results: list[tuple[str, bool, str]] = []
+    auto_restore(args)
 
     def check(name: str, fn: Callable[[], tuple[bool, str]]) -> None:
         """Run one doctor check and record its result."""
@@ -1244,6 +1558,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     funding: list[float | None] = []
     check("OpenRouter key", key)
+    check("HF checkpoint write access", checkpoint.write_access)
+    if os.environ.get("VLLM_BASE_URL") or getattr(args, "modal", False):
+        check("Modal vLLM endpoint", modal_check)
     approvals = load_approvals(args.campaign)
     if funding:
         check("funding", lambda: funding_status(
@@ -1256,6 +1573,38 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     for line in next_chunks(args.campaign, approvals):
         print(line)
     return 0 if all(ok for _, ok, _ in results) else 1
+
+
+def modal_models() -> list[str]:
+    """The models.yaml entries served by the sandbox's Modal vLLM app."""
+    return sorted(m for m, s in models_registry()["models"].items() if s.get("provider") == "modal")
+
+
+def modal_check(env: Mapping[str, str] | None = None,
+                fetch: Callable[..., Any] = _get_json) -> tuple[bool, str]:
+    """``VLLM_BASE_URL``/``VLLM_API_KEY`` are set and a free ``GET /v1/models`` lists the Modal model.
+
+    ``VLLM_API_KEY`` is the value the sandbox deploys as ``MODAL_VLLM_API_TOKEN``; the key
+    is sent but never printed. Generates nothing, so it costs only the endpoint's idle time.
+    """
+    env = os.environ if env is None else env
+    missing = [n for n in ("VLLM_BASE_URL", "VLLM_API_KEY") if not env.get(n)]
+    if missing:
+        return False, (f"{' and '.join(missing)} not set (VLLM_API_KEY is the value deployed as "
+                       "MODAL_VLLM_API_TOKEN)")
+    backend = providers.Backend.from_env("modal", env)
+    host = urllib.parse.urlparse(backend.base_url).hostname or ""
+    if not host.endswith(".modal.run") and host not in ("localhost", "127.0.0.1"):
+        return False, f"VLLM_BASE_URL host {host!r} is not a *.modal.run app URL"
+    if host.endswith(".modal.run") and urllib.parse.urlparse(backend.base_url).scheme != "https":
+        return False, "VLLM_BASE_URL must be https:// for a *.modal.run host (the API key is sent)"
+    data = fetch(f"{backend.base_url}/models", headers={"Authorization": f"Bearer {backend.api_key}"})
+    served = sorted(str(m.get("id")) for m in (data or {}).get("data") or [])
+    want = modal_models()
+    lacking = [m for m in want if m not in served]
+    if lacking:
+        return False, f"endpoint serves {served or 'nothing'}; models.yaml expects {lacking}"
+    return True, f"{backend.base_url} serves {', '.join(want)}"
 
 
 PING_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["ok", "word"],
@@ -1327,7 +1676,12 @@ def cmd_ping(args: argparse.Namespace, chat=providers.chat, key_status=providers
                   f"schema={'strict' if comp.used_schema else 'json_object fallback'} "
                   f"reasoning_tokens={comp.reasoning_tokens} ${cost:.6f}")
     print(f"spent ${budget.spent_usd:.6f}")
-    return 1 if failures else 0
+    rc = 1 if failures else 0
+    # a hand-built Namespace without the flag (tests, internal callers) does not stage
+    if not log.exists() or getattr(args, "no_checkpoint", True):
+        return rc
+    # the ping log gates every paid chunk on any machine, so it is staged like an answer
+    return auto_checkpoint(args, f"ping by {args.initials}", rc, api=getattr(args, "checkpoint_api", None))
 
 
 # ---------------------------------------------------------------- argparse
@@ -1421,6 +1775,8 @@ def add_commands(sub: Any) -> None:
         p.add_argument("--campaign", default="v10")
         p.add_argument("--stage", type=Path, default=runner.DEFAULT_STAGE)
         p.add_argument("--out", type=Path, default=runner.DEFAULT_OUT)
+        p.add_argument("--no-restore", action="store_true",
+                       help=f"do not first pull staged files missing locally from {checkpoint.STAGING_REPO}")
 
     from . import jev  # noqa: PLC0415
 
@@ -1442,6 +1798,18 @@ def add_commands(sub: Any) -> None:
                    help="do not upload the answers to the private HF staging repo (not recommended)")
     p.set_defaults(operate=cmd_chunk)
 
+    p = sub.add_parser("sweep", help="run every runnable chunk through --through after one dry run and one yes")
+    common(p)
+    p.add_argument("--through", required=True, help="the last chunk id to run (campaign.yaml order)")
+    p.add_argument("--from", dest="start", help="start at this chunk id instead of the first")
+    p.add_argument("--initials")
+    p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
+    p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--model-map", action="append", default=[], metavar="CAMPAIGN_MODEL=PROVIDER_MODEL")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--no-checkpoint", action="store_true")
+    p.set_defaults(operate=cmd_sweep)
+
     p = sub.add_parser("gate", help="score a chunk's gate; --approve records a pass")
     common(p)
     p.add_argument("id")
@@ -1451,6 +1819,8 @@ def add_commands(sub: Any) -> None:
     p.add_argument("--signed-off", action="store_true", help="you read the chunk's CSVs / sample.csv")
     p.add_argument("--override-bakeoff", action="store_true",
                    help="approve a bake-off arm other than the one `labeling bakeoff` picked")
+    p.add_argument("--sandbox", type=Path, default=runner.DEFAULT_SANDBOX,
+                   help="local-mailroom-sandbox checkout for the interim cross-check (absent: skipped)")
     p.add_argument("--initials")
     p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
     p.add_argument("--no-checkpoint", action="store_true")
@@ -1467,6 +1837,13 @@ def add_commands(sub: Any) -> None:
     p.add_argument("dir", type=Path, help="a chunk or run output directory")
     p.add_argument("--n", type=int, default=8)
     p.set_defaults(operate=cmd_inspect)
+
+    p = sub.add_parser("adjudicate", help="list every approved chunk's open adjudication items (offline)")
+    common(p)
+    p.add_argument("--chunk", help="only this approved chunk id")
+    p.add_argument("--sandbox", type=Path, default=runner.DEFAULT_SANDBOX)
+    p.add_argument("--no-checkpoint", action="store_true")
+    p.set_defaults(operate=cmd_adjudicate)
 
     p = sub.add_parser("checkpoint", help=f"upload label output to the private {checkpoint.STAGING_REPO}")
     common(p)
@@ -1487,6 +1864,8 @@ def add_commands(sub: Any) -> None:
 
     p = sub.add_parser("doctor", help="every readiness check (no paid call)")
     common(p)
+    p.add_argument("--modal", action="store_true",
+                   help="also check the Modal vLLM endpoint (on by default when VLLM_BASE_URL is set)")
     p.set_defaults(operate=cmd_doctor)
 
     p = sub.add_parser("check-class", help="validate a proposed new document class folder (offline)")
@@ -1503,5 +1882,7 @@ def add_commands(sub: Any) -> None:
                    help="ping with one real intent-calibration document instead of the tiny prompt")
     p.add_argument("--chunk", action="append", dest="chunks", default=None,
                    help="ping only the routes these chunks use (repeatable; default: every chunk)")
+    p.add_argument("--no-checkpoint", action="store_true",
+                   help="do not stage ping.jsonl to the private HF repo (other machines will not see it)")
     p.set_defaults(operate=cmd_ping)
 

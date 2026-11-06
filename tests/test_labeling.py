@@ -2222,6 +2222,389 @@ def test_gold_corrections_apply_and_refuse_a_moved_gold(tmp_path):
     with pytest.raises(SystemExit, match="decided_by"):
         operate.gold_corrections(tmp_path)
     assert operate.gold_corrections(tmp_path / "none") == {}
+# ---------------------------------------------------------------- preflight: HF write, restore, requires, Modal
+
+class _WhoamiHub(_FakeHub):
+    """A fake hub whose token is described by ``whoami``."""
+
+    def __init__(self, role, *, name="Lucius-Morningstar", orgs=(), scoped=(), private=True, exists=True):
+        super().__init__(private=private)
+        self.info = {"name": name, "orgs": list(orgs),
+                     "auth": {"accessToken": {"role": role, "fineGrained": {"scoped": list(scoped)}}}}
+        self.exists = exists
+
+    def whoami(self):
+        return self.info
+
+    def repo_info(self, repo_id, repo_type):
+        if not self.exists:
+            class RepositoryNotFoundError(Exception):
+                pass
+            raise RepositoryNotFoundError(repo_id)
+        return super().repo_info(repo_id, repo_type)
+
+
+def test_write_access_reads_the_token_role_and_namespace():
+    """Only a token that can write the staging namespace passes; an existing public repo fails."""
+    from mailroom_eda.labeling import checkpoint
+    assert checkpoint.write_access(api=_WhoamiHub("write"))[0]
+    assert not checkpoint.write_access(api=_WhoamiHub("read"))[0]
+    assert not checkpoint.write_access(api=_WhoamiHub("write", name="someone-else"))[0]
+    assert checkpoint.write_access(api=_WhoamiHub("write", name="x",
+                                                  orgs=[{"name": "Lucius-Morningstar", "roleInOrg": "write"}]))[0]
+    grant = [{"entity": {"type": "user", "name": "Lucius-Morningstar"}, "permissions": ["repo.write"]}]
+    assert checkpoint.write_access(api=_WhoamiHub("fineGrained", scoped=grant))[0]
+    assert not checkpoint.write_access(api=_WhoamiHub(
+        "fineGrained", scoped=[{"entity": {"type": "user", "name": "Lucius-Morningstar"},
+                                "permissions": ["repo.content.read"]}]))[0]
+    ok, why = checkpoint.write_access(api=_WhoamiHub("write", exists=False))
+    assert ok and "created private" in why
+    ok, why = checkpoint.write_access(api=_WhoamiHub("write", private=False))
+    assert not ok and "public" in why
+
+
+def test_paid_chunk_refuses_without_checkpoint_write_access(tmp_path, monkeypatch):
+    """A paid chunk stops before any call when its answers could not be staged."""
+    import argparse
+    from mailroom_eda.labeling import checkpoint
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [])
+    monkeypatch.setattr(checkpoint, "write_access", lambda: (False, "token role is read"))
+    args = argparse.Namespace(campaign="v10", id="1", arm=1, dry_run=False, ack_requires=False,
+                              provider="modal", model_map=[], stage=tmp_path, initials="JB",
+                              cap_usd=None, out=tmp_path, workers=1, no_checkpoint=False)
+    with pytest.raises(SystemExit, match="checkpoint not writable"):
+        operate.cmd_chunk(args)
+
+
+def test_auto_restore_fills_missing_files_and_respects_opt_out(tmp_path, monkeypatch):
+    """Commands parsed with --no-restore available pull missing staged files; opting out or no flag skips."""
+    import argparse
+    from mailroom_eda.labeling import checkpoint
+    _labels_tree(tmp_path / "labels")
+    hub = _FakeHub()
+    checkpoint.checkpoint(tmp_path / "labels", None, "x", api=hub)
+
+    def download(api, repo_id, filename, local_path):
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(hub.files[filename])
+        return local_path
+
+    monkeypatch.setattr(checkpoint.hf_interface, "download_file", download)
+    fresh = tmp_path / "fresh"
+    (fresh / "1.3_cuad-calibration").mkdir(parents=True)
+    (fresh / "1.3_cuad-calibration" / "documents.csv").write_text("local\n")
+    assert operate.auto_restore(argparse.Namespace(out=fresh), api=hub) == []  # hand-built: no flag, no restore
+    assert operate.auto_restore(argparse.Namespace(out=fresh, no_restore=True), api=hub) == []
+    wrote = operate.auto_restore(argparse.Namespace(out=fresh, no_restore=False), api=hub)
+    assert fresh / "1.3_cuad-calibration" / "calls.jsonl" in wrote
+    assert (fresh / "1.3_cuad-calibration" / "documents.csv").read_text() == "local\n"
+
+    class Broken(_FakeHub):
+        def list_repo_tree(self, **kw):
+            raise RuntimeError("offline")
+
+    assert operate.auto_restore(argparse.Namespace(out=fresh, no_restore=False), api=Broken()) == []
+    monkeypatch.setattr(checkpoint, "token_ready", lambda: False)
+    assert operate.auto_restore(argparse.Namespace(out=fresh, no_restore=False)) == []
+
+
+def test_ping_checkpoints_its_log(tmp_path, monkeypatch):
+    """A ping's log is staged right after it is written, so another machine sees the verified routes."""
+    import argparse
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-not-real")
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens):
+        return providers.Completion("{}", {"ok": True, "word": "mailroom"}, model, "P", 20, 8, 0, 0.00001,
+                                    "stop", True)
+    hub = _FakeHub()
+    args = argparse.Namespace(campaign="v10", initials="JB", cap_usd=0.05, out=tmp_path, chunks=["3"],
+                              no_checkpoint=False, checkpoint_api=hub)
+    assert operate.cmd_ping(args, chat=chat, key_status=lambda b: {"limit_remaining": None}) == 0
+    assert "labels/ping.jsonl" in hub.files and hub.commits == ["checkpoint: ping by JB"]
+
+
+def test_requires_is_met_by_the_dojo_pin(monkeypatch):
+    """llm-dojo-scoring X.Y.Z is met once fields.yaml pins at least that Dojo version."""
+    import mailroom_eda.labeling.operate as op
+    monkeypatch.setattr(op, "fields_registry", lambda: {"dojo_pin": {"version": "0.27.2"}})
+    assert not op.requires_met("llm-dojo-scoring 0.28.0 (G1)")[0]
+    assert op.requires_met(None)[0]
+    assert not op.requires_met("some other release")[0]
+    monkeypatch.setattr(op, "fields_registry", lambda: {"dojo_pin": {"version": "0.28.0"}})
+    assert op.requires_met("llm-dojo-scoring 0.28.0 (G1)")[0]
+    monkeypatch.setattr(op, "fields_registry", lambda: {"dojo_pin": {"version": "0.30.1"}})
+    assert op.requires_met("llm-dojo-scoring 0.28.0 (G1)")[0]
+    lines = op.next_chunks("v10", [{"chunk": c} for c in ("1", "2a", "2b", "2c", "3", "4")])
+    assert not any("external" in line for line in lines)
+
+
+def test_modal_check_lists_the_served_model():
+    """The Modal check needs both env vars, an app URL, and the models.yaml model on /v1/models."""
+    want = operate.modal_models()
+    env = {"VLLM_BASE_URL": "https://ws--vllm-serve.modal.run", "VLLM_API_KEY": "test-token-not-real"}
+    seen = {}
+
+    def fetch(url, headers):
+        seen.update(url=url, headers=headers)
+        return {"data": [{"id": m} for m in want]}
+
+    ok, msg = operate.modal_check(env, fetch=fetch)
+    assert ok and seen["url"].endswith(".modal.run/v1/models") and "test-token-not-real" not in msg
+    ok, msg = operate.modal_check({"VLLM_BASE_URL": env["VLLM_BASE_URL"]}, fetch=fetch)
+    assert not ok and "MODAL_VLLM_API_TOKEN" in msg
+    assert not operate.modal_check(env, fetch=lambda url, headers: {"data": [{"id": "other"}]})[0]
+    assert not operate.modal_check({**env, "VLLM_BASE_URL": "https://example.com"}, fetch=fetch)[0]
+
+
+# ---------------------------------------------------------------- sweep
+
+def test_sweep_plan_stops_at_an_unapproved_predecessor_or_requires():
+    """The plan follows campaign order, skips approved chunks and never runs past a missing approval."""
+    plan, why = operate.sweep_plan("v10", [], "9e")
+    assert {str(e["id"]) for e, _ in plan} == {"1"} and len(plan) == 7 and "1h" in why and "needs chunk 1" in why
+    approved = [{"chunk": c} for c in ("1", "1h")]
+    plan, why = operate.sweep_plan("v10", approved, "2c")
+    assert [str(e["id"]) for e, _ in plan] == ["2a", "2b", "2c"] and why == "reached 2c"
+    plan, why = operate.sweep_plan("v10", approved + [{"chunk": c} for c in ("2a", "2b", "2c", "3", "4a", "4b", "4c")], "9e")
+    assert plan == [] and "5a" in why and "not met" in why
+    plan, why = operate.sweep_plan("v10", [{"chunk": "7a"}], "7e", start="7b")
+    assert [str(e["id"]) for e, _ in plan] == ["7b", "7c", "7d", "7e"]
+    with pytest.raises(SystemExit, match="no such chunk"):
+        operate.sweep_plan("v10", [], "99")
+
+
+def _sweep_args(tmp_path, **kw):
+    import argparse
+    base = dict(campaign="v10", stage=tmp_path, out=tmp_path, through="7e", start="7b", initials="JB",
+                provider="openrouter", workers=1, model_map=[], dry_run=False, no_checkpoint=False)
+    return argparse.Namespace(**{**base, **kw})
+
+
+def test_sweep_runs_each_arm_once_confirmed_and_never_approves(tmp_path, monkeypatch):
+    """One yes runs the planned arms through cmd_chunk; a non-zero exit stops the sweep."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [{"chunk": "7a"}])
+    monkeypatch.setattr(runner, "load_stage", lambda stage: [])
+    ran = []
+    assert operate.cmd_sweep(_sweep_args(tmp_path, dry_run=True), confirm=lambda q: pytest.fail("no prompt"),
+                             run_chunk=lambda ns: pytest.fail("dry run")) == 0
+    assert operate.cmd_sweep(_sweep_args(tmp_path), confirm=lambda q: "no",
+                             run_chunk=lambda ns: pytest.fail("not confirmed")) == 1
+    assert operate.cmd_sweep(_sweep_args(tmp_path), confirm=lambda q: "yes",
+                             run_chunk=lambda ns: ran.append(ns.id) or 0) == 0
+    assert ran == ["7b", "7c", "7d", "7e"]
+    ran.clear()
+    assert operate.cmd_sweep(_sweep_args(tmp_path), confirm=lambda q: "yes",
+                             run_chunk=lambda ns: ran.append(ns.id) or (2 if ns.id == "7c" else 0)) == 2
+    assert ran == ["7b", "7c"]
+    with pytest.raises(SystemExit, match="initials"):
+        operate.cmd_sweep(_sweep_args(tmp_path, initials=None), confirm=lambda q: "yes", run_chunk=lambda ns: 0)
+    path = operate.approvals_path("v10")
+    assert not path.exists() or "7b" not in path.read_text()  # nothing approved
+
+
+# ---------------------------------------------------------------- adjudication step 10
+
+def _approved_field_chunk(tmp_path, monkeypatch, decisions):
+    """Chunk 7b approved, with a fields.csv whose final decisions are ``decisions``."""
+    entry, arm = operate.chunk_entry("v10", "7b", None)
+    d = operate.chunk_dir(tmp_path, entry, arm)
+    d.mkdir(parents=True)
+    (d / "calls.jsonl").write_text("{}\n")
+    rows = [{"document_id": f"DOC-{i}", "field": "intent", "decision": dec, "final_decision": dec,
+             "model_a_value": "x", "model_b_value": "y"} for i, dec in enumerate(decisions)]
+    export.write_csv(d / "fields.csv", export.FIELD_COLUMNS, rows)
+    export.write_csv(d / "adjudication.csv", export.FIELD_COLUMNS, [r for r in rows if r["decision"] == "adjudicate"])
+    approvals = [{"chunk": "7b", "arm": None, "reasoning": "low", "approved_by": "JB"}]
+    monkeypatch.setattr(operate, "load_approvals", lambda name: approvals)
+
+    def review(rows_, task, out_dir, reasoning=None, interim=None):
+        """Stand-in for runner.review: apply adjudication.csv verdicts to fields.csv."""
+        adj = {(r["document_id"], r["field"]): r for r in export.read_csv(out_dir / "adjudication.csv")}
+        fields = export.read_csv(out_dir / "fields.csv")
+        for f in fields:
+            v = adj.get((f["document_id"], f["field"]), {}).get("reviewer_verdict")
+            if v:
+                f["reviewer_verdict"], f["final_decision"] = v, "accept"
+        export.write_csv(out_dir / "fields.csv", export.FIELD_COLUMNS, fields)
+
+    monkeypatch.setattr(runner, "review", review)
+    monkeypatch.setattr(runner, "load_stage", lambda stage: [])
+    return d, approvals
+
+
+def test_adjudicate_lists_open_items_and_reads_verdicts_back(tmp_path, monkeypatch):
+    """open.csv lists every open item; a verdict typed there reaches the chunk and closes the item."""
+    import argparse
+    _approved_field_chunk(tmp_path, monkeypatch, ["accept", "adjudicate", "adjudicate"])
+    args = argparse.Namespace(campaign="v10", out=tmp_path, stage=tmp_path, chunk=None, no_checkpoint=True)
+    assert operate.cmd_adjudicate(args) == 0
+    open_rows = export.read_csv(tmp_path / "adjudication" / "open.csv")
+    assert [(r["chunk"], r["document_id"]) for r in open_rows] == [("7b", "DOC-1"), ("7b", "DOC-2")]
+    open_rows[0]["reviewer_verdict"] = "a"
+    export.write_csv(tmp_path / "adjudication" / "open.csv", operate.OPEN_COLUMNS, open_rows)
+    items, copied = operate.adjudication_items("v10", tmp_path, tmp_path, rows=[])
+    assert copied == 1 and [i["document_id"] for i in items] == ["DOC-2"]
+
+
+def test_adjudicate_one_chunk_keeps_other_chunks_open_rows(tmp_path, monkeypatch):
+    """`adjudicate --chunk X` rewrites only X's rows in open.csv; other chunks' verdicts survive."""
+    import argparse
+    _approved_field_chunk(tmp_path, monkeypatch, ["accept", "adjudicate"])
+    other = {c: "" for c in operate.OPEN_COLUMNS}
+    other.update(chunk="9b", document_id="DOC-9", field="entity_name", reviewer_verdict="b")
+    (tmp_path / "adjudication").mkdir(parents=True, exist_ok=True)
+    export.write_csv(tmp_path / "adjudication" / "open.csv", operate.OPEN_COLUMNS, [other])
+    args = argparse.Namespace(campaign="v10", out=tmp_path, stage=tmp_path, chunk="7b", no_checkpoint=True)
+    assert operate.cmd_adjudicate(args) == 0
+    rows = export.read_csv(tmp_path / "adjudication" / "open.csv")
+    assert ("9b", "DOC-9", "b") in [(r["chunk"], r["document_id"], r["reviewer_verdict"]) for r in rows]
+    assert ("7b", "DOC-1") in [(r["chunk"], r["document_id"]) for r in rows]
+
+
+def test_resolved_gate_passes_only_with_no_open_items(tmp_path, monkeypatch):
+    """Step 10 fails while anything is open or a needed chunk is unapproved, and records counts."""
+    entry, _ = operate.chunk_entry("v10", "10", None)
+    assert entry["task"] == "adjudication" and "9e" in entry["needs"]
+    _approved_field_chunk(tmp_path, monkeypatch, ["accept", "adjudicate"])
+    res = operate.gate_result("v10", entry, None, tmp_path, tmp_path)
+    assert not res["passed"] and res["open_items"] == 1 and res["per_chunk"] == {"7b": 1}
+    assert "9e" in res["unapproved_needs"] and (tmp_path / "adjudication" / "gate.json").exists()
+    every = [{"chunk": c, "arm": None, "reasoning": "low", "approved_by": "JB"} for c in entry["needs"]]
+    monkeypatch.setattr(operate, "load_approvals", lambda name: every)
+    monkeypatch.setattr(operate, "adjudication_items", lambda *a, **k: ([], 0))
+    assert operate.gate_result("v10", entry, None, tmp_path, tmp_path)["passed"]
+    assert any(line.startswith("next step: 10") for line in operate.next_chunks("v10", every))
+
+
+def test_steps_stay_out_of_costs_ping_and_sweep():
+    """Step 10 makes no model call: it is not a chunk to price, ping or sweep."""
+    camp = campaign("v10")
+    assert "10" not in {str(c["id"]) for c in camp["chunks"]}
+    plan, why = operate.sweep_plan("v10", [{"chunk": "7a"}], "7e", start="7b")
+    assert all(str(e["id"]) != "10" for e, _ in plan)
+
+
+# ---------------------------------------------------------------- interim overlay cross-check (flag only)
+
+def _overlay(root, records):
+    """A sandbox checkout with an interim overlay of ``records`` (correspondence.jsonl only)."""
+    import hashlib
+    d = root / "data/labels/interim"
+    d.mkdir(parents=True)
+    body = "".join(json.dumps(r, sort_keys=True) + "\n" for r in records)
+    (d / "correspondence.jsonl").write_text(body)
+    manifest = {"schema": "mailroom-interim-labels/v1",
+                "files": {"correspondence.jsonl": hashlib.sha256(body.encode()).hexdigest()}}
+    (d / "MANIFEST.json").write_text(json.dumps(manifest))
+    return hashlib.sha256((d / "MANIFEST.json").read_bytes()).hexdigest()
+
+
+def _interim_rec(doc_id, sha, labels):
+    return {"doc_class": "correspondence", "doc_id": doc_id, "doc_sha256": sha[:16], "labels": labels,
+            "source": {"gate_run": "extraction-gate-luna-v1.3.0"}}
+
+
+def test_interim_load_checks_integrity_and_matches_by_hash(tmp_path):
+    """Manifest and file hashes are enforced; records match on content or source content sha; derived drops."""
+    from mailroom_eda.labeling import interim
+    rows = [_row("correspondence", "attorney_demand", EMAIL_TEXT, document_id="e1", content_sha256="ab" * 32),
+            _row("correspondence", "attorney_demand", EMAIL_TEXT, document_id="e2", source_content_sha256="cd" * 32),
+            _row("correspondence", "attorney_demand", EMAIL_TEXT, document_id="e3", content_sha256="ef" * 32)]
+    sha = _overlay(tmp_path, [
+        _interim_rec("e1", "ab" * 32, {"sender": {"status": "gap_fill", "value": "alice@enron.com"},
+                                       "communication_type": {"status": "derived", "value": "email"},
+                                       "not_a_field": {"status": "gap_fill", "value": "x"}}),
+        _interim_rec("e2", "cd" * 32, {"intent": {"status": "disputed", "value": "request",
+                                                  "hub_value": "payment_demand", "hub_source": "heuristic"}}),
+        _interim_rec("e3", "00" * 32, {"sender": {"status": "gap_fill", "value": "x"}}),
+        _interim_rec("zz", "00" * 32, {"sender": {"status": "gap_fill", "value": "x"}})])
+    ov = interim.load(tmp_path, rows, manifest_sha256=sha)
+    assert set(ov.labels) == {("e1", "sender"), ("e2", "intent")}
+    assert ov.skipped == {"derived": 1, "unregistered_field": 1, "hash_mismatch": 1, "no_document": 1}
+    assert interim.load(tmp_path / "nowhere", rows) is None and interim.load(None, rows) is None
+    with pytest.raises(SystemExit, match="campaign.yaml interim_overlay"):
+        interim.load(tmp_path, rows, manifest_sha256="0" * 64)
+    (tmp_path / "data/labels/interim/correspondence.jsonl").write_text("{}\n")
+    with pytest.raises(SystemExit, match="differs from MANIFEST.json"):
+        interim.load(tmp_path, rows)
+
+
+def _reviewed_with_overlay(tmp_path, rows, sender_value):
+    """Run a correspondence chunk where both models disagree on urgency, review it with an overlay."""
+    from mailroom_eda.labeling import interim
+    row = {**rows[2], "content_sha256": "ab" * 32}
+    req = tasks.build("correspondence", row)
+    ans = {"fields": {f: {"value": None, "status": "not_found", "evidence": ""} for f in req.fields}}
+    ans["fields"]["sender"] = {"value": "alice@enron.com", "status": "present", "evidence": "From: alice@enron.com"}
+    other = json.loads(json.dumps(ans))
+    other["fields"]["sender"] = {"value": "Alice", "status": "present", "evidence": "Alice"}
+    models = ["deepseek/deepseek-v4.1-flash", "minimax/minimax-m3.1-flash"]
+    out = tmp_path / "chunk"
+    runner.run_chunk([row], task="correspondence", models=models,
+                     backend=providers.Backend("openrouter", "u", "k"), reasoning="off",
+                     budget=spend.Budget(1.0, 3600), out_dir=out, chat=_fake_chat(dict(zip(models, (ans, other)))))
+    _overlay(tmp_path / "sandbox", [_interim_rec(row["document_id"], "ab" * 32,
+                                                 {"sender": {"status": "gap_fill", "value": sender_value}})])
+    ov = interim.load(tmp_path / "sandbox", [row])
+    summary = runner.review([row], "correspondence", out, interim=ov)
+    return row, out, ov, summary
+
+
+def test_interim_columns_flag_without_changing_decisions(tmp_path, rows):
+    """The overlay is shown beside the models; decision and adjudication are unchanged."""
+    row, out, ov, summary = _reviewed_with_overlay(tmp_path, rows, "alice@enron.com")
+    fields = {f["field"]: f for f in export.read_csv(out / "fields.csv")}
+    s = fields["sender"]
+    assert s["interim_status"] == "gap_fill" and s["interim_verified"] == "true" and s["interim_agree"] == "a"
+    assert s["decision"] == "adjudicate" and s["final_decision"] == "adjudicate" and not s["final_source"]
+    assert summary["interim"]["rows"] == 1 and summary["interim"]["verified"] == 1
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    for name in ("calls.jsonl",):
+        (plain / name).write_bytes((out / name).read_bytes())
+    runner.review([row], "correspondence", plain)
+    assert [f["decision"] for f in export.read_csv(plain / "fields.csv")] == \
+        [f["decision"] for f in export.read_csv(out / "fields.csv")]
+
+
+def test_interim_verdict_needs_a_verified_overlay_value(tmp_path, rows):
+    """reviewer_verdict interim takes the overlay value only when it is grounded, and records its source."""
+    row, out, ov, _ = _reviewed_with_overlay(tmp_path, rows, "alice@enron.com")
+    adj = export.read_csv(out / "adjudication.csv")
+    adj[[a["field"] for a in adj].index("sender")]["reviewer_verdict"] = "interim"
+    export.write_csv(out / "adjudication.csv", export.FIELD_COLUMNS, adj)
+    runner.review([row], "correspondence", out, interim=ov)
+    s = {f["field"]: f for f in export.read_csv(out / "fields.csv")}["sender"]
+    assert s["final_decision"] == "accept" and s["final_value"] == "alice@enron.com"
+    assert s["final_source"] == "interim:extraction-gate-luna-v1.3.0"
+    with pytest.raises(SystemExit, match="--sandbox"):
+        runner.review([row], "correspondence", out)  # the verdict needs the overlay loaded
+
+    row2, out2, ov2, _ = _reviewed_with_overlay(tmp_path / "ungrounded", rows, "Mallory Not In Text")
+    s2 = {f["field"]: f for f in export.read_csv(out2 / "fields.csv")}["sender"]
+    assert s2["interim_verified"] == "false" and s2["interim_agree"] == "none"
+    adj = export.read_csv(out2 / "adjudication.csv")
+    adj[[a["field"] for a in adj].index("sender")]["reviewer_verdict"] = "interim"
+    export.write_csv(out2 / "adjudication.csv", export.FIELD_COLUMNS, adj)
+    with pytest.raises(SystemExit, match="not grounded"):
+        runner.review([row2], "correspondence", out2, interim=ov2)
+
+
+def test_interim_overlay_is_pinned_in_the_campaign():
+    """campaign.yaml pins the overlay manifest the cross-check was written against."""
+    pin = campaign("v10")["interim_overlay"]
+    assert len(pin["manifest_sha256"]) == 64 and pin["sandbox_commit"]
+
+
+def test_sweep_plan_leaves_out_skipped_arms_but_keeps_their_numbers():
+    """Chunk 3's ``skip:`` arms are not planned (no spend, no refusal mid-sweep); the
+    others keep the arm numbers their output folders use."""
+    plan, _ = operate.sweep_plan("v10", [], "3", start="3")
+    camp = [c for c in campaign("v10")["chunks"] if str(c["id"]) == "3"]
+    expected = [i for i, c in enumerate(camp, 1) if not c.get("skip")]
+    assert [arm for _, arm in plan] == expected and len(expected) < len(camp)
+    assert not any(c.get("skip") for c, _ in plan)
 
 
 def test_inspect_reads_the_corrected_gold(tmp_path, monkeypatch):
@@ -2346,3 +2729,12 @@ def test_a_winner_approved_on_another_prompt_does_not_run(monkeypatch):
 def test_cuad_inspect_reads_string_gold_spans():
     assert operate._span_text("the licensee shall not") == "the licensee shall not"
     assert operate._span_text({"text": "a span"}) == "a span" and operate._span_text(None) == ""
+
+
+def test_no_step_or_chunk_needs_a_skipped_chunk():
+    """A skipped chunk is never approved, so anything that needs it could never start."""
+    camp = campaign("v10")
+    skipped = {str(c["id"]) for c in camp["chunks"] if c.get("skip")
+               and all(o.get("skip") for o in camp["chunks"] if str(o["id"]) == str(c["id"]))}
+    for c in [*camp["chunks"], *(camp.get("steps") or [])]:
+        assert not skipped & {str(n) for n in c.get("needs") or []}, (c["id"], skipped)

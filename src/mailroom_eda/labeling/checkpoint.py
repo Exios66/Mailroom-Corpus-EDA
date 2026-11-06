@@ -139,3 +139,56 @@ def token_ready() -> bool:
     from huggingface_hub import get_token  # noqa: PLC0415
 
     return bool(get_token())
+
+
+def _scoped_write(scoped: Iterable[Any], repo_id: str) -> bool:
+    """A fine-grained token grants ``repo.write`` on the repo itself or on its namespace."""
+    namespace = repo_id.split("/")[0]
+    for s in scoped or []:
+        ent = s.get("entity") or {}
+        perms = set(s.get("permissions") or [])
+        if "repo.write" not in perms:
+            continue
+        if ent.get("type") in ("user", "org") and ent.get("name") == namespace:
+            return True
+        if ent.get("type") == "dataset" and ent.get("name") == repo_id:
+            return True
+    return False
+
+
+def write_access(repo_id: str = STAGING_REPO, *, api: Any = None) -> tuple[bool, str]:
+    """Whether the HF token can write ``repo_id``, from ``whoami`` (no upload, no repo creation).
+
+    A ``write`` token must belong to the namespace's user or an org it may write in; a
+    fine-grained token needs ``repo.write`` on the namespace or the repo. An existing repo
+    must be private (``ensure_private`` refuses a public one at upload time anyway).
+    """
+    if api is None and not token_ready():
+        return False, "no HF token (set HF_TOKEN or run `huggingface-cli login` with a write token)"
+    api = api or hf_interface.get_hf_api()
+    info = api.whoami()
+    user = info.get("name")
+    namespace = repo_id.split("/")[0]
+    orgs = {o.get("name"): o.get("roleInOrg") for o in info.get("orgs") or []}
+    tok = ((info.get("auth") or {}).get("accessToken") or {})
+    role = tok.get("role")
+    if role == "fineGrained":
+        ok = _scoped_write((tok.get("fineGrained") or {}).get("scoped") or [], repo_id)
+        why = "fine-grained token with repo.write" if ok else f"fine-grained token lacks repo.write on {namespace}"
+    elif role == "write":
+        ok = namespace == user or (namespace in orgs and orgs[namespace] not in ("read", None))
+        why = (f"write token for {user}" if ok
+               else f"write token for {user}, who cannot write in the {namespace} namespace")
+    else:
+        ok, why = False, f"token role is {role or 'unknown'}; checkpoints need a write token"
+    if not ok:
+        return False, why
+    try:
+        private = api.repo_info(repo_id=repo_id, repo_type="dataset").private
+    except Exception as exc:  # noqa: BLE001 - a repo that does not exist yet is created private on upload
+        if type(exc).__name__ == "RepositoryNotFoundError":
+            return True, f"{why}; {repo_id} will be created private on the first checkpoint"
+        raise
+    if not private:
+        return False, f"{repo_id} is public; labeling checkpoints go only to a private repo"
+    return True, f"{why}; {repo_id} is private"

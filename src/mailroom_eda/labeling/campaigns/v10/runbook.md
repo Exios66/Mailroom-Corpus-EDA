@@ -76,6 +76,57 @@ L="env PYTHONPATH=src python -m mailroom_eda.labeling"
    Every line must say `PASS ... schema=strict`. A `json_object fallback` means that route
    stopped supporting strict schemas; stop and run `$L prices`.
 
+## A fresh machine (or a lost checkout)
+
+Every paid answer lives on the private staging repo, so a new machine picks up where the
+last one stopped. Before the first chunk there:
+
+1. **Keys in the environment only** (never in a file): `OPENROUTER_API_KEY`, and an HF
+   token that can **write** `Lucius-Morningstar/mailroom-dataset-v10-staging` (`HF_TOKEN`,
+   or `huggingface-cli login`). `$L doctor` reports `HF checkpoint write access` from the
+   token's `whoami`. A read-only token fails that check, and a paid chunk refuses to start
+   with it unless you pass `--no-checkpoint`, which is not recommended.
+2. **Restore is automatic.** `chunk`, `sweep`, `gate`, `review`, `adjudicate`, `status` and
+   `doctor` first download staged files missing from the labels root. They never overwrite
+   a local file. `--no-restore` skips this; with no token it is skipped with one line.
+3. **Ping again on each new day or machine.** `$L ping --initials XX` stages `ping.jsonl`
+   as soon as it is written. A chunk accepts a passing ping from the last 24 hours, from any
+   machine.
+4. **Modal (optional).** Deploy from the sandbox (`deploy/README.md`): a person runs
+   `export MODAL_VLLM_API_TOKEN="$(openssl rand -hex 24)"` and
+   `modal deploy deploy/modal_vllm.py`. Then, in this shell:
+
+   ```bash
+   export VLLM_BASE_URL=https://<workspace>--sandbox-vllm-serve.modal.run/v1
+   export VLLM_API_KEY="$MODAL_VLLM_API_TOKEN"   # the same value the app was deployed with
+   ```
+
+   Once `VLLM_BASE_URL` is set (or with `--modal`), `$L doctor` sends one free
+   `GET /v1/models` and checks that it lists the `models.yaml` Modal model
+   (`Qwen/Qwen3-32B-FP8`). Nothing is generated; the call costs only the app's idle time.
+5. **External releases.** A chunk with `requires: "llm-dojo-scoring X.Y.Z"` becomes runnable
+   by itself once `fields.yaml` `dojo_pin.version` is at least X.Y.Z. `--ack-requires` still
+   overrides; the override is recorded in the chunk's `runs.jsonl`.
+
+## Sweeps
+
+`$L sweep --through <id> [--from <id>] --initials XX` runs every runnable chunk in
+`campaign.yaml` order after one combined dry run (rows, projected USD, summed caps and the
+key's usable credit) and one typed `yes`:
+
+```bash
+$L sweep --from 7b --through 7e --dry-run      # free: what it would run
+$L sweep --from 7b --through 7e --initials XX  # asks once, then runs 7b, 7c, 7d, 7e
+```
+
+- It skips approved chunks and stops at the first chunk whose `needs` are not approved or
+  whose `requires` is not met. So it runs a pilot or bake-off and then stops for your gate.
+- It stops at the first non-zero exit: 2 (cap or wall limit), 3 (failed calls) or 4
+  (checkpoint upload).
+- **It never approves.** Score and approve each chunk with `$L gate <id> --approve`.
+- Each arm runs through `$L chunk` with that chunk's own cap, wall limit, ping check and
+  checkpoint.
+
 ## Every chunk
 
 `<id>` is the chunk's `id` in `campaign.yaml` (`1`, `2a`, `5c`, ...). Chunk 1 and chunk 3
@@ -284,6 +335,43 @@ $L jev audit --initials XX --api-cost-cap-usd 0.10         # refused until the p
 - Audit (v4): 819 train rows, $0.0555, 163 flagged (`jev_intent-audit/flags-9f283f818cdb.csv`):
   121 llm_zero_shot, 27 aeslc_join, 15 heuristic. Every flag gets a full-text read.
 
+## Adjudication (step 10)
+
+Step 10 makes no model call. After the labeling chunks are approved:
+
+```bash
+$L adjudicate                 # rebuilds every approved field chunk; writes adjudication/open.csv
+# fill reviewer_verdict (and reviewer_value) in open.csv, or in each chunk's adjudication.csv
+$L adjudicate                 # copies the verdicts back and lists what is still open
+$L gate 10 --approve --initials XX
+```
+
+`open.csv` has one row per field still at `final_decision == adjudicate`, with the chunk,
+both model values and their evidence. The `resolved` gate passes only when every labeling
+chunk is approved and nothing is open; `gate.json` records the counts per chunk and field.
+
+## Interim overlay cross-check (flag only)
+
+`review`, `gate` and `adjudicate` read the sandbox's interim labels
+(`local-mailroom-sandbox/data/labels/interim/`, default `--sandbox ../local-mailroom-sandbox`;
+a missing checkout skips this with one line). Nothing is copied into this repo. The overlay
+is refused unless `MANIFEST.json` matches `campaign.yaml` `interim_overlay.manifest_sha256`
+and every file matches the manifest. Records match a stage row by `document_id` and the
+`content_sha256` prefix. `derived` labels are dropped.
+
+| column | meaning |
+|---|---|
+| `interim_value`, `interim_status` | the overlay value and its status (`gap_fill`, `correction`, `disputed`) |
+| `interim_verified` | the value is non-empty and grounded in this document (same check as a model value) |
+| `interim_agree` | which model values agree with it: `a+b`, `a`, `b` or `none` |
+| `final_source` | `interim:<gate_run>` when the reviewer chose the overlay |
+
+The overlay never changes `decision` or adds adjudication items. In a review you may answer
+`reviewer_verdict: interim` when `interim_verified` is true. This is how the PR 43 plan's
+CUAD parties and dates corrections enter chunks 5a and 5b. An intent chunk writes
+`interim-intent.csv`, which shows the overlay's 72 `disputed` intents with `hub_value` and
+`hub_source`. `gate.json` carries the counts for information only.
+
 ## Merger window A/B (before chunk 6; about $0.36)
 
 Does the section-aware merger window (`labeling/sections.py`) miss facts that the whole
@@ -348,14 +436,16 @@ The v10 build refuses labels whose configuration has no passing calibration or p
 - Chunks 5 and 6 (contract and merger entities) label the v2 schema fields; run them after
   llm-dojo-scoring 0.28.0 has merged, so the fields they fill are the ones the Dojo scores
   (`docs/plans/v10-consumer-patches.md`, G1). Their first chunks (5a, 6a) carry
-  `requires:`; `$L chunk` refuses them until you confirm the release has landed with
-  `--ack-requires`, and `$L doctor` lists them as waiting instead of offering them next.
+  `requires:`. Until `fields.yaml` pins llm-dojo-scoring 0.28.0 or later, `$L chunk` refuses
+  them (`--ack-requires` overrides) and `$L doctor` lists them as waiting instead of
+  offering them next.
 - Chunks 6c0 and 6c1 label `merger_consideration` for the 56 MAUD mergers whose subclass
   is `other` (they have full MAUD clause labels but no expert Type of Consideration
   answer). 6c0 calibrates both models on the 95 mergers that do have the answer; 6c1
   labels the 56. Chunks 6a, 6b and 6c need 6c1. Neither chunk depends on the Dojo
   release: `merger_consideration` is a v1 field.
-- Chunk 10 is human adjudication. Chunk 11 re-runs the v10 build and every gate.
+- Step 10 is human adjudication (`$L adjudicate`, then `$L gate 10`). Chunk 11 re-runs the
+  v10 build and every gate.
 - Any one-model chunk can run on Modal instead:
   `$L chunk <id> --provider modal --initials XX`, with `VLLM_BASE_URL` and `VLLM_API_KEY`
   set and the Modal app already deployed by a person (this package never deploys it).
