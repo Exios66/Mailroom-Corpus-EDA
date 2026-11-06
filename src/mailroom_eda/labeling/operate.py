@@ -29,7 +29,7 @@ import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Collection, Mapping, Sequence
 
 import yaml
 
@@ -255,6 +255,37 @@ def provider_models(models: Sequence[str], provider: str, model_map: Sequence[st
     return out
 
 
+def mixed_models(models: Sequence[str], model_map: Sequence[str]) -> tuple[list[str], dict[str, str]]:
+    """``--provider mixed``: each ``campaign_model=replacement`` swaps one model of the chunk for
+    another approved model; every model then runs on its own ``models.yaml`` provider (for
+    example Qwen on Modal beside GLM on OpenRouter). Returns the models and ``{model: provider}``."""
+    reg = models_registry()["models"]
+    out = list(models)
+    for item in model_map:
+        old, _, new = item.partition("=")
+        if old not in out:
+            raise SystemExit(f"--model-map {item!r}: {old!r} is not a model of this chunk ({out})")
+        if new not in reg:
+            raise SystemExit(f"--model-map {item!r}: {new!r} is not an approved model in models.yaml")
+        out[out.index(old)] = new
+    if len(set(out)) != len(out):
+        raise SystemExit(f"this chunk uses two models, but the map leaves {out}")
+    prov = {m: str(reg[m]["provider"]) for m in out}
+    if len(set(prov.values())) < 2:
+        raise SystemExit(f"--provider mixed, but every model runs on one provider ({prov}); "
+                         "run it with that --provider instead")
+    return out, prov
+
+
+def chunk_models(args: argparse.Namespace, models: Sequence[str]) -> tuple[list[str], str | dict[str, str]]:
+    """The models a chunk sends and where: one provider, or ``{model: provider}`` when mixed."""
+    if args.provider == "mixed":
+        return mixed_models(models, args.model_map)
+    if args.provider != "openrouter":
+        return provider_models(models, args.provider, args.model_map), args.provider
+    return list(models), args.provider
+
+
 REQUIRES_RE = re.compile(r"^\s*llm-dojo-scoring\s+(\d+(?:\.\d+)*)\b")
 
 
@@ -378,10 +409,13 @@ def cmd_chunk(args: argparse.Namespace) -> int:
             raise SystemExit(f"chunk {entry['id']} requires {entry['requires']} ({why}); bump the Dojo pin "
                              f"once it has landed, or re-run with --ack-requires")
         print(f"WARNING: --ack-requires overrides: {why}", file=sys.stderr)
-    if args.provider == "openrouter" and not args.dry_run:
+    models, provider = chunk_models(args, models)
+    prov = provider if isinstance(provider, dict) else {m: provider for m in models}
+    routed = [m for m in models if prov[m] == "openrouter"]
+    if routed and not args.dry_run:
         log = args.out / "ping.jsonl"
         probs = ping_problems(export.read_journal(log) if log.exists() else [],
-                              [(m, reasoning) for m in models])
+                              [(m, reasoning) for m in routed])
         if probs:
             raise SystemExit("route not verified; run `labeling ping --initials XX` first:\n  "
                              + "\n  ".join(probs))
@@ -390,8 +424,10 @@ def cmd_chunk(args: argparse.Namespace) -> int:
         if not ok:
             raise SystemExit(f"checkpoint not writable ({why}); paid answers must survive a lost checkout. "
                              "Fix the token, or pass --no-checkpoint")
-    if args.provider != "openrouter":
-        models = provider_models(models, args.provider, args.model_map)
+    if "modal" in prov.values() and not args.dry_run:
+        ok, why = modal_check()
+        if not ok:
+            raise SystemExit(f"Modal endpoint not ready: {why}")
     rows = runner.load_stage(args.stage)
     picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
     stale = stale_winner(args.campaign, entry, picked)
@@ -400,7 +436,7 @@ def cmd_chunk(args: argparse.Namespace) -> int:
     camp = campaign(args.campaign)
     rc = runner.execute(
         rows, picked, task=entry["task"], set_name=entry["set"], chunk_spec=entry.get("chunk"), models=models,
-        provider=args.provider, reasoning=reasoning, initials=args.initials,
+        provider=provider, reasoning=reasoning, initials=args.initials,
         cap_usd=float(args.cap_usd or entry["cap_usd"]),
         max_wall_seconds=float(entry.get("max_wall_seconds") or camp["max_wall_seconds"]),
         out_dir=chunk_dir(args.out, entry, arm), dry_run=args.dry_run, workers=args.workers,
@@ -413,7 +449,8 @@ def cmd_chunk(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------- sweep
 
 def sweep_plan(name: str, approvals: Sequence[Mapping[str, Any]], through: str,
-               start: str | None = None) -> tuple[list[tuple[dict[str, Any], int | None]], str]:
+               start: str | None = None, tasks: Collection[str] | None = None
+               ) -> tuple[list[tuple[dict[str, Any], int | None]], str]:
     """The chunk arms a sweep runs, in ``campaign.yaml`` order, and why it stops there.
 
     From ``start`` (default: the first chunk) through ``through``: approved chunks are
@@ -421,6 +458,9 @@ def sweep_plan(name: str, approvals: Sequence[Mapping[str, Any]], through: str,
     is not met, ends the plan. Every gate needs a human (a bake-off pick, verdicts, or a
     ``--signed-off`` read), so the plan runs a pilot or bake-off and then ends at the
     first chunk that depends on it. Nothing is ever approved here.
+
+    ``tasks`` keeps only those tasks' chunks; a chunk that cannot run then blocks only the
+    later chunks of its own task, so one document type waiting on review does not stop another.
     """
     entries = campaign(name)["chunks"]
     ids = [str(c["id"]) for c in entries]
@@ -432,7 +472,10 @@ def sweep_plan(name: str, approvals: Sequence[Mapping[str, Any]], through: str,
     last = len(ids) - 1 - ids[::-1].index(through)
     if first > last:
         raise SystemExit(f"--from {start} comes after --through {through} in campaign.yaml")
+    if tasks and not any(c["task"] in tasks for c in entries):
+        raise SystemExit(f"--task {', '.join(sorted(tasks))}: no chunk of task in campaign {name}")
     done = {str(a["chunk"]) for a in approvals}
+    blocked: dict[str, str] = {}
     counts = Counter(ids)
     plan: list[tuple[dict[str, Any], int | None]] = []
     seen: Counter = Counter()
@@ -441,14 +484,19 @@ def sweep_plan(name: str, approvals: Sequence[Mapping[str, Any]], through: str,
         seen[cid] += 1
         if i < first or i > last or cid in done or c.get("skip"):
             continue  # a ``skip:`` arm keeps its number but never runs (``cmd_chunk`` refuses it)
+        if tasks and (c["task"] not in tasks or c["task"] in blocked):
+            continue
         missing = [str(n) for n in c.get("needs") or [] if str(n) not in done]
-        if missing:
-            return plan, f"stopped at {cid}: needs chunk {', '.join(missing)} approved first"
         met, why = requires_met(c.get("requires"))
-        if not met:
-            return plan, f"stopped at {cid}: {why}"
+        stop = (f"stopped at {cid}: needs chunk {', '.join(missing)} approved first" if missing
+                else None if met else f"stopped at {cid}: {why}")
+        if stop and not tasks:
+            return plan, stop
+        if stop:
+            blocked[c["task"]] = stop
+            continue
         plan.append((c, seen[cid] if counts[cid] > 1 else None))
-    return plan, f"reached {through}"
+    return plan, "; ".join(blocked.values()) or f"reached {through}"
 
 
 def _sweep_projection(args: argparse.Namespace, plan: Sequence[tuple[Mapping[str, Any], int | None]],
@@ -457,8 +505,7 @@ def _sweep_projection(args: argparse.Namespace, plan: Sequence[tuple[Mapping[str
     out = []
     for entry, arm in plan:
         models, reasoning = resolve(args.campaign, entry)
-        if args.provider != "openrouter":
-            models = provider_models(models, args.provider, args.model_map)
+        models, _ = chunk_models(args, models)
         picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
         proj = runner.estimate(picked, entry["task"], models, entry["set"])
         out.append({"chunk": f"{entry['id']}{f'.{arm}' if arm else ''}", "task": entry["task"],
@@ -481,7 +528,8 @@ def cmd_sweep(args: argparse.Namespace, *, confirm: Callable[[str], str] = input
     run_chunk = run_chunk or cmd_chunk
     auto_restore(args)
     approvals = load_approvals(args.campaign)
-    plan, why = sweep_plan(args.campaign, approvals, args.through, args.start)
+    plan, why = sweep_plan(args.campaign, approvals, args.through, args.start,
+                           set(getattr(args, "task", None) or ()) or None)
     if not plan:
         print(f"nothing to run: {why}")
         return 0
@@ -494,14 +542,26 @@ def cmd_sweep(args: argparse.Namespace, *, confirm: Callable[[str], str] = input
     proj = sum(ln["projected_usd"] for ln in lines)
     caps = sum(ln["cap_usd"] for ln in lines)
     print(f"{len(lines)} arms: projected ${proj:.2f}, caps ${caps:.2f}; {why}")
-    if args.provider == "openrouter" and os.environ.get("OPENROUTER_API_KEY"):
+    if args.provider in ("openrouter", "mixed") and os.environ.get("OPENROUTER_API_KEY"):
         rem = providers.key_status(providers.Backend.from_env("openrouter")).get("limit_remaining")
         reserve = models_registry().get("key_reserve_usd", 3.0)
         usable = None if rem is None else float(rem) - reserve
         print("funding: no credit limit" if usable is None else f"funding: ${usable:.2f} usable after reserve")
-        if usable is not None and usable < caps and not args.dry_run:
-            raise SystemExit(f"the sweep's caps (${caps:.2f}) exceed the key's usable credit (${usable:.2f})")
-    elif args.provider == "openrouter":
+        if usable is not None and usable < caps:
+            # run what the credit likely covers (projected cost), in order; each chunk is capped
+            # at the live credit left, checkpoints, and resumes from its journal after a top-up
+            keep, total = 0, 0.0
+            while keep < len(lines) and total + lines[keep]["projected_usd"] <= usable + 1e-9:
+                total += lines[keep]["projected_usd"]
+                keep += 1
+            if not keep:
+                raise SystemExit(f"the key's usable credit (${usable:.2f}) covers no chunk: "
+                                 f"{lines[0]['chunk']} projects ${lines[0]['projected_usd']:.2f}")
+            print(f"deferred until more credit: {', '.join(ln['chunk'] for ln in lines[keep:])}")
+            plan, lines, caps = plan[:keep], lines[:keep], sum(ln["cap_usd"] for ln in lines[:keep])
+            print(f"running {keep} arms: projected ${total:.2f} of ${usable:.2f} usable; "
+                  f"each is capped at the credit left when it starts")
+    elif args.provider in ("openrouter", "mixed"):
         print("funding: not checked (OPENROUTER_API_KEY is not set)")
     if args.dry_run:
         return 0
@@ -513,8 +573,17 @@ def cmd_sweep(args: argparse.Namespace, *, confirm: Callable[[str], str] = input
     for entry, arm in plan:
         label = f"{entry['id']}{f'.{arm}' if arm else ''}"
         print(f"=== sweep: chunk {label}", file=sys.stderr)
+        cap = None
+        if args.provider in ("openrouter", "mixed") and os.environ.get("OPENROUTER_API_KEY"):
+            rem = providers.key_status(providers.Backend.from_env("openrouter")).get("limit_remaining")
+            left = None if rem is None else float(rem) - models_registry().get("key_reserve_usd", 3.0)
+            if left is not None and left < 0.01:
+                print(f"sweep stopped before chunk {label}: no credit left above the reserve")
+                return 0
+            if left is not None and left < float(entry["cap_usd"]):
+                cap = round(left, 2)  # never past the reserve; a stop here resumes after a top-up
         ns = argparse.Namespace(**{**vars(args), "id": str(entry["id"]), "arm": arm, "dry_run": False,
-                                   "ack_requires": False, "cap_usd": None, "no_restore": True})
+                                   "ack_requires": False, "cap_usd": cap, "no_restore": True})
         rc = run_chunk(ns)
         if rc:
             print(f"sweep stopped: chunk {label} exited {rc}")
@@ -817,10 +886,11 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
     rows = runner.load_stage(stage)
     picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
     models, reasoning = resolve(name, entry)
-    provider = "openrouter"
+    provider, providers_of = "openrouter", None
     started = [r for r in export.read_journal(out_dir / "runs.jsonl") if r.get("started_utc") and r.get("models")]
     if started:  # score the models the chunk actually ran (e.g. the mapped Modal model)
         models, provider = list(started[-1]["models"]), str(started[-1].get("provider") or provider)
+        providers_of = started[-1].get("providers") or None
     overlay = load_interim(argparse.Namespace(sandbox=sandbox, campaign=name), rows)
     reviewed = runner.review(rows, entry["task"], out_dir, reasoning=reasoning, interim=overlay)
     gate = dict(entry["gate"])
@@ -861,7 +931,8 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
     # what was scored: answers to today's prompt. Old-prompt answers stay in the journal (and
     # in spent_usd) but must not vouch for this prompt in an approval, nor price the arm.
     current = runner.current_prompt_calls(rows, entry["task"], calls, entry["set"])
-    res.update(chunk=entry["id"], arm=arm, task=entry["task"], models=models, provider=provider, reasoning=reasoning,
+    res.update(chunk=entry["id"], arm=arm, task=entry["task"], models=models, provider=provider,
+               **({"providers": providers_of} if providers_of else {}), reasoning=reasoning,
                prompt_sha256=sorted({c["prompt_sha256"] for c in current}),
                served_providers=sorted({c.get("served_provider") or "" for c in current} - {""}),
                spent_usd=round(sum(c.get("cost_usd") or 0 for c in every), 4),
@@ -1413,6 +1484,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
     (opinions if second else approvals).append({
         "chunk": str(entry["id"]), "arm": arm, "task": entry["task"], "set": entry["set"],
         "slice": entry.get("chunk"), "models": res["models"], "provider": res["provider"],
+        **({"providers": res["providers"]} if res.get("providers") else {}),
         "reasoning": res["reasoning"],
         "temperature": {m: providers.temperature(m) for m in res["models"]}, "prompt_sha256": res["prompt_sha256"],
         "served_providers": res["served_providers"],
@@ -1857,11 +1929,13 @@ def add_commands(sub: Any) -> None:
     p.add_argument("id")
     p.add_argument("--arm", type=int)
     p.add_argument("--initials")
-    p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
-    p.add_argument("--cap-usd", type=float, help="override the campaign cap (lower only is sensible)")
+    p.add_argument("--provider", default="openrouter", choices=(*providers.PROVIDERS, "mixed"),
+                   help="mixed: --model-map swaps a campaign model for one on another provider")
+    p.add_argument("--cap-usd", type=float, help="override the campaign cap (raise it for Modal: GPU time and the cold start count)")
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--model-map", action="append", default=[], metavar="CAMPAIGN_MODEL=PROVIDER_MODEL",
-                   help="with --provider modal: which approved Modal model replaces a campaign model")
+                   help="with --provider modal: which approved Modal model replaces a campaign model; "
+                        "with --provider mixed: which campaign model the other provider's model replaces")
     p.add_argument("--ack-requires", action="store_true",
                    help="the external release named by the chunk's requires: has landed")
     p.add_argument("--dry-run", action="store_true")
@@ -1873,8 +1947,11 @@ def add_commands(sub: Any) -> None:
     common(p)
     p.add_argument("--through", required=True, help="the last chunk id to run (campaign.yaml order)")
     p.add_argument("--from", dest="start", help="start at this chunk id instead of the first")
+    p.add_argument("--task", action="append", default=[],
+                   help="only this task's chunks (repeatable), e.g. --task correspondence --task corporate")
     p.add_argument("--initials")
-    p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
+    p.add_argument("--provider", default="openrouter", choices=(*providers.PROVIDERS, "mixed"),
+                   help="mixed: --model-map swaps a campaign model for one on another provider")
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--model-map", action="append", default=[], metavar="CAMPAIGN_MODEL=PROVIDER_MODEL")
     p.add_argument("--dry-run", action="store_true")
@@ -1896,7 +1973,8 @@ def add_commands(sub: Any) -> None:
     p.add_argument("--sandbox", type=Path, default=runner.DEFAULT_SANDBOX,
                    help="local-mailroom-sandbox checkout for the interim cross-check (absent: skipped)")
     p.add_argument("--initials")
-    p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
+    p.add_argument("--provider", default="openrouter", choices=(*providers.PROVIDERS, "mixed"),
+                   help="mixed: --model-map swaps a campaign model for one on another provider")
     p.add_argument("--no-checkpoint", action="store_true")
     p.set_defaults(operate=cmd_gate)
 

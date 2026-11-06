@@ -87,11 +87,17 @@ class Ingested:
         self.skipped[why] = self.skipped.get(why, 0) + 1
 
 
+def model_provider(model: str, approval: Mapping[str, Any]) -> str:
+    """Where ``model`` ran in an approved chunk: its ``providers`` entry (a mixed chunk), else
+    the chunk's ``provider``."""
+    return str((approval.get("providers") or {}).get(model) or approval.get("provider", "openrouter"))
+
+
 def configuration(model: str, approval: Mapping[str, Any]) -> str:
     """The configuration string of one model in an approved chunk."""
     temps = approval.get("temperature") or {}
     shas = ",".join(s[:12] for s in approval.get("prompt_sha256") or [])
-    return (f"{model}@{approval.get('provider', 'openrouter')}/reasoning={approval.get('reasoning')}"
+    return (f"{model}@{model_provider(model, approval)}/reasoning={approval.get('reasoning')}"
             f"/prompt={shas}/t={temps.get(model)}")
 
 
@@ -104,8 +110,8 @@ def _calibrated(model: str, approval: Mapping[str, Any], approvals: Sequence[Map
             continue
         if model not in (a.get("models") or []):
             continue
-        if (a.get("provider", "openrouter"), str(a.get("reasoning"))) != \
-                (approval.get("provider", "openrouter"), str(approval.get("reasoning"))):
+        if (model_provider(model, a), str(a.get("reasoning"))) != \
+                (model_provider(model, approval), str(approval.get("reasoning"))):
             continue
         if not shas <= set(a.get("prompt_sha256") or []):
             continue
