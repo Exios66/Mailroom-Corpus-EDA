@@ -41,9 +41,26 @@ chunks:
      gate: {kind: cuad_f1, micro_f1: 0.75, precision: 0.80}, note: "arm 6: Claude Haiku 5.5"}
   - {id: "1",  task: cuad, set: calibration, models: [minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.35,
      gate: {kind: cuad_f1, micro_f1: 0.75, precision: 0.80}, note: "arm 7: MiniMax M3.1 Flash, low"}
-  - {id: "2a", needs: ["1"], task: cuad, set: pending, chunk: "1/3", models: [winner_of_1], reasoning: winner_of_1, cap_usd: 0.55, gate: {kind: review}}
-  - {id: "2b", needs: ["1"], task: cuad, set: pending, chunk: "2/3", models: [winner_of_1], reasoning: winner_of_1, cap_usd: 0.55, gate: {kind: review}}
-  - {id: "2c", needs: ["1"], task: cuad, set: pending, chunk: "3/3", models: [winner_of_1], reasoning: winner_of_1, cap_usd: 0.45, gate: {kind: review}}
+  # Chunk 1h: 40 more golden contracts the prompt was never tuned on, one arm per chunk-1
+  # model; `labeling bakeoff 1` marks clearly-worse models, whose holdout arm is not run.
+  # The final pick pools calibration + holdout (80 contracts, paired bootstrap).
+  - {id: "1h", needs: ["1"], task: cuad, set: holdout, models: [deepseek/deepseek-v4.1-flash], reasoning: "low", cap_usd: 0.33,
+     gate: {kind: cuad_f1, micro_f1: 0.75, precision: 0.80}, note: "holdout arm 1"}
+  - {id: "1h", needs: ["1"], task: cuad, set: holdout, models: [z-ai/glm-5.3-flashx-legal], reasoning: "low", cap_usd: 0.59,
+     gate: {kind: cuad_f1, micro_f1: 0.75, precision: 0.80}, note: "holdout arm 2"}
+  - {id: "1h", needs: ["1"], task: cuad, set: holdout, models: [deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 0.26,
+     gate: {kind: cuad_f1, micro_f1: 0.75, precision: 0.80}, note: "holdout arm 3"}
+  - {id: "1h", needs: ["1"], task: cuad, set: holdout, models: [deepseek/deepseek-v4.1-flash-1017], reasoning: "off", cap_usd: 0.48,
+     gate: {kind: cuad_f1, micro_f1: 0.75, precision: 0.80}, note: "holdout arm 4"}
+  - {id: "1h", needs: ["1"], task: cuad, set: holdout, models: [openai/gpt-6-luna-pro], reasoning: "off", cap_usd: 0.18,
+     gate: {kind: cuad_f1, micro_f1: 0.75, precision: 0.80}, note: "holdout arm 5"}
+  - {id: "1h", needs: ["1"], task: cuad, set: holdout, models: [anthropic/claude-haiku-5.5], reasoning: "off", cap_usd: 0.18,
+     gate: {kind: cuad_f1, micro_f1: 0.75, precision: 0.80}, note: "holdout arm 6"}
+  - {id: "1h", needs: ["1"], task: cuad, set: holdout, models: [minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.29,
+     gate: {kind: cuad_f1, micro_f1: 0.75, precision: 0.80}, note: "holdout arm 7"}
+  - {id: "2a", needs: ["1", "1h"], task: cuad, set: pending, chunk: "1/3", models: [winner_of_1], reasoning: winner_of_1, cap_usd: 0.55, gate: {kind: review}}
+  - {id: "2b", needs: ["1", "1h"], task: cuad, set: pending, chunk: "2/3", models: [winner_of_1], reasoning: winner_of_1, cap_usd: 0.55, gate: {kind: review}}
+  - {id: "2c", needs: ["1", "1h"], task: cuad, set: pending, chunk: "3/3", models: [winner_of_1], reasoning: winner_of_1, cap_usd: 0.45, gate: {kind: review}}
   # Chunk 3 is the intent model bake-off on the 96 human-labeled emails (same candidates).
   - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 0.10,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 1: DeepSeek v4.1 Flash, off"}
@@ -63,11 +80,11 @@ chunks:
   - {id: "5b", needs: ["5a"], task: contract_entities, set: pilot, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 1.00, gate: {kind: human_verdicts, precision: 0.90}}
   - {id: "5c", needs: ["5b"], task: contract_entities, set: remainder, chunk: "1/3", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
-     reasoning: "off", cap_usd: 3.00, gate: {kind: agreement}}
+     reasoning: "off", cap_usd: 2.40, gate: {kind: agreement}}
   - {id: "5d", needs: ["5b"], task: contract_entities, set: remainder, chunk: "2/3", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
-     reasoning: "off", cap_usd: 3.00, gate: {kind: agreement}}
+     reasoning: "off", cap_usd: 2.60, gate: {kind: agreement}}
   - {id: "5e", needs: ["5b"], task: contract_entities, set: remainder, chunk: "3/3", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
-     reasoning: "off", cap_usd: 3.00, gate: {kind: agreement}}
+     reasoning: "off", cap_usd: 2.50, gate: {kind: agreement}}
   - {id: "6c0", task: merger_consideration, set: calibration, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 0.60, gate: {kind: consideration_accuracy, accuracy: 0.95},
      note: "the 95 mergers with the expert MAUD answer; both models must reach 0.95"}
@@ -77,9 +94,9 @@ chunks:
   - {id: "6a", needs: ["6c1"], task: merger_entities, set: pilot, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 0.40, gate: {kind: human_verdicts, precision: 0.90}, requires: "llm-dojo-scoring 0.28.0 (G1)"}
   - {id: "6b", needs: ["6c1", "6a"], task: merger_entities, set: remainder, chunk: "1/2", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
-     reasoning: "off", cap_usd: 1.50, gate: {kind: agreement}}
+     reasoning: "off", cap_usd: 1.30, gate: {kind: agreement}}
   - {id: "6c", needs: ["6c1", "6a"], task: merger_entities, set: remainder, chunk: "2/2", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
-     reasoning: "off", cap_usd: 1.50, gate: {kind: agreement}}
+     reasoning: "off", cap_usd: 1.30, gate: {kind: agreement}}
   - {id: "7a", task: correspondence, set: pilot, models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash],
      reasoning: "low", cap_usd: 0.25, gate: {kind: human_verdicts, precision: 0.90}}
   - {id: "7b", needs: ["7a"], task: correspondence, set: remainder, chunk: "1/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.50, gate: {kind: agreement}}
@@ -94,7 +111,7 @@ chunks:
   - {id: "8e", needs: ["8a"], task: claim_checklist, set: remainder, chunk: "4/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.75, gate: {kind: agreement}}
   - {id: "9a", task: corporate, set: pilot, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 0.50, gate: {kind: human_verdicts, precision: 0.90}}
-  - {id: "9b", needs: ["9a"], task: corporate, set: remainder, chunk: "1/4", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 1.00, gate: {kind: agreement}}
-  - {id: "9c", needs: ["9a"], task: corporate, set: remainder, chunk: "2/4", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 1.00, gate: {kind: agreement}}
-  - {id: "9d", needs: ["9a"], task: corporate, set: remainder, chunk: "3/4", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 1.00, gate: {kind: agreement}}
-  - {id: "9e", needs: ["9a"], task: corporate, set: remainder, chunk: "4/4", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 1.25, gate: {kind: agreement}}
+  - {id: "9b", needs: ["9a"], task: corporate, set: remainder, chunk: "1/4", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 0.90, gate: {kind: agreement}}
+  - {id: "9c", needs: ["9a"], task: corporate, set: remainder, chunk: "2/4", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 0.80, gate: {kind: agreement}}
+  - {id: "9d", needs: ["9a"], task: corporate, set: remainder, chunk: "3/4", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 0.85, gate: {kind: agreement}}
+  - {id: "9e", needs: ["9a"], task: corporate, set: remainder, chunk: "4/4", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 1.05, gate: {kind: agreement}}

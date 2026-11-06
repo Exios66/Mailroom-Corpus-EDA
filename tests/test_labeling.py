@@ -1629,3 +1629,17 @@ def test_cuad_prompt_excludes_winding_up_from_post_termination_services():
     Post-Termination Services; the expert gold excludes it."""
     from mailroom_eda.labeling.registry import prompt
     assert "winding up" in prompt("cuad_system").render({}).lower()
+
+
+def test_cuad_holdout_is_disjoint_from_calibration_and_stable():
+    """The revised prompt must pass on 40 golden contracts it was not tuned on."""
+    from mailroom_eda import v9_4_revision as v94
+    if not runner.DEFAULT_STAGE.exists():
+        pytest.skip("no local v9.4 stage")
+    rows = runner.load_stage(runner.DEFAULT_STAGE)
+    hold = runner.select(rows, "cuad", "holdout")
+    cal = {r["filename"] for r in v94.cuad_calibration_sample(rows)}
+    assert len(hold) == 40 and not cal & {r["filename"] for r in hold}
+    assert [r["filename"] for r in hold] == [r["filename"] for r in runner.select(rows, "cuad", "holdout")]
+    assert all(r["source_corpus"] == v94.GOLDEN_CUAD_SOURCE
+               and (r["gt_fields"].get("context_window_band") or "") != ">32k" for r in hold)

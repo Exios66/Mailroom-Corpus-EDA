@@ -37,7 +37,7 @@ from .registry import campaign, models_registry, vocabulary
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_STAGE = ROOT / "data" / "v9_4" / "stage"
 DEFAULT_OUT = ROOT / "docs" / "reports" / "audits" / "v10_labels"
-SETS = ("calibration", "pilot", "remainder", "pending", "flagged", "all")
+SETS = ("calibration", "holdout", "pilot", "remainder", "pending", "flagged", "all")
 PILOT_PER_STRATUM = {"contract_entities": 2, "merger_entities": 3, "merger_consideration": 3, "correspondence": 5,
                      "claim_checklist": 5, "corporate": 3}
 #: Output-token budget per call, by task (also the worst case the spend gate reserves).
@@ -109,10 +109,12 @@ def select(rows: Sequence[Mapping[str, Any]], task: str, set_name: str) -> list[
     if task == "cuad":
         if set_name == "calibration":
             out = v94.cuad_calibration_sample(rows)
+        elif set_name == "holdout":
+            out = v94.cuad_holdout_sample(rows)
         elif set_name == "pending":
             out = [r for r in pool if v94.is_pending_cuad(r)]
         else:
-            raise SystemExit("cuad sets: calibration, pending")
+            raise SystemExit("cuad sets: calibration, holdout, pending")
     elif task == "merger_consideration":
         # calibration: the 95 mergers with the expert MAUD answer; pending: the 56 without.
         if set_name == "calibration":

@@ -573,22 +573,23 @@ The machine-readable sequence is `src/mailroom_eda/labeling/campaigns/v10/campai
 |---|---|---|---|---|---|
 | 0 | build: cleanup, layout, specialist fix, deterministic fields, card | none | all | — | C3 gates 1–8, 12 and 13 pass. Deterministic fields: `cuad_family`, `merger_consideration`, `communication_type` |
 | 1 | CUAD model bake-off | DeepSeek v4.1 Flash low / off, DeepSeek v4.1 Flash 1017 off, GLM-5.3 FlashX Legal low, GPT-6 Luna Pro, Claude Haiku 5.5, MiniMax M3.1 Flash low | 40 × 7 arms | $0.35 / $0.30 / $0.55 / $0.63 / $0.25 / $0.25 / $0.35 | micro-F1 ≥ 0.75 and P ≥ 0.80, else STOP |
+| 1h | CUAD holdout (40 golden contracts not in calibration) | each chunk-1 model the calibration bake-off did not mark clearly worse | 40 × up to 7 arms | $0.33 / $0.59 / $0.26 / $0.48 / $0.18 / $0.18 / $0.29 | micro-F1 ≥ 0.75 and P ≥ 0.80; the pick pools calibration + holdout (80 contracts, paired bootstrap) |
 | 2a–c | CUAD on EX-10 | winner of #1 | 89 (30/30/29) | $0.55 / $0.55 / $0.45 | spans re-verify; the user reviews `spans.csv` |
 | 3 | intent model bake-off | DeepSeek v4.1 Flash off / low, DeepSeek v4.1 Flash 1017 off, GPT-6 Luna Pro, Claude Haiku 5.5, MiniMax M3.1 Flash low | 96 × 2 passes × 6 arms | $0.10 / $0.30 / $0.20 / $0.10 / $0.10 / $0.15 | κ ≥ 0.75 |
 | 4 | flagged intents | winner of #3 | 25 × 2 passes | $0.17 | two-pass agreement; the user reviews the CSV |
 | 5a | contract entity calibration | GLM-legal + DeepSeek | 40 | $0.75 | per-field accuracy ≥ 0.85 against gold derived from the expert CUAD spans (Parties, dates, Governing Law, Renewal Term) |
 | 5b | contract entity pilot (2 per CUAD family) | as 5a | 52 | $1.00 | human verdicts ≥ 0.90 |
-| 5c–e | contract entities | as 5a | 545 (182/182/181) | $3.00 each | agreement, verbatim checks, adjudication CSV |
+| 5c–e | contract entities | as 5a | 545 (182/182/181) | $2.40 / $2.60 / $2.50 | agreement, verbatim checks, adjudication CSV |
 | 6c0 | merger consideration calibration | GLM-legal + DeepSeek | 95 | $0.60 | each model ≥ 0.95 accuracy against the expert MAUD answer (`consideration_accuracy`, confusion table) |
 | 6c1 | merger consideration for the 56 `other` rows | as 6c0 | 56 | $0.40 | agreement; disagreements adjudicated |
 | 6a | merger pilot (3 per subclass) | GLM-legal + DeepSeek | 13 | $0.40 | needs 6c1; the user fills `reviewer_verdict`; agreed-field precision ≥ 0.90 |
-| 6b–c | merger remainder | as 6a | 138 (69/69) | $1.50 each | agreement and verbatim checks |
+| 6b–c | merger remainder | as 6a | 138 (69/69) | $1.30 each | agreement and verbatim checks |
 | 7a | correspondence pilot (5 per subclass) | DeepSeek + MiniMax, reasoning low | 38 | $0.25 | human verdicts ≥ 0.90 |
 | 7b–e | correspondence | as 7a | 962 | $0.50 each | agreement; enum checks |
 | 8a | claim_checklist pilot (5 per subclass) | DeepSeek + MiniMax, reasoning low | 30 | $0.25 | human verdicts ≥ 0.90 |
 | 8b–e | claim_checklist | as 8a | 1,070 | $0.50, $0.50, $0.50, $0.75 | agreement; evidence checks |
 | 9a | corporate pilot (3 per subclass) | GLM-legal + DeepSeek | 29 | $0.50 | human verdicts ≥ 0.90 |
-| 9b–e | corporate | as 9a | 415 | $1.00, $1.00, $1.00, $1.25 | agreement; verbatim checks |
+| 9b–e | corporate | as 9a | 415 | $0.90, $0.80, $0.85, $1.05 | agreement; verbatim checks |
 | 10 | adjudication | human, via `adjudication.csv` | residue | $0 | every item resolved |
 | 11 | re-stage, all gates, render the card | none | — | — | gates 1–13 pass |
 
