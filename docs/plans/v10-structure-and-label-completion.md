@@ -345,11 +345,11 @@ Output one JSON object, nothing else: {"clauses": [{"category": "<exact name>", 
 CUAD user turn. `category_list` is rendered from the pinned Dojo `CUAD_CATEGORIES`, and `family_definition` from `CUAD_FAMILIES`, so the prompt can't drift from the scorer. The family's salient-category list is no longer shown (2026-11-06): it invites the model to add categories the family usually has, and chunk 1 arm 3 missed the precision floor on exactly such false positives.
 
 ```text
-document_id: ${document_id} | filename: ${filename} | CUAD family: ${subclass} (${family_definition})
-length: ${n_chars} chars; shown: ${window_description}
 The 41 categories:
 ${category_list}
-Annotate every PRESENT category.
+Annotate every PRESENT category in the document below.
+document_id: ${document_id} | filename: ${filename} | CUAD family: ${subclass} (${family_definition})
+length: ${n_chars} chars; shown: ${window_description}
 <document>
 ${doc_text_window}
 </document>

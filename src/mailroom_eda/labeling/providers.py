@@ -98,6 +98,7 @@ class Completion:
     cost_usd: float | None
     finish_reason: str
     used_schema: bool
+    cached_tokens: int = 0
 
 
 def build_payload(provider: str, model: str, messages: Sequence[Mapping[str, str]],
@@ -249,6 +250,7 @@ def parse_completion(payload: Mapping[str, Any], *, used_schema: bool) -> Comple
         reasoning_tokens=int(details.get("reasoning_tokens") or 0),
         cost_usd=float(cost) if isinstance(cost, (int, float)) else None,
         finish_reason=finish, used_schema=used_schema,
+        cached_tokens=int((usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0),
     )
 
 

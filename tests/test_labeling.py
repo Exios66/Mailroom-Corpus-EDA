@@ -238,6 +238,28 @@ def test_window_keeps_head_and_tail():
     assert tasks.window("short", 50, 20)[0] == "short"
 
 
+def test_parse_completion_records_cached_prompt_tokens():
+    """Cached prompt tokens are read from usage, so prompt caching can be verified per call."""
+    comp = providers.parse_completion({"choices": [{"message": {"content": '{"a": 1}'}}],
+                                       "usage": {"prompt_tokens": 900,
+                                                 "prompt_tokens_details": {"cached_tokens": 640}}},
+                                      used_schema=True)
+    assert comp.cached_tokens == 640
+    bare = providers.parse_completion({"choices": [{"message": {"content": '{"a": 1}'}}]}, used_schema=True)
+    assert bare.cached_tokens == 0
+
+
+def test_cuad_prompt_puts_static_text_before_the_document_header(rows):
+    """Prompt caching: the user message opens with the static category list, so two
+    documents share a prefix through the last category; per-document text comes after."""
+    a, b = (tasks.build_cuad(r).messages for r in rows[:2])
+    assert a[0] == b[0]
+    ua, ub = a[1]["content"], b[1]["content"]
+    header = ua.index("document_id:")
+    assert ua.index("The 41 categories:") < header
+    assert ua[:header] == ub[:ub.index("document_id:")]
+
+
 def test_cuad_family_maps_every_contract_subclass():
     """Cuad family maps every contract subclass."""
     fams = {f["key"] for f in dojo_snapshot()["cuad_families"]}

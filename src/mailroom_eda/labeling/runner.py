@@ -340,7 +340,7 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
                  "served_provider": comp.served_provider, "used_schema": comp.used_schema,
                  "finish_reason": comp.finish_reason, "prompt_tokens": comp.prompt_tokens,
                  "completion_tokens": comp.completion_tokens, "reasoning_tokens": comp.reasoning_tokens,
-                 "cost_usd": round(cost, 6)})
+                 "cached_tokens": comp.cached_tokens, "cost_usd": round(cost, 6)})
         return comp
 
     def repair(r: Mapping[str, Any], model: str, first: providers.Completion | Mapping[str, Any],

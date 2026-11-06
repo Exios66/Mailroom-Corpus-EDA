@@ -19,7 +19,7 @@ exact windowed prompts, typical output per call, x1.25 for retries and repairs;
 | `deepseek/deepseek-v4.1-flash-1017` | 9.64 |
 | `z-ai/glm-5.3-flashx-legal` | 11.11 |
 | `google/gemini-3.5-flash-lite` | 14.08 |
-| `Qwen/Qwen3-32B-FP8` | 126.98 |
+| `Qwen/Qwen3-32B-FP8` | 126.99 |
 
 ## Recommended plan, chunk by chunk
 
