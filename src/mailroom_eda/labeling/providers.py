@@ -3,8 +3,10 @@
 * ``modal``: the sandbox's vLLM app (``VLLM_BASE_URL`` / ``VLLM_API_KEY``). Thinking is
   switched with ``chat_template_kwargs.enable_thinking`` (Qwen3 chat template).
 * ``openrouter``: ``https://openrouter.ai/api/v1`` with ``OPENROUTER_API_KEY``. The
-  request pins the routing (``require_parameters``, no fallbacks), sets reasoning
-  explicitly and asks for usage accounting, so each response reports its billed cost.
+  request pins the routing from ``models.yaml`` ``route`` (only the listed providers,
+  optional quantization allowlist and price ceiling, ``require_parameters`` so no
+  provider silently ignores the schema), sets reasoning explicitly and asks for usage
+  accounting, so each response reports its billed cost and serving provider.
 
 Both use stdlib ``urllib`` so the playbook adds no dependency. Keys are read from the
 environment only and never written anywhere.
@@ -25,6 +27,7 @@ PROVIDERS = ("modal", "openrouter")
 REASONING = ("off", "low")
 RETRY_STATUS = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 SCHEMA_REJECT_STATUS = frozenset({400, 422})
+_SCHEMA_WORDS = ("schema", "response_format", "structured", "json_object", "json mode")
 
 
 class ProviderError(RuntimeError):
@@ -80,17 +83,24 @@ class Completion:
 
 def build_payload(provider: str, model: str, messages: Sequence[Mapping[str, str]],
                   schema: Mapping[str, Any] | None, *, reasoning: str = "off",
-                  max_tokens: int = 4096, schema_name: str = "labels") -> dict[str, Any]:
-    """The request body for ``provider``. ``schema=None`` asks for plain JSON mode."""
+                  max_tokens: int = 4096, schema_name: str = "labels",
+                  route: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """The request body for ``provider``. ``schema=None`` asks for plain JSON mode.
+
+    ``route`` is the model's ``models.yaml`` routing block; ``seed`` is sent only when it
+    says every pinned provider supports it.
+    """
     if reasoning not in REASONING:
         raise ValueError(f"reasoning must be one of {REASONING}")
+    route = dict(route or {})
     body: dict[str, Any] = {
         "model": model,
         "messages": [dict(m) for m in messages],
         "temperature": 0,
-        "seed": 42,
         "max_tokens": max_tokens,
     }
+    if provider != "openrouter" or route.get("seed", True):
+        body["seed"] = 42
     if schema is not None:
         body["response_format"] = {"type": "json_schema",
                                    "json_schema": {"name": schema_name, "strict": True,
@@ -98,12 +108,25 @@ def build_payload(provider: str, model: str, messages: Sequence[Mapping[str, str
     else:
         body["response_format"] = {"type": "json_object"}
     if provider == "openrouter":
-        body["provider"] = {"require_parameters": True, "allow_fallbacks": False}
+        prov: dict[str, Any] = {"require_parameters": True, "allow_fallbacks": True}
+        for key in ("only", "quantizations", "max_price", "ignore", "data_collection"):
+            if route.get(key):
+                prov[key] = route[key]
+        if "only" not in prov:
+            prov["allow_fallbacks"] = False
+        body["provider"] = prov
         body["reasoning"] = {"enabled": False} if reasoning == "off" else {"effort": "low"}
         body["usage"] = {"include": True}
     else:
         body["chat_template_kwargs"] = {"enable_thinking": reasoning != "off"}
     return body
+
+
+def model_route(model: str) -> dict[str, Any]:
+    """The ``route`` block for an approved model (empty for unlisted models)."""
+    from .registry import models_registry  # noqa: PLC0415
+
+    return dict((models_registry()["models"].get(model) or {}).get("route") or {})
 
 
 def _post(url: str, key: str, body: Mapping[str, Any], timeout: float) -> tuple[int, dict, dict]:
@@ -172,12 +195,14 @@ def chat(backend: Backend, model: str, messages: Sequence[Mapping[str, str]],
          schema: Mapping[str, Any] | None, *, reasoning: str = "off", max_tokens: int = 4096,
          attempts: int = 5, timeout: float = 300.0,
          post: Callable[[str, str, Mapping[str, Any], float], tuple[int, dict, dict]] = _post,
-         sleep: Callable[[float], None] = time.sleep) -> Completion:
+         sleep: Callable[[float], None] = time.sleep,
+         route: Mapping[str, Any] | None = None) -> Completion:
     """Send one request with retries.
 
     Retries on 408/409/425/429/5xx and network errors, honouring ``Retry-After``. If the
-    provider rejects the JSON schema (400/422) the request is repeated once in plain JSON
-    mode; the caller's validation then does the schema's job. ``post`` and ``sleep`` are
+    provider rejects the JSON schema (a 400/422 whose error names the schema or response
+    format) the request is repeated in plain JSON mode; the caller's validation then does
+    the schema's job. Any other 4xx raises at once. ``post`` and ``sleep`` are
     injectable for tests.
     """
     url = f"{backend.base_url}/chat/completions"
@@ -185,7 +210,8 @@ def chat(backend: Backend, model: str, messages: Sequence[Mapping[str, str]],
     last = ""
     for attempt in range(attempts):
         body = build_payload(backend.provider, model, messages, schema if use_schema else None,
-                             reasoning=reasoning, max_tokens=max_tokens)
+                             reasoning=reasoning, max_tokens=max_tokens,
+                             route=model_route(model) if route is None else route)
         try:
             status, headers, payload = post(url, backend.api_key, body, timeout)
         except (urllib.error.URLError, TimeoutError, ConnectionError) as err:
@@ -195,9 +221,12 @@ def chat(backend: Backend, model: str, messages: Sequence[Mapping[str, str]],
         if status == 200:
             return parse_completion(payload, used_schema=use_schema)
         last = f"HTTP {status}: {str(payload)[:300]}"
-        if status in SCHEMA_REJECT_STATUS and use_schema:
+        if status in SCHEMA_REJECT_STATUS and use_schema and any(w in last.lower() for w in _SCHEMA_WORDS):
             use_schema = False
             continue
+        if status == 404 and "endpoint" in last.lower():
+            raise ProviderError(f"{last} -- no pinned provider serves {model} with these parameters; "
+                                "run `labeling prices` and update models.yaml route")
         if status in RETRY_STATUS:
             sleep(_retry_after(headers, attempt))
             continue

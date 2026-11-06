@@ -136,7 +136,7 @@ labeling/{providers,spend,runner,verify,export}.py
 
 - **Providers:**
   - `modal` uses `VLLM_*`; `openrouter` uses `OPENROUTER_API_KEY`.
-  - Requests use `temperature 0`, `seed 42`, strict json_schema, `provider{require_parameters:true, allow_fallbacks:false}`, `reasoning{enabled:false}` or `{effort:"low"}`, and `usage{include:true}`.
+  - Requests use `temperature 0`, strict json_schema, `provider{require_parameters:true, only:[pinned providers]}` (fallbacks only within the pinned list), `seed 42` where the pinned endpoints accept it, `reasoning{enabled:false}` or `{effort:"low"}`, and `usage{include:true}`.
   - Retries on 429/5xx with backoff. Falls back to `json_object` when a schema request is rejected.
   - Records the served model, the provider, usage and cost.
 - **Spend:**
@@ -224,13 +224,19 @@ Layout uses clean tables, collapsible long lists, and no internal ticket ids in 
 
 ## Part D: model choice, reasoning, costs
 
-**Models** (live OpenRouter prices on 2026-11-05, $ per million tokens, input / output):
+**Models** (live OpenRouter prices on 2026-11-06, $ per million tokens, input / output, at the priciest pinned endpoint):
 - **Legal primary:** `z-ai/glm-5.3-flashx-legal` (0.37 / 1.25).
-- **General primary and legal second opinion:** `deepseek/deepseek-v4.1-flash` (0.045 / 0.50).
-- **Non-legal second opinion:** `minimax/minimax-m3.1-flash` (0.075 / 0.30).
+- **General primary and legal second opinion:** `deepseek/deepseek-v4.1-flash` (0.15 / 0.65).
+- **Non-legal second opinion:** `minimax/minimax-m3.1-flash` (0.15 / 0.60).
 - **Fallback:** Modal `Qwen/Qwen3-32B-FP8`.
 - **Excluded:** `qwen/qwen3-32b` on OpenRouter (2025 model, about 40k context served), Kimi K3.1, and Gemini 3.8 Flash (5–20× the price).
 - Calibration picks the model; reputation does not.
+
+**Provider routing** (the `route:` block per model in `models.yaml`; checked live with `labeling prices`):
+- Every request sends `provider.require_parameters: true`, so OpenRouter only routes to endpoints that accept every parameter we send (strict `json_schema`, `reasoning`, `max_tokens`, `temperature`).
+- Each model's providers are pinned with `only`, so the served model and price are known: GLM-legal on `z-ai`; DeepSeek on `deepinfra`, `atlas-cloud`, `coreweave` and `inference-net` at fp8 with a `max_price` ceiling (cheaper fp4 endpoints are excluded); MiniMax on `parasail`, `together`, `fireworks` and `sambanova`. Fallbacks are allowed only within the pinned list.
+- `seed: 42` is sent only where every pinned endpoint accepts it (DeepSeek). The z-ai GLM endpoint does not list `seed`, and `require_parameters` would reject the request, so GLM runs at temperature 0 without a seed.
+- `models.yaml` prices are the priciest pinned endpoint, so projections and caps are upper bounds. Every journal record keeps the served provider.
 
 **Reasoning:**
 - **Off** for span and entity extraction. It is a copying task, and reasoning tokens are billed as output.
@@ -240,16 +246,16 @@ Layout uses clean tables, collapsible long lists, and no internal ticket ids in 
 
 **Token budget** (one model, every task once, windowed prompts measured by `labeling costs`): about **17.7M prompt / 3.4M output tokens**, including a 1.25x allowance for retries and CUAD repair calls. Merger windows add the regex-located Termination Fee, Outside Date, Brokers and Notices sections.
 
-**Single-model campaign cost** (from `src/mailroom_eda/labeling/campaigns/v10/costs.md`, prices checked 2026-11-05):
+**Single-model campaign cost** (from `src/mailroom_eda/labeling/campaigns/v10/costs.md`, prices checked 2026-11-06):
 
 | model | cost |
 |---|---|
-| minimax-m3.1-flash | $2.34 |
-| deepseek-v4.1-flash | $2.48 |
 | gpt-6-luna | $3.46 |
 | qwen3.8-flash | $4.24 |
 | glm-5.3-flash | $4.34 |
-| deepseek-v4.1-flash-1017 | $4.68 |
+| minimax-m3.1-flash | $4.68 |
+| deepseek-v4.1-flash | $4.85 |
+| deepseek-v4.1-flash-1017 | $9.36 |
 | glm-5.3-flashx-legal | $10.77 |
 | gemini-3.5-flash-lite | $13.75 |
 | Modal Qwen3-32B | about $8–12 of H100 time |
@@ -257,7 +263,7 @@ Layout uses clean tables, collapsible long lists, and no internal ticket ids in 
 **Recommended mix:**
 - GLM-legal + DeepSeek for contracts, mergers and corporate records.
 - DeepSeek + MiniMax for correspondence and insurance.
-- **About $11.40 projected (two models on every extraction chunk, all three CUAD bake-off arms, both intent arms); the per-chunk caps add up to $26.50.** The chunk-by-chunk table is in `costs.md`.
+- **About $14.24 projected (two models on every extraction chunk, all three CUAD bake-off arms, both intent arms); the per-chunk caps add up to $27.90.** The chunk-by-chunk table is in `costs.md`.
 - Prices are re-checked before every chunk, and `costs.md` is regenerated (`labeling costs`; `--check` fails when it is stale).
 
 ## Part E: prompts
@@ -497,13 +503,15 @@ The machine-readable sequence is `src/mailroom_eda/labeling/campaigns/v10/campai
 | 6a | merger pilot (3 per subclass) | GLM-legal + DeepSeek | 13 | $0.40 | the user fills `reviewer_verdict`; agreed-field precision ≥ 0.90 |
 | 6b–c | merger remainder | as 6a | 138 (69/69) | $1.50 each | agreement and verbatim checks |
 | 7a | correspondence pilot (5 per subclass) | DeepSeek + MiniMax | 38 | $0.25 | human verdicts ≥ 0.90 |
-| 7b–e | correspondence | as 7a | 962 | $0.35 each | agreement; enum checks |
+| 7b–e | correspondence | as 7a | 962 | $0.50 each | agreement; enum checks |
 | 8a | claim_checklist pilot (5 per subclass) | DeepSeek + MiniMax | 30 | $0.25 | human verdicts ≥ 0.90 |
-| 8b–e | claim_checklist | as 8a | 1,070 | $0.40, $0.40, $0.40, $0.50 | agreement; evidence checks |
+| 8b–e | claim_checklist | as 8a | 1,070 | $0.50, $0.50, $0.50, $0.75 | agreement; evidence checks |
 | 9a | corporate pilot (3 per subclass) | GLM-legal + DeepSeek | 29 | $0.50 | human verdicts ≥ 0.90 |
-| 9b–e | corporate | as 9a | 415 | $1.00 each | agreement; verbatim checks |
+| 9b–e | corporate | as 9a | 415 | $1.00, $1.00, $1.00, $1.25 | agreement; verbatim checks |
 | 10 | adjudication | human, via `adjudication.csv` | residue | $0 | every item resolved |
 | 11 | re-stage, all gates, render the card | none | — | — | gates 1–12 pass |
+
+Each chunk is run with `labeling chunk <id> --initials XX` and approved with `labeling gate <id> --approve --initials XX` (`campaigns/v10/runbook.md`); `needs:` in `campaign.yaml` enforces the order.
 
 Stop rules: a failed gate or a reached cap stops the sequence. Nothing is ingested without its calibration or pilot. Any chunk can run on Modal with `--provider modal`.
 

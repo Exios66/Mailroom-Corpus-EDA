@@ -50,26 +50,32 @@ the field registry, the prompts, the model list with prices, the campaign plan a
 | `campaigns/v10/` | `campaign.yaml` (chunk order, caps, gates), `costs.md` (generated), `runbook.md` |
 | `registry.py` | loads the registry, prompts and campaign |
 | `tasks.py` | turns a row into messages and a strict JSON schema, one builder per task |
-| `providers.py` | OpenRouter and Modal clients: retries, schema fallback, usage and cost |
+| `providers.py` | OpenRouter and Modal clients: per-model provider routing from `models.yaml`, retries, schema fallback, usage and cost |
 | `spend.py` | the run gate: initials, cap, wall limit, key headroom |
 | `verify.py` | evidence location, grounding, per-type normalisation, agreement, decisions |
 | `export.py` | the JSONL journal and the review CSVs |
-| `runner.py` | the command line: `select`, `estimate`, `run`, `review`, `costs` |
+| `runner.py` | the low-level command line: `select`, `estimate`, `run`, `review`, `costs` |
+| `operate.py` | the campaign commands: `stage`, `doctor`, `prices`, `ping`, `chunk`, `gate`, `status`, `check-class` |
+| `derive.py` | deterministic labels (CUAD family, merger consideration, communication type, specialist) |
+| `new_doc_types/` | how to add a sixth document class, with a checklist, templates and a worked commercial-lease example |
 
 ## Quick reference
 
+The campaign commands read everything (rows, models, reasoning, cap, wall limit) from
+`campaigns/v10/campaign.yaml`; `campaigns/v10/runbook.md` is the step-by-step guide.
+
 ```bash
-PYTHONPATH=src python -m mailroom_eda.labeling select   --task correspondence --set pilot
-PYTHONPATH=src python -m mailroom_eda.labeling estimate --task correspondence --set remainder --chunk 1/4
-PYTHONPATH=src python -m mailroom_eda.labeling run      --task correspondence --set pilot \
-  --provider openrouter --model deepseek/deepseek-v4.1-flash --second-model minimax/minimax-m3.1-flash \
-  --dry-run
-PYTHONPATH=src python -m mailroom_eda.labeling review   --task correspondence --set pilot
-PYTHONPATH=src python -m mailroom_eda.labeling costs    --check
+PYTHONPATH=src python -m mailroom_eda.labeling stage                 # build and check the v9.4 stage
+PYTHONPATH=src python -m mailroom_eda.labeling doctor                # every readiness check, no paid call
+PYTHONPATH=src python -m mailroom_eda.labeling ping --initials XX    # one tiny request per model (< $0.05)
+PYTHONPATH=src python -m mailroom_eda.labeling chunk 1 --arm 1 --dry-run
+PYTHONPATH=src python -m mailroom_eda.labeling chunk 1 --arm 1 --initials XX
+PYTHONPATH=src python -m mailroom_eda.labeling gate 1 --arm 1 --approve --initials XX
+PYTHONPATH=src python -m mailroom_eda.labeling status
 ```
 
-A paid run also needs `--initials`, `--api-cost-cap-usd` and `--max-wall-seconds`. See
-`campaigns/v10/runbook.md`.
+The low-level `select`, `estimate`, `run` and `review` commands take every setting as a
+flag; a paid `run` also needs `--initials`, `--api-cost-cap-usd` and `--max-wall-seconds`.
 
 ## Changing the playbook
 
@@ -77,10 +83,13 @@ A paid run also needs `--initials`, `--api-cost-cap-usd` and `--max-wall-seconds
   to copy it into Part E of `docs/plans/v10-structure-and-label-completion.md` (a test
   compares them), and re-calibrate: the prompt sha changes, so earlier calibrations no
   longer cover it.
-- **A model.** Add it to `models.yaml` with its provider and current prices, regenerate
+- **A model.** Add it to `models.yaml` with its provider, current prices and a `route:` (pinned
+  providers, quantization, `max_price`, whether its endpoints accept `seed`), run `prices`, regenerate
   `costs.md`, and calibrate it before it labels anything.
 - **The Dojo schema.** Refresh the snapshot with
   `python scripts/labeling/snapshot_dojo.py --dojo-src <llm-dojo-scoring>/src`, update
   `fields.yaml` and its `dojo_pin`, and run `tests/test_labeling.py`.
 - **A new campaign.** Copy `campaigns/v10/` to `campaigns/<name>/` and pass
   `--campaign <name>` to `costs`.
+- **A new document class.** Follow `new_doc_types/README.md`; check the proposal with
+  `python -m mailroom_eda.labeling check-class <folder>`.

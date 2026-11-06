@@ -41,12 +41,22 @@ SETS = ("calibration", "pilot", "remainder", "pending", "flagged", "all")
 PILOT_PER_STRATUM = {"contract_entities": 2, "merger_entities": 3, "correspondence": 5,
                      "claim_checklist": 5, "corporate": 3}
 #: Output-token budget per call, by task (also the worst case the spend gate reserves).
-MAX_TOKENS = {"cuad": 6000, "intent": 400, "contract_entities": 3000, "merger_entities": 3500,
+MAX_TOKENS = {"cuad": 8192, "intent": 400, "contract_entities": 3000, "merger_entities": 3500,
               "correspondence": 1200, "claim_checklist": 1500, "corporate": 2500}
 #: Typical output tokens per call, for estimates (measured from the field counts).
 TYPICAL_OUTPUT = {"cuad": 2500, "intent": 120, "contract_entities": 1200, "merger_entities": 1500,
                   "correspondence": 450, "claim_checklist": 500, "corporate": 800}
 RETRY_FACTOR = 1.25
+
+
+def max_tokens(task: str) -> int:
+    """Output-token budget for a task (``fields.yaml`` tasks set ``max_tokens``)."""
+    return MAX_TOKENS.get(task) or int(tasks.generic_tasks()[task].get("max_tokens", 3000))
+
+
+def typical_output(task: str) -> int:
+    """Typical output tokens per call, for estimates."""
+    return TYPICAL_OUTPUT.get(task) or int(tasks.generic_tasks()[task].get("typical_output", 1000))
 
 
 def _now() -> str:
@@ -74,7 +84,7 @@ def _sha_key(row: Mapping[str, Any]) -> str:
 
 def pilot_rows(rows: Sequence[Mapping[str, Any]], task: str) -> list[Mapping[str, Any]]:
     """Deterministic pilot: the first ``PILOT_PER_STRATUM[task]`` rows per subclass by sha."""
-    per = PILOT_PER_STRATUM[task]
+    per = PILOT_PER_STRATUM.get(task) or int(tasks.generic_tasks()[task].get("pilot_per_stratum", 3))
     by_sub: dict[str, list] = defaultdict(list)
     for r in sorted(rows, key=_sha_key):
         by_sub[str(r.get("expected_subclass") or "")].append(r)
@@ -142,7 +152,7 @@ def estimate(rows: Sequence[Mapping[str, Any]], task: str, models: Sequence[str]
             req = tasks.build(task, r, v)
             prompt_tokens += sum(spend.estimate_tokens(m["content"]) for m in req.messages)
             calls += 1
-    out_tokens = calls * TYPICAL_OUTPUT[task]
+    out_tokens = calls * typical_output(task)
     p_tok, o_tok = int(prompt_tokens * RETRY_FACTOR), int(out_tokens * RETRY_FACTOR)
     costs = {}
     for m in models:
@@ -182,96 +192,133 @@ def cuad_problems(row: Mapping[str, Any], response: Any, vocab: Sequence[str]) -
     return problems + [str(x) for x in list(dropped) + list(more)]
 
 
-def chunk_name(task: str, set_name: str, spec: str | None) -> str:
-    """Directory name for a chunk."""
-    if not spec:
-        return f"{task}-{set_name}"
-    i, n = spec.split("/")
-    return f"{task}-{set_name}-{i}of{n}"
+def chunk_name(task: str, set_name: str, spec: str | None, reasoning: str = "off") -> str:
+    """Directory name for an ad-hoc ``run`` (campaign chunks use ``operate.chunk_dir``)."""
+    base = f"{task}-{set_name}"
+    if spec:
+        i, n = spec.split("/")
+        base += f"-{i}of{n}"
+    return base if reasoning == "off" else f"{base}-reasoning-{reasoning}"
 
 
-def _done(calls_path: Path) -> set[tuple[str, str, str]]:
-    """(document_id, model, variant) triples already answered without error."""
+def _done(calls_path: Path, reasoning: str | None = None) -> set[tuple[str, str, str]]:
+    """(document_id, model, variant) triples already answered without error (at ``reasoning``)."""
     return {(c["document_id"], c["model"], c.get("variant", ""))
-            for c in export.read_journal(calls_path) if not c.get("error")}
+            for c in export.read_journal(calls_path)
+            if not c.get("error") and (reasoning is None or c.get("reasoning") == reasoning)}
+
+
+class _Stop(Exception):
+    """The budget refused the next call."""
 
 
 def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[str],
               backend: providers.Backend, reasoning: str, budget: spend.Budget, out_dir: Path,
-              vocab: Sequence[str] = (), chat=providers.chat) -> dict[str, Any]:
+              vocab: Sequence[str] = (), chat=providers.chat, workers: int = 1,
+              progress: Any = None) -> dict[str, Any]:
     """Send every (row, model, variant) not yet answered; append to ``calls.jsonl``.
 
     CUAD answers with rejected spans get one repair call (variant ``repair``) that replays
-    the first answer. Stops cleanly at the cap or wall limit (``SpendError``); everything
-    finished so far is kept, so a re-run continues where it stopped.
+    the first answer. ``workers`` calls run at once; the budget books every in-flight
+    call's worst case, so together they never pass the cap. Stops cleanly at the cap or
+    wall limit; everything finished so far is kept, so a re-run continues where it stopped.
     """
+    import threading  # noqa: PLC0415
+    from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: PLC0415
+
     if task == "cuad" and not vocab:
         raise ValueError("cuad runs need the CUAD vocabulary")
+    out_dir.mkdir(parents=True, exist_ok=True)
     calls_path = out_dir / "calls.jsonl"
-    done = _done(calls_path)
+    done = _done(calls_path, reasoning)
     stats: Counter = Counter()
+    lock = threading.Lock()
+    stop = threading.Event()
+    stop_reason: list[str] = []
+
+    def journal(rec: Mapping[str, Any]) -> None:
+        with lock:
+            export.append_journal(calls_path, rec)
+
+    def one(model: str, req: tasks.Request, rec: dict) -> providers.Completion | None:
+        if stop.is_set():
+            raise _Stop()
+        ptoks = sum(spend.estimate_tokens(m["content"]) for m in req.messages)
+        try:
+            reserved = budget.reserve(model, ptoks, max_tokens(task))
+        except spend.SpendError as err:
+            stop.set()
+            stop_reason.append(str(err))
+            raise _Stop() from err
+        try:
+            comp = chat(backend, model, req.messages, req.schema, reasoning=reasoning,
+                        max_tokens=max_tokens(task))
+        except providers.ProviderError as err:
+            budget.release(reserved)
+            journal({**rec, "error": str(err)})
+            with lock:
+                stats["errors"] += 1
+            return None
+        cost = budget.settle(model, comp.prompt_tokens, comp.completion_tokens, comp.cost_usd, reserved)
+        journal({**rec, "response": comp.parsed, "content": comp.content, "served_model": comp.served_model,
+                 "served_provider": comp.served_provider, "used_schema": comp.used_schema,
+                 "finish_reason": comp.finish_reason, "prompt_tokens": comp.prompt_tokens,
+                 "completion_tokens": comp.completion_tokens, "reasoning_tokens": comp.reasoning_tokens,
+                 "cost_usd": round(cost, 6)})
+        return comp
+
+    def job(r: Mapping[str, Any], v: str, model: str) -> None:
+        req = tasks.build(task, r, v)
+        rec = {"task": task, "document_id": req.document_id, "filename": r["filename"], "variant": v,
+               "model": model, "provider": backend.provider, "reasoning": reasoning, "temperature": 0,
+               "prompt_sha256": req.prompt_sha256, "labeled_utc": _now()}
+        comp = one(model, req, rec)
+        if comp is None:
+            return
+        with lock:
+            stats["calls"] += 1
+        if task != "cuad":
+            return
+        problems = cuad_problems(r, comp.parsed, vocab)
+        if not problems or (req.document_id, model, "repair") in done:
+            return
+        fix = tasks.build_cuad(r, repair_problems=problems[:40], prior_answer=comp.content)
+        rec = {**rec, "variant": "repair", "prompt_sha256": fix.prompt_sha256,
+               "repair_problems": problems[:40], "labeled_utc": _now()}
+        if one(model, fix, rec) is not None:
+            with lock:
+                stats["repairs"] += 1
+
+    jobs = []
     for r in rows:
         for v in _variants(task):
             for model in models:
-                req = tasks.build(task, r, v)
-                if (req.document_id, model, v) in done:
+                if (tasks._ids(r)[0], model, v) in done:
                     stats["skipped"] += 1
-                    continue
-                ptoks = sum(spend.estimate_tokens(m["content"]) for m in req.messages)
+                else:
+                    jobs.append((r, v, model))
+    finished = 0
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        futures = [pool.submit(job, *j) for j in jobs]
+        try:
+            for fut in as_completed(futures):
                 try:
-                    budget.reserve(model, ptoks, MAX_TOKENS[task])
-                except spend.SpendError as err:
-                    stats["stopped"] = 1
-                    return {**stats, "spent_usd": round(budget.spent_usd, 4), "stop_reason": str(err)}
-                rec = {"task": task, "document_id": req.document_id, "filename": r["filename"],
-                       "variant": v, "model": model, "provider": backend.provider,
-                       "reasoning": reasoning, "temperature": 0, "prompt_sha256": req.prompt_sha256,
-                       "labeled_utc": _now()}
-                try:
-                    comp = chat(backend, model, req.messages, req.schema, reasoning=reasoning,
-                                max_tokens=MAX_TOKENS[task])
-                except providers.ProviderError as err:
-                    export.append_journal(calls_path, {**rec, "error": str(err)})
-                    stats["errors"] += 1
-                    continue
-                _book(calls_path, rec, comp, budget, model)
-                stats["calls"] += 1
-                if task != "cuad":
-                    continue
-                problems = cuad_problems(r, comp.parsed, vocab)
-                if not problems or (req.document_id, model, "repair") in done:
-                    continue
-                fix = tasks.build_cuad(r, repair_problems=problems[:40], prior_answer=comp.content)
-                ptoks = sum(spend.estimate_tokens(m["content"]) for m in fix.messages)
-                try:
-                    budget.reserve(model, ptoks, MAX_TOKENS[task])
-                except spend.SpendError as err:
-                    stats["stopped"] = 1
-                    return {**stats, "spent_usd": round(budget.spent_usd, 4), "stop_reason": str(err)}
-                rec = {**rec, "variant": "repair", "prompt_sha256": fix.prompt_sha256,
-                       "repair_problems": problems[:40], "labeled_utc": _now()}
-                try:
-                    comp = chat(backend, model, fix.messages, fix.schema, reasoning=reasoning,
-                                max_tokens=MAX_TOKENS[task])
-                except providers.ProviderError as err:
-                    export.append_journal(calls_path, {**rec, "error": str(err)})
-                    stats["errors"] += 1
-                    continue
-                _book(calls_path, rec, comp, budget, model)
-                stats["repairs"] += 1
-    return {**stats, "spent_usd": round(budget.spent_usd, 4)}
-
-
-def _book(calls_path: Path, rec: Mapping[str, Any], comp: providers.Completion,
-          budget: spend.Budget, model: str) -> None:
-    """Settle one completion against the budget and journal it."""
-    cost = budget.settle(model, comp.prompt_tokens, comp.completion_tokens, comp.cost_usd)
-    export.append_journal(calls_path, {
-        **rec, "response": comp.parsed, "content": comp.content, "served_model": comp.served_model,
-        "served_provider": comp.served_provider, "used_schema": comp.used_schema,
-        "finish_reason": comp.finish_reason, "prompt_tokens": comp.prompt_tokens,
-        "completion_tokens": comp.completion_tokens, "reasoning_tokens": comp.reasoning_tokens,
-        "cost_usd": round(cost, 6)})
+                    fut.result()
+                except _Stop:
+                    pass
+                finished += 1
+                if progress and (finished % 25 == 0 or finished == len(jobs)):
+                    progress(f"{finished}/{len(jobs)} jobs, ${budget.spent_usd:.4f} spent, "
+                             f"{stats['errors']} errors")
+        except KeyboardInterrupt:
+            stop.set()
+            for f in futures:
+                f.cancel()
+            raise
+    out = {**stats, "spent_usd": round(budget.spent_usd, 4)}
+    if stop_reason:
+        out.update(stopped=1, stop_reason=stop_reason[0])
+    return out
 
 
 # ---------------------------------------------------------------- review (offline)
@@ -421,9 +468,11 @@ def _reviewer_columns(path: Path) -> dict[tuple[str, str], dict[str, str]]:
     return out
 
 
-def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path) -> dict[str, Any]:
-    """Rebuild the derived journals and CSVs for one chunk directory."""
-    calls = export.read_journal(out_dir / "calls.jsonl")
+def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
+           reasoning: str | None = None) -> dict[str, Any]:
+    """Rebuild the derived journals and CSVs for one chunk directory (calls at ``reasoning``)."""
+    calls = [c for c in export.read_journal(out_dir / "calls.jsonl")
+             if reasoning is None or c.get("reasoning") == reasoning]
     models = sorted({c["model"] for c in calls if not c.get("error")},
                     key=lambda m: [c["model"] for c in calls].index(m))
     if task == "cuad":
@@ -576,12 +625,20 @@ def _parser() -> argparse.ArgumentParser:
             p.add_argument("--api-cost-cap-usd", type=float)
             p.add_argument("--max-wall-seconds", type=float)
             p.add_argument("--dry-run", action="store_true")
+            p.add_argument("--workers", type=int, default=4)
+        if name == "review":
+            p.add_argument("--reasoning", default="off", choices=providers.REASONING)
+    from . import operate  # noqa: PLC0415
+
+    operate.add_commands(sub)
     return ap
 
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point; returns an exit code."""
     args = _parser().parse_args(argv)
+    if getattr(args, "operate", None):
+        return args.operate(args)
     rows = load_stage(args.stage)
     if args.cmd == "costs":
         from .registry import CAMPAIGNS_DIR  # noqa: PLC0415
@@ -596,7 +653,6 @@ def main(argv: list[str] | None = None) -> int:
         print(path)
         return 0
     picked = chunk(select(rows, args.task, args.set_name), args.chunk)
-    out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk)
     if args.cmd == "select":
         for r in picked:
             print(tasks._ids(r)[0], r["filename"], r.get("expected_subclass"), sep="\t")
@@ -606,38 +662,64 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(estimate(picked, args.task, args.models.split(",")), indent=1))
         return 0
     if args.cmd == "review":
-        print(json.dumps(review(rows, args.task, out_dir), indent=1))
+        out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, args.reasoning)
+        print(json.dumps(review(rows, args.task, out_dir, reasoning=args.reasoning), indent=1))
         return 0
     models = [args.model] + ([args.second_model] if args.second_model else [])
+    out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, args.reasoning)
+    return execute(rows, picked, task=args.task, set_name=args.set_name, chunk_spec=args.chunk, models=models,
+                   provider=args.provider, reasoning=args.reasoning, initials=args.initials,
+                   cap_usd=args.api_cost_cap_usd, max_wall_seconds=args.max_wall_seconds, out_dir=out_dir,
+                   dry_run=args.dry_run, workers=args.workers)
+
+
+def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any]], *, task: str,
+            set_name: str, chunk_spec: str | None, models: Sequence[str], provider: str, reasoning: str,
+            initials: str | None, cap_usd: float | None, max_wall_seconds: float | None, out_dir: Path,
+            dry_run: bool = False, workers: int = 4, chunk_id: str | None = None,
+            chat=providers.chat, key_status=providers.key_status) -> int:
+    """Validate, project, gate the spend, run and review one chunk. Returns an exit code
+    (0 done, 2 stopped at the cap or wall, 3 finished with failed calls to re-run)."""
     approved = models_registry()["models"]
     for m in models:
-        if m not in approved or approved[m]["provider"] != args.provider:
-            raise SystemExit(f"{m} is not an approved {args.provider} model in models.yaml")
-    if args.task in tasks.TWO_MODEL_TASKS and len(models) != 2 and args.set_name != "pilot":
-        raise SystemExit(f"{args.task} needs --second-model outside pilots (two-model agreement)")
-    proj = estimate(picked, args.task, models)
-    print(json.dumps(proj, indent=1))
-    if args.dry_run:
+        if m not in approved or approved[m]["provider"] != provider:
+            raise SystemExit(f"{m} is not an approved {provider} model in models.yaml")
+    if len(set(models)) != len(models):
+        raise SystemExit("the two models must differ")
+    if task in tasks.TWO_MODEL_TASKS and len(models) != 2 and set_name != "pilot":
+        raise SystemExit(f"{task} needs --second-model outside pilots (two-model agreement)")
+    if task not in tasks.TWO_MODEL_TASKS and len(models) != 1:
+        raise SystemExit(f"{task} runs one model")
+    proj = estimate(picked, task, models)
+    print(json.dumps({"chunk": chunk_id, "out": str(out_dir), "reasoning": reasoning, **proj}, indent=1))
+    if dry_run:
         return 0
-    spend.require_run_flags(initials=args.initials, cap_usd=args.api_cost_cap_usd,
-                            max_wall_seconds=args.max_wall_seconds)
-    backend = providers.Backend.from_env(args.provider)
-    if args.provider == "openrouter":
-        spend.check_key_headroom(providers.key_status(backend), args.api_cost_cap_usd)
-    budget = spend.Budget(args.api_cost_cap_usd, args.max_wall_seconds)
+    spend.require_run_flags(initials=initials, cap_usd=cap_usd, max_wall_seconds=max_wall_seconds)
+    backend = providers.Backend.from_env(provider)
+    if provider == "openrouter":
+        headroom = spend.check_key_headroom(key_status(backend), cap_usd)
+        print(f"key headroom after reserve: {'unlimited' if headroom == float('inf') else f'${headroom:.2f}'}",
+              file=sys.stderr)
+    budget = spend.Budget(cap_usd, max_wall_seconds)
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "run.json").write_text(json.dumps({
-        "task": args.task, "set": args.set_name, "chunk": args.chunk, "models": models,
-        "provider": args.provider, "reasoning": args.reasoning, "initials": args.initials,
-        "api_cost_cap_usd": args.api_cost_cap_usd, "max_wall_seconds": args.max_wall_seconds,
-        "documents": len(picked), "projection": proj, "started_utc": _now()}, indent=1) + "\n")
-    result = run_chunk(picked, task=args.task, models=models, backend=backend, reasoning=args.reasoning,
-                       budget=budget, out_dir=out_dir,
-                       vocab=cuad_vocab(rows) if args.task == "cuad" else ())
-    result["review"] = review(rows, args.task, out_dir)
+    export.append_journal(out_dir / "runs.jsonl", {
+        "chunk": chunk_id, "task": task, "set": set_name, "slice": chunk_spec, "models": list(models),
+        "provider": provider, "reasoning": reasoning, "initials": initials, "api_cost_cap_usd": cap_usd,
+        "max_wall_seconds": max_wall_seconds, "workers": workers, "documents": len(picked),
+        "projection": proj, "started_utc": _now()})
+    result = run_chunk(picked, task=task, models=models, backend=backend, reasoning=reasoning,
+                       budget=budget, out_dir=out_dir, vocab=cuad_vocab(rows) if task == "cuad" else (),
+                       chat=chat, workers=workers, progress=lambda m: print(m, file=sys.stderr))
+    result["review"] = review(rows, task, out_dir, reasoning=reasoning)
+    export.append_journal(out_dir / "runs.jsonl", {"chunk": chunk_id, "finished_utc": _now(), "result": result})
     print(json.dumps(result, indent=1))
-    return 2 if result.get("stopped") else 0
-
+    if result.get("stopped"):
+        print("stopped at the cap or wall limit; re-run the same command to continue", file=sys.stderr)
+        return 2
+    if result.get("errors"):
+        print(f"{result['errors']} calls failed; re-run the same command to retry only those", file=sys.stderr)
+        return 3
+    return 0
 
 if __name__ == "__main__":
     raise SystemExit(main())

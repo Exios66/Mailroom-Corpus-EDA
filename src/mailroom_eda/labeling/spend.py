@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Mapping
@@ -81,29 +82,45 @@ def check_key_headroom(key_data: Mapping[str, Any], cap_usd: float) -> float:
 
 @dataclass
 class Budget:
-    """Running spend for one chunk."""
+    """Running spend for one chunk; safe to share between worker threads.
+
+    ``reserve`` books a call's worst case as in flight, so concurrent calls can never
+    together exceed the cap; ``settle`` replaces that reservation with the billed cost
+    and ``release`` drops it when the call fails.
+    """
 
     cap_usd: float
     max_wall_seconds: float
     spent_usd: float = 0.0
     calls: int = 0
+    in_flight_usd: float = 0.0
     started: float = field(default_factory=time.monotonic)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def reserve(self, model: str, prompt_tokens: int, max_tokens: int) -> float:
-        """Worst-case cost of the next call; raises when it could breach the cap or wall."""
-        if time.monotonic() - self.started > self.max_wall_seconds:
-            raise SpendError(f"wall-clock limit {self.max_wall_seconds:.0f}s reached")
+        """Book the worst-case cost of the next call; raise when it could breach the cap or wall."""
         worst = token_cost(model, prompt_tokens, max_tokens)
-        if self.spent_usd + worst > self.cap_usd:
-            raise SpendError(f"next call could cost ${worst:.4f}; spent ${self.spent_usd:.4f} "
-                             f"of ${self.cap_usd:.2f} cap")
+        with self._lock:
+            if time.monotonic() - self.started > self.max_wall_seconds:
+                raise SpendError(f"wall-clock limit {self.max_wall_seconds:.0f}s reached")
+            if self.spent_usd + self.in_flight_usd + worst > self.cap_usd:
+                raise SpendError(f"next call could cost ${worst:.4f}; spent ${self.spent_usd:.4f} "
+                                 f"(+${self.in_flight_usd:.4f} in flight) of ${self.cap_usd:.2f} cap")
+            self.in_flight_usd += worst
         return worst
 
+    def release(self, reserved: float) -> None:
+        """Drop a reservation whose call failed without a bill."""
+        with self._lock:
+            self.in_flight_usd = max(0.0, self.in_flight_usd - reserved)
+
     def settle(self, model: str, prompt_tokens: int, completion_tokens: int,
-               billed_usd: float | None) -> float:
-        """Book one call; returns the amount booked."""
+               billed_usd: float | None, reserved: float = 0.0) -> float:
+        """Book one call (replacing its reservation); returns the amount booked."""
         cost = billed_usd if billed_usd is not None else token_cost(model, prompt_tokens,
                                                                      completion_tokens)
-        self.spent_usd += cost
-        self.calls += 1
+        with self._lock:
+            self.in_flight_usd = max(0.0, self.in_flight_usd - reserved)
+            self.spent_usd += cost
+            self.calls += 1
         return cost

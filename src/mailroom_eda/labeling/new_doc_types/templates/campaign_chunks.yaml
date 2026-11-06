@@ -1,0 +1,18 @@
+# Template: campaign chunks for one new class. Append to campaigns/<name>/campaign.yaml under
+# chunks:, then regenerate costs.md with:  python -m mailroom_eda.labeling costs --campaign <name>
+#
+# Order: a pilot (stratified, a human reviews every field), then the remainder in slices,
+# each gated on two-model agreement. If a labeled public dataset exists, put a calibration
+# chunk with gate field_accuracy (or cuad_f1-style) before the pilot.
+# Models: legal text uses the legal model plus a second opinion; other text uses the two
+# general models. Keep reasoning "off" for extraction.
+
+  - {id: "<n>a", task: <class>_entities, set: pilot,
+     models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
+     reasoning: "off", cap_usd: 0.50, gate: {kind: human_verdicts, precision: 0.90}}
+  - {id: "<n>b", needs: ["<n>a"], task: <class>_entities, set: remainder, chunk: "1/2",
+     models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
+     reasoning: "off", cap_usd: 1.00, gate: {kind: agreement}}
+  - {id: "<n>c", needs: ["<n>a"], task: <class>_entities, set: remainder, chunk: "2/2",
+     models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
+     reasoning: "off", cap_usd: 1.00, gate: {kind: agreement}}

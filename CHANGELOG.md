@@ -8,6 +8,23 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 
 ## Unreleased
 
+- v10 labeling playbook (`src/mailroom_eda/labeling/`). It is offline until a person runs a
+  chunk; no dataset is regenerated or published.
+  - Campaign commands read every setting from `campaigns/v10/campaign.yaml`:
+    `stage`, `doctor`, `prices`, `ping`, `chunk <id>`, `gate <id> --approve`, `status`.
+    `needs:` enforces chunk order, and approvals (with served providers and the prompt
+    sha) are recorded in `campaigns/v10/approved.yaml`.
+  - OpenRouter routing is pinned per model in `models.yaml` (`route:`):
+    `require_parameters`, pinned providers, fp8 and `max_price` for DeepSeek, and `seed`
+    only where the endpoints accept it (the z-ai GLM endpoint does not). Prices were
+    re-checked on 2026-11-06 (DeepSeek 0.15/0.65, MiniMax 0.15/0.60). The campaign projects
+    $14.24 against $27.90 of chunk caps.
+  - Chunks run four calls in parallel. The budget reserves each call's worst case, so
+    concurrent calls cannot exceed the cap together.
+  - `new_doc_types/`: how to add a sixth document class across all four repositories
+    (walkthrough, checklist, `find_touchpoints.py`, templates, and a validated
+    `commercial_lease` example). New extraction tasks are declared in `fields.yaml`
+    `tasks:` with no Python changes, and `check-class` validates a proposal offline.
 - DMR-091 independent source audit: join cross-config metadata, text, provenance,
   split and MAUD reports by unique filename, rejecting ambiguous identities.
   Verify staged parquet class/subclass routing against JSONL, and retain native

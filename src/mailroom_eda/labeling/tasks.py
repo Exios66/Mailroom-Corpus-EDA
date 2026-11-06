@@ -346,6 +346,48 @@ TWO_MODEL_TASKS = frozenset({"contract_entities", "merger_entities", "correspond
                              "claim_checklist", "corporate"})
 
 
+
+
+def build_generic(row: Mapping[str, Any], task: str) -> Request:
+    """Extraction task declared in ``fields.yaml`` ``tasks:`` (no Python builder needed).
+
+    The prompt template receives ``subclass``, ``field_list`` (one line per field from
+    its ``description`` and ``where``), ``window_description`` and ``doc_text_window``.
+    """
+    spec = generic_tasks()[task]
+    fields = _task_fields(row, task)
+    lines = [f"- {name} ({f.get('retype') or f['type']}): {str(f.get('description', '')).rstrip('.')}."
+             + (f" Where to look: {f['where']}" if f.get("where") else "")
+             + (f" One of: {' | '.join(vocabulary(f['vocabulary']))}." if f.get("vocabulary") else "")
+             for name, f in fields.items()]
+    head, tail = spec.get("window", [HEAD_CHARS, TAIL_CHARS])
+    return _extraction(row, task, spec.get("prompt", task), {
+        "subclass": row.get("expected_subclass") or "unknown", "field_list": "\n".join(lines),
+    }, window(str(row["doc_text"]), head, tail))
+
+
+def generic_tasks() -> dict[str, dict[str, Any]]:
+    """Tasks declared in ``fields.yaml`` under ``tasks:`` (see ``new_doc_types/``)."""
+    from .registry import fields_registry  # noqa: PLC0415
+
+    return dict(fields_registry().get("tasks") or {})
+
+
+def _register_generic_tasks() -> None:
+    """Add the ``fields.yaml`` tasks to the dispatch tables."""
+    global TWO_MODEL_TASKS
+    for name, spec in generic_tasks().items():
+        if name in BUILDERS or name == "intent":
+            raise ValueError(f"fields.yaml task {name!r} shadows a built-in task")
+        TASK_CLASSES[name] = spec["class"]
+        BUILDERS[name] = lambda row, _t=name: build_generic(row, _t)
+        if spec.get("two_model", True):
+            TWO_MODEL_TASKS = TWO_MODEL_TASKS | {name}
+
+
+_register_generic_tasks()
+
+
 def build(task: str, row: Mapping[str, Any], variant: str = "") -> Request:
     """Dispatch to the task builder."""
     if task == "intent":

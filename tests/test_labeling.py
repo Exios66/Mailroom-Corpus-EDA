@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from mailroom_eda.labeling import export, providers, runner, spend, tasks, verify
+from mailroom_eda.labeling import export, operate, providers, runner, spend, tasks, verify
 from mailroom_eda.labeling.registry import (
     PROMPTS_DIR,
     Prompt,
@@ -606,3 +606,209 @@ def test_derived_subclasses_and_specialists(rows):
     assert derive.communication_type(rows[2]) == "attorney_demand"
     assert derive.communication_type({**rows[2], "expected_subclass": "fax"}) == "other"
     assert derive.specialist(rows[1]) == "merger_agreement_specialist"
+
+
+# ---------------------------------------------------------------- OpenRouter routing (models.yaml)
+
+def test_openrouter_routes_pin_providers_and_only_send_supported_seed():
+    msgs = [{"role": "user", "content": "x"}]
+    schema = {"type": "object"}
+    glm = providers.build_payload("openrouter", "z-ai/glm-5.3-flashx-legal", msgs, schema,
+                                  route=providers.model_route("z-ai/glm-5.3-flashx-legal"))
+    assert "seed" not in glm  # z-ai's endpoint does not list seed; require_parameters would reject it
+    assert glm["provider"]["only"] == ["z-ai"] and glm["provider"]["require_parameters"] is True
+    ds = providers.build_payload("openrouter", "deepseek/deepseek-v4.1-flash", msgs, schema,
+                                 route=providers.model_route("deepseek/deepseek-v4.1-flash"))
+    assert ds["seed"] == 42
+    assert ds["provider"]["quantizations"] == ["fp8"] and ds["provider"]["allow_fallbacks"] is True
+    assert set(ds["provider"]["max_price"]) == {"prompt", "completion"}
+    for model, spec in models_registry()["models"].items():
+        if spec["provider"] == "openrouter":
+            assert spec.get("route", {}).get("only"), f"{model}: pin its providers in models.yaml"
+
+
+def _catalog_fetch(drop_param=None):
+    reg = models_registry()
+
+    def fetch(url):
+        if url == "https://openrouter.ai/api/v1/models":
+            ids = [m for m, s in reg["models"].items() if s["provider"] == "openrouter"]
+            ids += list(reg.get("comparison") or {})
+            return {"data": [{"id": m, "context_length": 131072,
+                              "pricing": {"prompt": "0.0000001", "completion": "0.0000002"}} for m in ids]}
+        model = url.split("/models/", 1)[1].removesuffix("/endpoints")
+        spec = reg["models"][model]
+        route = spec.get("route") or {}
+        params = set(operate.REQUIRED_PARAMETERS) | {"seed"}
+        params.discard(drop_param)
+        return {"data": {"endpoints": [{
+            "tag": f"{route['only'][0]}/{(route.get('quantizations') or ['fp8'])[0]}",
+            "quantization": (route.get("quantizations") or ["fp8"])[0], "context_length": 131072,
+            "pricing": {"prompt": str(spec["prompt"] / 1e6), "completion": str(spec["completion"] / 1e6)},
+            "supported_parameters": sorted(params)}]}}
+    return fetch
+
+
+def test_price_report_accepts_current_catalog_and_flags_missing_parameters():
+    ok = operate.price_report(fetch=_catalog_fetch())
+    assert ok["problems"] == []
+    assert all(m["serving_endpoints"] for m in ok["models"].values())
+    bad = operate.price_report(fetch=_catalog_fetch(drop_param="response_format"))
+    assert bad["problems"] and all("no pinned endpoint" in p for p in bad["problems"])
+
+
+# ---------------------------------------------------------------- concurrency and the budget
+
+def test_budget_counts_in_flight_reservations():
+    model = "deepseek/deepseek-v4.1-flash"
+    worst = spend.token_cost(model, 1000, 1000)
+    b = spend.Budget(cap_usd=worst * 2.5, max_wall_seconds=3600)
+    r1, r2 = b.reserve(model, 1000, 1000), b.reserve(model, 1000, 1000)
+    with pytest.raises(spend.SpendError, match="in flight"):
+        b.reserve(model, 1000, 1000)  # two calls in flight already hold the headroom
+    b.release(r1)
+    b.settle(model, 1000, 10, None, reserved=r2)
+    assert b.in_flight_usd == pytest.approx(0.0)
+    b.reserve(model, 1000, 1000)
+
+
+def test_parallel_workers_match_serial_run(tmp_path, rows):
+    base_row = rows[2]
+    many = [{**base_row, "filename": f"mail_{i}.txt", "document_id": f"m{i}"} for i in range(12)]
+    req = tasks.build("correspondence", many[0])
+    answer = {"fields": {f: {"value": None, "status": "not_found", "evidence": ""} for f in req.fields}}
+    models = ["deepseek/deepseek-v4.1-flash", "minimax/minimax-m3.1-flash"]
+    backend = providers.Backend("openrouter", "https://or/api/v1", "k")
+    out = {}
+    for workers in (1, 4):
+        d = tmp_path / f"w{workers}"
+        res = runner.run_chunk(many, task="correspondence", models=models, backend=backend, reasoning="off",
+                               budget=spend.Budget(1.0, 3600), out_dir=d,
+                               chat=_fake_chat(dict.fromkeys(models, answer)), workers=workers)
+        assert res["calls"] == 24 and not res.get("errors")
+        runner.review(many, "correspondence", d)
+        out[workers] = sorted((r["document_id"], r["field"], r["decision"])
+                              for r in export.read_csv(d / "fields.csv"))
+    assert out[1] == out[4]
+
+
+# ---------------------------------------------------------------- campaign wiring
+
+def test_campaign_needs_order_and_output_dirs():
+    camp = campaign("v10")
+    ids = list(dict.fromkeys(str(c["id"]) for c in camp["chunks"]))
+    approved = set(models_registry()["models"])
+    seen_dirs = set()
+    for c in camp["chunks"]:
+        assert c["task"] in tasks.BUILDERS or c["task"] == "intent", c
+        assert c["cap_usd"] > 0
+        assert str(c["reasoning"]) in ("off", "low") or str(c["reasoning"]).startswith("winner_of_")
+        for need in c.get("needs") or []:
+            assert need in ids and ids.index(need) < ids.index(str(c["id"])), (c["id"], need)
+        for m in c["models"]:
+            assert m in approved or str(m).startswith("winner_of_"), (c["id"], m)
+    for cid in ids:
+        entries = operate.chunk_entries("v10", cid)
+        for arm in (range(1, len(entries) + 1) if len(entries) > 1 else [None]):
+            entry, a = operate.chunk_entry("v10", cid, arm)
+            d = operate.chunk_dir(Path("out"), entry, a)
+            assert d not in seen_dirs, d
+            seen_dirs.add(d)
+    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 30.0
+
+
+def test_winner_placeholders_resolve_from_approvals(tmp_path, monkeypatch):
+    path = tmp_path / "approved.yaml"
+    monkeypatch.setattr(operate, "approvals_path", lambda name: path)
+    entry = next(c for c in campaign("v10")["chunks"] if any(str(m).startswith("winner_of_") for m in c["models"]))
+    with pytest.raises(SystemExit, match="no approved arm"):
+        operate.resolve("v10", entry)
+    ref = next(str(m) for m in entry["models"] if str(m).startswith("winner_of_")).removeprefix("winner_of_")
+    path.write_text(f"approved:\n- {{chunk: '{ref}', models: [z-ai/glm-5.3-flashx-legal], reasoning: low}}\n")
+    models, reasoning = operate.resolve("v10", entry)
+    assert "z-ai/glm-5.3-flashx-legal" in models and not any(str(m).startswith("winner_of_") for m in models)
+    if str(entry["reasoning"]).startswith("winner_of_"):
+        assert reasoning == "low"
+
+
+def test_ping_sends_one_strict_request_per_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-not-real")
+    sent = []
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens):
+        sent.append((model, reasoning))
+        return providers.Completion("{}", {"ok": True, "word": "mailroom"}, model, "P", 20, 8, 0, 0.00001,
+                                    "stop", True)
+    import argparse
+    args = argparse.Namespace(campaign="v10", initials="JB", cap_usd=0.05, out=tmp_path)
+    assert operate.cmd_ping(args, chat=chat, key_status=lambda b: {"limit_remaining": None}) == 0
+    assert len(sent) == len(set(sent)) and ("z-ai/glm-5.3-flashx-legal", "off") in sent
+    assert len(export.read_journal(tmp_path / "ping.jsonl")) == len(sent)
+    with pytest.raises(spend.SpendError):
+        operate.cmd_ping(argparse.Namespace(campaign="v10", initials="jb", cap_usd=0.05, out=tmp_path),
+                         chat=chat, key_status=lambda b: {"limit_remaining": None})
+
+
+# ---------------------------------------------------------------- registry validation and new classes
+
+LEASE_DIR = ROOT / "src/mailroom_eda/labeling/new_doc_types/examples/commercial_lease"
+
+
+def test_live_registry_validates():
+    from mailroom_eda.labeling.registry import validate_registry
+    assert validate_registry(fields_registry()) == []
+
+
+def test_validator_reports_each_problem(tmp_path):
+    from mailroom_eda.labeling.registry import validate_registry
+    (tmp_path / "t.md").write_text("${field_list} ${doc_text_window} ${surprise}")
+    reg = {"vocabularies": {}, "tasks": {"t": {"class": "widget", "prompt": "t"}, "u": {"class": "widget"}},
+           "classes": {"widget": {"specialist": "widgets", "fields": {
+               "a": {"type": "number", "source": "llm", "task": "t", "absence": "absent_ok", "description": "d"},
+               "b": {"type": "label", "source": "llm", "task": "t", "absence": "sometimes"},
+               "c": {"type": "name", "source": "llm", "task": "cuad", "absence": "absent_ok"}}}}}
+    problems = "\n".join(validate_registry(reg, prompts_dir=tmp_path))
+    for needle in ("specialist must be", "not a Dojo scoring type", "absence must be", "closed vocabulary",
+                   "need a description", "labels 'contract'", "missing prompt u.md", "cannot fill: ['surprise']"):
+        assert needle in problems, needle
+
+
+def test_lease_example_checks_clean_and_leaves_registry_untouched():
+    problems, samples = operate.check_class(LEASE_DIR)
+    assert problems == []
+    text = samples["lease_entities"]
+    assert "- landlord (name):" in text and "One of: gross | modified_gross" in text
+    assert "${" not in text
+    assert "commercial_lease" not in fields_registry()["classes"]
+    assert "lease_entities" not in tasks.BUILDERS
+    assert prompt("extract_rules").text  # the live prompt cache still points at the live prompts
+
+
+def test_check_class_reports_a_broken_folder(tmp_path):
+    (tmp_path / "prompts").mkdir()
+    (tmp_path / "prompts" / "extract_rules.md").write_text("x")
+    (tmp_path / "fields.yaml").write_text(
+        "classes:\n  contract: {specialist: x_specialist, fields: {}}\n"
+        "tasks:\n  cuad: {class: contract}\n")
+    problems, _ = operate.check_class(tmp_path)
+    text = "\n".join(problems)
+    assert "classes.contract already exists" in text and "shadows a built-in task" in text
+    assert "would overwrite a live prompt" in text
+    assert operate.check_class(tmp_path / "missing")[0][0].endswith("missing")
+
+
+def test_find_touchpoints_flags_registries(tmp_path):
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "classes.py").write_text(
+        'DOC = ["contract", "merger_agreement", "corporate_record"]\n')
+    (tmp_path / "pkg" / "one.py").write_text('if row["expected"] == "correspondence":\n    pass\n')
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "skip.py").write_text('X = ["contract", "merger_agreement", "corporate_record"]\n')
+    out = tmp_path / "report.md"
+    script = ROOT / "src/mailroom_eda/labeling/new_doc_types/find_touchpoints.py"
+    subprocess.run([sys.executable, str(script), "--repo", str(tmp_path), "--markdown", str(out)], check=True,
+                   capture_output=True)
+    text = out.read_text()
+    assert "`pkg/classes.py`" in text.split("Class-specific code")[0]
+    assert "`pkg/one.py`" in text.split("Class-specific code")[1]
+    assert "skip.py" not in text

@@ -137,3 +137,67 @@ def prompt_bundle_sha(names: list[str]) -> str:
 def campaign(name: str) -> dict[str, Any]:
     """The parsed ``campaigns/<name>/campaign.yaml``."""
     return yaml.safe_load((CAMPAIGNS_DIR / name / "campaign.yaml").read_text(encoding="utf-8"))
+
+
+DOJO_TYPES = frozenset({"name", "label", "free_text", "id", "date", "money", "entity_list",
+                        "entity_list:name", "entity_list:free_text"})
+
+
+def validate_registry(reg: Mapping[str, Any], *, prompts_dir: Path = PROMPTS_DIR) -> list[str]:
+    """Problems in a parsed ``fields.yaml`` (empty when it is valid).
+
+    Checks every class and field for a Dojo type, source, absence policy, known
+    vocabulary and a labeling task that targets the field's class; and every
+    ``tasks:`` entry for a known class and an existing prompt with the placeholders
+    the generic builder fills.
+    """
+    out: list[str] = []
+    vocabs = reg.get("vocabularies") or {}
+    declared = dict(reg.get("tasks") or {})
+    builtin = {"cuad": "contract", "intent": "correspondence", "contract_entities": "contract",
+               "merger_entities": "merger_agreement", "correspondence": "correspondence",
+               "claim_checklist": "insurance_claim", "corporate": "corporate_record"}
+    task_class = {**builtin, **{k: v.get("class") for k, v in declared.items()}}
+    for cls, block in (reg.get("classes") or {}).items():
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", cls):
+            out.append(f"class {cls!r}: use a snake_case key")
+        if not str(block.get("specialist") or "").endswith("_specialist"):
+            out.append(f"{cls}: specialist must be a <name>_specialist key")
+        for name, f in (block.get("fields") or {}).items():
+            where = f"{cls}.{name}"
+            if f.get("type") not in DOJO_TYPES:
+                out.append(f"{where}: type {f.get('type')!r} is not a Dojo scoring type")
+            if f.get("retype") and f["retype"] not in DOJO_TYPES:
+                out.append(f"{where}: retype {f['retype']!r} is not a Dojo scoring type")
+            if f.get("source") not in SOURCES:
+                out.append(f"{where}: source must be one of {sorted(SOURCES)}")
+            if f.get("absence") not in ABSENCE_POLICIES:
+                out.append(f"{where}: absence must be one of {sorted(ABSENCE_POLICIES)}")
+            if f.get("vocabulary") and f["vocabulary"] not in vocabs:
+                out.append(f"{where}: unknown vocabulary {f['vocabulary']!r}")
+            if (f.get("retype") or f.get("type")) == "label" and not f.get("vocabulary") and f.get("source") == "llm":
+                out.append(f"{where}: an llm label field needs a closed vocabulary")
+            if f.get("source") == "llm":
+                t = f.get("task")
+                if t not in task_class:
+                    out.append(f"{where}: task {t!r} is neither built in nor declared under tasks:")
+                elif task_class[t] != cls:
+                    out.append(f"{where}: task {t!r} labels {task_class[t]!r}, not {cls!r}")
+                if t in declared and not f.get("description"):
+                    out.append(f"{where}: fields of a declared task need a description for the prompt")
+    for t, spec in declared.items():
+        if spec.get("class") not in (reg.get("classes") or {}):
+            out.append(f"task {t}: class {spec.get('class')!r} is not in classes:")
+        path = prompts_dir / f"{spec.get('prompt', t)}.md"
+        if not path.exists():
+            out.append(f"task {t}: missing prompt {path.name}")
+            continue
+        found = set(_PLACEHOLDER.findall(path.read_text(encoding="utf-8")))
+        missing = {"field_list", "doc_text_window"} - found
+        extra = found - {"field_list", "doc_text_window", "subclass", "window_description"}
+        if missing:
+            out.append(f"task {t}: prompt {path.name} lacks ${{{'}, ${'.join(sorted(missing))}}}")
+        if extra:
+            out.append(f"task {t}: prompt {path.name} has placeholders the generic builder cannot fill: "
+                       f"{sorted(extra)}")
+    return out

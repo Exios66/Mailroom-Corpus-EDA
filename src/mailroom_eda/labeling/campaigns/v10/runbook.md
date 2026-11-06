@@ -4,80 +4,134 @@ The operator's checklist for running the v10 label-completion campaign one chunk
 time. The chunk list is `campaign.yaml`, the projections are `costs.md`, and the design is
 in `docs/plans/v10-structure-and-label-completion.md`.
 
-Nothing here runs by itself. Every paid chunk is started by a person, with their own
-initials, a USD cap and a wall-clock limit, and only after the previous chunk's gate passed.
+Nothing here runs by itself. You start each paid chunk with your own initials. The chunk's
+USD cap and wall-clock limit come from `campaign.yaml`. A chunk will not start until every
+chunk it `needs` has been approved.
 
-## Before the first chunk
+All commands run from the repository root. `L` below stands for
+`PYTHONPATH=src python -m mailroom_eda.labeling`; set it once:
 
-1. Build the v9.4 stage if `data/v9_4/stage/ground_truth_hardened.jsonl` is missing
-   (`python run_all.py` phases through v9.4; `data/` is gitignored).
-2. Check the prices on <https://openrouter.ai/models> against `models.yaml`. If any changed,
-   edit `models.yaml`, update `checked`, and regenerate the projections:
+```bash
+L="env PYTHONPATH=src python -m mailroom_eda.labeling"
+```
+
+## One-time setup (about five minutes)
+
+1. **Install and test** (offline):
 
    ```bash
-   PYTHONPATH=src python -m mailroom_eda.labeling costs
+   python -m venv .venv && .venv/bin/pip install -e ".[dev]"
+   source .venv/bin/activate
+   python -m pytest tests/test_labeling.py -q
    ```
 
-3. Put the key in the environment only. Never write it to a file in the repository.
+2. **Build the stage.** This downloads the public v9.2 Hub tag and rebuilds
+   `data/v9_4/stage/` (about 20 seconds), then checks its sha against `campaign.yaml`:
 
    ```bash
-   export OPENROUTER_API_KEY=...        # or, for Modal: VLLM_BASE_URL and VLLM_API_KEY
+   $L stage
    ```
 
-4. Run the offline tests: `python -m pytest tests/test_labeling.py -q`.
+3. **Put the key in the environment only.** Never write it into a file in the repository.
+   On the OpenRouter key page, give the key a credit limit a little above the campaign total
+   (about $30). The runner keeps a $3 reserve on top of each chunk's cap.
+
+   ```bash
+   export OPENROUTER_API_KEY=...
+   ```
+
+4. **Check readiness.** `doctor` runs every check without a paid call: Python, the stage
+   sha, the Dojo pin, the prompts in the plan, `costs.md`, live OpenRouter prices and
+   provider routing, the key's remaining credit, and the approvals so far. It ends with the
+   next chunk to run.
+
+   ```bash
+   $L doctor
+   ```
+
+   `$L prices` prints the full routing report: for every model, the pinned providers that
+   currently serve it with every parameter we send (strict JSON schema, reasoning control,
+   `max_tokens`, `temperature`, and `seed` where the route sends it), their prices, and
+   any problem. If a price moved, update `models.yaml` (`checked:` too) and regenerate the
+   projections with `$L costs`.
+
+5. **Ping.** One tiny strict-schema request per model and reasoning level the campaign
+   uses, capped at $0.05 in total (it usually costs well under $0.01):
+
+   ```bash
+   $L ping --initials XX
+   ```
+
+   Every line must say `PASS ... schema=strict`. A `json_object fallback` means that route
+   stopped supporting strict schemas; stop and run `$L prices`.
 
 ## Every chunk
 
-Replace `<...>` with the chunk's row in `campaign.yaml`. `XX` is your initials.
+`<id>` is the chunk's `id` in `campaign.yaml` (`1`, `2a`, `5c`, ...). Chunk 1 and chunk 3
+have several arms (a bake-off); add `--arm N` to each command for those.
 
-1. **Look at the rows.**
-
-   ```bash
-   PYTHONPATH=src python -m mailroom_eda.labeling select --task <task> --set <set> --chunk <i/n>
-   ```
-
-2. **Dry run.** This prints the projected tokens and USD and makes no network call.
+1. **Dry run.** Shows the rows, models, reasoning, projected tokens and USD, and the cap.
+   No network call.
 
    ```bash
-   PYTHONPATH=src python -m mailroom_eda.labeling run --task <task> --set <set> --chunk <i/n> \
-     --provider openrouter --model <model_a> --second-model <model_b> --reasoning off --dry-run
+   $L chunk <id> [--arm N] --dry-run
    ```
 
-3. **Run.** The runner checks the key's remaining credit (keeping a $3 reserve), refuses a
-   call that could exceed the cap, and stops at the wall limit. A stopped or interrupted
-   chunk can be re-run with the same command: answered calls are skipped. Exit code 2 means
-   it stopped at the cap or the wall.
+2. **Run.** Four calls run in parallel by default (`--workers`). The run checks the key's
+   remaining credit first, reserves the worst case of every call before sending it, and
+   stops before anything could exceed the cap or the wall limit. Interrupt it at any time;
+   running the same command again skips answered calls.
 
    ```bash
-   PYTHONPATH=src python -m mailroom_eda.labeling run --task <task> --set <set> --chunk <i/n> \
-     --provider openrouter --model <model_a> --second-model <model_b> --reasoning off \
-     --initials XX --api-cost-cap-usd <cap_usd> --max-wall-seconds 5400
+   $L chunk <id> [--arm N] --initials XX
    ```
 
-4. **Review.** Output is in `docs/reports/audits/v10_labels/<task>-<set>-<i>of<n>/`:
+   Exit codes: 0 done, 2 stopped at the cap or the wall (re-run to continue, or raise the
+   cap in `campaign.yaml` if the projection was wrong), 3 some calls failed (re-run; they
+   are retried).
+
+3. **Review.** Output is in `docs/reports/audits/v10_labels/<id>[.<arm>]_<task>-<set>[-<i>of<n>]/`:
 
    | file | what to do with it |
    |---|---|
    | `documents.csv` | one row per document: status, counts, models, tokens, cost |
-   | `fields.csv` | one row per (document, field): both models' values and evidence, the decision and why. On pilots, mark each reviewed row `correct` or `wrong` in `reviewer_verdict` |
+   | `fields.csv` | one row per (document, field): both models' values and evidence, the decision and why. On pilots, mark at least 30 accepted rows `correct` or `wrong` in `reviewer_verdict` |
    | `adjudication.csv` | only the rows a person must decide; fill `reviewer_verdict` (`a` or `b` to take that model's value, `value` with your own `reviewer_value`, `absent` when the document does not state it, `reject` to leave it unlabeled) |
+   | `sample.csv` | agreement chunks: 20 accepted rows to read before signing off |
    | `spans.csv` | CUAD only: every span, whether it was found verbatim, and why it was dropped |
    | `cuad-labels.jsonl`, `intent-labels.jsonl` | the records the v9.4 calibration and ingest code reads |
-   | `calls.jsonl` | every raw answer with its model, provider, reasoning, prompt sha, tokens and cost |
-   | `run.json` | the exact command settings, the projection and the operator's initials |
+   | `calls.jsonl` | every raw answer with its model, served provider, reasoning, prompt sha, tokens and cost |
+   | `run.json` | the settings, the projection and the operator's initials |
 
-   `review` needs no network and can be re-run at any time; it keeps every `reviewer_*`
-   entry already in `fields.csv` and `adjudication.csv`:
+   After editing a CSV, refresh the derived files (offline; reviewer entries are kept):
 
    ```bash
-   PYTHONPATH=src python -m mailroom_eda.labeling review --task <task> --set <set> --chunk <i/n>
+   $L review --task <task> --set <set> [--chunk i/n] --out docs/reports/audits/v10_labels/<dir> [--reasoning off]
    ```
 
-5. **Gate.** Check the chunk's gate (below). If it fails, stop the sequence: fix the prompt
-   or the model choice, and re-run calibration. A prompt change changes its sha, so earlier
-   calibrations no longer cover it.
+4. **Gate.** Scores the chunk's gate offline and prints the result. For `agreement` chunks,
+   read `sample.csv` first and add `--signed-off`.
 
-6. **Sign off.** Add a line to the log at the end of this file, then commit the chunk directory.
+   ```bash
+   $L gate <id> [--arm N] [--signed-off]
+   ```
+
+5. **Approve.** Records the passing configuration (models, served providers, reasoning,
+   prompt sha, gate scores, your initials) in `campaigns/v10/approved.yaml`. Later chunks
+   that use `winner_of_<id>` take their model and reasoning from it. For a bake-off, approve
+   only the winning arm (`--replace` changes an earlier choice).
+
+   ```bash
+   $L gate <id> [--arm N] [--signed-off] --approve --initials XX
+   ```
+
+6. **Commit** the chunk directory and `approved.yaml` together, and add a line to the
+   sign-off log at the end of this file.
+
+`$L status` shows every chunk: calls answered, spend, gate and approval.
+
+If a gate fails, stop: fix the prompt or the model choice and re-run that chunk's
+calibration. A prompt change changes its sha, so earlier calibrations no longer cover it.
 
 ## Gates
 
@@ -86,8 +140,8 @@ Replace `<...>` with the chunk's row in `campaign.yaml`. `XX` is your initials.
 | `cuad_f1` | micro-F1 ≥ 0.75 and precision ≥ 0.80 against the expert CUAD spans (`v9_4_revision.score_cuad_calibration`). For the GLM `low` arm, adopt it only if its micro-F1 beats the `off` arm by 0.02 or more |
 | `intent_kappa` | Cohen's κ ≥ 0.75 against the manual intent labels (`v9_4_revision.score_intent_calibration`) |
 | `field_accuracy` | per-field accuracy ≥ 0.85 against values derived from the expert CUAD spans |
-| `human_verdicts` | at least 90% of the reviewed `fields.csv` rows marked correct |
-| `agreement` | every disagreement and every failed evidence check is in `adjudication.csv`; a reviewer reads a sample of 20 accepted rows |
+| `human_verdicts` | at least 30 accepted `fields.csv` rows reviewed, and at least 90% of them marked correct |
+| `agreement` | no unanswered calls, at most 30% of fields sent to adjudication, and a reviewer read the 20 rows in `sample.csv` (`--signed-off`) |
 | `review` | a person read the CSVs and found no systematic error |
 
 Calibration covers one configuration: (model, provider, reasoning, prompt sha, temperature).
@@ -100,8 +154,10 @@ The v10 build refuses labels whose configuration has no passing calibration or p
   llm-dojo-scoring 0.28.0 has merged, so the fields they fill are the ones the Dojo scores
   (`docs/plans/v10-consumer-patches.md`, G1).
 - Chunk 10 is human adjudication. Chunk 11 re-runs the v10 build and every gate.
-- Any chunk can run on Modal instead: `--provider modal --model Qwen/Qwen3-32B-FP8`, with
-  `VLLM_BASE_URL` pointing at the deployed app. Calibrate that configuration first.
+- Any chunk can run on Modal instead (`$L chunk <id> --provider modal --initials XX`, with
+  `VLLM_BASE_URL` and `VLLM_API_KEY` set). The Modal model is a different configuration, so
+  calibrate it before it labels anything.
+- Spend: the chunk caps add up to $27.90 and the projection is about $14 (`costs.md`).
 
 ## Sign-off log
 
