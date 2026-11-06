@@ -249,6 +249,25 @@ def ping_problems(log: Sequence[Mapping[str, Any]], routes: Sequence[tuple[str, 
     return out
 
 
+def stale_winner(name: str, entry: Mapping[str, Any], picked: Sequence[Mapping[str, Any]]) -> str:
+    """Why a ``winner_of_<id>`` chunk may not run, or ``""``: the approval it uses must have
+    been scored on the prompt this chunk would send (a prompt edit needs a new calibration)."""
+    refs = {str(m) for m in [*entry["models"], entry["reasoning"]] if str(m).startswith("winner_of_")}
+    if not refs or not picked:
+        return ""
+    variant = "a" if entry["task"] == "intent" else ""
+    want = tasks.build(entry["task"], picked[0], variant, set_name=entry["set"]).prompt_sha256
+    approvals = load_approvals(name)
+    for ref in sorted(refs):
+        cid = ref.removeprefix("winner_of_")
+        hits = [a for a in approvals if str(a["chunk"]) == cid]
+        if hits and want not in (hits[-1].get("prompt_sha256") or []):
+            return (f"chunk {entry['id']} would send prompt {want[:12]}, but chunk {cid} was approved on "
+                    f"{[s[:12] for s in hits[-1].get('prompt_sha256') or []]}: re-run chunk {cid} on the "
+                    f"current prompt, gate it and re-approve with --replace")
+    return ""
+
+
 def cmd_chunk(args: argparse.Namespace) -> int:
     """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
@@ -272,6 +291,9 @@ def cmd_chunk(args: argparse.Namespace) -> int:
         models = provider_models(models, args.provider, args.model_map)
     rows = runner.load_stage(args.stage)
     picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
+    stale = stale_winner(args.campaign, entry, picked)
+    if stale:
+        raise SystemExit(stale)
     camp = campaign(args.campaign)
     rc = runner.execute(
         rows, picked, task=entry["task"], set_name=entry["set"], chunk_spec=entry.get("chunk"), models=models,
@@ -614,13 +636,15 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
         raise SystemExit(f"unknown gate kind {kind!r}")
     every = [c for c in export.read_journal(out_dir / "calls.jsonl") if c.get("reasoning") == reasoning]
     calls = [c for c in every if not c.get("error")]
-    res.update(chunk=entry["id"], arm=arm, task=entry["task"], models=models, provider=provider, reasoning=reasoning,
-               prompt_sha256=sorted({c["prompt_sha256"] for c in calls}),
-               served_providers=sorted({c.get("served_provider") or "" for c in calls} - {""}),
-               spent_usd=round(sum(c.get("cost_usd") or 0 for c in every), 4),
-               answer_cost_usd=round(sum(c.get("reused_cost_usd") or c.get("cost_usd") or 0 for c in calls), 4),
-               scored_utc=_now())
+    # what was scored: answers to today's prompt. Old-prompt answers stay in the journal (and
+    # in spent_usd) but must not vouch for this prompt in an approval, nor price the arm.
     current = runner.current_prompt_calls(rows, entry["task"], calls, entry["set"])
+    res.update(chunk=entry["id"], arm=arm, task=entry["task"], models=models, provider=provider, reasoning=reasoning,
+               prompt_sha256=sorted({c["prompt_sha256"] for c in current}),
+               served_providers=sorted({c.get("served_provider") or "" for c in current} - {""}),
+               spent_usd=round(sum(c.get("cost_usd") or 0 for c in every), 4),
+               answer_cost_usd=round(sum(c.get("reused_cost_usd") or c.get("cost_usd") or 0 for c in current), 4),
+               scored_utc=_now())
     outside = pin_violations(current, reasoning)
     if outside:
         res.update(passed=False, served_outside_pin=outside)
@@ -834,6 +858,11 @@ def _quote_context(text: str, quote: str) -> str:
     return "> " + " ".join(ctx.split())
 
 
+def _span_text(span: Any) -> str:
+    """A CUAD span's text: gold spans may be bare strings, model spans are ``{"text": ...}``."""
+    return str(span.get("text") or "") if isinstance(span, Mapping) else str(span or "")
+
+
 def _inspect_items(rows: Mapping[str, Mapping[str, Any]], records: Sequence[Mapping[str, Any]],
                    task: str) -> list[tuple[bool, str, list[str]]]:
     """(disagrees, document_id, markdown lines) per labeled document."""
@@ -864,11 +893,11 @@ def _inspect_items(rows: Mapping[str, Mapping[str, Any]], records: Sequence[Mapp
             lines = [f"- accepted: {r.get('accepted')}; gold categories {len(g)}, predicted {len(p)}"]
             for cat in sorted(p - g):
                 spans = pred[cat]
-                lines += [f"- **false positive** {cat}", "  " + _quote_context(row["doc_text"], str(spans[0].get("text") or ""))]
+                lines += [f"- **false positive** {cat}", "  " + _quote_context(row["doc_text"], _span_text(spans[0]))]
             for cat in sorted(g - p):
-                lines += [f"- **missed** {cat}", "  gold: " + _quote_context(row["doc_text"], str(gold[cat][0].get("text") or ""))]
+                lines += [f"- **missed** {cat}", "  gold: " + _quote_context(row["doc_text"], _span_text(gold[cat][0]))]
             for cat in sorted(g & p)[:3]:
-                lines += [f"- agreed {cat}", "  " + _quote_context(row["doc_text"], str(pred[cat][0].get("text") or ""))]
+                lines += [f"- agreed {cat}", "  " + _quote_context(row["doc_text"], _span_text(pred[cat][0]))]
             items.append((bool(p ^ g), str(r["document_id"]), lines))
     else:  # extraction tasks: fields.csv rows
         by_doc: dict[str, list[Mapping[str, Any]]] = {}

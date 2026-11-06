@@ -2328,3 +2328,21 @@ def test_intent_relabel_runs_exactly_two_models():
         runner.execute(rows, rows, set_name="relabel", models=two[:1], **kw)
     with pytest.raises(SystemExit, match="runs one model"):
         runner.execute(rows, rows, set_name="flagged", models=two, **kw)
+
+
+def test_a_winner_approved_on_another_prompt_does_not_run(monkeypatch):
+    """A prompt edit after a bake-off approval needs a new calibration before the winner is used."""
+    row = _row("correspondence", "email", "Please send the report.", {"intent_status": "auto_labeled"})
+    want = tasks.build("intent", row, "a", set_name="relabel").prompt_sha256
+    entry = {"id": "4a", "task": "intent", "set": "relabel", "models": ["winner_of_3", "anthropic/claude-haiku-5.5"],
+             "reasoning": "winner_of_3"}
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [{"chunk": "3", "prompt_sha256": ["old"]}])
+    assert "re-run chunk 3" in operate.stale_winner("v10", entry, [row])
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [{"chunk": "3", "prompt_sha256": ["old", want]}])
+    assert operate.stale_winner("v10", entry, [row]) == ""
+    assert operate.stale_winner("v10", {**entry, "models": ["m"], "reasoning": "off"}, [row]) == ""
+
+
+def test_cuad_inspect_reads_string_gold_spans():
+    assert operate._span_text("the licensee shall not") == "the licensee shall not"
+    assert operate._span_text({"text": "a span"}) == "a span" and operate._span_text(None) == ""

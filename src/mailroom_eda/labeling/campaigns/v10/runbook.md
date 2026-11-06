@@ -167,23 +167,24 @@ the labels root is gitignored, because this GitHub repo is public. A paid run re
   checkout is missing (never overwriting local files), so a later run reuses those answers
   instead of buying them again.
 
-## Funded now (2026-11-06: $9.12 credit, $6.12 usable above the $3 reserve)
+## Funded now (2026-11-06: $9.50 credit after chunk 3, $6.50 usable above the $3 reserve)
 
-The full campaign projects to $20.42, so only this prefix runs before a top-up. It is ordered
+The full campaign projects to $21.40, so only this prefix runs before a top-up. Running
+totals count from the $6.50 usable after chunk 3. It is ordered
 so every paid step feeds a decision. Each chunk starts only when usable credit covers its cap.
 
 | step | chunks | projected USD | running total |
 |---|---|---:|---:|
-| 1 | `3`: intent bake-off, 6 arms (`--chunk 3` ping first) | 0.47 | 0.47 |
-| 2 | `4a`–`4c`: re-read the 904 machine-made intents (below); supersedes `4` | 1.28 | 1.75 |
-| 3 | `1`: CUAD bake-off, 7 arms | 1.48 | 2.07 |
-| 4 | `1h`: CUAD holdout, only the arms `bakeoff 1` did not exclude | ≤ 1.53 | ≤ 3.59 |
-| 5 | merger window A/B (below) | 0.36 | ≤ 3.95 |
-| 6 | `2a`–`2c`: CUAD on the 89 EX-10 contracts with the chunk-1 winner | ≤ 0.81 | ≤ 4.77 |
-| 7 | `7a`, `8a`: correspondence and claim-checklist pilots | 0.18 | ≤ 4.94 |
+| 1 | `3`: intent bake-off; done 2026-11-06 (6 arms, then arms 1, 3, 5, 6 on the new prompt) | spent 0.36 | — |
+| 2 | `4a`–`4c`: re-read the 904 machine-made intents (below); supersedes `4` | 1.28 (4a spent 0.17) | 1.28 |
+| 3 | `1`: CUAD bake-off, 7 arms | 1.48 | 2.76 |
+| 4 | `1h`: CUAD holdout, only the arms `bakeoff 1` did not exclude | ≤ 1.53 | ≤ 4.29 |
+| 5 | merger window A/B (below) | 0.36 | ≤ 4.65 |
+| 6 | `2a`–`2c`: CUAD on the 89 EX-10 contracts with the chunk-1 winner | ≤ 0.81 | ≤ 5.46 |
+| 7 | `7a`, `8a`: correspondence and claim-checklist pilots | 0.18 | ≤ 5.64 |
 
-- Steps 2 and 6 are priced at the costliest possible winner; a DeepSeek winner costs less.
-- About $1.18 stays unspent as slack for repairs and re-runs.
+- Step 6 is priced at the costliest possible winner; a DeepSeek winner costs less.
+- About $0.86 stays unspent as slack for repairs and re-runs.
 - Chunks 5, 6, 9 and the remainders of 7 and 8 (about $15.5) wait for a top-up and for the
   post-bake-off re-plan (plan Task 7).
 - Report credit after every step.
