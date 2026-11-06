@@ -98,6 +98,7 @@ class Completion:
     cost_usd: float | None
     finish_reason: str
     used_schema: bool
+    cached_tokens: int = 0
 
 
 def build_payload(provider: str, model: str, messages: Sequence[Mapping[str, str]],
@@ -112,13 +113,15 @@ def build_payload(provider: str, model: str, messages: Sequence[Mapping[str, str
     """
     if reasoning not in REASONING:
         raise ValueError(f"reasoning must be one of {REASONING}")
-    route = dict(route or {})
+    route = effective_route(route, reasoning)
     body: dict[str, Any] = {
         "model": model,
         "messages": [dict(m) for m in messages],
         "temperature": 0,
         "max_tokens": max_tokens,
     }
+    if provider == "openrouter" and route.get("temperature", True) is False:
+        del body["temperature"]  # the endpoint rejects it; require_parameters would route nowhere
     if provider != "openrouter" or route.get("seed", True):
         body["seed"] = 42
     if schema is not None:
@@ -140,6 +143,42 @@ def build_payload(provider: str, model: str, messages: Sequence[Mapping[str, str
     else:
         body["chat_template_kwargs"] = {"enable_thinking": reasoning != "off"}
     return body
+
+
+def temperature(model: str) -> int | None:
+    """The temperature sent for ``model``: 0, or ``None`` where its route omits it."""
+    return None if (model_route(model) or {}).get("temperature", True) is False else 0
+
+
+def effective_route(route: Mapping[str, Any] | None, reasoning: str) -> dict[str, Any]:
+    """The route for one reasoning level: ``by_reasoning[<level>]`` overlays the base keys.
+
+    Pinning providers per level matters because they do not honour reasoning alike (on
+    2026-11-06 one DeepSeek provider spent 0 reasoning tokens at ``low``, another 241),
+    so a calibration covers only the providers that serve its level.
+    """
+    route = dict(route or {})
+    overlay = (route.pop("by_reasoning", None) or {}).get(reasoning) or {}
+    return {**route, **overlay}
+
+
+def _slug(name: str) -> str:
+    return "".join(ch for ch in str(name).lower() if ch.isalnum())
+
+
+#: Display names OpenRouter reports for a served provider whose slug differs (2026-11-06:
+#: a Claude Haiku answer through ``google-vertex`` reported ``Google``).
+SERVED_ALIASES = {"google": "googlevertex", "googlevertex": "googlevertex", "amazonbedrock": "amazonbedrock",
+                  "bedrock": "amazonbedrock", "azureopenai": "azure"}
+
+
+def served_outside_route(route: Mapping[str, Any] | None, reasoning: str, served: Any) -> list[str]:
+    """Served provider names (display names such as ``CoreWeave``) outside the route's ``only`` pin."""
+    only = {_slug(p) for p in effective_route(route, reasoning).get("only") or []}
+    if not only:
+        return []
+    return sorted(str(p) for p in served
+                  if p and _slug(p) not in only and SERVED_ALIASES.get(_slug(p)) not in only)
 
 
 def model_route(model: str) -> dict[str, Any]:
@@ -225,6 +264,7 @@ def parse_completion(payload: Mapping[str, Any], *, used_schema: bool) -> Comple
         reasoning_tokens=int(details.get("reasoning_tokens") or 0),
         cost_usd=float(cost) if isinstance(cost, (int, float)) else None,
         finish_reason=finish, used_schema=used_schema,
+        cached_tokens=int((usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0),
     )
 
 

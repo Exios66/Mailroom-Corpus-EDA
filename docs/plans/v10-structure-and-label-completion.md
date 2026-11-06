@@ -28,6 +28,22 @@ The user also wants these entity-schema changes:
 - Correspondence, insurance and corporate keep their current Dojo schemas.
 - **Contracts and mergers get their own adapted entity schemas**, separate from the CUAD clause checklist and the MAUD questions.
 
+### Alignment with the live Hub (checked 2026-11-06)
+
+- The Hub `main` is still the v9.2 data (`670e8bc6`, tags `v9.1` and `v9.2`, plus the
+  `corporate-labels-v9.2.1` branch). v9.3 and v9.4 exist only as local stages, rebuilt from
+  that tag by `labeling stage`. v10 builds from the v9.4 stage, not from anything newer
+  on the Hub.
+- A label-status export of the "core" subset (`mailroom_core.csv`, 2,379 rows, dated
+  2026-11-03) agrees with v9.2 on every shared row: split, subtype, `annotation_method`,
+  `intent`, text length and context band. It is the v9.4 row set minus the 800 template
+  insurance rows (600 CMS DE-SynPUF and 200 GNOTHEIA), the 89 EX-10 contracts, and the 25
+  flagged intents. It predates the near-duplicate test drop, so it still has
+  `0000950137-06-011083_n08078exv3w03.htm` (445 corporate records, where v9.4 has 444).
+- Scope (user decision, 2026-11-06): v10 labels **all 1,100** insurance rows, not only
+  the 300 in the core subset. `communication_date` stays **text-only**: the export's
+  `sent_date` comes from `metadata.date`, and that remains a cross-check, not gold.
+
 ### Decisions (asked and answered)
 
 1. The labeling playbook is an **in-repo package** in the EDA repo.
@@ -46,7 +62,7 @@ The user also wants these entity-schema changes:
   - Corporate `not_applicable` is treated inconsistently between `corporate_record_schema.py:380` and `:381`.
   - There is no HF loader, and the vendor snapshot has no tests.
 - **llm-mailroom:**
-  - Joins `default` and `ground_truth` on `filename`. Counts rows where `content_sha256` doesn't equal sha256(`doc_text`).
+  - Joins `default` and `ground_truth` on `filename`; v10's blind `default` has no `filename`, so the join moves to `document_id` (patch below). Counts rows where `content_sha256` doesn't equal sha256(`doc_text`).
   - Every `result_cache` key hashes `doc_text`.
   - `load_dataset` without a config name relies on `default` being the default config.
   - **Bug:** the viewer `/rows` fallbacks send no revision, so once v10 is on the Hub main branch, pinned v9.1 runs would silently read v10.
@@ -167,13 +183,20 @@ labeling/{providers,spend,runner,verify,export}.py
   - `merger_consideration` is `populated` on all 151 mergers (95 from the expert answer, 56 from the task), and the 95 keep the expert value whatever the models answered in calibration.
 - **Splits are unchanged.** The md5 rule is untouched and no row is added or removed: 3,292 rows (train 2,971 / test 321) and 151 mergers. Only the merger subclass distribution in the new configs changes (today all_cash 57, all_stock 24, mixed_cash_stock 13, mixed_cash_stock_election 1, other 56; the 56 split 48 train / 8 test); the card's composition and per-subclass tables are rendered from the data, so they follow.
 - **New configs drop:** the empty and constant columns, `source_filename`, the nested mirrors, and build-internal metadata keys.
-- **`default` keeps:** `filename`, `doc_text` and `metadata`, minus the build-internal keys (`gt_label_ex10` needs `metadata`), plus `document_id`. It stays the **first config**, because llm-mailroom calls `load_dataset` without a config name.
+- **`default` is blind:** `document_id`, `doc_text` and the empty `prompt`, nothing else. It stays the **first config**, because llm-mailroom calls `load_dataset` without a config name.
+  - **No `metadata`:** a leak scan on the v9.4 stage found metadata values that give away the class, the subclass and gold values (`source_row_id` equals `claim_number`).
+  - **No `filename`:** the source filename names the subclass or class on 1,346 of 3,292 rows, test split included: `carrier:…`, `inpatient:…`, `auto:CLM-000803.txt` (subclass plus the gold claim number; 96 of 114 test insurance rows), `contract_#_merger_agreement.txt` (all 17 test mergers), CUAD names such as `…_Co-Branding Agreement_ Agency Agreement.pdf` (46 of 60 test contracts). `document_id` is an opaque hash (`DOC-` plus 16 hex digits, checked on every staged row) and is the join key.
+  - `doc_text` carries no build-injected header; its first lines are the documents' own titles.
+- **`source_metadata`** (non-blind, like the GT configs): `document_id`, `filename` and `metadata` minus the build-internal keys. `gt_label_ex10` and anything else that needs the source fields reads it.
+- **Labels land only in the GT-tier configs** (`ground_truth`, `gt_<class>`, `routing`, `cuad_clauses`, `maud_answers`), never in `default`. The labeling journals under `docs/reports/audits/v10_labels/` are build inputs, not dataset configs.
 - **`prompt`** is dropped from the new configs. It stays as an empty column in the legacy and default configs for one release.
 - **Fixes:**
   - `expected_specialist` comes from the taxonomy (`merger_agreement_specialist`).
   - The dedup wording is corrected: 9 exact copies in 6 groups, plus 1 near-duplicate dropped from test.
 
 ### C2. Layout
+
+Written by `python -m mailroom_eda.v10_build --stage data/v9_4/stage --out data/v10/stage [--labels]` (`v10_build.build`), byte-identical for the same inputs.
 
 | config | rows | contents |
 |---|---|---|
@@ -187,6 +210,8 @@ labeling/{providers,spend,runner,verify,export}.py
 `dataset_info.json` carries splits and `num_examples`. Shards keep the `-00000-of-00001` naming. The sandbox hard-codes those names; a patch replaces that with a glob.
 
 ### C3. Gates (`scripts/audit/verify_v10_conformance.py`)
+
+Implemented in `src/mailroom_eda/v10_conformance.py` (gate numbers as below; chunk 0 runs 1–8, 12 and 13 through campaign step `0`, chunk 11 runs all 13 through step `11`).
 
 1. The row set equals v9.4.
 2. The cleanup diff stays inside its allowlist, and every hash matches its `doc_text` in every config.
@@ -203,6 +228,8 @@ labeling/{providers,spend,runner,verify,export}.py
 13. Every config loads offline with `datasets` from local parquet.
 
 ### C4. Dataset card (`src/mailroom_eda/card_v10.py`, rendered from data and `fields.yaml`)
+
+The build writes the card to `<stage>/README.md` and records its hash in `manifest.json`; `python -m mailroom_eda.card_v10 --check` is gate 12.
 
 **YAML:**
 - `pretty_name`
@@ -241,13 +268,15 @@ Layout uses clean tables, collapsible long lists, and no internal ticket ids in 
 **Provider routing** (the `route:` block per model in `models.yaml`; checked live with `labeling prices`):
 - Every request sends `provider.require_parameters: true`, so OpenRouter only routes to endpoints that accept every parameter we send (strict `json_schema`, `reasoning`, `max_tokens`, `temperature`).
 - Each model's providers are pinned with `only`, so the served model and price are known: GLM-legal on `z-ai`; DeepSeek on `deepinfra`, `atlas-cloud`, `coreweave` and `inference-net` at fp8 with a `max_price` ceiling (cheaper fp4 endpoints are excluded); MiniMax on `parasail`, `together`, `fireworks` and `sambanova`. Fallbacks are allowed only within the pinned list.
+- A `by_reasoning` overlay narrows the pin per reasoning level, because providers do not honour `low` alike (2026-11-06 per-provider pings, `labeling ping --per-provider`): DeepSeek `low` runs on `atlas-cloud`, `coreweave` and `inference-net` (DeepInfra spent 0 reasoning tokens on a real CUAD document; only `ping --per-provider --real-doc` shows this, since every provider reasons on the tiny ping). At `low` DeepSeek's reasoning length is erratic on any provider (336 to over 2,300 tokens on the same email), so the output allowance for reasoning is 6,144 tokens: a truncated answer is billed and discarded, unused room is free; MiniMax `low` runs on `fireworks` and `sambanova` (Parasail and Together reported 0 reasoning tokens). A gate fails when any call was served outside its pin, or when most of a provider's answers at `low` spent 0 reasoning tokens.
 - `seed: 42` is sent only where every pinned endpoint accepts it (DeepSeek). The z-ai GLM endpoint does not list `seed`, and `require_parameters` would reject the request, so GLM runs at temperature 0 without a seed.
 - `models.yaml` prices are the priciest pinned endpoint, so projections and caps are upper bounds. Every journal record keeps the served provider.
 
 **Reasoning:**
-- **Off** for span and entity extraction. It is a copying task, and reasoning tokens are billed as output.
+- **Off** for span and entity extraction where the model allows it. It is a copying task, and reasoning tokens are billed as output.
+- **Re-plan (2026-11-06):** GLM-legal and MiniMax now refuse reasoning off (HTTP 400 "Reasoning is mandatory for this endpoint"). Chunks 7 and 8 (DeepSeek + MiniMax) therefore run at `low` for both models, so both answer under one configuration; projected $15.66 (was $14.72), every chunk inside its cap. Chunk 1 arm 1 (GLM off) is skipped. Chunks 5, 6 and 9 still list GLM at off and must be re-planned to `low` before they run.
 - The CUAD bake-off tests GLM with `low`; it is adopted only if micro-F1 improves by at least 0.02.
-- **Low** is tried for intent only (chunk 3 runs off and low and keeps the better kappa). Urgency is labeled inside the correspondence extraction call with reasoning off, and `communication_type` is deterministic (the subclass).
+- **Low** is tried for intent (chunk 3 runs off and low and keeps the better kappa). Urgency is labeled inside the correspondence extraction call, and `communication_type` is deterministic (the subclass).
 - **Never `high`.**
 
 **Token budget** (one model, every task once, windowed prompts measured by `labeling costs`): about **18.4M prompt / 3.4M output tokens**, including a 1.25x allowance for retries and CUAD repair calls. Merger windows add the regex-located Termination Fee, Outside Date, Brokers and Notices sections, and the `merger_consideration` window adds the Conversion of Shares, Merger Consideration and Election sections.
@@ -269,7 +298,7 @@ Layout uses clean tables, collapsible long lists, and no internal ticket ids in 
 **Recommended mix:**
 - GLM-legal + DeepSeek for contracts, mergers and corporate records.
 - DeepSeek + MiniMax for correspondence and insurance.
-- **About $14.68 projected (two models on every extraction chunk, all three CUAD bake-off arms, both intent arms); the per-chunk caps add up to $28.90.** The chunk-by-chunk table is in `costs.md`.
+- **About $20.42 projected (two models on every extraction chunk, every bake-off arm on calibration and holdout); the per-chunk caps add up to $29.76.** The chunk-by-chunk table is in `costs.md`.
 - Prices are re-checked before every chunk, and `costs.md` is regenerated (`labeling costs`; `--check` fails when it is stale).
 
 ## Part E: prompts
@@ -288,27 +317,52 @@ Output one JSON object, nothing else: {"clauses": [{"category": "<exact name>", 
 1. category is exactly one of the 41 names in the user message.
 2. text is copied character for character (same words, order, punctuation, capitalisation). Never
    paraphrase, summarise, fix typos or join text from two places. Markdown marks (* _ #) may be dropped.
-3. Copy the operative sentence or clause, not a whole article and not a bare heading ("Governing Law."
-   alone is wrong). Keep spans under 1,500 characters.
-4. Omit absent categories. Never add one because contracts of this type usually have it. If unsure, omit.
-5. One clause may support several categories; repeat it under each. Several spans per category are allowed.
-6. Document Name: the title near the top. Parties: each party's name as printed, one span per party.
+3. Copy the operative sentence or clause, not a whole article and not a heading. A heading alone
+   ("Governing Law.", "ARTICLE 3 CONFIDENTIALITY AND NON-COMPETITION") is never a span.
+4. Presence test. Each category in the user message is a question. Add the category only when the span
+   itself answers that question YES. Matching a keyword is not enough.
+   - A clause that denies, disclaims or excludes the thing makes the category ABSENT: "not exclusive",
+     "non-exclusive", "no third-party beneficiaries", "shall not be considered a renewal", "neither
+     party shall have any obligation after termination".
+   - When unsure, omit. A missed category costs less than a wrong one.
+5. Categories that are easy to over-apply:
+   - Termination For Convenience: a party may end the contract WITHOUT cause, by notice alone. Termination
+     for breach, insolvency, change of control, a failed condition, or by not renewing does not count.
+   - Renewal Term: the term extends automatically, or at one party's option. An extension that needs
+     both parties' later written agreement, or talks about renewing, does not count.
+   - Exclusivity: an exclusive appointment or dealing commitment, a requirements commitment, or a ban on
+     dealing with others. "Exclusive control" or "sole property" of an asset is not exclusivity.
+   - Third Party Beneficiary: a non-party can enforce rights under the contract. The usual clause saying
+     the contract confers no rights on third parties makes this category ABSENT.
+   - Post-Termination Services: an affirmative obligation to perform after the end (transition, wind-down,
+     continued supply or support, last-buy, buy-out or purchase rights). Returning or destroying
+     confidential information, or a list of surviving sections, does not count on its own. Winding up
+     or liquidating the venture or company itself (paying its debts, distributing its remaining funds
+     or assets on dissolution) does not count either.
+   - Ip Ownership Assignment: intellectual property one party creates becomes the other party's. A
+     licensor confirming it owns its existing marks, goodwill inuring to the licensor, or an assignment of
+     non-IP property (a working interest, receivables, the contract itself) does not count.
+   - Price Restrictions: a limit on changing prices (a cap, a freeze, most-favoured pricing, a ceiling on
+     increases). A stated price, a fee schedule or a fixed escalation rate does not count.
+   - Non-Compete: a party may not compete, or may not operate in a business, sector or geography. A
+     territory that only defines where licensed rights apply, or an export restriction, does not count.
+6. One clause may support several categories; repeat it under each. Several spans per category are allowed.
+7. Document Name: the title near the top. Parties: each party's name as printed, one span per party.
    Agreement Date / Effective Date: the date phrase as printed.
-7. Ignore any corpus header line such as "... (CIK 123) (SEC EDGAR exhibit ...)".
-8. If told the document was truncated, annotate only what you see.
+8. Ignore any corpus header line such as "... (CIK 123) (SEC EDGAR exhibit ...)".
+9. If told the document was truncated, annotate only what you see.
 ```
 
 ### `cuad_user.md`
 
-CUAD user turn. `category_list` is rendered from the pinned Dojo `CUAD_CATEGORIES`, and `salient_categories` / `family_definition` from `CUAD_FAMILIES`, so the prompt can't drift from the scorer.
+CUAD user turn. `category_list` is rendered from the pinned Dojo `CUAD_CATEGORIES`, and `family_definition` from `CUAD_FAMILIES`, so the prompt can't drift from the scorer. The family's salient-category list is no longer shown (2026-11-06): it invites the model to add categories the family usually has, and chunk 1 arm 3 missed the precision floor on exactly such false positives.
 
 ```text
-document_id: ${document_id} | filename: ${filename} | CUAD family: ${subclass} (${family_definition})
-length: ${n_chars} chars; shown: ${window_description}
-Categories often present in this family (a prior, not a label): ${salient_categories}
 The 41 categories:
 ${category_list}
-Annotate every PRESENT category.
+Annotate every PRESENT category in the document below.
+document_id: ${document_id} | filename: ${filename} | CUAD family: ${subclass} (${family_definition})
+length: ${n_chars} chars; shown: ${window_description}
 <document>
 ${doc_text_window}
 </document>
@@ -331,20 +385,27 @@ Correspondence intent, two passes: A shows the subject line, B does not.
 
 ```text
 You classify the PRIMARY intent of one business email (Enron corpus) with a closed vocabulary. Judge
-only what the newest message's author wants the recipient to know or do; quoted or forwarded text is
-context only.
+what the email's author wants the recipient to know or do.
+- Forwards: when the newest message adds nothing of its own beyond a pointer ("FYI", "see below",
+  "if you would like to participate", a one-line comment), classify the forwarded content. When the
+  newest message makes its own ask, notice or point, classify that.
 - payment_demand: asks the recipient to pay, settle or cure an amount owed or a default.
 - notice: formally informs of a fact, breach, termination, change or intention with contractual,
-  legal or procedural effect.
-- analysis: assesses options, risks, positions, terms or data; it reasons rather than reports.
-- request: asks for information, a document, approval or an action (not a meeting).
+  legal or procedural effect, including operational notices to many parties (an outage, a capacity
+  or nomination change, a "notice to all interested parties").
+- analysis: assesses options, risks, positions, terms, legislation or data; it reasons rather than
+  reports. A memo that analyses stays analysis even if it also mentions a call.
+- request: asks the recipient for information, a document, approval or an action (not a meeting),
+  even when the ask sits inside a status report ("please gather...", "you may need to fax...").
 - update: reports status, progress, events or figures without an ask or formal notice.
-- meeting_invite: proposes, schedules, moves, confirms or cancels a meeting or call.
-- press_communication: a press release or public, media-facing statement.
-- other: none of the above (personal, empty forward, auto-reply, newsletter, spam).
+- meeting_invite: the main point is to propose, schedule, move, confirm or cancel a meeting or call
+  (a revised call schedule counts); a passing mention of a call inside other content does not.
+- press_communication: a press release or public, media-facing statement, forwarded or not.
+- other: none of the above: personal notes, empty forwards, auto-replies, and marketing,
+  newsletters or spam from outside vendors.
 Tie-breaks: an explicit ask beats an update; a meeting ask is meeting_invite; a formal notice beats an
 update; use other only when no label fits, never for uncertainty.
-Output only {"intent": "<label>", "confidence": <0-1>, "evidence": "<verbatim quote, max 200 chars, from the newest message>"}
+Output only {"intent": "<label>", "confidence": <0-1>, "evidence": "<verbatim quote, max 200 chars, from the text you classified>"}
 ```
 
 ### `intent_user.md`
@@ -519,26 +580,30 @@ ${doc_text_window}
 
 The machine-readable sequence is `src/mailroom_eda/labeling/campaigns/v10/campaign.yaml`; row counts come from `labeling select`, and the projections from `costs.md`.
 
+**Model re-plan (2026-11-06).** Only top-tier current models label: no older DeepSeek snapshots and no weaker models. Chunks 1 and 3 are bake-offs on the golden sets. The primary DeepSeek is the better of `deepseek-v4.1-flash` (2026-09-10) and the newer `deepseek-v4.1-flash-1017` (2026-10-17, about 2x the price). The second opinion for the two-model chunks is the candidate that scores at least as well as the primary on gold: GPT-6 Luna Pro, Claude Haiku 5.5 or MiniMax M3.1 Flash. GLM-5.3 FlashX Legal is the candidate for the contract and merger tasks. Chunks 5–9 are re-planned from the measured scores before any of them runs. Claude reads a sample of each arm's answers against the documents before a gate is approved. Claude Haiku 5.5 and GPT-6 Luna Pro endpoints take no `temperature`, so their routes omit it and the calibration records `temperature: null`.
+
 | # | chunk | config | rows | cap | gate to proceed |
 |---|---|---|---|---|---|
 | 0 | build: cleanup, layout, specialist fix, deterministic fields, card | none | all | — | C3 gates 1–8, 12 and 13 pass. Deterministic fields: `cuad_family`, `merger_consideration`, `communication_type` |
-| 1 | CUAD bake-off | GLM-legal off, GLM-legal low, DeepSeek off | 40 × 3 arms | $0.75 / $0.85 / $0.40 | micro-F1 ≥ 0.75 and P ≥ 0.80, else STOP |
-| 2a–c | CUAD on EX-10 | winner of #1 | 89 (30/30/29) | $0.60 each | spans re-verify; the user reviews `spans.csv` |
-| 3 | intent calibration | DeepSeek off, DeepSeek low | 96 × 2 passes × 2 arms | $0.15 / $0.20 | κ ≥ 0.75 |
-| 4 | flagged intents | winner of #3 | 25 × 2 passes | $0.10 | two-pass agreement; the user reviews the CSV |
-| 5a | contract entity calibration | GLM-legal + DeepSeek | 40 | $0.75 | per-field accuracy ≥ 0.85 against gold derived from the expert CUAD spans (Parties, dates, Governing Law, Renewal Term) |
-| 5b | contract entity pilot (2 per CUAD family) | as 5a | 52 | $1.00 | human verdicts ≥ 0.90 |
-| 5c–e | contract entities | as 5a | 545 (182/182/181) | $3.00 each | agreement, verbatim checks, adjudication CSV |
-| 6c0 | merger consideration calibration | GLM-legal + DeepSeek | 95 | $0.60 | each model ≥ 0.95 accuracy against the expert MAUD answer (`consideration_accuracy`, confusion table) |
-| 6c1 | merger consideration for the 56 `other` rows | as 6c0 | 56 | $0.40 | agreement; disagreements adjudicated |
-| 6a | merger pilot (3 per subclass) | GLM-legal + DeepSeek | 13 | $0.40 | needs 6c1; the user fills `reviewer_verdict`; agreed-field precision ≥ 0.90 |
-| 6b–c | merger remainder | as 6a | 138 (69/69) | $1.50 each | agreement and verbatim checks |
-| 7a | correspondence pilot (5 per subclass) | DeepSeek + MiniMax | 38 | $0.25 | human verdicts ≥ 0.90 |
-| 7b–e | correspondence | as 7a | 962 | $0.50 each | agreement; enum checks |
-| 8a | claim_checklist pilot (5 per subclass) | DeepSeek + MiniMax | 30 | $0.25 | human verdicts ≥ 0.90 |
-| 8b–e | claim_checklist | as 8a | 1,070 | $0.50, $0.50, $0.50, $0.75 | agreement; evidence checks |
-| 9a | corporate pilot (3 per subclass) | GLM-legal + DeepSeek | 29 | $0.50 | human verdicts ≥ 0.90 |
-| 9b–e | corporate | as 9a | 415 | $1.00, $1.00, $1.00, $1.25 | agreement; verbatim checks |
+| 1 | CUAD model bake-off | arm 1: DeepSeek v4.1 Flash low; arm 2: GLM-5.3 FlashX Legal low; arm 3: DeepSeek v4.1 Flash off; arm 4: DeepSeek v4.1 Flash 1017 off; arm 5: GPT-6 Luna Pro off; arm 6: Claude Haiku 5.5 off; arm 7: MiniMax M3.1 Flash low | 40 × 7 arms | $0.30 / $0.55 / $0.25 / $0.45 / $0.20 / $0.20 / $0.30 | micro-F1 ≥ 0.75 and P ≥ 0.80, else STOP |
+| 1h | CUAD holdout (40 golden contracts not in calibration) | each chunk-1 model the calibration bake-off did not mark clearly worse (arms in chunk-1 order) | 40 × up to 7 arms | $0.35 / $0.55 / $0.25 / $0.50 / $0.20 / $0.20 / $0.30 | micro-F1 ≥ 0.75 and P ≥ 0.80; the pick pools calibration + holdout (80 contracts, paired bootstrap) |
+| 2a–c | CUAD on EX-10 | winner of #1 | 89 (30/30/29) | $0.45, $0.45, $0.35 | spans re-verify; the user reviews `spans.csv` |
+| 3 | intent model bake-off | arm 1: DeepSeek v4.1 Flash off; arm 2: DeepSeek v4.1 Flash low (skipped); arm 3: DeepSeek v4.1 Flash 1017 off (approved 2026-11-06, κ 0.823); arm 4: GPT-6 Luna Pro off (skipped); arm 5: Claude Haiku 5.5 off; arm 6: MiniMax M3.1 Flash low | 96 × 2 passes × 4 arms | $0.10 / $0 / $0.15 / $0 / $0.10 / $0.15 | κ ≥ 0.75 against the corrected gold |
+| 4 | flagged intents | skipped: superseded by 4a–4c | — | $0 | — |
+| 4a–c | intent relabel: every machine-made intent | winner of #3 + Claude Haiku 5.5 (the user's second opinion) | 904 (302/302/300) × 2 passes × 2 models | $0.65 each | unanimous and subtype-consistent answers are written; the rest is adjudicated; a person decides every test-split change |
+| 5a | contract entity calibration | GLM-legal + DeepSeek | 40 | $0.50 | per-field accuracy ≥ 0.85 against gold derived from the expert CUAD spans (Parties, dates, Governing Law, Renewal Term) |
+| 5b | contract entity pilot (2 per CUAD family) | as 5a | 52 | $0.70 | human verdicts ≥ 0.90 |
+| 5c–e | contract entities | as 5a | 545 (182/182/181) | $2.20, $2.45, $2.35 | agreement, verbatim checks, adjudication CSV |
+| 6c0 | merger consideration calibration | GLM-legal + DeepSeek | 95 | $0.35 | each model ≥ 0.95 accuracy against the expert MAUD answer (`consideration_accuracy`, confusion table) |
+| 6c1 | merger consideration for the 56 `other` rows | as 6c0 | 56 | $0.25 | agreement; disagreements adjudicated |
+| 6a | merger pilot (3 per subclass) | GLM-legal + DeepSeek | 13 | $0.25 | needs 6c1; the user fills `reviewer_verdict`; agreed-field precision ≥ 0.90 |
+| 6b–c | merger remainder | as 6a | 138 (69/69) | $1.30 each | agreement and verbatim checks |
+| 7a | correspondence pilot (5 per subclass) | DeepSeek + MiniMax, reasoning low | 38 | $0.15 | human verdicts ≥ 0.90 |
+| 7b–e | correspondence | as 7a | 962 | $0.90, $0.85, $0.85, $0.85 | agreement; enum checks |
+| 8a | claim_checklist pilot (5 per subclass) | DeepSeek + MiniMax, reasoning low | 30 | $0.15 | human verdicts ≥ 0.90 |
+| 8b–e | claim_checklist | as 8a | 1,070 | $0.95, $0.95, $0.95, $1.20 | agreement; evidence checks |
+| 9a | corporate pilot (3 per subclass) | GLM-legal + DeepSeek | 29 | $0.25 | human verdicts ≥ 0.90 |
+| 9b–e | corporate | as 9a | 415 | $0.85, $0.75, $0.80, $0.95 | agreement; verbatim checks |
 | 10 | adjudication | human, via `adjudication.csv` | residue | $0 | every item resolved |
 | 11 | re-stage, all gates, render the card | none | — | — | gates 1–13 pass |
 

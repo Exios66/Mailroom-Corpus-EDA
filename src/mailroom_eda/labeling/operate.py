@@ -21,8 +21,10 @@ import hashlib
 import json
 import os
 import random
+import re
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
@@ -31,7 +33,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
-from . import derive, export, providers, runner, spend, tasks, verify
+from . import checkpoint, derive, export, interim, providers, runner, spend, tasks, verify
 from .registry import CAMPAIGNS_DIR, campaign, dojo_snapshot, fields_registry, models_registry
 
 ROOT = runner.ROOT
@@ -52,9 +54,12 @@ def _now() -> str:
 
 def chunk_entries(name: str, chunk_id: str) -> list[dict[str, Any]]:
     """All arms of one chunk id, in campaign order."""
-    entries = [c for c in campaign(name)["chunks"] if str(c["id"]) == str(chunk_id)]
+    camp = campaign(name)
+    entries = [c for c in camp["chunks"] if str(c["id"]) == str(chunk_id)] \
+        or [c for c in camp.get("steps") or [] if str(c["id"]) == str(chunk_id)]
     if not entries:
-        ids = sorted({str(c["id"]) for c in campaign(name)["chunks"]}, key=lambda x: (len(x), x))
+        ids = sorted({str(c["id"]) for c in camp["chunks"] + (camp.get("steps") or [])},
+                     key=lambda x: (len(x), x))
         raise SystemExit(f"no chunk {chunk_id!r} in campaign {name}; chunks: {', '.join(ids)}")
     return entries
 
@@ -85,6 +90,88 @@ def chunk_dir(out: Path, entry: Mapping[str, Any], arm: int | None) -> Path:
 def approvals_path(name: str) -> Path:
     """``campaigns/<name>/approved.yaml``."""
     return CAMPAIGNS_DIR / name / "approved.yaml"
+
+
+def auto_checkpoint(args: argparse.Namespace, why: str, rc: int = 0, *, api: Any = None) -> int:
+    """Checkpoint the labels root after ``why``; a failed upload turns a clean exit into 4."""
+    if getattr(args, "no_checkpoint", False):
+        print(f"checkpoint skipped (--no-checkpoint) after {why}", file=sys.stderr)
+        return rc
+    try:
+        res = checkpoint.checkpoint(Path(args.out), approvals_path(getattr(args, "campaign", "v10")),
+                                    f"checkpoint: {why}", api=api)
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 - the run's output is on disk either way
+        print(f"CHECKPOINT FAILED after {why}: {exc}\n  output is on disk; retry with "
+              "`labeling checkpoint`", file=sys.stderr)
+        return rc or 4
+    print(f"checkpointed {res['files']} files to {res['repo']} (verified)", file=sys.stderr)
+    return rc
+
+
+def auto_restore(args: argparse.Namespace, *, api: Any = None) -> list[Path]:
+    """Pull staged files missing from ``args.out`` before a command reads it (never overwrites).
+
+    Runs only when the command was parsed with ``--no-restore`` available and not given
+    (a hand-built ``Namespace`` without the attribute skips it). No token, or a staging
+    repo that does not exist yet, prints one line and carries on.
+    """
+    if getattr(args, "no_restore", True):
+        return []
+    if api is None and not checkpoint.token_ready():
+        print("restore skipped: no HF token", file=sys.stderr)
+        return []
+    try:
+        wrote = checkpoint.restore(Path(args.out), api=api)
+    except Exception as exc:  # noqa: BLE001 - restore is a convenience; the command still runs
+        print(f"restore skipped: {type(exc).__name__}: {str(exc)[:160]}", file=sys.stderr)
+        return []
+    if wrote:
+        print(f"restored {len(wrote)} missing files from {checkpoint.STAGING_REPO}", file=sys.stderr)
+    return wrote
+
+
+def load_interim(args: argparse.Namespace, rows: Sequence[Mapping[str, Any]]) -> "interim.Overlay | None":
+    """The sandbox overlay for ``rows`` when ``args.sandbox`` holds one (else ``None``, one line)."""
+    sandbox = getattr(args, "sandbox", None)
+    pinned = (campaign(getattr(args, "campaign", "v10")).get("interim_overlay") or {}).get("manifest_sha256")
+    overlay = interim.load(sandbox, rows, manifest_sha256=pinned)
+    if overlay is None and sandbox is not None:
+        print(f"interim cross-check skipped: no {interim.INTERIM_DIR} under {sandbox}", file=sys.stderr)
+    return overlay
+
+
+def cmd_checkpoint(args: argparse.Namespace) -> int:
+    """Upload the labels root to the private staging repo, or --restore missing files from it."""
+    if args.restore:
+        wrote = checkpoint.restore(Path(args.out))
+        print(f"restored {len(wrote)} files into {args.out}")
+        return 0
+    return auto_checkpoint(argparse.Namespace(out=args.out, campaign=args.campaign), "manual checkpoint")
+
+
+def funding_status(remaining: float | None, reserve: float, chunks: Sequence[Mapping[str, Any]], *,
+                   approved: set[str]) -> tuple[bool, str]:
+    """Can the key's credit pay for the next chunk, and for the rest of the campaign?
+
+    Usable credit is ``remaining`` minus ``reserve``. Fails only when it does not cover
+    the next unapproved chunk's caps (every arm of it); a shortfall on the remaining caps
+    is reported in the message. ``remaining=None`` means the key has no credit limit.
+    """
+    todo = [c for c in chunks if str(c["id"]) not in approved]
+    caps = sum(float(c.get("cap_usd") or 0) for c in todo)
+    if remaining is None:
+        return True, f"no credit limit; ${caps:.2f} in remaining caps"
+    usable = float(remaining) - reserve
+    msg = f"${usable:.2f} usable, ${caps:.2f} in remaining caps"
+    if usable < caps:
+        msg += f" (short by ${caps - usable:.2f}: add credit before the later chunks)"
+    if not todo:
+        return True, msg
+    nxt = str(todo[0]["id"])
+    need = sum(float(c.get("cap_usd") or 0) for c in todo if str(c["id"]) == nxt)
+    if usable < need:
+        return False, f"next chunk {nxt} needs ${need:.2f}; {msg}"
+    return True, msg
 
 
 def load_approvals(name: str) -> list[dict[str, Any]]:
@@ -146,15 +233,44 @@ def provider_models(models: Sequence[str], provider: str, model_map: Sequence[st
     return out
 
 
+REQUIRES_RE = re.compile(r"^\s*llm-dojo-scoring\s+(\d+(?:\.\d+)*)\b")
+
+
+def _version(text: str) -> tuple[int, ...]:
+    """``"0.28.0"`` -> ``(0, 28, 0)``."""
+    return tuple(int(x) for x in text.split("."))
+
+
+def requires_met(requires: str | None) -> tuple[bool, str]:
+    """Whether a chunk's external ``requires:`` has landed.
+
+    ``"llm-dojo-scoring X.Y.Z ..."`` is met once ``fields.yaml`` ``dojo_pin.version`` is at
+    least X.Y.Z (the Dojo snapshot test ties that pin to the vendored scorer). Anything
+    else cannot be checked here and stays unmet until ``--ack-requires``.
+    """
+    if not requires:
+        return True, "no external requirement"
+    m = REQUIRES_RE.match(str(requires))
+    if not m:
+        return False, f"{requires!r} is not machine-checkable"
+    have = str(fields_registry()["dojo_pin"]["version"])
+    ok = _version(have) >= _version(m[1])
+    return ok, f"dojo_pin is llm-dojo-scoring {have}; {requires!r} {'met' if ok else 'not met'}"
+
+
 def next_chunks(name: str, approvals: Sequence[Mapping[str, Any]]) -> list[str]:
     """Lines naming the next runnable chunk and any chunk held by an external ``requires``."""
     done = {str(a["chunk"]) for a in approvals}
     lines, held = [], []
-    for c in campaign(name)["chunks"]:
+    entries = campaign(name)["chunks"]
+    # A chunk every entry of which is skipped (e.g. superseded) is never offered as next.
+    skipped = {str(c["id"]) for c in entries
+               if all(e.get("skip") for e in entries if str(e["id"]) == str(c["id"]))}
+    for c in entries:
         cid = str(c["id"])
-        if cid in done or not all(str(n) in done for n in c.get("needs") or []):
+        if cid in done or cid in skipped or not all(str(n) in done for n in c.get("needs") or []):
             continue
-        if c.get("requires"):
+        if c.get("requires") and not requires_met(c["requires"])[0]:
             if cid not in held:
                 held.append(cid)
             continue
@@ -162,31 +278,227 @@ def next_chunks(name: str, approvals: Sequence[Mapping[str, Any]]) -> list[str]:
             lines.append(f"next chunk: {cid} ({c['task']} / {c['set']}); `labeling chunk {cid} --dry-run` shows it")
     if held:
         lines.append(f"waiting on an external release (requires:): {', '.join(held)}")
+    for st in campaign(name).get("steps") or []:
+        sid = str(st["id"])
+        if not lines and sid not in done and all(str(n) in done for n in st.get("needs") or []):
+            hint = {"adjudication": " (`labeling adjudicate` lists what is open)",
+                    "build": " (build first: `python -m mailroom_eda.v10_build`)"}.get(st["task"], "")
+            lines.append(f"next step: {sid} ({st['task']}); `labeling gate {sid}` scores it{hint}")
     return lines
+
+
+PING_MAX_AGE_HOURS = 24
+
+
+def ping_problems(log: Sequence[Mapping[str, Any]], routes: Sequence[tuple[str, str]], *,
+                  now: datetime | None = None, max_age_hours: float = PING_MAX_AGE_HOURS) -> list[str]:
+    """Why each (model, reasoning) route may not be used yet: no ping, a failed latest ping, or a stale one.
+
+    ``doctor`` checks catalog metadata only; the ping is the one check that sends the
+    exact parameters a chunk sends, so a route that changed (for example reasoning that
+    can no longer be turned off) is caught before a chunk spends on it.
+    """
+    now = now or datetime.now(timezone.utc)
+    out = []
+    for model, reasoning in routes:
+        # per-provider and real-document probes answer other questions (which provider
+        # reasons); only the plain route ping decides whether the route works
+        mine = sorted((r for r in log if r.get("model") == model and str(r.get("reasoning")) == reasoning
+                       and not r.get("pinned") and not r.get("probe")),
+                      key=lambda r: str(r.get("utc") or ""))
+        name = f"{model} reasoning={reasoning}"
+        if not mine:
+            out.append(f"{name}: never pinged")
+            continue
+        last = mine[-1]
+        if last.get("error") or last.get("response") != {"ok": True, "word": "mailroom"} \
+                or last.get("used_schema") is not True:  # a json_object fallback is not the strict schema
+            out.append(f"{name}: latest ping failed: {str(last.get('error') or last.get('response'))[:160]}")
+            continue
+        age = (now - datetime.fromisoformat(str(last["utc"]).replace("Z", "+00:00"))).total_seconds() / 3600
+        if age > max_age_hours:
+            out.append(f"{name}: latest passing ping is older than {max_age_hours:g}h ({age:.0f}h)")
+    return out
+
+
+def stale_winner(name: str, entry: Mapping[str, Any], picked: Sequence[Mapping[str, Any]]) -> str:
+    """Why a ``winner_of_<id>`` chunk may not run, or ``""``: the approval it uses must have
+    been scored on the prompt this chunk would send (a prompt edit needs a new calibration)."""
+    refs = {str(m) for m in [*entry["models"], entry["reasoning"]] if str(m).startswith("winner_of_")}
+    if not refs or not picked:
+        return ""
+    variant = "a" if entry["task"] == "intent" else ""
+    want = tasks.build(entry["task"], picked[0], variant, set_name=entry["set"]).prompt_sha256
+    approvals = load_approvals(name)
+    for ref in sorted(refs):
+        cid = ref.removeprefix("winner_of_")
+        hits = [a for a in approvals if str(a["chunk"]) == cid]
+        if hits and want not in (hits[-1].get("prompt_sha256") or []):
+            return (f"chunk {entry['id']} would send prompt {want[:12]}, but chunk {cid} was approved on "
+                    f"{[s[:12] for s in hits[-1].get('prompt_sha256') or []]}: re-run chunk {cid} on the "
+                    f"current prompt, gate it and re-approve with --replace")
+    return ""
 
 
 def cmd_chunk(args: argparse.Namespace) -> int:
     """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
+    if entry.get("skip"):
+        raise SystemExit(f"chunk {entry['id']} arm {arm} is skipped: {entry['skip']}")
+    auto_restore(args)
     models, reasoning = resolve(args.campaign, entry)
     for need in entry.get("needs") or []:
         if not any(str(a["chunk"]) == str(need) for a in load_approvals(args.campaign)):
             raise SystemExit(f"chunk {entry['id']} starts after chunk {need} is approved")
-    if entry.get("requires") and not args.dry_run and not args.ack_requires:
-        raise SystemExit(f"chunk {entry['id']} requires {entry['requires']}; once that has landed, "
-                         f"re-run with --ack-requires")
+    met, why = requires_met(entry.get("requires"))
+    if not met and not args.dry_run:
+        if not args.ack_requires:
+            raise SystemExit(f"chunk {entry['id']} requires {entry['requires']} ({why}); bump the Dojo pin "
+                             f"once it has landed, or re-run with --ack-requires")
+        print(f"WARNING: --ack-requires overrides: {why}", file=sys.stderr)
+    if args.provider == "openrouter" and not args.dry_run:
+        log = args.out / "ping.jsonl"
+        probs = ping_problems(export.read_journal(log) if log.exists() else [],
+                              [(m, reasoning) for m in models])
+        if probs:
+            raise SystemExit("route not verified; run `labeling ping --initials XX` first:\n  "
+                             + "\n  ".join(probs))
+    if not args.dry_run and not getattr(args, "no_checkpoint", False):
+        ok, why = checkpoint.write_access()
+        if not ok:
+            raise SystemExit(f"checkpoint not writable ({why}); paid answers must survive a lost checkout. "
+                             "Fix the token, or pass --no-checkpoint")
     if args.provider != "openrouter":
         models = provider_models(models, args.provider, args.model_map)
     rows = runner.load_stage(args.stage)
     picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
+    stale = stale_winner(args.campaign, entry, picked)
+    if stale:
+        raise SystemExit(stale)
     camp = campaign(args.campaign)
-    return runner.execute(
+    rc = runner.execute(
         rows, picked, task=entry["task"], set_name=entry["set"], chunk_spec=entry.get("chunk"), models=models,
         provider=args.provider, reasoning=reasoning, initials=args.initials,
         cap_usd=float(args.cap_usd or entry["cap_usd"]),
         max_wall_seconds=float(entry.get("max_wall_seconds") or camp["max_wall_seconds"]),
         out_dir=chunk_dir(args.out, entry, arm), dry_run=args.dry_run, workers=args.workers,
-        chunk_id=f"{entry['id']}{f'.{arm}' if arm else ''}")
+        chunk_id=f"{entry['id']}{f'.{arm}' if arm else ''}",
+        require_checkpoint=not getattr(args, "no_checkpoint", False),
+        **({"ack_requires": why} if not met and args.ack_requires and not args.dry_run else {}))
+    return rc if args.dry_run else auto_checkpoint(args, f"chunk {entry['id']}{f'.{arm}' if arm else ''} run", rc)
+
+
+# ---------------------------------------------------------------- sweep
+
+def sweep_plan(name: str, approvals: Sequence[Mapping[str, Any]], through: str,
+               start: str | None = None) -> tuple[list[tuple[dict[str, Any], int | None]], str]:
+    """The chunk arms a sweep runs, in ``campaign.yaml`` order, and why it stops there.
+
+    From ``start`` (default: the first chunk) through ``through``: approved chunks are
+    skipped, as are arms marked ``skip:``; the first chunk whose ``needs`` are not all approved, or whose ``requires``
+    is not met, ends the plan. Every gate needs a human (a bake-off pick, verdicts, or a
+    ``--signed-off`` read), so the plan runs a pilot or bake-off and then ends at the
+    first chunk that depends on it. Nothing is ever approved here.
+    """
+    entries = campaign(name)["chunks"]
+    ids = [str(c["id"]) for c in entries]
+    if through not in ids:
+        raise SystemExit(f"--through {through}: no such chunk in campaign {name}")
+    if start is not None and start not in ids:
+        raise SystemExit(f"--from {start}: no such chunk in campaign {name}")
+    first = ids.index(start) if start else 0
+    last = len(ids) - 1 - ids[::-1].index(through)
+    if first > last:
+        raise SystemExit(f"--from {start} comes after --through {through} in campaign.yaml")
+    done = {str(a["chunk"]) for a in approvals}
+    counts = Counter(ids)
+    plan: list[tuple[dict[str, Any], int | None]] = []
+    seen: Counter = Counter()
+    for i, c in enumerate(entries):
+        cid = ids[i]
+        seen[cid] += 1
+        if i < first or i > last or cid in done or c.get("skip"):
+            continue  # a ``skip:`` arm keeps its number but never runs (``cmd_chunk`` refuses it)
+        missing = [str(n) for n in c.get("needs") or [] if str(n) not in done]
+        if missing:
+            return plan, f"stopped at {cid}: needs chunk {', '.join(missing)} approved first"
+        met, why = requires_met(c.get("requires"))
+        if not met:
+            return plan, f"stopped at {cid}: {why}"
+        plan.append((c, seen[cid] if counts[cid] > 1 else None))
+    return plan, f"reached {through}"
+
+
+def _sweep_projection(args: argparse.Namespace, plan: Sequence[tuple[Mapping[str, Any], int | None]],
+                      rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """One projection line per planned arm (no network)."""
+    out = []
+    for entry, arm in plan:
+        models, reasoning = resolve(args.campaign, entry)
+        if args.provider != "openrouter":
+            models = provider_models(models, args.provider, args.model_map)
+        picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
+        proj = runner.estimate(picked, entry["task"], models, entry["set"])
+        out.append({"chunk": f"{entry['id']}{f'.{arm}' if arm else ''}", "task": entry["task"],
+                    "set": entry["set"], "documents": proj["documents"], "calls": proj["calls"],
+                    "projected_usd": round(sum(proj["cost_usd"].values()), 4),
+                    "cap_usd": float(entry["cap_usd"]), "reasoning": reasoning, "models": models})
+    return out
+
+
+def cmd_sweep(args: argparse.Namespace, *, confirm: Callable[[str], str] = input,
+              run_chunk: Callable[[argparse.Namespace], int] | None = None) -> int:
+    """Run every runnable chunk through ``--through`` after one combined dry run and one ``yes``.
+
+    Each arm goes through ``cmd_chunk`` (its own cap, wall limit, ping and checkpoint
+    checks). The sweep stops at the first chunk that needs an unapproved one (so after a
+    pilot or bake-off, whose gate a human decides), an unmet ``requires``, or the first
+    non-zero exit (2 cap/wall, 3 failed calls, 4
+    checkpoint). It never approves: ``labeling gate --approve`` stays a human step.
+    """
+    run_chunk = run_chunk or cmd_chunk
+    auto_restore(args)
+    approvals = load_approvals(args.campaign)
+    plan, why = sweep_plan(args.campaign, approvals, args.through, args.start)
+    if not plan:
+        print(f"nothing to run: {why}")
+        return 0
+    lines = _sweep_projection(args, plan, runner.load_stage(args.stage))
+    width = max(len(ln["chunk"]) for ln in lines)
+    for ln in lines:
+        print(f"{ln['chunk']:<{width}}  {ln['task']:<20} {ln['set']:<12} docs={ln['documents']:<5} "
+              f"calls={ln['calls']:<5} projected=${ln['projected_usd']:.2f} cap=${ln['cap_usd']:.2f} "
+              f"reasoning={ln['reasoning']}")
+    proj = sum(ln["projected_usd"] for ln in lines)
+    caps = sum(ln["cap_usd"] for ln in lines)
+    print(f"{len(lines)} arms: projected ${proj:.2f}, caps ${caps:.2f}; {why}")
+    if args.provider == "openrouter" and os.environ.get("OPENROUTER_API_KEY"):
+        rem = providers.key_status(providers.Backend.from_env("openrouter")).get("limit_remaining")
+        reserve = models_registry().get("key_reserve_usd", 3.0)
+        usable = None if rem is None else float(rem) - reserve
+        print("funding: no credit limit" if usable is None else f"funding: ${usable:.2f} usable after reserve")
+        if usable is not None and usable < caps and not args.dry_run:
+            raise SystemExit(f"the sweep's caps (${caps:.2f}) exceed the key's usable credit (${usable:.2f})")
+    elif args.provider == "openrouter":
+        print("funding: not checked (OPENROUTER_API_KEY is not set)")
+    if args.dry_run:
+        return 0
+    if not args.initials or not spend.INITIALS_RE.match(args.initials):
+        raise SystemExit("a sweep needs --initials (a human's 2-6 capital letters)")
+    if confirm(f"run these {len(lines)} arms (caps ${caps:.2f})? type yes: ").strip() != "yes":
+        print("not confirmed; nothing ran")
+        return 1
+    for entry, arm in plan:
+        label = f"{entry['id']}{f'.{arm}' if arm else ''}"
+        print(f"=== sweep: chunk {label}", file=sys.stderr)
+        ns = argparse.Namespace(**{**vars(args), "id": str(entry["id"]), "arm": arm, "dry_run": False,
+                                   "ack_requires": False, "cap_usd": None, "no_restore": True})
+        rc = run_chunk(ns)
+        if rc:
+            print(f"sweep stopped: chunk {label} exited {rc}")
+            return rc
+    print(f"sweep done: {why}. Score and approve each chunk with `labeling gate <id> --approve`.")
+    return 0
 
 
 # ---------------------------------------------------------------- gates
@@ -342,11 +654,141 @@ def gate_agreement(out_dir: Path, signed_off: bool,
             "how": "read sample.csv, then re-run with --signed-off"}
 
 
+#: Expert gold the user overruled after reading the email (``<out>/gold-corrections.csv``). It
+#: lives beside the labels (gitignored, private HF backup) because it is ground truth; scoring
+#: applies it, and the ingest writes it to the GT config with its provenance, never to default.
+GOLD_CORRECTIONS = "gold-corrections.csv"
+GOLD_CORRECTION_COLUMNS = ("document_id", "filename", "field", "gold_was", "gold_now", "reason",
+                           "decided_by", "decided_utc")
+
+
+def gold_corrections(out: Path) -> dict[tuple[str, str], dict[str, str]]:
+    """``{(filename, field): correction}`` from ``<out>/gold-corrections.csv`` (empty if none)."""
+    path = out / GOLD_CORRECTIONS
+    if not path.exists():
+        return {}
+    found: dict[tuple[str, str], dict[str, str]] = {}
+    for c in export.read_csv(path):
+        if not (c.get("decided_by") and c.get("gold_now")):
+            raise SystemExit(f"{path}: every correction needs decided_by and gold_now ({c.get('filename')})")
+        found[(c["filename"], c["field"])] = c
+    return found
+
+
+def corrected_gold(rows: Sequence[Mapping[str, Any]],
+                   corrections: Mapping[tuple[str, str], Mapping[str, str]]) -> tuple[list[dict[str, Any]], int]:
+    """Rows with corrected ``gt_fields`` values, and how many changed. A correction whose
+    ``gold_was`` no longer matches the row is refused: the gold moved under it."""
+    out, n = [], 0
+    for row in rows:
+        fixes = {f: c for (fn, f), c in corrections.items() if fn == row["filename"]}
+        if not fixes:
+            out.append(dict(row))
+            continue
+        gt = dict(row["gt_fields"])
+        for f, c in fixes.items():
+            if str(gt.get(f) or "") != c["gold_was"]:
+                raise SystemExit(f"gold correction for {row['filename']} {f}: expected "
+                                 f"{c['gold_was']!r}, the row has {gt.get(f)!r}")
+            gt[f] = c["gold_now"]
+            n += 1
+        out.append({**row, "gt_fields": gt})
+    return out, n
+
+
+#: The intent a correspondence subtype (``expected_subclass``) points to. The subtypes came from
+#: older automatic labelers, so a conflict is a reason to read the email, not proof either side is
+#: right: it goes to adjudication, never written automatically. ``demand`` and ``attorney_demand``
+#: are left out (user, 2026-11-06): a demand is often for an action, not a payment. Subtypes not
+#: listed (email, memo, letter, demand) admit any intent.
+SUBTYPE_INTENT = {"press_release": "press_communication", "meeting_request": "meeting_invite",
+                  "notice": "notice"}
+RELABEL_COLUMNS = ("document_id", "filename", "split", "subtype", "subtype_intent", "existing",
+                   "existing_source", "primary_a", "primary_b", "second_a", "second_b", "decision",
+                   "new_intent", "reason", "evidence", "reviewer_decision", "reviewed_by", "reviewer_note")
+
+
+def relabel_decision(existing: str, subtype: str | None, answers: Sequence[str]) -> tuple[str, str, str]:
+    """(decision, new intent, reason) for one email from its four answers (two models, two
+    passes). Only a unanimous answer that fits the subtype is written; a subtype conflict is
+    read by a person (who may find the subtype wrong); ``keep`` leaves the existing label when
+    the answers split but one of them is it."""
+    implied = SUBTYPE_INTENT.get(subtype or "")
+    if len(answers) == 4 and len(set(answers)) == 1:
+        label = answers[0]
+        if implied and label != implied:
+            return "adjudicate", "", f"all four say {label}; subtype {subtype} implies {implied}"
+        return ("confirm" if label == existing else "change"), label, "unanimous"
+    if implied and existing != implied:
+        return "adjudicate", "", f"answers split; existing {existing} contradicts subtype {subtype}"
+    if existing not in answers:
+        return "adjudicate", "", "answers split and none keeps the existing label"
+    return "keep", existing, "answers split; existing label among them"
+
+
+def gate_intent_relabel(picked: Sequence[Mapping[str, Any]], out_dir: Path, models: Sequence[str],
+                        signed_off: bool) -> dict[str, Any]:
+    """Decide every email of a relabel chunk into ``decisions.csv`` (reviewer columns kept
+    across re-gates). Passes when both models answered both passes on every email, every
+    adjudicated email has a reviewer decision (an intent or ``keep``), and it is signed off."""
+    from ..intent_backfill import CANONICAL_INTENTS  # noqa: PLC0415
+
+    recs = {(r["document_id"], r["model"]): r for r in export.read_journal(out_dir / "intent-labels.jsonl")}
+    path = out_dir / "decisions.csv"
+    kept = {r["document_id"]: r for r in export.read_csv(path)} if path.exists() else {}
+    rows, missing = [], []
+    for row in picked:
+        doc_id, fn = tasks._ids(row)
+        got = [recs.get((doc_id, m)) for m in models]
+        if len(models) != 2 or not all(got):
+            missing.append(doc_id)
+            continue
+        answers = [str(g[p]["intent"] or "") for g in got for p in ("pass_a", "pass_b")]
+        gt = row["gt_fields"]
+        existing = str(gt.get("intent") or "")
+        decision, new, reason = relabel_decision(existing, row.get("expected_subclass"), answers)
+        if row.get("split") == "test" and decision == "change":
+            # the test split scores models later: labels written by these two models would
+            # favor models that read email like them, so a person decides every test change
+            decision, new, reason = "adjudicate", "", f"test split: models propose {new}; a person decides"
+        prev = kept.get(doc_id, {})
+        rows.append({"document_id": doc_id, "filename": fn, "split": row.get("split", ""),
+                     "subtype": row.get("expected_subclass") or "",
+                     "subtype_intent": SUBTYPE_INTENT.get(row.get("expected_subclass") or "", ""),
+                     "existing": existing, "existing_source": str(gt.get("intent_source") or ""),
+                     "primary_a": answers[0], "primary_b": answers[1], "second_a": answers[2],
+                     "second_b": answers[3], "decision": decision, "new_intent": new, "reason": reason,
+                     "evidence": str(got[0]["pass_a"].get("evidence") or ""),
+                     "reviewer_decision": prev.get("reviewer_decision", ""),
+                     "reviewed_by": prev.get("reviewed_by", ""), "reviewer_note": prev.get("reviewer_note", "")})
+    export.write_csv(path, RELABEL_COLUMNS, rows)
+    allowed = set(CANONICAL_INTENTS) | {"keep"}
+    open_items = [r["document_id"] for r in rows
+                  if r["decision"] == "adjudicate" and r["reviewer_decision"] not in allowed]
+    bad = [r["document_id"] for r in rows if r["reviewer_decision"] and r["reviewer_decision"] not in allowed]
+    # a test-split adjudication is decided by a person (initials), never by a model
+    unsigned_test = [r["document_id"] for r in rows if r["split"] == "test" and r["decision"] == "adjudicate"
+                     and not spend.INITIALS_RE.match(r["reviewed_by"] or "")]
+    mix = Counter(r["decision"] for r in rows)
+    ok = not missing and not open_items and not bad and not unsigned_test and signed_off
+    return {"kind": "intent_relabel", "documents": len(rows), "expected_documents": len(picked),
+            "decisions": dict(mix), "unanswered_documents": len(missing), "open_adjudications": len(open_items),
+            "invalid_reviewer_decisions": bad, "test_adjudications_without_initials": len(unsigned_test),
+            "decisions_csv": str(path), "signed_off": signed_off,
+            "passed": ok, "how": "decide each adjudicate row in decisions.csv (an intent or keep; test-split "
+                                 "rows need a person's initials in reviewed_by), read the changes, "
+                                 "then re-run with --signed-off"}
+
+
 def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path, stage: Path,
-                signed_off: bool = False) -> dict[str, Any]:
+                signed_off: bool = False, sandbox: Path | None = None) -> dict[str, Any]:
     """Score one chunk arm's gate from its output directory (offline)."""
     from .. import v9_4_revision as v94  # noqa: PLC0415
 
+    if entry["gate"]["kind"] == "resolved":
+        return gate_resolved(name, entry, out, stage, sandbox=sandbox)
+    if entry["gate"]["kind"] == "conformance":
+        return gate_conformance(name, entry, out, stage)
     out_dir = chunk_dir(out, entry, arm)
     if not (out_dir / "calls.jsonl").exists():
         raise SystemExit(f"{out_dir} has no calls.jsonl; run `labeling chunk {entry['id']}` first")
@@ -357,7 +799,8 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
     started = [r for r in export.read_journal(out_dir / "runs.jsonl") if r.get("started_utc") and r.get("models")]
     if started:  # score the models the chunk actually ran (e.g. the mapped Modal model)
         models, provider = list(started[-1]["models"]), str(started[-1].get("provider") or provider)
-    runner.review(rows, entry["task"], out_dir, reasoning=reasoning)
+    overlay = load_interim(argparse.Namespace(sandbox=sandbox, campaign=name), rows)
+    reviewed = runner.review(rows, entry["task"], out_dir, reasoning=reasoning, interim=overlay)
     gate = dict(entry["gate"])
     kind = gate.pop("kind")
     if kind == "cuad_f1":
@@ -366,10 +809,16 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
         ok = (res["documents"] == res["expected_documents"] and res["micro_f1"] >= gate["micro_f1"]
               and res["micro_precision"] >= gate["precision"])
         res = {"kind": kind, **{k: v for k, v in res.items() if k != "per_category"}, "floors": gate, "passed": ok}
+        res["per_document"] = cuad_per_document(picked, export.read_journal(out_dir / "cuad-labels.jsonl"),
+                                                runner.cuad_vocab(rows))
     elif kind == "intent_kappa":
+        picked, fixed = corrected_gold(picked, gold_corrections(out))
         res = v94.score_intent_calibration(picked, export.read_journal(out_dir / "intent-labels.jsonl"))
         ok = res["documents"] == res["expected_documents"] and res["cohen_kappa"] >= gate["kappa"]
-        res = {"kind": kind, **res, "floors": gate, "passed": ok}
+        res = {"kind": kind, **res, "gold_corrections": fixed, "floors": gate, "passed": ok}
+        res["per_document"] = intent_per_document(picked, export.read_journal(out_dir / "intent-labels.jsonl"))
+    elif kind == "intent_relabel":
+        res = gate_intent_relabel(picked, out_dir, models, signed_off)
     elif kind == "field_accuracy":
         res = gate_field_accuracy(rows, out_dir, gate["accuracy"])
     elif kind == "human_verdicts":
@@ -387,19 +836,534 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
         raise SystemExit(f"unknown gate kind {kind!r}")
     every = [c for c in export.read_journal(out_dir / "calls.jsonl") if c.get("reasoning") == reasoning]
     calls = [c for c in every if not c.get("error")]
+    # what was scored: answers to today's prompt. Old-prompt answers stay in the journal (and
+    # in spent_usd) but must not vouch for this prompt in an approval, nor price the arm.
+    current = runner.current_prompt_calls(rows, entry["task"], calls, entry["set"])
     res.update(chunk=entry["id"], arm=arm, task=entry["task"], models=models, provider=provider, reasoning=reasoning,
-               prompt_sha256=sorted({c["prompt_sha256"] for c in calls}),
-               served_providers=sorted({c.get("served_provider") or "" for c in calls} - {""}),
-               spent_usd=round(sum(c.get("cost_usd") or 0 for c in every), 4), scored_utc=_now())
+               prompt_sha256=sorted({c["prompt_sha256"] for c in current}),
+               served_providers=sorted({c.get("served_provider") or "" for c in current} - {""}),
+               spent_usd=round(sum(c.get("cost_usd") or 0 for c in every), 4),
+               answer_cost_usd=round(sum(c.get("reused_cost_usd") or c.get("cost_usd") or 0 for c in current), 4),
+               scored_utc=_now())
+    if overlay is not None:  # informational: never part of passed
+        res["interim"] = {**reviewed.get("interim", {}), "manifest_sha256": overlay.manifest_sha256}
+    outside = pin_violations(current, reasoning)
+    if outside:
+        res.update(passed=False, served_outside_pin=outside)
+    unreasoned = unreasoned_providers(current, reasoning)
+    if unreasoned:
+        res.update(passed=False, reasoning_not_honoured=unreasoned)
     (out_dir / "gate.json").write_text(json.dumps(res, indent=1) + "\n", encoding="utf-8")
     return res
+
+
+def cuad_per_document(gold_rows: Sequence[Mapping[str, Any]], journal: Sequence[Mapping[str, Any]],
+                      vocab: Sequence[str]) -> list[dict[str, Any]]:
+    """Per-document category tp/fp/fn, scored as ``v9_4_revision.score_cuad_calibration`` does."""
+    from .. import v9_4_revision as v94  # noqa: PLC0415
+
+    folded = v94.fold_journal(journal)
+    out = []
+    for row in gold_rows:
+        rec = folded.get(row["filename"])
+        if rec is None:
+            continue
+        gold = v94._json_obj(row["gt_fields"].get("cuad_clause_labels"))
+        raw = v94._json_obj(rec.get("cuad_clause_labels")) if rec.get("accepted") else {}
+        pred, _, _ = v94.verify_cuad_labels(row["doc_text"], raw, vocab)
+        c = Counter("tp" if gold.get(n) and pred.get(n) else "fp" if pred.get(n) else "fn" if gold.get(n) else "tn"
+                    for n in vocab)
+        out.append({"document_id": tasks._ids(row)[0], "tp": c["tp"], "fp": c["fp"], "fn": c["fn"]})
+    return out
+
+
+def intent_per_document(manual_rows: Sequence[Mapping[str, Any]],
+                        journal: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Per-document gold and pass-A intent, as ``score_intent_calibration`` pairs them."""
+    by_fn = {str(r["filename"]): r for r in journal}
+    return [{"document_id": tasks._ids(row)[0], "gold": str(row["gt_fields"].get("intent") or ""),
+             "pred": str((by_fn[row["filename"]].get("pass_a") or {}).get("intent") or "")}
+            for row in manual_rows if row["filename"] in by_fn]
+
+
+# ---------------------------------------------------------------- bake-off
+
+#: 40 contracts and 96 emails cannot resolve 0.02 gaps (user, 2026-11-06): arms are compared by
+#: paired bootstrap intervals over shared documents, never by a raw score gap.
+BOOTSTRAP_N, BOOTSTRAP_SEED, NON_INFERIORITY_MARGIN = 2000, 42, 0.05
+
+
+def _metric(docs: Sequence[Mapping[str, Any]], metric: str) -> float:
+    from .. import v9_4_revision as v94  # noqa: PLC0415
+
+    if metric == "micro_f1":
+        tp, fp, fn = (sum(d[k] for d in docs) for k in ("tp", "fp", "fn"))
+        return 2 * tp / (2 * tp + fp + fn) if tp else 0.0
+    if metric == "cohen_kappa":
+        return v94.cohen_kappa([d["gold"] for d in docs], [d["pred"] for d in docs])
+    raise ValueError(metric)
+
+
+def paired_bootstrap(a: Sequence[Mapping[str, Any]], b: Sequence[Mapping[str, Any]], metric: str,
+                     n: int = BOOTSTRAP_N, seed: int = BOOTSTRAP_SEED) -> tuple[float, float, float]:
+    """(point, lo95, hi95) of metric(b) - metric(a), resampling the shared documents."""
+    import random  # noqa: PLC0415
+
+    da, db = {d["document_id"]: d for d in a}, {d["document_id"]: d for d in b}
+    ids = sorted(set(da) & set(db))
+    if not ids:
+        return 0.0, 0.0, 0.0
+    point = _metric([db[i] for i in ids], metric) - _metric([da[i] for i in ids], metric)
+    rng = random.Random(seed)
+    diffs = []
+    for _ in range(n):
+        pick = [rng.choice(ids) for _ in ids]
+        diffs.append(_metric([db[i] for i in pick], metric) - _metric([da[i] for i in pick], metric))
+    diffs.sort()
+    return round(point, 4), round(diffs[int(0.025 * n)], 4), round(diffs[int(0.975 * n) - 1], 4)
+
+
+def _arm_model(arm: Mapping[str, Any]) -> str:
+    return str(arm["gate"]["models"][0])
+
+
+def _arm_cost(arm: Mapping[str, Any]) -> float:
+    """What the arm's answers cost (reused answers count at their original price)."""
+    g = arm["gate"]
+    return float(g.get("answer_cost_usd") or g.get("spent_usd") or 0.0)
+
+
+def _ineligible(arm: Mapping[str, Any]) -> str:
+    g = arm["gate"]
+    if g.get("skipped"):
+        return f"skipped: {g['skipped']}"
+    if g.get("documents") != g.get("expected_documents"):
+        return f"incomplete ({g.get('documents')}/{g.get('expected_documents')})"
+    if g.get("served_outside_pin"):
+        return f"served outside pin: {g['served_outside_pin']}"
+    if g.get("reasoning_not_honoured"):
+        return f"reasoning not honoured: {g['reasoning_not_honoured']}"
+    if not g.get("passed"):
+        return "floor not passed"
+    return ""
+
+
+def bakeoff_ranking(arms: Sequence[Mapping[str, Any]], metric: str,
+                    margin: float = NON_INFERIORITY_MARGIN) -> dict[str, Any]:
+    """Pick the primary DeepSeek arm and an equally capable second opinion of another vendor.
+
+    Cheapest first, upgraded only on evidence: the primary is the cheapest eligible DeepSeek
+    arm, replaced by a costlier one only when its lo95 against the current pick is > 0. The
+    second is the cheapest eligible arm of another vendor whose lo95 against the primary is
+    >= -margin. An arm whose hi95 against the primary is < -margin is clearly worse.
+    """
+    eligible = [a for a in arms if not _ineligible(a)]
+    primary = None
+    for a in sorted((a for a in eligible if _arm_model(a).startswith("deepseek/")), key=_arm_cost):
+        if primary is None or paired_bootstrap(primary["docs"], a["docs"], metric)[1] > 0:
+            primary = a
+    table, second = [], None
+    for a in sorted(arms, key=_arm_cost):
+        why = _ineligible(a)
+        point, lo, hi = paired_bootstrap(primary["docs"], a["docs"], metric) if primary else (0.0, 0.0, 0.0)
+        row = {"model": _arm_model(a), "reasoning": a["gate"].get("reasoning"), "arm": a["gate"].get("arm"),
+               "score": round(_metric(a["docs"], metric), 4), "vs_primary": point, "lo95": lo, "hi95": hi,
+               "cost_usd": round(_arm_cost(a), 4), "eligible": why or "yes",
+               "excluded": "clearly worse" if primary and a is not primary and hi < -margin else "",
+               "primary": a is primary, "second": False}
+        if (primary and not why and second is None and not _arm_model(a).startswith("deepseek/")
+                and lo >= -margin):
+            second, row["second"] = a, True
+        table.append(row)
+    return {"metric": metric, "margin": margin, "primary": primary, "second": second, "table": table}
+
+
+def bakeoff_arms(name: str, chunk_id: str, out: Path) -> tuple[list[dict[str, Any]], str]:
+    """Each arm of a bake-off chunk as ``{"gate", "docs"}``; chunk 1 pools the matching
+    chunk-1h holdout arm (same model and reasoning) when it was run."""
+    entries = [c for c in campaign(name)["chunks"] if str(c["id"]) == str(chunk_id)]
+    if not entries:
+        raise SystemExit(f"no chunk {chunk_id} in campaign {name}")
+    metric = {"cuad": "micro_f1", "intent": "cohen_kappa"}.get(entries[0]["task"])
+    if metric is None:
+        raise SystemExit(f"chunk {chunk_id} ({entries[0]['task']}) is not a bake-off")
+    holdout = {(tuple(c["models"]), str(c["reasoning"])): (c, i)
+               for i, c in enumerate((c for c in campaign(name)["chunks"] if str(c["id"]) == f"{chunk_id}h"), 1)}
+    arms = []
+    for i, entry in enumerate(entries, 1):
+        path = chunk_dir(out, entry, i) / "gate.json"
+        if entry.get("skip"):
+            arms.append({"gate": {"models": entry["models"], "reasoning": entry["reasoning"], "arm": i,
+                                  "skipped": entry["skip"], "passed": False}, "docs": []})
+            continue
+        if not path.exists():
+            arms.append({"gate": {"models": entry["models"], "reasoning": entry["reasoning"], "arm": i,
+                                  "documents": 0, "expected_documents": None, "passed": False}, "docs": []})
+            continue
+        gate = json.loads(path.read_text(encoding="utf-8"))
+        arm = {"gate": gate, "docs": list(gate.get("per_document") or [])}
+        h = holdout.get((tuple(entry["models"]), str(entry["reasoning"])))
+        hpath = chunk_dir(out, h[0], h[1]) / "gate.json" if h else None
+        if hpath and hpath.exists():
+            hg = json.loads(hpath.read_text(encoding="utf-8"))
+            arm = {"gate": {**gate, "documents": gate["documents"] + hg["documents"],
+                            "expected_documents": gate["expected_documents"] + hg["expected_documents"],
+                            "passed": gate["passed"] and hg["passed"],
+                            "served_outside_pin": (gate.get("served_outside_pin") or []) + (hg.get("served_outside_pin") or []),
+                            "reasoning_not_honoured": {**(gate.get("reasoning_not_honoured") or {}),
+                                                       **(hg.get("reasoning_not_honoured") or {})},
+                            "answer_cost_usd": _arm_cost({"gate": gate}) + _arm_cost({"gate": hg}),
+                            "pooled_holdout": True},
+                   "docs": arm["docs"] + list(hg.get("per_document") or [])}
+        arms.append(arm)
+    return arms, metric
+
+
+def cmd_bakeoff(args: argparse.Namespace) -> int:
+    """Rank a bake-off chunk's arms; write ``<out>/<chunk>.bakeoff.json``."""
+    arms, metric = bakeoff_arms(args.campaign, args.id, args.out)
+    rank = bakeoff_ranking(arms, metric, getattr(args, "margin", NON_INFERIORITY_MARGIN))
+    print(f"{'model':40} {'reasoning':9} {'score':>6} {'vs prim':>8} {'lo95':>7} {'hi95':>7} {'cost':>7}  status")
+    for r in rank["table"]:
+        tag = "PRIMARY" if r["primary"] else "SECOND" if r["second"] else r["excluded"] or (
+            "" if r["eligible"] == "yes" else r["eligible"])
+        print(f"{r['model']:40} {str(r['reasoning']):9} {r['score']:6.3f} {r['vs_primary']:+8.3f} "
+              f"{r['lo95']:+7.3f} {r['hi95']:+7.3f} {r['cost_usd']:7.3f}  {tag}")
+    pick = lambda a: a and {"model": _arm_model(a), "reasoning": a["gate"].get("reasoning"),  # noqa: E731
+                            "arm": a["gate"].get("arm")}
+    saved = {"chunk": str(args.id), "metric": metric, "margin": rank["margin"], "primary": pick(rank["primary"]),
+             "second": pick(rank["second"]), "table": rank["table"], "ranked_utc": _now()}
+    path = Path(args.out) / f"{args.id}.bakeoff.json"
+    path.write_text(json.dumps(saved, indent=1) + "\n", encoding="utf-8")
+    print(path)
+    if rank["primary"] is None or rank["second"] is None:
+        print("no " + ("primary" if rank["primary"] is None else "second opinion")
+              + " qualifies: STOP and re-plan", file=sys.stderr)
+        return 1
+    return 0
+
+
+# ---------------------------------------------------------------- inspect
+
+INSPECT_CONTEXT = 200
+
+
+def _quote_context(text: str, quote: str) -> str:
+    """The quote's verified location with INSPECT_CONTEXT characters each side, or NOT FOUND."""
+    if not quote:
+        return "(no quote)"
+    span = verify.locate(text, quote)
+    if span is None:
+        return f"NOT FOUND: `{quote[:160]}`"
+    a, b = span
+    ctx = text[max(0, a - INSPECT_CONTEXT):a] + "**" + text[a:b] + "**" + text[b:b + INSPECT_CONTEXT]
+    return "> " + " ".join(ctx.split())
+
+
+def _span_text(span: Any) -> str:
+    """A CUAD span's text: gold spans may be bare strings, model spans are ``{"text": ...}``."""
+    return str(span.get("text") or "") if isinstance(span, Mapping) else str(span or "")
+
+
+def _inspect_items(rows: Mapping[str, Mapping[str, Any]], records: Sequence[Mapping[str, Any]],
+                   task: str) -> list[tuple[bool, str, list[str]]]:
+    """(disagrees, document_id, markdown lines) per labeled document."""
+    from .. import v9_4_revision as v94  # noqa: PLC0415
+
+    items = []
+    if task == "intent":
+        for r in records:
+            row = rows.get(str(r.get("document_id")))
+            if row is None:
+                continue
+            gold = (row.get("gt_fields") or {}).get("intent") or ""
+            passes = [(k, r.get(k) or {}) for k in ("pass_a", "pass_b") if r.get(k)]
+            answers = {p.get("intent") for _, p in passes} | ({gold} if gold else set())
+            lines = [f"- gold: `{gold}`" if gold else "- gold: (none)"]
+            for k, p in passes:
+                lines += [f"- {k}: `{p.get('intent')}` (confidence {p.get('confidence')})",
+                          "  " + _quote_context(row["doc_text"], str(p.get("evidence") or ""))]
+            items.append((len(answers) > 1, str(r["document_id"]), lines))
+    elif task == "cuad":
+        for r in records:
+            row = rows.get(str(r.get("document_id")))
+            if row is None:
+                continue
+            gold = v94._json_obj((row.get("gt_fields") or {}).get("cuad_clause_labels")) or {}
+            pred = v94._json_obj(r.get("cuad_clause_labels")) or {}
+            g, p = {k for k, v in gold.items() if v}, {k for k, v in pred.items() if v}
+            lines = [f"- accepted: {r.get('accepted')}; gold categories {len(g)}, predicted {len(p)}"]
+            for cat in sorted(p - g):
+                spans = pred[cat]
+                lines += [f"- **false positive** {cat}", "  " + _quote_context(row["doc_text"], _span_text(spans[0]))]
+            for cat in sorted(g - p):
+                lines += [f"- **missed** {cat}", "  gold: " + _quote_context(row["doc_text"], _span_text(gold[cat][0]))]
+            for cat in sorted(g & p)[:3]:
+                lines += [f"- agreed {cat}", "  " + _quote_context(row["doc_text"], _span_text(pred[cat][0]))]
+            items.append((bool(p ^ g), str(r["document_id"]), lines))
+    else:  # extraction tasks: fields.csv rows
+        by_doc: dict[str, list[Mapping[str, Any]]] = {}
+        for f in records:
+            by_doc.setdefault(str(f["document_id"]), []).append(f)
+        for doc, fields in by_doc.items():
+            row = rows.get(doc)
+            if row is None:
+                continue
+            lines, split = [], False
+            for f in fields:
+                va = (f.get("model_a_status"), f.get("model_a_value"))
+                vb = (f.get("model_b_status"), f.get("model_b_value")) if f.get("model_b") else va
+                split |= va != vb
+                lines.append(f"- {f['field']}: {f.get('model_a')} `{va[1] or va[0]}`"
+                             + (f" vs {f.get('model_b')} `{vb[1] or vb[0]}`" if f.get("model_b") else "")
+                             + f" → {f.get('decision') or f.get('final_decision') or ''}")
+                for slot in ("a", "b"):
+                    if f.get(f"model_{slot}_evidence"):
+                        lines.append("  " + _quote_context(row["doc_text"], str(f[f"model_{slot}_evidence"])))
+            items.append((split, doc, lines))
+    return items
+
+
+def inspect_report(rows: Sequence[Mapping[str, Any]], records: Sequence[Mapping[str, Any]], task: str,
+                   n: int = 8, calls: Sequence[Mapping[str, Any]] = ()) -> str:
+    """Markdown for ``n`` documents (disagreements first, then a seeded sample) to read
+    against the documents before any ``gate --approve``."""
+    import random  # noqa: PLC0415
+
+    by_id = {tasks._ids(r)[0]: r for r in rows}
+    items = _inspect_items(by_id, records, task)
+    rng = random.Random(42)
+    rng.shuffle(items)
+    items.sort(key=lambda it: not it[0])  # stable: disagreements first, each group shuffled
+    served: dict[str, set[str]] = {}
+    for c in calls:
+        served.setdefault(str(c.get("document_id")), set()).add(str(c.get("served_provider") or "?"))
+    out = [f"# inspect: {task}, {min(n, len(items))} of {len(items)} documents "
+           f"({sum(it[0] for it in items)} disagree)", ""]
+    for split, doc, lines in items[:n]:
+        row = by_id[doc]
+        out += [f"## {doc} {'(DISAGREES)' if split else ''}".rstrip(),
+                f"`{row.get('filename')}` · split {row.get('split')} · served by "
+                f"{', '.join(sorted(served.get(doc, set()))) or '?'}", "", *lines, ""]
+    return "\n".join(out)
+
+
+def cmd_inspect(args: argparse.Namespace) -> int:
+    """Write ``<dir>/inspect.md`` for a chunk or run directory."""
+    d = Path(args.dir)
+    for task, name in (("intent", "intent-labels.jsonl"), ("cuad", "cuad-labels.jsonl")):
+        if (d / name).exists():
+            records = export.read_journal(d / name)
+            break
+    else:
+        if not (d / "fields.csv").exists():
+            raise SystemExit(f"{d} has no labels to inspect (run `labeling review` first)")
+        task, records = "fields", export.read_csv(d / "fields.csv")
+    calls = export.read_journal(d / "calls.jsonl") if (d / "calls.jsonl").exists() else []
+    rows = runner.load_stage(args.stage)
+    if task == "intent":  # the gold the gate scores against (corrections live in the labels root)
+        rows, _ = corrected_gold(rows, gold_corrections(d.parent))
+    md = inspect_report(rows, records, task, args.n, calls)
+    (d / "inspect.md").write_text(md, encoding="utf-8")
+    print(d / "inspect.md")
+    return 0
+# ---------------------------------------------------------------- adjudication (step 10)
+
+ADJUDICATION_DIR = "adjudication"
+OPEN_COLUMNS = ("chunk", *export.FIELD_COLUMNS)
+#: chunk tasks whose output is cuad-labels/intent-labels, not fields.csv
+NON_FIELD_TASKS = {"cuad", "intent"}
+
+
+def _merge_open_verdicts(chunk_out: Path, label: str, open_rows: Mapping[tuple[str, str, str], Mapping[str, str]]
+                         ) -> int:
+    """Copy reviewer columns filled in ``adjudication/open.csv`` into the chunk's adjudication.csv."""
+    path = chunk_out / "adjudication.csv"
+    if not path.exists():
+        return 0
+    rows = export.read_csv(path)
+    changed = 0
+    for r in rows:
+        o = open_rows.get((label, r["document_id"], r["field"]))
+        if o and any(o.get(c) for c in runner.REVIEWER_COLUMNS) \
+                and any(o.get(c, "") != r.get(c, "") for c in runner.REVIEWER_COLUMNS):
+            r.update({c: o.get(c, "") for c in runner.REVIEWER_COLUMNS})
+            changed += 1
+    if changed:
+        export.write_csv(path, export.FIELD_COLUMNS, rows)
+    return changed
+
+
+def adjudication_items(name: str, out: Path, stage: Path, *, only: str | None = None,
+                       rows: Sequence[Mapping[str, Any]] | None = None,
+                       sandbox: Path | None = None) -> tuple[list[dict[str, Any]], int]:
+    """Every field of an approved chunk still at ``final_decision == adjudicate``.
+
+    Verdicts already typed into ``adjudication/open.csv`` are first copied into each
+    chunk's ``adjudication.csv``; then ``runner.review`` rebuilds the chunk (it keeps the
+    reviewer columns), so a verdict entered in either place counts. Returns the open rows
+    and how many verdicts were copied.
+    """
+    rows = runner.load_stage(stage) if rows is None else rows
+    open_path = Path(out) / ADJUDICATION_DIR / "open.csv"
+    typed = {(r["chunk"], r["document_id"], r["field"]): r
+             for r in (export.read_csv(open_path) if open_path.exists() else [])}
+    items: list[dict[str, Any]] = []
+    copied = 0
+    overlay = load_interim(argparse.Namespace(sandbox=sandbox, campaign=name), rows) if sandbox else None
+    for a in load_approvals(name):
+        cid = str(a["chunk"])
+        if only and cid != str(only):
+            continue
+        entry, arm = chunk_entry(name, cid, a.get("arm"))
+        if "models" not in entry or entry["task"] in NON_FIELD_TASKS:
+            continue
+        label = f"{cid}{f'.{arm}' if arm else ''}"
+        d = chunk_dir(Path(out), entry, arm)
+        if not (d / "calls.jsonl").exists():
+            raise SystemExit(f"approved chunk {label}: {d} has no calls.jsonl; restore it first "
+                             "(`labeling checkpoint --restore`)")
+        copied += _merge_open_verdicts(d, label, typed)
+        runner.review(rows, entry["task"], d, reasoning=a.get("reasoning"), interim=overlay)
+        items += [{"chunk": label, **f} for f in export.read_csv(d / "fields.csv")
+                  if f.get("final_decision") == "adjudicate"]
+    return items, copied
+
+
+def gate_resolved(name: str, entry: Mapping[str, Any], out: Path, stage: Path,
+                  sandbox: Path | None = None) -> dict[str, Any]:
+    """Step gate: every ``needs`` chunk is approved and none has an open adjudication item."""
+    done = {str(a["chunk"]) for a in load_approvals(name)}
+    unapproved = [str(n) for n in entry.get("needs") or [] if str(n) not in done]
+    items, _ = adjudication_items(name, out, stage, sandbox=sandbox)
+    per_chunk = dict(Counter(i["chunk"] for i in items))
+    res = {"kind": "resolved", "open_items": len(items), "per_chunk": per_chunk,
+           "per_field": dict(Counter(f"{i['chunk']}/{i['field']}" for i in items)),
+           "unapproved_needs": unapproved, "passed": not items and not unapproved,
+           "how": "fill reviewer_verdict in adjudication/open.csv, then `labeling adjudicate` and re-gate",
+           "chunk": entry["id"], "arm": None, "task": entry["task"], "models": [], "provider": "none",
+           "reasoning": "none", "prompt_sha256": [], "served_providers": [], "spent_usd": 0.0,
+           "scored_utc": _now()}
+    path = step_gate_path(out, entry)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(res, indent=1) + "\n", encoding="utf-8")
+    return res
+
+
+#: gate kinds of campaign steps (no model calls, so no provider check)
+STEP_GATES = ("resolved", "conformance")
+
+
+def step_gate_path(out: Path, entry: Mapping[str, Any]) -> Path:
+    """Where a step's gate.json lives under the labels root."""
+    sub = ADJUDICATION_DIR if entry["task"] == "adjudication" else f"build-{entry['id']}"
+    return Path(out) / sub / "gate.json"
+
+
+def gate_conformance(name: str, entry: Mapping[str, Any], out: Path, stage: Path) -> dict[str, Any]:
+    """Step gate for chunks 0 and 11: the listed v10 conformance gates over the built stage."""
+    from .. import v10_conformance  # noqa: PLC0415
+
+    built = ROOT / str(entry.get("stage") or "data/v10/stage")
+    if not (built / "manifest.json").exists():
+        raise SystemExit(f"{built} has no manifest.json; run `python -m mailroom_eda.v10_build --out {built}"
+                         f"{' --labels' if str(entry['id']) != '0' else ''}` first")
+    done = {str(a["chunk"]) for a in load_approvals(name)}
+    unapproved = [str(n) for n in entry.get("needs") or [] if str(n) not in done]
+    rep = v10_conformance.run(built, stage, list(entry["gate"].get("gates") or v10_conformance.GATE_NAMES),
+                              labels_root=Path(out), campaign=name)
+    manifest = json.loads((built / "manifest.json").read_text(encoding="utf-8"))
+    res = {"kind": "conformance", "gates": rep["gates"], "unapproved_needs": unapproved,
+           "passed": rep["passed"] and not unapproved, "stage": str(built),
+           "manifest_sha256": hashlib.sha256((built / "manifest.json").read_bytes()).hexdigest(),
+           "labels": (manifest.get("inputs") or {}).get("labels"),
+           "chunk": entry["id"], "arm": None, "task": entry["task"], "models": [], "provider": "none",
+           "reasoning": "none", "prompt_sha256": [], "served_providers": [], "spent_usd": 0.0,
+           "scored_utc": _now()}
+    path = step_gate_path(out, entry)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(res, indent=1) + "\n", encoding="utf-8")
+    return res
+
+
+def cmd_adjudicate(args: argparse.Namespace) -> int:
+    """Rebuild every approved field chunk and list its open items in ``adjudication/open.csv``."""
+    auto_restore(args)
+    items, copied = adjudication_items(args.campaign, args.out, args.stage, only=args.chunk,
+                                       sandbox=getattr(args, "sandbox", None))
+    path = Path(args.out) / ADJUDICATION_DIR / "open.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if args.chunk and path.exists():
+        # One chunk was rebuilt: keep every other chunk's rows (and their typed verdicts).
+        keep = [r for r in export.read_csv(path) if str(r["chunk"]).split(".")[0] != str(args.chunk)]
+        items = keep + items
+    export.write_csv(path, OPEN_COLUMNS, items)
+    if copied:
+        print(f"copied {copied} verdicts from open.csv into their chunks")
+    per = Counter((i["chunk"], i["field"]) for i in items)
+    for (chunk, field), n in sorted(per.items()):
+        print(f"{chunk:<6} {field:<32} {n:>5} open")
+    print(f"{len(items)} open items -> {path}")
+    return auto_checkpoint(args, f"adjudicate ({len(items)} open)")
+
+
+def pin_violations(calls: Sequence[Mapping[str, Any]], reasoning: str) -> list[str]:
+    """``"<model> via <provider>"`` for each answer served outside its model's route pin."""
+    out: set[str] = set()
+    for c in calls:
+        for p in providers.served_outside_route(providers.model_route(c["model"]), reasoning,
+                                                {c.get("served_provider")}):
+            out.add(f"{c['model']} via {p}")
+    return sorted(out)
+
+
+UNREASONED_MAX_SHARE = 0.5
+#: and at least this many zero-token answers: one or two easy documents are not a pattern
+UNREASONED_MIN_ZEROS = 3
+
+
+def unreasoned_providers(calls: Sequence[Mapping[str, Any]], reasoning: str) -> dict[str, str]:
+    """``{"<model> via <provider>": "<zero>/<n>"}`` where most answers at a reasoning level
+    other than off spent 0 reasoning tokens: that provider is not honouring the level.
+
+    A tiny ping cannot show this; a model may skip reasoning on one easy prompt, so only a
+    majority of zero-token answers on real documents flags the provider.
+    """
+    if reasoning == "off":
+        return {}
+    seen: dict[str, list[int]] = {}
+    for c in calls:
+        key = f"{c['model']} via {c.get('served_provider') or '?'}"
+        tally = seen.setdefault(key, [0, 0])
+        tally[0] += not c.get("reasoning_tokens")
+        tally[1] += 1
+    return {k: f"{z}/{n}" for k, (z, n) in sorted(seen.items()) if z > UNREASONED_MAX_SHARE * n and z >= UNREASONED_MIN_ZEROS}
+
+
+def bakeoff_guard(name: str, entry: Mapping[str, Any], res: Mapping[str, Any], out: Path,
+                  override: bool = False) -> None:
+    """Approving a bake-off arm picks the model later chunks use (``winner_of_<id>``): it must
+    be the arm ``labeling bakeoff`` chose. A holdout chunk (``1h``) follows its chunk's pick."""
+    cid = str(entry["id"])
+    base = cid[:-1] if cid.endswith("h") else cid
+    if sum(str(c["id"]) == cid for c in campaign(name)["chunks"]) < 2 or override:
+        return
+    path = out / f"{base}.bakeoff.json"
+    if not path.exists():
+        raise SystemExit(f"chunk {cid} is a bake-off: run `labeling bakeoff {base}` before approving an arm")
+    primary = json.loads(path.read_text(encoding="utf-8")).get("primary") or {}
+    if (primary.get("model"), str(primary.get("reasoning"))) != (res["models"][0], str(res["reasoning"])):
+        raise SystemExit(f"the bake-off picked {primary.get('model')} at {primary.get('reasoning')}; this arm is "
+                         f"{res['models'][0]} at {res['reasoning']} (pass --override-bakeoff to approve it anyway)")
 
 
 def cmd_gate(args: argparse.Namespace) -> int:
     """Score a chunk's gate; with --approve, record a pass in approved.yaml."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
-    res = gate_result(args.campaign, entry, arm, args.out, args.stage, signed_off=args.signed_off)
-    if res["provider"] != args.provider:
+    auto_restore(args)
+    res = gate_result(args.campaign, entry, arm, args.out, args.stage, signed_off=args.signed_off,
+                      sandbox=getattr(args, "sandbox", None))
+    if res["kind"] not in STEP_GATES and res["provider"] != args.provider:
         raise SystemExit(f"--provider {args.provider}, but chunk {entry['id']} ran on {res['provider']} "
                          f"(runs.jsonl); the gate scores the models the chunk ran")
     print(json.dumps(res, indent=1))
@@ -409,6 +1373,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
         raise SystemExit("gate did not pass; nothing approved")
     if not args.initials or not spend.INITIALS_RE.match(args.initials):
         raise SystemExit("--approve needs --initials (a human's 2-6 capital letters)")
+    bakeoff_guard(args.campaign, entry, res, Path(args.out), getattr(args, "override_bakeoff", False))
     approvals = load_approvals(args.campaign)
     same = [a for a in approvals if str(a["chunk"]) == str(entry["id"])]
     if same and not args.replace:
@@ -417,22 +1382,25 @@ def cmd_gate(args: argparse.Namespace) -> int:
     approvals.append({
         "chunk": str(entry["id"]), "arm": arm, "task": entry["task"], "set": entry["set"],
         "slice": entry.get("chunk"), "models": res["models"], "provider": res["provider"],
-        "reasoning": res["reasoning"], "temperature": 0, "prompt_sha256": res["prompt_sha256"],
+        "reasoning": res["reasoning"],
+        "temperature": {m: providers.temperature(m) for m in res["models"]}, "prompt_sha256": res["prompt_sha256"],
         "served_providers": res["served_providers"],
         "gate": {k: v for k, v in res.items() if k in ("kind", "micro_f1", "micro_precision", "cohen_kappa",
                                                        "precision", "adjudicate_share", "passed")},
         "approved_by": args.initials, "approved_utc": _now()})
     path = approvals_path(args.campaign)
-    path.write_text("# Written by `labeling gate --approve`; commit it with the chunk's output.\n"
+    path.write_text("# Written by `labeling gate --approve`. Commit this file; the chunk's label output\n"
+                    "# stays out of git (private HF staging repo only).\n"
                     + yaml.safe_dump({"approved": approvals}, sort_keys=False), encoding="utf-8")
     print(f"approved chunk {entry['id']}{f' arm {arm}' if arm else ''} -> {path}")
-    return 0
+    return auto_checkpoint(args, f"chunk {entry['id']} approved by {args.initials}")
 
 
 # ---------------------------------------------------------------- status
 
 def cmd_status(args: argparse.Namespace) -> int:
     """One line per chunk arm: calls answered, spend, gate, approval."""
+    auto_restore(args)
     camp = campaign(args.campaign)
     approved = {str(a["chunk"]): a for a in load_approvals(args.campaign)}
     seen: Counter = Counter()
@@ -455,6 +1423,18 @@ def cmd_status(args: argparse.Namespace) -> int:
         label = f"{cid}{f'.{arm}' if arm else ''}"
         print(f"{label:<6} {entry['task']:<18} {entry['set']:<12} {entry.get('chunk') or 'all':<5} "
               f"{ok:>9} {spent:>8.4f} {entry['cap_usd']:>6.2f}  {state}")
+    for st in camp.get("steps") or []:
+        sid = str(st["id"])
+        gate_path = step_gate_path(args.out, st)
+        gate = json.loads(gate_path.read_text()) if gate_path.exists() else None
+        failed = ([g for g, v in (gate or {}).get("gates", {}).items() if not v["passed"]]
+                  if st["task"] == "build" else (gate or {}).get("open_items", "?"))
+        state = ("gate passed" if gate and gate["passed"] else
+                 f"gate failed ({'gates ' + ','.join(map(str, failed)) if st['task'] == 'build' else f'{failed} open'})"
+                 if gate else "not scored")
+        if sid in approved:
+            state += f"; approved by {approved[sid]['approved_by']}"
+        print(f"{sid:<6} {st['task']:<18} {st.get('set', ''):<12} {'':<5} {'':>9} {'':>8} {'':>6}  {state}")
     return 0
 
 
@@ -483,6 +1463,8 @@ def price_report(fetch: Callable[[str], Any] = _get_json) -> dict[str, Any]:
         route = spec.get("route") or {}
         eps = fetch(f"{PUBLIC_MODELS_URL}/{model}/endpoints")["data"]["endpoints"]
         need = set(REQUIRED_PARAMETERS) | ({"seed"} if route.get("seed") else set())
+        if route.get("temperature", True) is False:
+            need.discard("temperature")
         cap = route.get("max_price") or {}
         usable = []
         for ep in eps:
@@ -562,6 +1544,7 @@ def _stage_check(stage: Path, name: str) -> tuple[bool, str]:
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Run every readiness check and print PASS/FAIL lines. Makes no paid call."""
     results: list[tuple[str, bool, str]] = []
+    auto_restore(args)
 
     def check(name: str, fn: Callable[[], tuple[bool, str]]) -> None:
         """Run one doctor check and record its result."""
@@ -610,12 +1593,21 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         data = providers.key_status(providers.Backend.from_env("openrouter"))
         rem = data.get("limit_remaining")
         reserve = models_registry().get("key_reserve_usd", 3.0)
+        funding.append(None if rem is None else float(rem))
         if rem is None:
             return True, f"key OK, no credit limit; usage so far ${float(data.get('usage') or 0):.2f}"
         return float(rem) > reserve, f"key OK, ${float(rem):.2f} remaining (reserve ${reserve:.2f})"
 
+    funding: list[float | None] = []
     check("OpenRouter key", key)
+    check("HF checkpoint write access", checkpoint.write_access)
+    if os.environ.get("VLLM_BASE_URL") or getattr(args, "modal", False):
+        check("Modal vLLM endpoint", modal_check)
     approvals = load_approvals(args.campaign)
+    if funding:
+        check("funding", lambda: funding_status(
+            funding[0], models_registry().get("key_reserve_usd", 3.0), campaign(args.campaign)["chunks"],
+            approved={str(a["chunk"]) for a in approvals}))
     check("approvals", lambda: (True, f"{len(approvals)} chunks approved"))
     width = max(len(n) for n, _, _ in results)
     for name, ok, msg in results:
@@ -623,6 +1615,38 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     for line in next_chunks(args.campaign, approvals):
         print(line)
     return 0 if all(ok for _, ok, _ in results) else 1
+
+
+def modal_models() -> list[str]:
+    """The models.yaml entries served by the sandbox's Modal vLLM app."""
+    return sorted(m for m, s in models_registry()["models"].items() if s.get("provider") == "modal")
+
+
+def modal_check(env: Mapping[str, str] | None = None,
+                fetch: Callable[..., Any] = _get_json) -> tuple[bool, str]:
+    """``VLLM_BASE_URL``/``VLLM_API_KEY`` are set and a free ``GET /v1/models`` lists the Modal model.
+
+    ``VLLM_API_KEY`` is the value the sandbox deploys as ``MODAL_VLLM_API_TOKEN``; the key
+    is sent but never printed. Generates nothing, so it costs only the endpoint's idle time.
+    """
+    env = os.environ if env is None else env
+    missing = [n for n in ("VLLM_BASE_URL", "VLLM_API_KEY") if not env.get(n)]
+    if missing:
+        return False, (f"{' and '.join(missing)} not set (VLLM_API_KEY is the value deployed as "
+                       "MODAL_VLLM_API_TOKEN)")
+    backend = providers.Backend.from_env("modal", env)
+    host = urllib.parse.urlparse(backend.base_url).hostname or ""
+    if not host.endswith(".modal.run") and host not in ("localhost", "127.0.0.1"):
+        return False, f"VLLM_BASE_URL host {host!r} is not a *.modal.run app URL"
+    if host.endswith(".modal.run") and urllib.parse.urlparse(backend.base_url).scheme != "https":
+        return False, "VLLM_BASE_URL must be https:// for a *.modal.run host (the API key is sent)"
+    data = fetch(f"{backend.base_url}/models", headers={"Authorization": f"Bearer {backend.api_key}"})
+    served = sorted(str(m.get("id")) for m in (data or {}).get("data") or [])
+    want = modal_models()
+    lacking = [m for m in want if m not in served]
+    if lacking:
+        return False, f"endpoint serves {served or 'nothing'}; models.yaml expects {lacking}"
+    return True, f"{backend.base_url} serves {', '.join(want)}"
 
 
 PING_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["ok", "word"],
@@ -635,35 +1659,71 @@ def cmd_ping(args: argparse.Namespace, chat=providers.chat, key_status=providers
     backend = providers.Backend.from_env("openrouter")
     spend.check_key_headroom(key_status(backend), args.cap_usd)
     budget = spend.Budget(args.cap_usd, 300)
+    picked = set(getattr(args, "chunks", None) or [])
     used = {(m, str(c["reasoning"])) for c in campaign(args.campaign)["chunks"] for m in c["models"]
+            if not picked or str(c["id"]) in picked
             if not str(m).startswith("winner_of_") and not str(c["reasoning"]).startswith("winner_of_")}
-    used |= {("z-ai/glm-5.3-flashx-legal", "off"), ("deepseek/deepseek-v4.1-flash", "low")}
     msgs = [{"role": "system", "content": "Reply with JSON only."},
             {"role": "user", "content": 'Return {"ok": true, "word": "mailroom"}.'}]
+    schema: Mapping[str, Any] = PING_SCHEMA
+    probe = ""
+
+    def answered(parsed: Any) -> bool:
+        return parsed == {"ok": True, "word": "mailroom"}
+
+    if getattr(args, "real_doc", False):
+        # one real correspondence document under the intent prompt: a tiny prompt cannot show
+        # whether a provider actually reasons at a level on real text
+        rows = runner.select(runner.load_stage(args.stage), "intent", "calibration")
+        row = min(rows, key=lambda r: str(r.get("document_id")))
+        req = tasks.build_intent(row, "a")
+        msgs, schema, probe = req.messages, req.schema, f"real_doc:{req.document_id}"
+        enum = set(schema["properties"]["intent"]["enum"])
+
+        def answered(parsed: Any) -> bool:  # noqa: F811
+            return isinstance(parsed, dict) and parsed.get("intent") in enum
     failures = 0
     log = args.out / "ping.jsonl"
+    per_provider = bool(getattr(args, "per_provider", False))
     for model, reasoning in sorted(used):
         if models_registry()["models"].get(model, {}).get("provider") != "openrouter":
             continue
-        reserved = budget.reserve(model, 50, 300)
-        rec = {"model": model, "reasoning": reasoning, "initials": args.initials, "utc": _now()}
-        try:
-            comp = chat(backend, model, msgs, PING_SCHEMA, reasoning=reasoning, max_tokens=300)
-        except providers.ProviderError as err:
-            budget.release(reserved)
-            failures += 1
-            export.append_journal(log, {**rec, "error": str(err)})
-            print(f"FAIL  {model} reasoning={reasoning}: {err}")
-            continue
-        cost = budget.settle(model, comp.prompt_tokens, comp.completion_tokens, comp.cost_usd, reserved)
-        good = comp.parsed == {"ok": True, "word": "mailroom"} and comp.used_schema
-        failures += not good
-        export.append_journal(log, {**rec, "served_provider": comp.served_provider, "served_model": comp.served_model,
-                                    "used_schema": comp.used_schema, "response": comp.parsed, "cost_usd": cost})
-        print(f"{'PASS' if good else 'FAIL'}  {model} reasoning={reasoning} via {comp.served_provider or '?'} "
-              f"schema={'strict' if comp.used_schema else 'json_object fallback'} ${cost:.6f}")
+        base = providers.effective_route(providers.model_route(model), reasoning)
+        # the route as a whole, then (with --per-provider) each pinned provider alone
+        targets: list[str | None] = [None] + (list(base.get("only") or []) if per_provider else [])
+        for pinned in targets:
+            reserved = budget.reserve(model, spend.estimate_tokens(json.dumps(msgs)) if probe else 50,
+                                      300 + runner.REASONING_ALLOWANCE)
+            rec = {"model": model, "reasoning": reasoning, "initials": args.initials, "utc": _now(),
+                   **({"pinned": pinned} if pinned else {}), **({"probe": probe} if probe else {})}
+            kw = {"route": {**base, "only": [pinned]}} if pinned else {}
+            name = f"{model} reasoning={reasoning}" + (f" pinned={pinned}" if pinned else "")
+            try:
+                comp = chat(backend, model, msgs, schema, reasoning=reasoning,
+                            max_tokens=300 + (runner.REASONING_ALLOWANCE if reasoning != "off" else 0), **kw)
+            except providers.ProviderError as err:
+                budget.release(reserved)
+                failures += pinned is None
+                export.append_journal(log, {**rec, "error": str(err)})
+                print(f"FAIL  {name}: {err}")
+                continue
+            cost = budget.settle(model, comp.prompt_tokens, comp.completion_tokens, comp.cost_usd, reserved)
+            good = answered(comp.parsed) and comp.used_schema
+            failures += (not good) and pinned is None
+            export.append_journal(log, {**rec, "served_provider": comp.served_provider,
+                                        "served_model": comp.served_model, "used_schema": comp.used_schema,
+                                        "response": comp.parsed, "reasoning_tokens": comp.reasoning_tokens,
+                                        "cost_usd": cost})
+            print(f"{'PASS' if good else 'FAIL'}  {name} via {comp.served_provider or '?'} "
+                  f"schema={'strict' if comp.used_schema else 'json_object fallback'} "
+                  f"reasoning_tokens={comp.reasoning_tokens} ${cost:.6f}")
     print(f"spent ${budget.spent_usd:.6f}")
-    return 1 if failures else 0
+    rc = 1 if failures else 0
+    # a hand-built Namespace without the flag (tests, internal callers) does not stage
+    if not log.exists() or getattr(args, "no_checkpoint", True):
+        return rc
+    # the ping log gates every paid chunk on any machine, so it is staged like an answer
+    return auto_checkpoint(args, f"ping by {args.initials}", rc, api=getattr(args, "checkpoint_api", None))
 
 
 # ---------------------------------------------------------------- argparse
@@ -757,7 +1817,12 @@ def add_commands(sub: Any) -> None:
         p.add_argument("--campaign", default="v10")
         p.add_argument("--stage", type=Path, default=runner.DEFAULT_STAGE)
         p.add_argument("--out", type=Path, default=runner.DEFAULT_OUT)
+        p.add_argument("--no-restore", action="store_true",
+                       help=f"do not first pull staged files missing locally from {checkpoint.STAGING_REPO}")
 
+    from . import jev  # noqa: PLC0415
+
+    jev.add_command(sub, common)
     p = sub.add_parser("chunk", help="run one campaign chunk as campaign.yaml defines it")
     common(p)
     p.add_argument("id")
@@ -771,7 +1836,21 @@ def add_commands(sub: Any) -> None:
     p.add_argument("--ack-requires", action="store_true",
                    help="the external release named by the chunk's requires: has landed")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--no-checkpoint", action="store_true",
+                   help="do not upload the answers to the private HF staging repo (not recommended)")
     p.set_defaults(operate=cmd_chunk)
+
+    p = sub.add_parser("sweep", help="run every runnable chunk through --through after one dry run and one yes")
+    common(p)
+    p.add_argument("--through", required=True, help="the last chunk id to run (campaign.yaml order)")
+    p.add_argument("--from", dest="start", help="start at this chunk id instead of the first")
+    p.add_argument("--initials")
+    p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
+    p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--model-map", action="append", default=[], metavar="CAMPAIGN_MODEL=PROVIDER_MODEL")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--no-checkpoint", action="store_true")
+    p.set_defaults(operate=cmd_sweep)
 
     p = sub.add_parser("gate", help="score a chunk's gate; --approve records a pass")
     common(p)
@@ -780,9 +1859,38 @@ def add_commands(sub: Any) -> None:
     p.add_argument("--approve", action="store_true")
     p.add_argument("--replace", action="store_true")
     p.add_argument("--signed-off", action="store_true", help="you read the chunk's CSVs / sample.csv")
+    p.add_argument("--override-bakeoff", action="store_true",
+                   help="approve a bake-off arm other than the one `labeling bakeoff` picked")
+    p.add_argument("--sandbox", type=Path, default=runner.DEFAULT_SANDBOX,
+                   help="local-mailroom-sandbox checkout for the interim cross-check (absent: skipped)")
     p.add_argument("--initials")
     p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
+    p.add_argument("--no-checkpoint", action="store_true")
     p.set_defaults(operate=cmd_gate)
+
+    p = sub.add_parser("bakeoff", help="rank a bake-off chunk's arms by paired bootstrap (offline)")
+    common(p)
+    p.add_argument("id")
+    p.add_argument("--margin", type=float, default=NON_INFERIORITY_MARGIN)
+    p.set_defaults(operate=cmd_bakeoff)
+
+    p = sub.add_parser("inspect", help="write inspect.md: answers, gold and quote context to read before a gate")
+    common(p)
+    p.add_argument("dir", type=Path, help="a chunk or run output directory")
+    p.add_argument("--n", type=int, default=8)
+    p.set_defaults(operate=cmd_inspect)
+
+    p = sub.add_parser("adjudicate", help="list every approved chunk's open adjudication items (offline)")
+    common(p)
+    p.add_argument("--chunk", help="only this approved chunk id")
+    p.add_argument("--sandbox", type=Path, default=runner.DEFAULT_SANDBOX)
+    p.add_argument("--no-checkpoint", action="store_true")
+    p.set_defaults(operate=cmd_adjudicate)
+
+    p = sub.add_parser("checkpoint", help=f"upload label output to the private {checkpoint.STAGING_REPO}")
+    common(p)
+    p.add_argument("--restore", action="store_true", help="download staged files missing locally")
+    p.set_defaults(operate=cmd_checkpoint)
 
     p = sub.add_parser("status", help="progress, spend, gate and approval for every chunk")
     common(p)
@@ -798,6 +1906,8 @@ def add_commands(sub: Any) -> None:
 
     p = sub.add_parser("doctor", help="every readiness check (no paid call)")
     common(p)
+    p.add_argument("--modal", action="store_true",
+                   help="also check the Modal vLLM endpoint (on by default when VLLM_BASE_URL is set)")
     p.set_defaults(operate=cmd_doctor)
 
     p = sub.add_parser("check-class", help="validate a proposed new document class folder (offline)")
@@ -808,5 +1918,13 @@ def add_commands(sub: Any) -> None:
     common(p)
     p.add_argument("--initials", required=True)
     p.add_argument("--cap-usd", type=float, default=0.05)
+    p.add_argument("--per-provider", action="store_true",
+                   help="also ping each pinned provider alone and log its reasoning tokens")
+    p.add_argument("--real-doc", action="store_true",
+                   help="ping with one real intent-calibration document instead of the tiny prompt")
+    p.add_argument("--chunk", action="append", dest="chunks", default=None,
+                   help="ping only the routes these chunks use (repeatable; default: every chunk)")
+    p.add_argument("--no-checkpoint", action="store_true",
+                   help="do not stage ping.jsonl to the private HF repo (other machines will not see it)")
     p.set_defaults(operate=cmd_ping)
 

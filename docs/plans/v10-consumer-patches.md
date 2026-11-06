@@ -17,7 +17,7 @@ vendored in the sandbox), llm-mailroom `cb960a2` and the sandbox branch.
   - Corporate `not_applicable` is treated inconsistently between `corporate_record_schema.py:380` and `:381`.
   - There is no HF loader, and the vendor snapshot has no tests.
 - **llm-mailroom:**
-  - Joins `default` and `ground_truth` on `filename`. Counts rows where `content_sha256` doesn't equal sha256(`doc_text`).
+  - Joins `default` and `ground_truth` on `filename`; v10's blind `default` has no `filename`, so the join moves to `document_id` (patch below). Counts rows where `content_sha256` doesn't equal sha256(`doc_text`).
   - Every `result_cache` key hashes `doc_text`.
   - `load_dataset` without a config name relies on `default` being the default config.
   - **Bug:** the viewer `/rows` fallbacks send no revision, so once v10 is on the Hub main branch, pinned v9.1 runs would silently read v10.
@@ -76,6 +76,7 @@ The repo is added with `add_repo` (push access) when this phase starts.
 - **`schemas/documents.py` + `config/taxonomy.yaml`:** Contract and Merger v2 fields and types mirrored from the Dojo, and the `label` enums. New `llm/frozen_v2/{contracts,merger_agreement}_specialist.txt` prompts; `frozen_v1` stays frozen. Bump the prompt version.
 - **`pipeline/hf_corpora.py`:** `FULL_CORPUS_SCHEMA="v10"`, the v10 pin, a per-class `configs` map, and `n_docs` 3,292.
 - **`pipeline/hf_corpus_loader.py`:** `load_class_gt`, `load_routing`, long-table loaders joined on `document_id` with `filename` as the fallback, and numpy-to-list conversion.
+- **Blind `default` is `document_id` + `doc_text` + empty `prompt`:** every join with `default` uses `document_id` (there is no `filename` fallback there, because the filename names the subclass or class on 1,346 rows). `gt_label_ex10` and any reader of source fields load the `source_metadata` config (`document_id`, `filename`, `metadata`). Pinned v9 runs are unaffected.
 - **`langchain_agents/doc_inventories.coerce_gt_value`:** handle `np.ndarray` and pyarrow values.
 - **`cuad_maud.flatten_*`:** accept long-table rows.
 - **`scripts/run_hf_pilot.py`:**
@@ -123,6 +124,8 @@ The repo is added with `add_repo` (push access) when this phase starts.
   - add `test_corpus` fixtures for a typed config, a cleaned text with a matching hash, and raw vs canonical subclasses.
 
 ### G4. Publish (only on the user's go)
+
+Status and guards: `v10-release-train.md`. The guarded script is `scripts/publish/publish_v10.py` (a dry run unless `--tag v10 --initials XX --confirm`).
 
 1. Run the v10 gates.
 2. Publish to the Hub as a new tag `v10`, keeping the older tags.

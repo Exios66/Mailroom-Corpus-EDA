@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 import re
 import subprocess
 import sys
 import urllib.error
+from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -149,7 +152,7 @@ def test_campaign_chunks_are_runnable():
         assert ch["task"] in tasks.TASK_CLASSES
         assert ch["set"] in runner.SETS
         assert str(ch["reasoning"]) in providers.REASONING + ("winner_of_1", "winner_of_3")
-        assert ch["cap_usd"] > 0 and "kind" in ch["gate"]
+        assert (ch["cap_usd"] > 0 or ch.get("skip")) and "kind" in ch["gate"]
         for m in ch["models"]:
             assert m in approved or m.startswith("winner_of_"), m
         if ch["task"] in tasks.TWO_MODEL_TASKS:
@@ -236,6 +239,28 @@ def test_window_keeps_head_and_tail():
     assert shown.startswith("A" * 50) and shown.endswith("B" * 20)
     assert "first 50" in desc and "last 20" in desc
     assert tasks.window("short", 50, 20)[0] == "short"
+
+
+def test_parse_completion_records_cached_prompt_tokens():
+    """Cached prompt tokens are read from usage, so prompt caching can be verified per call."""
+    comp = providers.parse_completion({"choices": [{"message": {"content": '{"a": 1}'}}],
+                                       "usage": {"prompt_tokens": 900,
+                                                 "prompt_tokens_details": {"cached_tokens": 640}}},
+                                      used_schema=True)
+    assert comp.cached_tokens == 640
+    bare = providers.parse_completion({"choices": [{"message": {"content": '{"a": 1}'}}]}, used_schema=True)
+    assert bare.cached_tokens == 0
+
+
+def test_cuad_prompt_puts_static_text_before_the_document_header(rows):
+    """Prompt caching: the user message opens with the static category list, so two
+    documents share a prefix through the last category; per-document text comes after."""
+    a, b = (tasks.build_cuad(r).messages for r in rows[:2])
+    assert a[0] == b[0]
+    ua, ub = a[1]["content"], b[1]["content"]
+    header = ua.index("document_id:")
+    assert ua.index("The 41 categories:") < header
+    assert ua[:header] == ub[:ub.index("document_id:")]
 
 
 def test_cuad_family_maps_every_contract_subclass():
@@ -489,7 +514,7 @@ def _fake_chat(answers):
     def chat(backend, model, messages, schema, *, reasoning, max_tokens):
         """Fake chat call."""
         content = json.dumps(answers[model])
-        return providers.Completion(content, answers[model], model, "P", 100, 50, 0, 0.0001, "stop", True)
+        return providers.Completion(content, answers[model], model, "CoreWeave", 100, 50, 0, 0.0001, "stop", True)
     return chat
 
 
@@ -520,6 +545,7 @@ def test_run_and_review_two_model_extraction(tmp_path, rows):
     adj = export.read_csv(tmp_path / "adjudication.csv")
     assert {r["field"] for r in adj} == {"urgency"}
     doc = export.read_csv(tmp_path / "documents.csv")[0]
+    assert doc["cost_usd"] == "" and doc["document_tokens"] == str(spend.estimate_tokens(row["doc_text"]))
     assert doc["status"] == "needs_review" and doc["model"] == ",".join(models)
     assert summary["documents"] == 1
 
@@ -564,6 +590,10 @@ def test_cuad_run_repairs_and_review_writes_v94_records(tmp_path, rows):
     assert row["doc_text"][gl["start"]:gl["start"] + len(gl["text"])] == gl["text"]
     assert {"filename", "model", "accepted", "span_count", "cuad_clause_labels"} <= set(rec)
     assert export.read_csv(tmp_path / "spans.csv")
+    doc = export.read_csv(tmp_path / "documents.csv")[0]  # usage covers the first call and the repair
+    assert (doc["prompt_tokens"], doc["completion_tokens"]) == ("200", "100")
+    assert doc["cost_usd"] == ""  # cost stays in calls.jsonl, never in the CSVs
+    assert doc["document_tokens"] == str(spend.estimate_tokens(row["doc_text"]))
 
 
 def test_intent_review_pairs_two_passes(tmp_path, rows):
@@ -578,6 +608,10 @@ def test_intent_review_pairs_two_passes(tmp_path, rows):
     rec = export.read_journal(tmp_path / "intent-labels.jsonl")[0]
     assert rec["pass_a"]["intent"] == rec["pass_b"]["intent"] == "payment_demand"
     assert rec["reasoning"] == "low"
+    doc = export.read_csv(tmp_path / "documents.csv")[0]  # usage covers both passes
+    assert (doc["prompt_tokens"], doc["completion_tokens"]) == ("200", "100")
+    assert doc["cost_usd"] == ""  # cost stays in calls.jsonl, never in the CSVs
+    assert doc["document_tokens"] == str(spend.estimate_tokens(row["doc_text"]))
 
 
 def test_cli_refuses_paid_run_without_initials(tmp_path, monkeypatch, rows):
@@ -660,9 +694,10 @@ def test_consideration_window_keeps_conversion_clause():
     """Consideration window keeps conversion clause."""
     filler = "Lorem ipsum dolor sit amet. " * 4000
     text = ("AGREEMENT AND PLAN OF MERGER\n" + filler + "\nARTICLE II\nEFFECT OF THE MERGER ON CAPITAL STOCK\n"
-            "Each Share shall be converted into the right to receive $10.00 in cash.\n" + filler)
+            "Section 2.1 Conversion of Shares. Each Share issued and outstanding immediately prior to the "
+            "Effective Time shall be converted into the right to receive $10.00 in cash.\n" + filler)
     win, desc = tasks.consideration_window(text)
-    assert len(win) < 20_000 and "converted into the right to receive $10.00" in win
+    assert len(win) <= tasks.CONSIDERATION_WINDOW_CAP and "converted into the right to receive $10.00" in win
     assert "Conversion of Shares" in desc
 
 
@@ -677,6 +712,16 @@ def test_derived_subclasses_and_specialists(rows):
 
 
 # ---------------------------------------------------------------- OpenRouter routing (models.yaml)
+
+def test_route_without_temperature_omits_it():
+    """Claude Haiku 5.5 and GPT-6 Luna Pro endpoints reject temperature; with
+    require_parameters a temperature 0 request would find no endpoint, so the route drops it."""
+    msgs = [{"role": "user", "content": "x"}]
+    body = providers.build_payload("openrouter", "m", msgs, {"type": "object"},
+                                   route={"only": ["anthropic"], "temperature": False, "seed": False})
+    assert "temperature" not in body and "seed" not in body
+    assert providers.build_payload("openrouter", "m", msgs, None, route={"only": ["x"]})["temperature"] == 0
+
 
 def test_openrouter_routes_pin_providers_and_only_send_supported_seed():
     """Openrouter routes pin providers and only send supported seed."""
@@ -776,7 +821,7 @@ def test_campaign_needs_order_and_output_dirs():
     seen_dirs = set()
     for c in camp["chunks"]:
         assert c["task"] in tasks.BUILDERS or c["task"] == "intent", c
-        assert c["cap_usd"] > 0
+        assert c["cap_usd"] > 0 or c.get("skip"), c["id"]
         assert str(c["reasoning"]) in ("off", "low") or str(c["reasoning"]).startswith("winner_of_")
         for need in c.get("needs") or []:
             assert need in ids and ids.index(need) < ids.index(str(c["id"])), (c["id"], need)
@@ -789,7 +834,20 @@ def test_campaign_needs_order_and_output_dirs():
             d = operate.chunk_dir(Path("out"), entry, a)
             assert d not in seen_dirs, d
             seen_dirs.add(d)
-    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 30.0
+    # $30 plus the 904-email intent relabel the user added on 2026-11-06 (caps $1.95)
+    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 31.5
+
+
+def test_every_cap_covers_its_projection_with_headroom():
+    """A cap below 1.4x its projection stops the chunk before its last calls (the cap check
+    reserves the worst case per call)."""
+    stage = runner.DEFAULT_STAGE / "ground_truth_hardened.jsonl"
+    if not stage.exists():
+        pytest.skip("v9.4 stage not built (data/ is gitignored)")
+    costs = runner.campaign_costs(runner.load_stage(runner.DEFAULT_STAGE), "v10")
+    low = [(c["id"], c["projected_usd"], c["cap_usd"]) for c in costs["chunks"]
+           if c["cap_usd"] < 1.4 * c["projected_usd"] - 1e-9]
+    assert not low, low
 
 
 def test_winner_placeholders_resolve_from_approvals(tmp_path, monkeypatch):
@@ -1335,3 +1393,1389 @@ def test_check_lockstep_names_missing_files(tmp_path):
     res = subprocess.run([sys.executable, str(script), "--eda", str(tmp_path / "eda"), "--mailroom",
                           str(tmp_path / "mr"), "--sandbox", str(tmp_path / "sb")], capture_output=True, text=True)
     assert res.returncode == 1 and "missing:" in res.stderr and "job/spec.py" in res.stderr
+
+
+def test_reasoning_calls_get_a_reasoning_allowance_on_top_of_the_answer_budget(tmp_path, rows):
+    """Reasoning tokens count against max_tokens, so a reasoning call must not be cut off."""
+    assert runner.max_tokens("intent", "off") == runner.MAX_TOKENS["intent"]
+    assert runner.max_tokens("intent", "low") == runner.MAX_TOKENS["intent"] + runner.REASONING_ALLOWANCE
+    seen = []
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens):
+        """Fake chat call that records the budget it was given."""
+        seen.append(max_tokens)
+        ans = {"intent": "update", "confidence": 0.9, "evidence": "x"}
+        return providers.Completion(json.dumps(ans), ans, model, "P", 100, 50, 0, 0.0001, "stop", True)
+
+    runner.run_chunk([rows[2]], task="intent", models=["deepseek/deepseek-v4.1-flash"],
+                     backend=providers.Backend("openrouter", "u", "k"), reasoning="low",
+                     budget=spend.Budget(1.0, 3600), out_dir=tmp_path, chat=chat)
+    assert seen and set(seen) == {runner.MAX_TOKENS["intent"] + runner.REASONING_ALLOWANCE}
+
+
+def test_identical_answers_from_other_journals_are_reused_not_bought_again(tmp_path, rows):
+    """An answer already paid for under the labels root, with the same configuration, is copied."""
+    ans = {"intent": "update", "confidence": 0.9, "evidence": "x"}
+    common = dict(task="intent", models=["deepseek/deepseek-v4.1-flash"],
+                  backend=providers.Backend("openrouter", "u", "k"), budget=spend.Budget(1.0, 3600))
+    runner.run_chunk([rows[2]], reasoning="off", out_dir=tmp_path / "smoke" / "a",
+                     chat=_fake_chat({"deepseek/deepseek-v4.1-flash": ans}), **common)
+
+    def no_call(*a, **k):
+        """Any paid call here is a failure."""
+        raise AssertionError("a reusable answer was bought again")
+
+    res = runner.run_chunk([rows[2]], reasoning="off", out_dir=tmp_path / "3_intent", chat=no_call,
+                           reuse_from=[tmp_path], **common)
+    assert res.get("calls", 0) == 0 and res["reused"] == 2  # passes a and b
+    recs = export.read_journal(tmp_path / "3_intent" / "calls.jsonl")
+    assert len(recs) == 2 and all(r["reused_from"].endswith("smoke/a/calls.jsonl") for r in recs)
+    runner.review([rows[2]], "intent", tmp_path / "3_intent")
+    assert export.read_journal(tmp_path / "3_intent" / "intent-labels.jsonl")[0]["pass_a"]["intent"] == "update"
+
+
+def test_answers_from_a_different_configuration_are_not_reused(tmp_path, rows):
+    """A different reasoning level is a different configuration, so it is sent again."""
+    ans = {"intent": "update", "confidence": 0.9, "evidence": "x"}
+    common = dict(task="intent", models=["deepseek/deepseek-v4.1-flash"],
+                  backend=providers.Backend("openrouter", "u", "k"), budget=spend.Budget(1.0, 3600),
+                  chat=_fake_chat({"deepseek/deepseek-v4.1-flash": ans}))
+    runner.run_chunk([rows[2]], reasoning="off", out_dir=tmp_path / "a", **common)
+    res = runner.run_chunk([rows[2]], reasoning="low", out_dir=tmp_path / "b", reuse_from=[tmp_path], **common)
+    assert res["calls"] == 2 and res.get("reused", 0) == 0
+
+
+def test_review_scores_only_answers_to_the_current_prompt(tmp_path, rows):
+    """After a prompt edit, answers to the old prompt stay in the journal but are not scored."""
+    row = rows[2]
+    new = {"intent": "update", "confidence": 0.9, "evidence": "x"}
+    runner.run_chunk([row], task="intent", models=["deepseek/deepseek-v4.1-flash"],
+                     backend=providers.Backend("openrouter", "u", "k"), reasoning="off",
+                     budget=spend.Budget(1.0, 3600), out_dir=tmp_path,
+                     chat=_fake_chat({"deepseek/deepseek-v4.1-flash": new}))
+    journal = export.read_journal(tmp_path / "calls.jsonl")
+    stale = [{**c, "prompt_sha256": "0" * 64, "content": json.dumps({**new, "intent": "notice"}),
+              "response": {**new, "intent": "notice"}, "labeled_utc": "2099-01-01T00:00:00Z"} for c in journal]
+    for c in stale:  # appended last, so a naive "latest answer wins" review would pick them
+        export.append_journal(tmp_path / "calls.jsonl", c)
+    runner.review([row], "intent", tmp_path)
+    (rec,) = export.read_journal(tmp_path / "intent-labels.jsonl")
+    assert rec["pass_a"]["intent"] == rec["pass_b"]["intent"] == "update"
+    assert len(export.read_journal(tmp_path / "calls.jsonl")) == 4  # nothing deleted
+
+
+def test_funding_status_compares_usable_credit_with_the_remaining_caps():
+    """Usable credit (after the reserve) must cover the next chunk; a shortfall on the rest is reported."""
+    chunks = [{"id": "1", "cap_usd": 0.75}, {"id": "1", "cap_usd": 0.40}, {"id": "3", "cap_usd": 2.0}]
+    ok, msg = operate.funding_status(8.0, 3.0, chunks, approved={"1"})
+    assert ok and "$5.00 usable" in msg and "$2.00 in remaining caps" in msg and "short" not in msg
+    ok, msg = operate.funding_status(4.2, 3.0, chunks, approved=set())
+    assert ok and "short by $1.95" in msg  # both arms of chunk 1 ($1.15) fit; the rest does not
+    ok, msg = operate.funding_status(3.5, 3.0, chunks, approved=set())
+    assert not ok and "next chunk 1 needs $1.15" in msg
+    ok, msg = operate.funding_status(None, 3.0, chunks, approved=set())
+    assert ok and "no credit limit" in msg
+
+
+def test_ping_problems_need_a_recent_passing_ping_per_route():
+    """Each (model, reasoning) a chunk uses needs a passing ping within the window; the latest wins."""
+    from datetime import datetime, timezone
+    now = datetime(2026, 11, 6, 12, 0, tzinfo=timezone.utc)
+    ok = {"response": {"ok": True, "word": "mailroom"}, "used_schema": True}
+    log = [
+        {"model": "a", "reasoning": "off", "utc": "2026-11-06T06:00:00Z", **ok},
+        {"model": "b", "reasoning": "off", "utc": "2026-11-06T06:00:00Z", **ok},
+        {"model": "b", "reasoning": "off", "utc": "2026-11-06T07:00:00Z", "error": "HTTP 400: Reasoning is mandatory"},
+        {"model": "c", "reasoning": "low", "utc": "2026-11-04T06:00:00Z", **ok},
+    ]
+    probs = operate.ping_problems(log, [("a", "off"), ("b", "off"), ("c", "low"), ("d", "off")], now=now)
+    assert len(probs) == 3
+    assert any("b reasoning=off" in p and "Reasoning is mandatory" in p for p in probs)
+    assert any("c reasoning=low" in p and "older than 24h" in p for p in probs)
+    assert any("d reasoning=off" in p and "never pinged" in p for p in probs)
+
+
+def test_chunk_refuses_a_paid_run_on_an_unpinged_route(tmp_path, monkeypatch):
+    """A paid chunk run stops before any call when a route has no recent passing ping."""
+    import argparse
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [])
+    args = argparse.Namespace(campaign="v10", id="3", arm=1, dry_run=False, ack_requires=False,
+                              provider="openrouter", model_map=[], stage=tmp_path, initials="JB",
+                              cap_usd=None, out=tmp_path, workers=1)
+    with pytest.raises(SystemExit, match="labeling ping"):
+        operate.cmd_chunk(args)
+
+
+def test_route_can_pin_providers_per_reasoning_level():
+    """by_reasoning narrows the provider pin for one reasoning level and leaves the others alone."""
+    route = {"only": ["deepinfra", "coreweave", "inference-net"], "seed": True,
+             "by_reasoning": {"low": {"only": ["coreweave"]}}}
+    low = providers.build_payload("openrouter", "m", [{"role": "user", "content": "x"}], None,
+                                  reasoning="low", route=route)
+    off = providers.build_payload("openrouter", "m", [{"role": "user", "content": "x"}], None,
+                                  reasoning="off", route=route)
+    assert low["provider"]["only"] == ["coreweave"]
+    assert off["provider"]["only"] == ["deepinfra", "coreweave", "inference-net"]
+    assert "by_reasoning" not in low["provider"]
+
+
+def test_served_providers_outside_the_pin_are_named():
+    """Served display names (CoreWeave, Z.AI) are matched to route slugs (coreweave, z-ai)."""
+    route = {"only": ["deepinfra", "coreweave", "inference-net", "z-ai"],
+             "by_reasoning": {"low": {"only": ["coreweave"]}}}
+    assert providers.served_outside_route(route, "off", {"CoreWeave", "InferenceNet", "Z.AI"}) == []
+    assert providers.served_outside_route(route, "low", {"CoreWeave", "DeepInfra"}) == ["DeepInfra"]
+
+
+def test_pin_violations_list_answers_served_outside_their_route(monkeypatch):
+    """A gate fails when any scored answer was served by a provider outside its model's pin."""
+    monkeypatch.setattr(providers, "model_route", lambda m: {"only": ["coreweave", "deepinfra"],
+                                                            "by_reasoning": {"low": {"only": ["coreweave"]}}})
+    calls = [{"model": "m", "served_provider": "CoreWeave"}, {"model": "m", "served_provider": "DeepInfra"}]
+    assert operate.pin_violations(calls, "off") == []
+    assert operate.pin_violations(calls, "low") == ["m via DeepInfra"]
+
+
+def test_unreasoned_providers_flag_a_provider_that_ignores_low():
+    """On real documents, a provider whose low-reasoning answers mostly spent 0 reasoning tokens
+    is not honouring the level; one easy document with 0 tokens is not enough to flag it."""
+    calls = ([{"model": "m", "served_provider": "CoreWeave", "reasoning_tokens": 240}] * 9
+             + [{"model": "m", "served_provider": "CoreWeave", "reasoning_tokens": 0}]
+             + [{"model": "m", "served_provider": "DeepInfra", "reasoning_tokens": 0}] * 3)
+    assert operate.unreasoned_providers(calls, "off") == {}
+    assert operate.unreasoned_providers(calls, "low") == {"m via DeepInfra": "3/3"}
+
+
+def test_ping_per_provider_pins_each_provider_and_records_reasoning_tokens(tmp_path, monkeypatch):
+    """--per-provider sends one request pinned to each provider of a route and logs its reasoning tokens."""
+    import argparse
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.setattr(operate, "campaign", lambda name: {"chunks": [
+        {"id": "3", "models": ["deepseek/deepseek-v4.1-flash"], "reasoning": "low"}]})
+    sent = []
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens, route=None):
+        """Fake chat: reasoning only on coreweave."""
+        sent.append((model, reasoning, tuple((route or {}).get("only") or ())))
+        rt = 200 if route and route.get("only") == ["coreweave"] else 0
+        return providers.Completion('{"ok": true, "word": "mailroom"}', {"ok": True, "word": "mailroom"},
+                                    model, (route or {}).get("only", ["?"])[0], 20, 5, rt, 0.00001, "stop", True)
+
+    args = argparse.Namespace(campaign="v10", initials="JB", cap_usd=0.05, out=tmp_path, per_provider=True)
+    assert operate.cmd_ping(args, chat=chat, key_status=lambda b: {"limit_remaining": 10}) == 0
+    pinned = [s for s in sent if s[0] == "deepseek/deepseek-v4.1-flash" and s[1] == "low" and len(s[2]) == 1]
+    assert {s[2][0] for s in pinned} == {"atlas-cloud", "coreweave", "inference-net"}  # low pin excludes deepinfra
+    log = export.read_journal(tmp_path / "ping.jsonl")
+    cw = [r for r in log if r.get("pinned") == "coreweave" and r["reasoning"] == "low"]
+    assert cw and cw[0]["reasoning_tokens"] == 200
+    # per-provider records never decide whether the route as a whole is verified
+    assert operate.ping_problems([r for r in log if r.get("pinned")], [("deepseek/deepseek-v4.1-flash", "low")])
+
+
+def test_ping_real_doc_sends_a_real_intent_document(tmp_path, monkeypatch, rows):
+    """--real-doc pings with a real correspondence document and the intent schema, so the
+    logged reasoning tokens show whether a provider reasons on real text."""
+    import argparse
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.setattr(operate, "campaign", lambda name: {"chunks": [
+        {"id": "3", "models": ["deepseek/deepseek-v4.1-flash"], "reasoning": "low"}]})
+    monkeypatch.setattr(runner, "load_stage", lambda stage: rows)
+    monkeypatch.setattr(runner, "select", lambda rs, task, set_name: [r for r in rs if r["expected"] == "correspondence"])
+    seen = []
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens, route=None):
+        """Fake chat answering the intent schema."""
+        seen.append((messages, schema))
+        ans = {"intent": "payment_demand", "confidence": 0.9, "evidence": "x"}
+        return providers.Completion(json.dumps(ans), ans, model, "CoreWeave", 900, 40, 120, 0.0001, "stop", True)
+
+    args = argparse.Namespace(campaign="v10", initials="JB", cap_usd=0.05, out=tmp_path, per_provider=False,
+                              real_doc=True, stage=tmp_path)
+    assert operate.cmd_ping(args, chat=chat, key_status=lambda b: {"limit_remaining": 10}) == 0
+    assert seen and all("intent" in s["properties"] for _, s in seen)
+    assert all(rows[2]["doc_text"][:40] in m[-1]["content"] for m, _ in seen)
+    log = export.read_journal(tmp_path / "ping.jsonl")
+    assert all(r["probe"] == "real_doc:e1" and r["reasoning_tokens"] == 120 for r in log if "error" not in r)
+
+
+def test_cuad_window_sends_calibration_whole_and_caps_giants(rows):
+    """Golden CUAD calibration contracts fit 32k tokens; all of them are sent whole.
+    Only a document past 400k characters is windowed."""
+    big = {**rows[0], "doc_text": "x" * 300_000}
+    assert "the full document" in tasks.build_cuad(big).messages[1]["content"]
+    giant = {**rows[0], "doc_text": "y" * 616_016}
+    msg = tasks.build_cuad(giant).messages[1]["content"]
+    assert "the full document" not in msg and len(msg) < 410_000
+
+
+def test_cuad_window_is_part_of_the_prompt_sha(rows, monkeypatch):
+    """A cached answer made on cut-off text is never reused after the window changes."""
+    before = tasks.build_cuad(rows[0]).prompt_sha256
+    monkeypatch.setattr(tasks, "CUAD_HEAD_CHARS", 48_000)
+    assert tasks.build_cuad(rows[0]).prompt_sha256 != before
+
+
+def test_costs_use_measured_reasoning_tokens():
+    """Low reasoning is priced from the reasoning tokens each model was measured to spend,
+    not a flat output multiplier (DeepSeek reasoned 250-1,600 tokens on one email)."""
+    est = {"output_tokens": 1000, "calls": 192}
+    ds = "deepseek/deepseek-v4.1-flash"
+    assert runner.reasoning_tokens(ds, "intent", "off") == 0
+    assert runner.reasoning_tokens(ds, "intent", "low") == 900
+    assert runner.reasoning_tokens(ds, "corporate", "low") == 1200
+    assert runner.reasoning_tokens("anthropic/claude-haiku-5.5", "cuad", "low") == 1200
+    assert (runner.projected_output(ds, "intent", "low", est) - runner.projected_output(ds, "intent", "off", est)
+            == round(900 * 192 * runner.RETRY_FACTOR))
+
+
+def test_cuad_problems_restate_the_category_question_on_a_failed_semantic_probe(monkeypatch):
+    """A failed semantic probe tells the repair call what the category asks, not just that it failed."""
+    from mailroom_eda import v9_4_revision as v94
+    monkeypatch.setattr(v94, "verify_cuad_labels",
+                        lambda doc, labels, vocab: ({}, ["Audit Rights: failed semantic probe"], []))
+    row = {"doc_text": "The Company may inspect the books once a year."}
+    resp = {"clauses": [{"category": "Audit Rights", "text": "The Company may inspect the books"}]}
+    (msg,) = runner.cuad_problems(row, resp, ["Audit Rights"])
+    desc = next(c["description"] for c in dojo_snapshot()["cuad_categories"] if c["name"] == "Audit Rights")
+    assert msg.startswith("Audit Rights: failed semantic probe") and desc in msg
+    assert runner._probe_hint("Parties: not verbatim: 'x'") == "Parties: not verbatim: 'x'"
+
+
+def test_cuad_prompt_excludes_winding_up_from_post_termination_services():
+    """Five of seven smoke arms labeled a joint venture's liquidation clause as
+    Post-Termination Services; the expert gold excludes it."""
+    from mailroom_eda.labeling.registry import prompt
+    assert "winding up" in prompt("cuad_system").render({}).lower()
+
+
+def test_cuad_holdout_is_disjoint_from_calibration_and_stable():
+    """The revised prompt must pass on 40 golden contracts it was not tuned on."""
+    from mailroom_eda import v9_4_revision as v94
+    if not runner.DEFAULT_STAGE.exists():
+        pytest.skip("no local v9.4 stage")
+    rows = runner.load_stage(runner.DEFAULT_STAGE)
+    hold = runner.select(rows, "cuad", "holdout")
+    cal = {r["filename"] for r in v94.cuad_calibration_sample(rows)}
+    assert len(hold) == 40 and not cal & {r["filename"] for r in hold}
+    assert [r["filename"] for r in hold] == [r["filename"] for r in runner.select(rows, "cuad", "holdout")]
+    assert all(r["source_corpus"] == v94.GOLDEN_CUAD_SOURCE
+               and (r["gt_fields"].get("context_window_band") or "") != ">32k" for r in hold)
+
+
+# --- PR 43 review fixes -------------------------------------------------------------------
+
+def _ping(model, reasoning, utc, **extra):
+    return {"model": model, "reasoning": reasoning, "utc": utc, "used_schema": True,
+            "response": {"ok": True, "word": "mailroom"}, **extra}
+
+
+def test_ping_problems_ignore_real_doc_probes_and_require_strict_schema():
+    """A later --real-doc probe answers a different question and never decides route health;
+    a json_object fallback is not a passing ping."""
+    now = datetime(2026, 11, 6, 12, tzinfo=timezone.utc)
+    route = [("m", "low")]
+    log = [_ping("m", "low", "2026-11-06T10:00:00Z"),
+           {**_ping("m", "low", "2026-11-06T11:00:00Z"), "probe": "real_doc:e1", "response": {"intent": "update"}}]
+    assert operate.ping_problems(log, route, now=now) == []
+    fallback = [_ping("m", "low", "2026-11-06T10:00:00Z", used_schema=False)]
+    assert "latest ping failed" in operate.ping_problems(fallback, route, now=now)[0]
+
+
+def test_ping_targets_only_the_chosen_chunks(tmp_path, monkeypatch):
+    """--chunk limits the ping to the routes those chunks use; no route is forced in."""
+    import argparse
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.setattr(operate, "campaign", lambda name: {"chunks": [
+        {"id": "3", "models": ["deepseek/deepseek-v4.1-flash"], "reasoning": "low"},
+        {"id": "5a", "models": ["z-ai/glm-5.3-flashx-legal"], "reasoning": "off"}]})
+    sent = []
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens, route=None):
+        sent.append((model, reasoning))
+        return providers.Completion('{"ok": true, "word": "mailroom"}', {"ok": True, "word": "mailroom"},
+                                    model, "CoreWeave", 20, 5, 9, 0.00001, "stop", True)
+
+    args = argparse.Namespace(campaign="v10", initials="JB", cap_usd=0.05, out=tmp_path, chunks=["3"])
+    assert operate.cmd_ping(args, chat=chat, key_status=lambda b: {"limit_remaining": 10}) == 0
+    assert sent == [("deepseek/deepseek-v4.1-flash", "low")]
+
+
+def test_served_outside_route_accepts_provider_display_aliases():
+    """OpenRouter reports google-vertex as "Google" and amazon-bedrock as "Amazon Bedrock"."""
+    route = {"only": ["anthropic", "google-vertex"]}
+    assert providers.served_outside_route(route, "off", {"Google", "Anthropic"}) == []
+    assert providers.served_outside_route(route, "off", {"Azure"}) == ["Azure"]
+
+
+def _intent_journal(tmp_path, rows, reasoning="low"):
+    ans = {"intent": "update", "confidence": 0.9, "evidence": "x"}
+    common = dict(task="intent", models=["deepseek/deepseek-v4.1-flash"],
+                  backend=providers.Backend("openrouter", "u", "k"), budget=spend.Budget(1.0, 3600))
+    runner.run_chunk([rows[2]], reasoning=reasoning, out_dir=tmp_path / "smoke" / "a",
+                     chat=_fake_chat({"deepseek/deepseek-v4.1-flash": ans}), **common)
+    return common, ans
+
+
+def _rewrite(path, **changes):
+    recs = [{**c, **changes} for c in export.read_journal(path)]
+    path.unlink()
+    for c in recs:
+        export.append_journal(path, c)
+
+
+def test_reuse_skips_answers_served_outside_the_current_route(tmp_path, rows):
+    """A low-reasoning answer DeepInfra served before the low pin dropped it is bought again."""
+    common, ans = _intent_journal(tmp_path, rows)
+    _rewrite(tmp_path / "smoke" / "a" / "calls.jsonl", served_provider="DeepInfra")
+    res = runner.run_chunk([rows[2]], reasoning="low", out_dir=tmp_path / "3", reuse_from=[tmp_path],
+                           chat=_fake_chat({"deepseek/deepseek-v4.1-flash": ans}), **common)
+    assert res.get("reused", 0) == 0 and res["calls"] == 2
+
+
+def test_reuse_requires_the_same_rendered_input(tmp_path, rows):
+    """The prompt sha hashes templates, not the document: an answer to other text is not reused."""
+    common, ans = _intent_journal(tmp_path, rows, reasoning="off")
+    edited = {**rows[2], "doc_text": rows[2]["doc_text"] + "\nP.S. one more line."}
+    res = runner.run_chunk([edited], reasoning="off", out_dir=tmp_path / "3", reuse_from=[tmp_path],
+                           chat=_fake_chat({"deepseek/deepseek-v4.1-flash": ans}), **common)
+    assert res.get("reused", 0) == 0 and res["calls"] == 2
+
+
+def test_reused_answers_do_not_count_as_this_chunks_spend(tmp_path, rows):
+    """A reused answer keeps what it cost in reused_cost_usd; this chunk spent nothing on it."""
+    common, _ = _intent_journal(tmp_path, rows, reasoning="off")
+
+    def no_call(*a, **k):
+        raise AssertionError("a reusable answer was bought again")
+
+    runner.run_chunk([rows[2]], reasoning="off", out_dir=tmp_path / "3", reuse_from=[tmp_path], chat=no_call, **common)
+    recs = export.read_journal(tmp_path / "3" / "calls.jsonl")
+    assert recs and all(r["cost_usd"] == 0 and r["reused_cost_usd"] > 0 for r in recs)
+    runner.run_chunk([rows[2]], reasoning="off", out_dir=tmp_path / "4", reuse_from=[tmp_path / "3"],
+                     chat=no_call, **common)
+    again = export.read_journal(tmp_path / "4" / "calls.jsonl")
+    assert again and all(r["cost_usd"] == 0 and r["reused_cost_usd"] == recs[0]["reused_cost_usd"] for r in again)
+
+
+def test_unreasoned_providers_need_several_zero_token_answers():
+    """One zero-token answer from a fallback provider is not evidence it ignores the level."""
+    one = [{"model": "m", "served_provider": "AtlasCloud", "reasoning_tokens": 0}]
+    assert operate.unreasoned_providers(one, "low") == {}
+
+
+# ---------------------------------------------------------------- HF staging checkpoints
+
+class _FakeHub:
+    """Enough of HfApi for checkpoint: a dataset repo held in memory."""
+
+    def __init__(self, private=True):
+        self.private, self.files, self.created, self.commits = private, {}, [], []
+
+    def create_repo(self, repo_id, repo_type, private, exist_ok):
+        self.created.append((repo_id, private))
+
+    def repo_info(self, repo_id, repo_type):
+        import types
+        return types.SimpleNamespace(private=self.private)
+
+    def upload_folder(self, folder_path, repo_id, repo_type, path_in_repo, commit_message, allow_patterns):
+        root = Path(folder_path)
+        for p in root.rglob("*"):
+            if p.is_file():
+                self.files[p.relative_to(root).as_posix()] = p.read_bytes()
+        self.commits.append(commit_message)
+
+    def list_repo_tree(self, repo_id, repo_type, recursive):
+        import types
+        from mailroom_eda.labeling import checkpoint
+        return [types.SimpleNamespace(path=k, lfs=None, blob_id=checkpoint.git_blob_sha(v))
+                for k, v in self.files.items()]
+
+
+def _labels_tree(root):
+    d = root / "1.3_cuad-calibration"
+    d.mkdir(parents=True)
+    (d / "calls.jsonl").write_text(json.dumps({"document_id": "DOC-1", "cost_usd": 0.01, "reused_cost_usd": 0.01,
+                                               "input_sha256": "ab", "served_provider": "CoreWeave"}) + "\n")
+    (d / "cuad-labels.jsonl").write_text(json.dumps({"document_id": "DOC-1",
+                                                     "labels": {"Price Restrictions": [{"text": "x"}]}}) + "\n")
+    (d / "documents.csv").write_text('"document_id","cost_usd","status"\n"DOC-1","0.01","accepted"\n')
+    (d / "runs.jsonl").write_text(json.dumps({"api_cost_cap_usd": 0.4, "projection": {"cost_usd": {"m": 1}},
+                                              "result": {"spent_usd": 0.08, "calls": 3}}) + "\n")
+    return d
+
+
+def test_checkpoint_backs_up_files_byte_for_byte_with_spend(tmp_path):
+    """The private backup is part of the logs: a restore must bring back the spending records
+    (2026-11-06: a stripped backup lost them), and the card declares no blind config."""
+    from mailroom_eda.labeling import checkpoint
+    d = _labels_tree(tmp_path / "labels")
+    staged = checkpoint.stage(tmp_path / "labels", None, tmp_path / "out")
+    for name in ("calls.jsonl", "cuad-labels.jsonl", "documents.csv", "runs.jsonl"):
+        assert staged[f"labels/1.3_cuad-calibration/{name}"].read_bytes() == (d / name).read_bytes()
+    assert '"cost_usd": 0.01' in staged["labels/1.3_cuad-calibration/calls.jsonl"].read_text()
+    card = staged["README.md"].read_text()
+    assert "config_name: labels" in card and "config_name: default" not in card
+
+
+def test_checkpoint_uploads_privately_and_verifies(tmp_path):
+    """The staging repo is created private, every file is verified, and the published repo is refused."""
+    from mailroom_eda import hf_interface
+    from mailroom_eda.labeling import checkpoint
+    _labels_tree(tmp_path / "labels")
+    hub = _FakeHub()
+    res = checkpoint.checkpoint(tmp_path / "labels", None, "checkpoint: test", api=hub)
+    assert res["verified"] and hub.created == [(checkpoint.STAGING_REPO, True)]
+    assert "labels/1.3_cuad-calibration/cuad-labels.jsonl" in hub.files
+    with pytest.raises(SystemExit, match="public"):
+        checkpoint.checkpoint(tmp_path / "labels", None, "x", api=_FakeHub(private=False))
+    with pytest.raises(SystemExit, match="published"):
+        checkpoint.checkpoint(tmp_path / "labels", None, "x", api=hub, repo_id=hf_interface.REPO_ID)
+
+
+def test_checkpoint_fails_loudly_when_the_upload_does_not_verify(tmp_path):
+    """A Hub copy that differs from what was staged is an error, and the command exits 4."""
+    import argparse
+    from mailroom_eda.labeling import checkpoint
+
+    class Corrupt(_FakeHub):
+        def list_repo_tree(self, **kw):
+            return [type(f)(path=f.path, lfs=None, blob_id="0" * 40) for f in super().list_repo_tree(**kw)]
+
+    _labels_tree(tmp_path / "labels")
+    with pytest.raises(SystemExit, match="did not verify"):
+        checkpoint.checkpoint(tmp_path / "labels", None, "x", api=Corrupt())
+    args = argparse.Namespace(out=tmp_path / "labels", campaign="v10", no_checkpoint=False)
+    assert operate.auto_checkpoint(args, "test", 0, api=Corrupt()) == 4
+    assert operate.auto_checkpoint(args, "test", 2, api=Corrupt()) == 2  # keeps the run's own code
+    assert operate.auto_checkpoint(args, "test", 0, api=_FakeHub()) == 0
+
+
+def test_restore_fills_only_missing_files(tmp_path, monkeypatch):
+    """Restore brings back staged answers a checkout lost and never overwrites local files."""
+    from mailroom_eda.labeling import checkpoint
+    _labels_tree(tmp_path / "labels")
+    hub = _FakeHub()
+    checkpoint.checkpoint(tmp_path / "labels", None, "x", api=hub)
+
+    def download(api, repo_id, filename, local_path):
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(hub.files[filename])
+        return local_path
+
+    monkeypatch.setattr(checkpoint.hf_interface, "download_file", download)
+    fresh = tmp_path / "fresh"
+    (fresh / "1.3_cuad-calibration").mkdir(parents=True)
+    (fresh / "1.3_cuad-calibration" / "documents.csv").write_text("local\n")
+    wrote = checkpoint.restore(fresh, api=hub)
+    assert (fresh / "1.3_cuad-calibration" / "documents.csv").read_text() == "local\n"
+    assert fresh / "1.3_cuad-calibration" / "calls.jsonl" in wrote
+    assert not (fresh / "README.md").exists()
+
+
+def test_paid_run_refuses_without_a_checkpoint_token(tmp_path, monkeypatch):
+    """No paid call starts when its answers could not be checkpointed."""
+    from mailroom_eda.labeling import checkpoint
+    monkeypatch.setattr(checkpoint, "token_ready", lambda: False)
+    rows = [_row("correspondence", None, "Please pay invoice 7 by Friday.")]
+    with pytest.raises(SystemExit, match="HF token"):
+        runner.execute(rows, rows, task="correspondence", set_name="all", chunk_spec=None,
+                       models=["deepseek/deepseek-v4.1-flash", "minimax/minimax-m3.1-flash"],
+                       provider="openrouter", reasoning="off", initials="JB", cap_usd=0.01,
+                       max_wall_seconds=10, out_dir=tmp_path, require_checkpoint=True,
+                       chat=lambda *a, **k: pytest.fail("no call may be sent"))
+
+
+# ---------------------------------------------------------------- merger section locator
+
+FILL = ("The parties further agree to the matters set out in this paragraph. " * 20) + "\n"
+AGREEMENT = (
+    "AGREEMENT AND PLAN OF MERGER\nTABLE OF CONTENTS\nSection 8.2 Termination by Either Party 70\n"
+    "Section 8.6 Termination Fee 71\nSection 9.9 Governing Law 80\n" + FILL
+    + "ARTICLE I DEFINITIONS\nSection 1.1 Definitions.\n"
+    "“Parent Termination Fee” means $35,000,000.\n“Company Permit” has the meaning set forth in Section 4.12.\n"
+    + FILL * 30
+    + "Section 8.2 Termination by Either Party. This Agreement may be terminated if the Merger has not been "
+    "consummated on or before June 30, 2027 (the “Outside Date”).\n" + FILL
+    + "Section 8.6 Termination Fee. If this Agreement is terminated, Parent shall pay the Parent Termination Fee.\n"
+    + FILL
+    + "Section 9.9 Governing Law. This Agreement is governed by the laws of the State of Delaware.\n" + FILL
+    + "EXHIBIT A\nSection 8.6 Termination Fee. EXHIBIT COPY.\n" + FILL)
+
+
+def test_headings_skip_table_of_contents_and_later_exhibits():
+    """TOC entries and exhibit copies of a section number are not the operative section."""
+    from mailroom_eda.labeling import sections
+    fee = [h for h in sections.headings(AGREEMENT) if h.number == "8.6"]
+    assert len(fee) == 1
+    assert AGREEMENT[fee[0].start:].startswith("Section 8.6 Termination Fee. If this Agreement")
+
+
+def test_locate_takes_whole_operative_section_and_its_definition():
+    """The fee amount can live only in the definitions article; it rides with the section."""
+    from mailroom_eda.labeling import sections
+    got = dict(sections.locate(AGREEMENT, sections.MERGER_NEEDS))
+    assert "Parent shall pay the Parent Termination Fee" in got["Termination Fee"]
+    assert "$35,000,000" in got["Termination Fee"] and "EXHIBIT COPY" not in got["Termination Fee"]
+    assert "laws of the State of Delaware" in got["Governing Law"]
+
+
+def test_outside_date_found_by_inline_definition():
+    from mailroom_eda.labeling import sections
+    got = dict(sections.locate(AGREEMENT, sections.MERGER_NEEDS))
+    assert "June 30, 2027" in got["Outside Date"]
+
+
+MERGER_SIGNALS = {
+    "Conversion of Shares": r"converted into the right to receive|shall be converted",
+    "Termination Fee": r"\$\s?[\d,.]+",
+    "Governing Law": r"laws of the (state|commonwealth) of",
+    "Outside Date": r"(january|february|march|april|may|june|july|august|september|october|november|december)"
+                    r"\s+\d{1,2},\s+\d{4}|\d+\)?\s+(days|months)|\d+(st|nd|rd|th)\s+day",
+}
+
+
+def test_merger_locator_finds_every_needed_section():
+    """On the 151 real mergers every needed section is located, and the excerpts carry the
+    values the fields ask for (2026-11-06: the regex window found Conversion in 23)."""
+    import re
+    from mailroom_eda.labeling import sections
+    if not runner.DEFAULT_STAGE.exists():
+        pytest.skip("no local v9.4 stage")
+    mergers = [r for r in runner.load_stage(runner.DEFAULT_STAGE) if r["expected"] == "merger_agreement"]
+    located, signal, misses = Counter(), Counter(), []
+    for r in mergers:
+        t = str(r["doc_text"])
+        assert len(tasks.merger_window(t)[0]) <= 120_000
+        got = dict(sections.locate(t, sections.MERGER_NEEDS))
+        for need in sections.MERGER_NEEDS:
+            if need.label in got:
+                located[need.label] += 1
+                if need.label in MERGER_SIGNALS and re.search(MERGER_SIGNALS[need.label], got[need.label], re.I):
+                    signal[need.label] += 1
+                elif need.label in MERGER_SIGNALS:
+                    misses.append((need.label, r["document_id"]))
+            else:
+                misses.append((need.label, r["document_id"]))
+    print(sorted(Counter(m[0] for m in misses).items()))
+    assert all(located[n.label] >= 140 for n in sections.MERGER_NEEDS), dict(located)
+    assert all(signal[k] >= 130 for k in MERGER_SIGNALS), dict(signal)
+
+
+def test_full_text_flag_sends_the_whole_agreement_and_changes_the_sha(tmp_path, monkeypatch):
+    """`run --full-text` (the A/B arm) sends the whole merger agreement, hashes `window: full`
+    into the prompt sha so its answers are never reused as located ones, and writes to its own
+    directory."""
+    big = AGREEMENT + FILL * 600
+    row = _row("merger_agreement", None, big)
+    located = tasks.build("merger_entities", row, "")
+    assert len(located.messages[1]["content"]) < len(big)
+    monkeypatch.setattr(tasks, "FULL_TEXT_TASKS", {"merger_entities"})
+    full = tasks.build("merger_entities", row, "")
+    assert big in full.messages[1]["content"] and full.prompt_sha256 != located.prompt_sha256
+    assert runner.chunk_name("merger_entities", "pilot", None, full_text=True) == "merger_entities-pilot-fulltext"
+    with pytest.raises(SystemExit, match="full-text applies"):
+        runner.main(["run", "--task", "intent", "--set", "calibration", "--stage", str(tmp_path),
+                     "--provider", "openrouter", "--model", "deepseek/deepseek-v4.1-flash", "--dry-run",
+                     "--full-text"])
+
+
+def test_one_model_may_run_a_calibration_set_but_not_a_labeling_set():
+    """A calibration run is scored against expert gold, so the one-model A/B arms may run it;
+    a set whose answers become labels still needs two agreeing models."""
+    rows = [_row("merger_agreement", None, AGREEMENT)]
+    ok = runner.execute(rows, rows, task="merger_consideration", set_name="calibration", chunk_spec=None,
+                        models=["deepseek/deepseek-v4.1-flash"], provider="openrouter", reasoning="off",
+                        initials=None, cap_usd=None, max_wall_seconds=None, out_dir=Path("/nonexistent"),
+                        dry_run=True)
+    assert ok == 0
+    with pytest.raises(SystemExit, match="second-model"):
+        runner.execute(rows, rows, task="merger_consideration", set_name="pending", chunk_spec=None,
+                       models=["deepseek/deepseek-v4.1-flash"], provider="openrouter", reasoning="off",
+                       initials=None, cap_usd=None, max_wall_seconds=None, out_dir=Path("/nonexistent"),
+                       dry_run=True)
+
+
+# ---------------------------------------------------------------- bake-off ranking (Task 5)
+
+def _cuad_docs(n, tp, fp, fn, start=0):
+    """n per-document CUAD records with the same counts."""
+    return [{"document_id": f"DOC-{i:04d}", "tp": tp, "fp": fp, "fn": fn} for i in range(start, start + n)]
+
+
+def _arm(model, docs, cost, reasoning="off", **gate):
+    return {"gate": {"models": [model], "reasoning": reasoning, "passed": True, "documents": len(docs),
+                     "expected_documents": len(docs), "answer_cost_usd": cost, "spent_usd": cost, **gate},
+            "docs": docs}
+
+
+def test_paired_bootstrap_is_deterministic_and_brackets_the_point():
+    a = _cuad_docs(20, 8, 2, 2) + _cuad_docs(20, 6, 3, 3, start=20)
+    b = _cuad_docs(20, 9, 1, 1) + _cuad_docs(20, 6, 3, 3, start=20)
+    one = operate.paired_bootstrap(a, b, "micro_f1")
+    assert one == operate.paired_bootstrap(a, b, "micro_f1")
+    assert one[1] <= one[0] <= one[2] and one[0] > 0
+
+
+def test_bakeoff_keeps_cheaper_deepseek_unless_costlier_is_significantly_better():
+    import random
+    rng = random.Random(1)
+    base = [{"document_id": f"DOC-{i:04d}", "tp": rng.randint(5, 10), "fp": rng.randint(0, 3), "fn": rng.randint(0, 3)}
+            for i in range(40)]
+    # a small mixed gain (some documents better, some worse): not significant
+    noisy = [dict(d, fp=max(0, d["fp"] + (-1 if i % 2 else 1) * (i % 3 == 0)), tp=d["tp"] + (i % 7 == 0))
+             for i, d in enumerate(base)]
+    cheap = _arm("deepseek/deepseek-v4.1-flash", base, 0.16)
+    pricey = _arm("deepseek/deepseek-v4.1-flash-1017", noisy, 0.31)
+    rank = operate.bakeoff_ranking([cheap, pricey, _arm("openai/gpt-6-luna-pro", base, 0.12)], "micro_f1")
+    assert rank["primary"]["gate"]["models"] == ["deepseek/deepseek-v4.1-flash"]
+    # a gain on every document is significant: the costlier snapshot wins
+    better = _arm("deepseek/deepseek-v4.1-flash-1017", [dict(d, fp=0, fn=0) for d in base], 0.31)
+    rank = operate.bakeoff_ranking([cheap, better, _arm("openai/gpt-6-luna-pro", base, 0.12)], "micro_f1")
+    assert rank["primary"]["gate"]["models"] == ["deepseek/deepseek-v4.1-flash-1017"]
+
+
+def test_bakeoff_second_opinion_must_be_non_inferior_and_another_vendor():
+    base = _cuad_docs(40, 8, 1, 1)
+    worse = _cuad_docs(40, 6, 3, 3)  # about 0.2 F1 worse on every document
+    arms = [_arm("deepseek/deepseek-v4.1-flash", base, 0.16),
+            _arm("deepseek/deepseek-v4.1-flash-1017", base, 0.31),
+            _arm("anthropic/claude-haiku-5.5", worse, 0.05),
+            _arm("openai/gpt-6-luna-pro", base, 0.12),
+            _arm("minimax/minimax-m3.1-flash", base, 0.19, reasoning="low")]
+    rank = operate.bakeoff_ranking(arms, "micro_f1")
+    assert rank["second"]["gate"]["models"] == ["openai/gpt-6-luna-pro"]  # cheapest non-inferior
+    row = next(r for r in rank["table"] if r["model"] == "anthropic/claude-haiku-5.5")
+    assert row["excluded"] == "clearly worse"
+    assert all(r["model"] != "deepseek/deepseek-v4.1-flash-1017" or not r["second"] for r in rank["table"])
+
+
+def test_bakeoff_ignores_incomplete_and_unpinned_arms():
+    base = _cuad_docs(40, 7, 2, 2)
+    short = _arm("deepseek/deepseek-v4.1-flash-1017", _cuad_docs(30, 10, 0, 0), 0.01)
+    short["gate"]["expected_documents"] = 40
+    off_pin = _arm("openai/gpt-6-luna-pro", _cuad_docs(40, 10, 0, 0), 0.01, served_outside_pin=["Azure"])
+    rank = operate.bakeoff_ranking([_arm("deepseek/deepseek-v4.1-flash", base, 0.16), short, off_pin,
+                                    _arm("anthropic/claude-haiku-5.5", base, 0.12)], "micro_f1")
+    assert rank["primary"]["gate"]["models"] == ["deepseek/deepseek-v4.1-flash"]
+    reasons = {r["model"]: r["eligible"] for r in rank["table"]}
+    assert reasons["deepseek/deepseek-v4.1-flash-1017"].startswith("incomplete")
+    assert reasons["openai/gpt-6-luna-pro"].startswith("served outside pin")
+    assert rank["second"]["gate"]["models"] == ["anthropic/claude-haiku-5.5"]
+
+
+def test_bakeoff_has_no_second_when_none_is_non_inferior(tmp_path, monkeypatch, capsys):
+    import argparse
+    base = _cuad_docs(40, 8, 1, 1)
+    arms = [_arm("deepseek/deepseek-v4.1-flash", base, 0.16), _arm("openai/gpt-6-luna-pro", _cuad_docs(40, 5, 4, 4), 0.12)]
+    rank = operate.bakeoff_ranking(arms, "micro_f1")
+    assert rank["second"] is None
+    monkeypatch.setattr(operate, "bakeoff_arms", lambda name, chunk_id, out: (arms, "micro_f1"))
+    args = argparse.Namespace(campaign="v10", id="1", out=tmp_path, margin=0.05)
+    assert operate.cmd_bakeoff(args) == 1
+    saved = json.loads((tmp_path / "1.bakeoff.json").read_text())
+    assert saved["second"] is None and saved["primary"]["model"] == "deepseek/deepseek-v4.1-flash"
+
+
+def test_intent_bootstrap_uses_kappa():
+    gold = ["notice", "request", "update", "other"] * 24
+    a = [{"document_id": f"D{i}", "gold": g, "pred": g if i % 5 else "other"} for i, g in enumerate(gold)]
+    b = [{"document_id": f"D{i}", "gold": g, "pred": g} for i, g in enumerate(gold)]
+    point, lo, hi = operate.paired_bootstrap(a, b, "cohen_kappa")
+    assert lo > 0 and point > 0
+
+
+def test_approving_a_bakeoff_arm_follows_the_bakeoff_pick(tmp_path):
+    """The approved arm becomes winner_of_<id>: it must be the arm the bake-off picked."""
+    entry = {"id": "1", "task": "cuad"}
+    res = {"models": ["openai/gpt-6-luna-pro"], "reasoning": "off"}
+    with pytest.raises(SystemExit, match="labeling bakeoff 1"):
+        operate.bakeoff_guard("v10", entry, res, tmp_path)
+    (tmp_path / "1.bakeoff.json").write_text(json.dumps(
+        {"primary": {"model": "deepseek/deepseek-v4.1-flash", "reasoning": "off", "arm": 3}}))
+    with pytest.raises(SystemExit, match="bake-off picked deepseek"):
+        operate.bakeoff_guard("v10", entry, res, tmp_path)
+    operate.bakeoff_guard("v10", {"id": "1h"}, {"models": ["deepseek/deepseek-v4.1-flash"], "reasoning": "off"},
+                          tmp_path)  # the holdout follows chunk 1's pick
+    operate.bakeoff_guard("v10", entry, res, tmp_path, override=True)
+    operate.bakeoff_guard("v10", {"id": "4"}, res, tmp_path)  # one arm: not a bake-off
+
+
+# ---------------------------------------------------------------- inspect report (Task 6)
+
+def test_inspect_report_shows_gold_answers_and_quote_context():
+    """Disagreements come first; both answers, the gold, the quote in context, and an
+    unlocatable quote marked NOT FOUND."""
+    agree = _row("correspondence", None, "Please pay invoice 7 by Friday or we will sue.",
+                 gt={"intent": "payment_demand"}, fn="a.txt")
+    split = _row("correspondence", None, "The board meeting moved to Tuesday at noon.",
+                 gt={"intent": "update"}, fn="b.txt")
+    recs = [
+        {"document_id": tasks._ids(agree)[0], "filename": "a.txt", "model": "m",
+         "pass_a": {"intent": "payment_demand", "confidence": 0.9, "evidence": "pay invoice 7"},
+         "pass_b": {"intent": "payment_demand", "confidence": 0.9, "evidence": "pay invoice 7"}},
+        {"document_id": tasks._ids(split)[0], "filename": "b.txt", "model": "m",
+         "pass_a": {"intent": "meeting_invite", "confidence": 0.6, "evidence": "board meeting moved"},
+         "pass_b": {"intent": "update", "confidence": 0.7, "evidence": "this sentence is not in the email"}}]
+    calls = [{"document_id": tasks._ids(split)[0], "served_provider": "CoreWeave", "variant": "a"}]
+    md = operate.inspect_report([agree, split], recs, "intent", n=2, calls=calls)
+    first, second = md.index(tasks._ids(split)[0]), md.index(tasks._ids(agree)[0])
+    assert first < second  # the disagreement is read first
+    assert "meeting_invite" in md and "gold: `update`" in md and "CoreWeave" in md
+    assert "The **board meeting moved** to Tuesday at noon" in md
+    assert "NOT FOUND" in md
+
+
+def test_skipped_arm_neither_runs_nor_costs_nor_ranks(tmp_path):
+    """A bake-off arm marked skip: keeps its arm number (output directories stay stable),
+    refuses to run, projects $0 and ranks as ineligible."""
+    import argparse
+    camp = campaign("v10")
+    skipped = [(c, i) for i, c in enumerate((c for c in camp["chunks"] if str(c["id"]) == "3"), 1) if c.get("skip")]
+    assert [c["models"][0] for c, _ in skipped] == ["deepseek/deepseek-v4.1-flash", "openai/gpt-6-luna-pro"]
+    entry, arm = skipped[0]
+    args = argparse.Namespace(campaign="v10", id="3", arm=arm, dry_run=True, ack_requires=False,
+                              provider="openrouter", model_map=[], stage=tmp_path, initials="JB",
+                              cap_usd=None, out=tmp_path, workers=1)
+    with pytest.raises(SystemExit, match="skipped"):
+        operate.cmd_chunk(args)
+    arms, _ = operate.bakeoff_arms("v10", "3", tmp_path)
+    assert operate._ineligible(arms[arm - 1]).startswith("skipped")
+
+
+def test_full_text_lasts_one_invocation(monkeypatch):
+    """`--full-text` must not leak into a later in-process run, even one that raised."""
+    seen = []
+
+    def fake_run(args, full_text):
+        seen.append(set(tasks.FULL_TEXT_TASKS))
+        if args.dry_run:
+            raise RuntimeError("boom")
+        return 0
+
+    monkeypatch.setattr(runner, "_run", fake_run)
+    argv = ["run", "--task", "merger_entities", "--set", "pilot", "--provider", "openrouter",
+            "--model", "deepseek/deepseek-v4.1-flash", "--full-text"]
+    assert runner.main(argv) == 0
+    with pytest.raises(RuntimeError):
+        runner.main(argv + ["--dry-run"])
+    assert seen == [{"merger_entities"}, {"merger_entities"}] and tasks.FULL_TEXT_TASKS == set()
+
+
+@pytest.mark.parametrize("cap", [9_000, 12_345, 20_000])
+def test_located_window_never_exceeds_its_cap(monkeypatch, cap):
+    """Separators and the signature-page marker count against the cap too."""
+    from mailroom_eda.labeling import sections
+    monkeypatch.setattr(sections, "locate", lambda text, needs: [(f"n{i}", "x" * 2_999) for i in range(12)])
+    text = "y" * 200_000
+    window, _ = tasks._located_window(text, (), 2_000, cap, 3_000)
+    assert len(window) <= cap and window.endswith(text[-3_000:])
+    window, _ = tasks._located_window(text, (), 2_000, cap, 0)
+    assert len(window) <= cap
+
+
+def test_locate_scans_the_headings_once(monkeypatch):
+    from mailroom_eda.labeling import sections
+    calls = []
+    real = sections._all_headings
+    monkeypatch.setattr(sections, "_all_headings", lambda text: calls.append(1) or real(text))
+    sections.locate(AGREEMENT + FILL * 50, sections.MERGER_NEEDS)
+    assert len(calls) == 1
+
+
+def test_merger_ab_diff_reports_missing_documents_apart(tmp_path, monkeypatch):
+    """A document one arm never answered is listed as missing, never counted a difference."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "merger_window_ab", Path(__file__).resolve().parents[1] / "scripts/labeling/merger_window_ab.py")
+    ab = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ab)
+    monkeypatch.setattr(ab, "ROOT", tmp_path)
+    cols = ["document_id", "field", "model_a_status", "model_a_value", "model_a_evidence"]
+    loc = [{"document_id": "D1", "field": "f", "model_a_status": "present", "model_a_value": "a",
+            "model_a_evidence": "a"}]
+    full = loc + [{"document_id": "D2", "field": "f", "model_a_status": "present", "model_a_value": "b",
+                   "model_a_evidence": "b"}]
+    for d, rows in (("merger_entities-pilot", loc), ("merger_entities-pilot-fulltext", full)):
+        (tmp_path / d).mkdir()
+        export.write_csv(tmp_path / d / "fields.csv", cols, rows)
+    res = ab.entities_diff()
+    assert res["fields_differ"] == 0 and res["agreements_with_a_full_only_value"] == 0
+    assert res["documents_missing_from"] == {"located": ["D2"], "full": []}
+
+
+def test_gold_corrections_apply_and_refuse_a_moved_gold(tmp_path):
+    """Accepted corrections replace the gold the gate scores against; one whose gold_was no
+    longer matches the row, or that names no decider, is refused."""
+    row = {"filename": "a/1.", "gt_fields": {"intent": "update"}}
+    fix = {"document_id": "D", "filename": "a/1.", "field": "intent", "gold_was": "update",
+           "gold_now": "notice", "reason": "r", "decided_by": "user", "decided_utc": "t"}
+    export.write_csv(tmp_path / operate.GOLD_CORRECTIONS, operate.GOLD_CORRECTION_COLUMNS, [fix])
+    fixed, n = operate.corrected_gold([row, {"filename": "b/2.", "gt_fields": {"intent": "other"}}],
+                                      operate.gold_corrections(tmp_path))
+    assert n == 1 and fixed[0]["gt_fields"]["intent"] == "notice" and row["gt_fields"]["intent"] == "update"
+    with pytest.raises(SystemExit, match="expected 'update'"):
+        operate.corrected_gold([{"filename": "a/1.", "gt_fields": {"intent": "request"}}],
+                               operate.gold_corrections(tmp_path))
+    export.write_csv(tmp_path / operate.GOLD_CORRECTIONS, operate.GOLD_CORRECTION_COLUMNS,
+                     [fix | {"decided_by": ""}])
+    with pytest.raises(SystemExit, match="decided_by"):
+        operate.gold_corrections(tmp_path)
+    assert operate.gold_corrections(tmp_path / "none") == {}
+# ---------------------------------------------------------------- preflight: HF write, restore, requires, Modal
+
+class _WhoamiHub(_FakeHub):
+    """A fake hub whose token is described by ``whoami``."""
+
+    def __init__(self, role, *, name="Lucius-Morningstar", orgs=(), scoped=(), private=True, exists=True):
+        super().__init__(private=private)
+        self.info = {"name": name, "orgs": list(orgs),
+                     "auth": {"accessToken": {"role": role, "fineGrained": {"scoped": list(scoped)}}}}
+        self.exists = exists
+
+    def whoami(self):
+        return self.info
+
+    def repo_info(self, repo_id, repo_type):
+        if not self.exists:
+            class RepositoryNotFoundError(Exception):
+                pass
+            raise RepositoryNotFoundError(repo_id)
+        return super().repo_info(repo_id, repo_type)
+
+
+def test_write_access_reads_the_token_role_and_namespace():
+    """Only a token that can write the staging namespace passes; an existing public repo fails."""
+    from mailroom_eda.labeling import checkpoint
+    assert checkpoint.write_access(api=_WhoamiHub("write"))[0]
+    assert not checkpoint.write_access(api=_WhoamiHub("read"))[0]
+    assert not checkpoint.write_access(api=_WhoamiHub("write", name="someone-else"))[0]
+    assert checkpoint.write_access(api=_WhoamiHub("write", name="x",
+                                                  orgs=[{"name": "Lucius-Morningstar", "roleInOrg": "write"}]))[0]
+    grant = [{"entity": {"type": "user", "name": "Lucius-Morningstar"}, "permissions": ["repo.write"]}]
+    assert checkpoint.write_access(api=_WhoamiHub("fineGrained", scoped=grant))[0]
+    assert not checkpoint.write_access(api=_WhoamiHub(
+        "fineGrained", scoped=[{"entity": {"type": "user", "name": "Lucius-Morningstar"},
+                                "permissions": ["repo.content.read"]}]))[0]
+    ok, why = checkpoint.write_access(api=_WhoamiHub("write", exists=False))
+    assert ok and "created private" in why
+    ok, why = checkpoint.write_access(api=_WhoamiHub("write", private=False))
+    assert not ok and "public" in why
+
+
+def test_paid_chunk_refuses_without_checkpoint_write_access(tmp_path, monkeypatch):
+    """A paid chunk stops before any call when its answers could not be staged."""
+    import argparse
+    from mailroom_eda.labeling import checkpoint
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [])
+    monkeypatch.setattr(checkpoint, "write_access", lambda: (False, "token role is read"))
+    args = argparse.Namespace(campaign="v10", id="1", arm=1, dry_run=False, ack_requires=False,
+                              provider="modal", model_map=[], stage=tmp_path, initials="JB",
+                              cap_usd=None, out=tmp_path, workers=1, no_checkpoint=False)
+    with pytest.raises(SystemExit, match="checkpoint not writable"):
+        operate.cmd_chunk(args)
+
+
+def test_auto_restore_fills_missing_files_and_respects_opt_out(tmp_path, monkeypatch):
+    """Commands parsed with --no-restore available pull missing staged files; opting out or no flag skips."""
+    import argparse
+    from mailroom_eda.labeling import checkpoint
+    _labels_tree(tmp_path / "labels")
+    hub = _FakeHub()
+    checkpoint.checkpoint(tmp_path / "labels", None, "x", api=hub)
+
+    def download(api, repo_id, filename, local_path):
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(hub.files[filename])
+        return local_path
+
+    monkeypatch.setattr(checkpoint.hf_interface, "download_file", download)
+    fresh = tmp_path / "fresh"
+    (fresh / "1.3_cuad-calibration").mkdir(parents=True)
+    (fresh / "1.3_cuad-calibration" / "documents.csv").write_text("local\n")
+    assert operate.auto_restore(argparse.Namespace(out=fresh), api=hub) == []  # hand-built: no flag, no restore
+    assert operate.auto_restore(argparse.Namespace(out=fresh, no_restore=True), api=hub) == []
+    wrote = operate.auto_restore(argparse.Namespace(out=fresh, no_restore=False), api=hub)
+    assert fresh / "1.3_cuad-calibration" / "calls.jsonl" in wrote
+    assert (fresh / "1.3_cuad-calibration" / "documents.csv").read_text() == "local\n"
+
+    class Broken(_FakeHub):
+        def list_repo_tree(self, **kw):
+            raise RuntimeError("offline")
+
+    assert operate.auto_restore(argparse.Namespace(out=fresh, no_restore=False), api=Broken()) == []
+    monkeypatch.setattr(checkpoint, "token_ready", lambda: False)
+    assert operate.auto_restore(argparse.Namespace(out=fresh, no_restore=False)) == []
+
+
+def test_ping_checkpoints_its_log(tmp_path, monkeypatch):
+    """A ping's log is staged right after it is written, so another machine sees the verified routes."""
+    import argparse
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-not-real")
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens):
+        return providers.Completion("{}", {"ok": True, "word": "mailroom"}, model, "P", 20, 8, 0, 0.00001,
+                                    "stop", True)
+    hub = _FakeHub()
+    args = argparse.Namespace(campaign="v10", initials="JB", cap_usd=0.05, out=tmp_path, chunks=["3"],
+                              no_checkpoint=False, checkpoint_api=hub)
+    assert operate.cmd_ping(args, chat=chat, key_status=lambda b: {"limit_remaining": None}) == 0
+    assert "labels/ping.jsonl" in hub.files and hub.commits == ["checkpoint: ping by JB"]
+
+
+def test_requires_is_met_by_the_dojo_pin(monkeypatch):
+    """llm-dojo-scoring X.Y.Z is met once fields.yaml pins at least that Dojo version."""
+    import mailroom_eda.labeling.operate as op
+    monkeypatch.setattr(op, "fields_registry", lambda: {"dojo_pin": {"version": "0.27.2"}})
+    assert not op.requires_met("llm-dojo-scoring 0.28.0 (G1)")[0]
+    assert op.requires_met(None)[0]
+    assert not op.requires_met("some other release")[0]
+    monkeypatch.setattr(op, "fields_registry", lambda: {"dojo_pin": {"version": "0.28.0"}})
+    assert op.requires_met("llm-dojo-scoring 0.28.0 (G1)")[0]
+    monkeypatch.setattr(op, "fields_registry", lambda: {"dojo_pin": {"version": "0.30.1"}})
+    assert op.requires_met("llm-dojo-scoring 0.28.0 (G1)")[0]
+    lines = op.next_chunks("v10", [{"chunk": c} for c in ("1", "2a", "2b", "2c", "3", "4")])
+    assert not any("external" in line for line in lines)
+
+
+def test_modal_check_lists_the_served_model():
+    """The Modal check needs both env vars, an app URL, and the models.yaml model on /v1/models."""
+    want = operate.modal_models()
+    env = {"VLLM_BASE_URL": "https://ws--vllm-serve.modal.run", "VLLM_API_KEY": "test-token-not-real"}
+    seen = {}
+
+    def fetch(url, headers):
+        seen.update(url=url, headers=headers)
+        return {"data": [{"id": m} for m in want]}
+
+    ok, msg = operate.modal_check(env, fetch=fetch)
+    assert ok and seen["url"].endswith(".modal.run/v1/models") and "test-token-not-real" not in msg
+    ok, msg = operate.modal_check({"VLLM_BASE_URL": env["VLLM_BASE_URL"]}, fetch=fetch)
+    assert not ok and "MODAL_VLLM_API_TOKEN" in msg
+    assert not operate.modal_check(env, fetch=lambda url, headers: {"data": [{"id": "other"}]})[0]
+    assert not operate.modal_check({**env, "VLLM_BASE_URL": "https://example.com"}, fetch=fetch)[0]
+
+
+# ---------------------------------------------------------------- sweep
+
+def test_sweep_plan_stops_at_an_unapproved_predecessor_or_requires():
+    """The plan follows campaign order, skips approved chunks and never runs past a missing approval."""
+    plan, why = operate.sweep_plan("v10", [], "9e")
+    assert {str(e["id"]) for e, _ in plan} == {"1"} and len(plan) == 7 and "1h" in why and "needs chunk 1" in why
+    approved = [{"chunk": c} for c in ("1", "1h")]
+    plan, why = operate.sweep_plan("v10", approved, "2c")
+    assert [str(e["id"]) for e, _ in plan] == ["2a", "2b", "2c"] and why == "reached 2c"
+    plan, why = operate.sweep_plan("v10", approved + [{"chunk": c} for c in ("2a", "2b", "2c", "3", "4a", "4b", "4c")], "9e")
+    assert plan == [] and "5a" in why and "not met" in why
+    plan, why = operate.sweep_plan("v10", [{"chunk": "7a"}], "7e", start="7b")
+    assert [str(e["id"]) for e, _ in plan] == ["7b", "7c", "7d", "7e"]
+    with pytest.raises(SystemExit, match="no such chunk"):
+        operate.sweep_plan("v10", [], "99")
+
+
+def _sweep_args(tmp_path, **kw):
+    import argparse
+    base = dict(campaign="v10", stage=tmp_path, out=tmp_path, through="7e", start="7b", initials="JB",
+                provider="openrouter", workers=1, model_map=[], dry_run=False, no_checkpoint=False)
+    return argparse.Namespace(**{**base, **kw})
+
+
+def test_sweep_runs_each_arm_once_confirmed_and_never_approves(tmp_path, monkeypatch):
+    """One yes runs the planned arms through cmd_chunk; a non-zero exit stops the sweep."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [{"chunk": "7a"}])
+    monkeypatch.setattr(runner, "load_stage", lambda stage: [])
+    ran = []
+    assert operate.cmd_sweep(_sweep_args(tmp_path, dry_run=True), confirm=lambda q: pytest.fail("no prompt"),
+                             run_chunk=lambda ns: pytest.fail("dry run")) == 0
+    assert operate.cmd_sweep(_sweep_args(tmp_path), confirm=lambda q: "no",
+                             run_chunk=lambda ns: pytest.fail("not confirmed")) == 1
+    assert operate.cmd_sweep(_sweep_args(tmp_path), confirm=lambda q: "yes",
+                             run_chunk=lambda ns: ran.append(ns.id) or 0) == 0
+    assert ran == ["7b", "7c", "7d", "7e"]
+    ran.clear()
+    assert operate.cmd_sweep(_sweep_args(tmp_path), confirm=lambda q: "yes",
+                             run_chunk=lambda ns: ran.append(ns.id) or (2 if ns.id == "7c" else 0)) == 2
+    assert ran == ["7b", "7c"]
+    with pytest.raises(SystemExit, match="initials"):
+        operate.cmd_sweep(_sweep_args(tmp_path, initials=None), confirm=lambda q: "yes", run_chunk=lambda ns: 0)
+    path = operate.approvals_path("v10")
+    assert not path.exists() or "7b" not in path.read_text()  # nothing approved
+
+
+# ---------------------------------------------------------------- adjudication step 10
+
+def _approved_field_chunk(tmp_path, monkeypatch, decisions):
+    """Chunk 7b approved, with a fields.csv whose final decisions are ``decisions``."""
+    entry, arm = operate.chunk_entry("v10", "7b", None)
+    d = operate.chunk_dir(tmp_path, entry, arm)
+    d.mkdir(parents=True)
+    (d / "calls.jsonl").write_text("{}\n")
+    rows = [{"document_id": f"DOC-{i}", "field": "intent", "decision": dec, "final_decision": dec,
+             "model_a_value": "x", "model_b_value": "y"} for i, dec in enumerate(decisions)]
+    export.write_csv(d / "fields.csv", export.FIELD_COLUMNS, rows)
+    export.write_csv(d / "adjudication.csv", export.FIELD_COLUMNS, [r for r in rows if r["decision"] == "adjudicate"])
+    approvals = [{"chunk": "7b", "arm": None, "reasoning": "low", "approved_by": "JB"}]
+    monkeypatch.setattr(operate, "load_approvals", lambda name: approvals)
+
+    def review(rows_, task, out_dir, reasoning=None, interim=None):
+        """Stand-in for runner.review: apply adjudication.csv verdicts to fields.csv."""
+        adj = {(r["document_id"], r["field"]): r for r in export.read_csv(out_dir / "adjudication.csv")}
+        fields = export.read_csv(out_dir / "fields.csv")
+        for f in fields:
+            v = adj.get((f["document_id"], f["field"]), {}).get("reviewer_verdict")
+            if v:
+                f["reviewer_verdict"], f["final_decision"] = v, "accept"
+        export.write_csv(out_dir / "fields.csv", export.FIELD_COLUMNS, fields)
+
+    monkeypatch.setattr(runner, "review", review)
+    monkeypatch.setattr(runner, "load_stage", lambda stage: [])
+    return d, approvals
+
+
+def test_adjudicate_lists_open_items_and_reads_verdicts_back(tmp_path, monkeypatch):
+    """open.csv lists every open item; a verdict typed there reaches the chunk and closes the item."""
+    import argparse
+    _approved_field_chunk(tmp_path, monkeypatch, ["accept", "adjudicate", "adjudicate"])
+    args = argparse.Namespace(campaign="v10", out=tmp_path, stage=tmp_path, chunk=None, no_checkpoint=True)
+    assert operate.cmd_adjudicate(args) == 0
+    open_rows = export.read_csv(tmp_path / "adjudication" / "open.csv")
+    assert [(r["chunk"], r["document_id"]) for r in open_rows] == [("7b", "DOC-1"), ("7b", "DOC-2")]
+    open_rows[0]["reviewer_verdict"] = "a"
+    export.write_csv(tmp_path / "adjudication" / "open.csv", operate.OPEN_COLUMNS, open_rows)
+    items, copied = operate.adjudication_items("v10", tmp_path, tmp_path, rows=[])
+    assert copied == 1 and [i["document_id"] for i in items] == ["DOC-2"]
+
+
+def test_adjudicate_one_chunk_keeps_other_chunks_open_rows(tmp_path, monkeypatch):
+    """`adjudicate --chunk X` rewrites only X's rows in open.csv; other chunks' verdicts survive."""
+    import argparse
+    _approved_field_chunk(tmp_path, monkeypatch, ["accept", "adjudicate"])
+    other = {c: "" for c in operate.OPEN_COLUMNS}
+    other.update(chunk="9b", document_id="DOC-9", field="entity_name", reviewer_verdict="b")
+    (tmp_path / "adjudication").mkdir(parents=True, exist_ok=True)
+    export.write_csv(tmp_path / "adjudication" / "open.csv", operate.OPEN_COLUMNS, [other])
+    args = argparse.Namespace(campaign="v10", out=tmp_path, stage=tmp_path, chunk="7b", no_checkpoint=True)
+    assert operate.cmd_adjudicate(args) == 0
+    rows = export.read_csv(tmp_path / "adjudication" / "open.csv")
+    assert ("9b", "DOC-9", "b") in [(r["chunk"], r["document_id"], r["reviewer_verdict"]) for r in rows]
+    assert ("7b", "DOC-1") in [(r["chunk"], r["document_id"]) for r in rows]
+
+
+def test_resolved_gate_passes_only_with_no_open_items(tmp_path, monkeypatch):
+    """Step 10 fails while anything is open or a needed chunk is unapproved, and records counts."""
+    entry, _ = operate.chunk_entry("v10", "10", None)
+    assert entry["task"] == "adjudication" and "9e" in entry["needs"]
+    _approved_field_chunk(tmp_path, monkeypatch, ["accept", "adjudicate"])
+    res = operate.gate_result("v10", entry, None, tmp_path, tmp_path)
+    assert not res["passed"] and res["open_items"] == 1 and res["per_chunk"] == {"7b": 1}
+    assert "9e" in res["unapproved_needs"] and (tmp_path / "adjudication" / "gate.json").exists()
+    every = [{"chunk": c, "arm": None, "reasoning": "low", "approved_by": "JB"} for c in [*entry["needs"], "0"]]
+    monkeypatch.setattr(operate, "load_approvals", lambda name: every)
+    monkeypatch.setattr(operate, "adjudication_items", lambda *a, **k: ([], 0))
+    assert operate.gate_result("v10", entry, None, tmp_path, tmp_path)["passed"]
+    assert any(line.startswith("next step: 10") for line in operate.next_chunks("v10", every))
+
+
+def test_steps_stay_out_of_costs_ping_and_sweep():
+    """Step 10 makes no model call: it is not a chunk to price, ping or sweep."""
+    camp = campaign("v10")
+    assert "10" not in {str(c["id"]) for c in camp["chunks"]}
+    plan, why = operate.sweep_plan("v10", [{"chunk": "7a"}], "7e", start="7b")
+    assert all(str(e["id"]) != "10" for e, _ in plan)
+
+
+# ---------------------------------------------------------------- interim overlay cross-check (flag only)
+
+def _overlay(root, records):
+    """A sandbox checkout with an interim overlay of ``records`` (correspondence.jsonl only)."""
+    import hashlib
+    d = root / "data/labels/interim"
+    d.mkdir(parents=True)
+    body = "".join(json.dumps(r, sort_keys=True) + "\n" for r in records)
+    (d / "correspondence.jsonl").write_text(body)
+    manifest = {"schema": "mailroom-interim-labels/v1",
+                "files": {"correspondence.jsonl": hashlib.sha256(body.encode()).hexdigest()}}
+    (d / "MANIFEST.json").write_text(json.dumps(manifest))
+    return hashlib.sha256((d / "MANIFEST.json").read_bytes()).hexdigest()
+
+
+def _interim_rec(doc_id, sha, labels):
+    return {"doc_class": "correspondence", "doc_id": doc_id, "doc_sha256": sha[:16], "labels": labels,
+            "source": {"gate_run": "extraction-gate-luna-v1.3.0"}}
+
+
+def test_interim_load_checks_integrity_and_matches_by_hash(tmp_path):
+    """Manifest and file hashes are enforced; records match on content or source content sha; derived drops."""
+    from mailroom_eda.labeling import interim
+    rows = [_row("correspondence", "attorney_demand", EMAIL_TEXT, document_id="e1", content_sha256="ab" * 32),
+            _row("correspondence", "attorney_demand", EMAIL_TEXT, document_id="e2", source_content_sha256="cd" * 32),
+            _row("correspondence", "attorney_demand", EMAIL_TEXT, document_id="e3", content_sha256="ef" * 32)]
+    sha = _overlay(tmp_path, [
+        _interim_rec("e1", "ab" * 32, {"sender": {"status": "gap_fill", "value": "alice@enron.com"},
+                                       "communication_type": {"status": "derived", "value": "email"},
+                                       "not_a_field": {"status": "gap_fill", "value": "x"}}),
+        _interim_rec("e2", "cd" * 32, {"intent": {"status": "disputed", "value": "request",
+                                                  "hub_value": "payment_demand", "hub_source": "heuristic"}}),
+        _interim_rec("e3", "00" * 32, {"sender": {"status": "gap_fill", "value": "x"}}),
+        _interim_rec("zz", "00" * 32, {"sender": {"status": "gap_fill", "value": "x"}})])
+    ov = interim.load(tmp_path, rows, manifest_sha256=sha)
+    assert set(ov.labels) == {("e1", "sender"), ("e2", "intent")}
+    assert ov.skipped == {"derived": 1, "unregistered_field": 1, "hash_mismatch": 1, "no_document": 1}
+    assert interim.load(tmp_path / "nowhere", rows) is None and interim.load(None, rows) is None
+    with pytest.raises(SystemExit, match="campaign.yaml interim_overlay"):
+        interim.load(tmp_path, rows, manifest_sha256="0" * 64)
+    (tmp_path / "data/labels/interim/correspondence.jsonl").write_text("{}\n")
+    with pytest.raises(SystemExit, match="differs from MANIFEST.json"):
+        interim.load(tmp_path, rows)
+
+
+def _reviewed_with_overlay(tmp_path, rows, sender_value):
+    """Run a correspondence chunk where both models disagree on urgency, review it with an overlay."""
+    from mailroom_eda.labeling import interim
+    row = {**rows[2], "content_sha256": "ab" * 32}
+    req = tasks.build("correspondence", row)
+    ans = {"fields": {f: {"value": None, "status": "not_found", "evidence": ""} for f in req.fields}}
+    ans["fields"]["sender"] = {"value": "alice@enron.com", "status": "present", "evidence": "From: alice@enron.com"}
+    other = json.loads(json.dumps(ans))
+    other["fields"]["sender"] = {"value": "Alice", "status": "present", "evidence": "Alice"}
+    models = ["deepseek/deepseek-v4.1-flash", "minimax/minimax-m3.1-flash"]
+    out = tmp_path / "chunk"
+    runner.run_chunk([row], task="correspondence", models=models,
+                     backend=providers.Backend("openrouter", "u", "k"), reasoning="off",
+                     budget=spend.Budget(1.0, 3600), out_dir=out, chat=_fake_chat(dict(zip(models, (ans, other)))))
+    _overlay(tmp_path / "sandbox", [_interim_rec(row["document_id"], "ab" * 32,
+                                                 {"sender": {"status": "gap_fill", "value": sender_value}})])
+    ov = interim.load(tmp_path / "sandbox", [row])
+    summary = runner.review([row], "correspondence", out, interim=ov)
+    return row, out, ov, summary
+
+
+def test_interim_columns_flag_without_changing_decisions(tmp_path, rows):
+    """The overlay is shown beside the models; decision and adjudication are unchanged."""
+    row, out, ov, summary = _reviewed_with_overlay(tmp_path, rows, "alice@enron.com")
+    fields = {f["field"]: f for f in export.read_csv(out / "fields.csv")}
+    s = fields["sender"]
+    assert s["interim_status"] == "gap_fill" and s["interim_verified"] == "true" and s["interim_agree"] == "a"
+    assert s["decision"] == "adjudicate" and s["final_decision"] == "adjudicate" and not s["final_source"]
+    assert summary["interim"]["rows"] == 1 and summary["interim"]["verified"] == 1
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    for name in ("calls.jsonl",):
+        (plain / name).write_bytes((out / name).read_bytes())
+    runner.review([row], "correspondence", plain)
+    assert [f["decision"] for f in export.read_csv(plain / "fields.csv")] == \
+        [f["decision"] for f in export.read_csv(out / "fields.csv")]
+
+
+def test_interim_verdict_needs_a_verified_overlay_value(tmp_path, rows):
+    """reviewer_verdict interim takes the overlay value only when it is grounded, and records its source."""
+    row, out, ov, _ = _reviewed_with_overlay(tmp_path, rows, "alice@enron.com")
+    adj = export.read_csv(out / "adjudication.csv")
+    adj[[a["field"] for a in adj].index("sender")]["reviewer_verdict"] = "interim"
+    export.write_csv(out / "adjudication.csv", export.FIELD_COLUMNS, adj)
+    runner.review([row], "correspondence", out, interim=ov)
+    s = {f["field"]: f for f in export.read_csv(out / "fields.csv")}["sender"]
+    assert s["final_decision"] == "accept" and s["final_value"] == "alice@enron.com"
+    assert s["final_source"] == "interim:extraction-gate-luna-v1.3.0"
+    with pytest.raises(SystemExit, match="--sandbox"):
+        runner.review([row], "correspondence", out)  # the verdict needs the overlay loaded
+
+    row2, out2, ov2, _ = _reviewed_with_overlay(tmp_path / "ungrounded", rows, "Mallory Not In Text")
+    s2 = {f["field"]: f for f in export.read_csv(out2 / "fields.csv")}["sender"]
+    assert s2["interim_verified"] == "false" and s2["interim_agree"] == "none"
+    adj = export.read_csv(out2 / "adjudication.csv")
+    adj[[a["field"] for a in adj].index("sender")]["reviewer_verdict"] = "interim"
+    export.write_csv(out2 / "adjudication.csv", export.FIELD_COLUMNS, adj)
+    with pytest.raises(SystemExit, match="not grounded"):
+        runner.review([row2], "correspondence", out2, interim=ov2)
+
+
+def test_interim_overlay_is_pinned_in_the_campaign():
+    """campaign.yaml pins the overlay manifest the cross-check was written against."""
+    pin = campaign("v10")["interim_overlay"]
+    assert len(pin["manifest_sha256"]) == 64 and pin["sandbox_commit"]
+
+
+def test_sweep_plan_leaves_out_skipped_arms_but_keeps_their_numbers():
+    """Chunk 3's ``skip:`` arms are not planned (no spend, no refusal mid-sweep); the
+    others keep the arm numbers their output folders use."""
+    plan, _ = operate.sweep_plan("v10", [], "3", start="3")
+    camp = [c for c in campaign("v10")["chunks"] if str(c["id"]) == "3"]
+    expected = [i for i, c in enumerate(camp, 1) if not c.get("skip")]
+    assert [arm for _, arm in plan] == expected and len(expected) < len(camp)
+    assert not any(c.get("skip") for c, _ in plan)
+
+
+def _lockstep_fixture(tmp_path, *, version_slot, vendored="0.28.0", mailroom_ref="v0.28.0", eda_commit=None):
+    """Four fake checkouts that agree except where a test says otherwise."""
+    eda, mr, sb = tmp_path / "eda", tmp_path / "mr", tmp_path / "sb"
+    sha = "1cd4aba76d82eea20c6e8dfcc0d760881bf84924"
+    _write(eda / "src/mailroom_eda/labeling/fields.yaml",
+           f'dojo_pin: {{version: "0.28.0", commit: "{eda_commit or sha}"}}\n')
+    _write(eda / "src/mailroom_eda/config.py", 'REPO_TAG = "v10"\n')
+    _write(mr / "pyproject.toml", f'"llm-dojo-scoring @ git+https://github.com/x/llm-dojo-scoring.git@{mailroom_ref}",\n')
+    _write(mr / "src/pipeline/hf_corpora.py", 'FULL_CORPUS_REVISION = "v10"\n"docclass-merged": {\n "n_docs": 3292,\n')
+    _write(sb / "src/mailroom_sandbox/cli.py",
+           f'    ("llm-dojo-scoring", "{version_slot}",\n     "https://github.com/x/llm-dojo-scoring.git", "{sha}"),\n')
+    _write(sb / "requirements/dojo-release.txt", f"llm-dojo-scoring @ git+https://github.com/x/llm-dojo-scoring.git@{sha}\n")
+    _write(sb / "vendor/llm-dojo-scoring/src/llm_dojo_scoring/__init__.py", f'__version__ = "{vendored}"\n')
+    _write(sb / "src/mailroom_sandbox/job/spec.py", 'FAMILY_HF_TAG = "v10"\nFAMILY_CORPUS_SIZE = 3292\n')
+    return eda, mr, sb, sha
+
+
+def test_check_lockstep_reads_tag_and_commit_pins(tmp_path):
+    """A ``_VENDOR_PINS`` commit pin takes its version from the vendored ``__version__``."""
+    sys.path.insert(0, str(ROOT / "src/mailroom_eda/labeling/integrations"))
+    try:
+        import check_lockstep as cl
+    finally:
+        sys.path.pop(0)
+
+    def rows(**kw):
+        """``{check: agrees}`` for one fixture."""
+        d = tmp_path / str(len(list(tmp_path.iterdir())))
+        d.mkdir()
+        eda, mr, sb, _ = _lockstep_fixture(d, **kw)
+        return {c: ok for c, _, ok in cl.table(eda, mr, sb, rows=3292)}
+
+    sha = "1cd4aba76d82eea20c6e8dfcc0d760881bf84924"
+    assert all(rows(version_slot="v0.28.0").values())
+    assert all(rows(version_slot=sha).values())                      # commit pin, vendored 0.28.0
+    assert all(rows(version_slot=sha, mailroom_ref=sha).values())    # llm-mailroom pins the commit too
+    assert not rows(version_slot=sha, vendored="0.27.2")["Dojo release version"]
+    assert not rows(version_slot="f" * 40)["Dojo commit"]            # pin ref and frozen sha differ
+    assert not rows(version_slot=sha, eda_commit=sha[:12])["Dojo commit"]  # full shas only
+
+
+def test_inspect_reads_the_corrected_gold(tmp_path, monkeypatch):
+    """inspect.md shows the gold the gate scores against: corrections in the labels root apply."""
+    row = _row("correspondence", None, "Re-order your contact lenses online today.",
+               gt={"intent": "request"}, fn="c/618.")
+    d = tmp_path / "3.3_intent-calibration"
+    d.mkdir()
+    export.write_csv(tmp_path / operate.GOLD_CORRECTIONS, operate.GOLD_CORRECTION_COLUMNS,
+                     [{"document_id": tasks._ids(row)[0], "filename": "c/618.", "field": "intent",
+                       "gold_was": "request", "gold_now": "other", "reason": "marketing",
+                       "decided_by": "user", "decided_utc": "t"}])
+    rec = {"document_id": tasks._ids(row)[0], "filename": "c/618.", "model": "m",
+           "pass_a": {"intent": "other", "confidence": 0.9, "evidence": "Re-order"},
+           "pass_b": {"intent": "other", "confidence": 0.9, "evidence": "Re-order"}}
+    (d / "intent-labels.jsonl").write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    monkeypatch.setattr(runner, "load_stage", lambda stage: [row])
+    operate.cmd_inspect(type("A", (), {"dir": str(d), "stage": tmp_path, "n": 5})())
+    md = (d / "inspect.md").read_text(encoding="utf-8")
+    assert "gold: `other`" in md and "0 disagree" in md
+
+
+@pytest.mark.parametrize("existing,subtype,answers,decision,new", [
+    ("update", "email", ["notice"] * 4, "change", "notice"),
+    ("notice", "notice", ["notice"] * 4, "confirm", "notice"),
+    ("update", "press_release", ["update"] * 4, "adjudicate", ""),   # the subtype disagrees
+    ("request", "demand", ["request"] * 4, "confirm", "request"),     # a demand need not be a payment
+    ("payment_demand", "attorney_demand", ["request"] * 4, "change", "request"),
+    ("update", "email", ["update", "notice", "update", "update"], "keep", "update"),
+    ("other", "email", ["update", "notice", "update", "update"], "adjudicate", ""),
+    ("update", "meeting_request", ["update", "meeting_invite"] * 2, "adjudicate", ""),
+])
+def test_relabel_decision(existing, subtype, answers, decision, new):
+    """Only a unanimous answer that fits the subtype is written; a split keeps the existing
+    label when one answer is it; a subtype conflict is read by a person."""
+    got = operate.relabel_decision(existing, subtype, answers)
+    assert got[:2] == (decision, new)
+
+
+def test_relabel_set_is_every_machine_made_intent():
+    rows = [_row("correspondence", "email", "x", {"intent_status": s}, fn=f"{s}.") for s in
+            ("manual", "auto_labeled", "flagged_review")] + [_row("contract", None, "x", fn="c.")]
+    assert [r["filename"] for r in runner.select(rows, "intent", "relabel")] == ["auto_labeled.", "flagged_review."]
+
+
+def test_intent_relabel_gate_needs_both_models_and_every_adjudication_decided(tmp_path):
+    a = _row("correspondence", "email", "x", {"intent": "update", "intent_source": "llm_zero_shot"}, fn="a.",
+             split="train")
+    b = _row("correspondence", "press_release", "y", {"intent": "update", "intent_source": "heuristic"}, fn="b.",
+             split="train")
+    models = ["deepseek/m", "anthropic/h"]
+
+    def rec(row, model, x, y):
+        return {"document_id": tasks._ids(row)[0], "filename": row["filename"], "model": model,
+                "pass_a": {"intent": x, "evidence": "q"}, "pass_b": {"intent": y, "evidence": "q"}}
+    recs = [rec(a, m, "notice", "notice") for m in models] + [rec(b, models[0], "update", "update")]
+    path = tmp_path / "intent-labels.jsonl"
+    path.write_text("".join(json.dumps(r) + "\n" for r in recs), encoding="utf-8")
+    res = operate.gate_intent_relabel([a, b], tmp_path, models, signed_off=True)
+    assert res["unanswered_documents"] == 1 and not res["passed"]
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec(b, models[1], "update", "update")) + "\n")
+    res = operate.gate_intent_relabel([a, b], tmp_path, models, signed_off=True)
+    assert res["decisions"] == {"change": 1, "adjudicate": 1} and res["open_adjudications"] == 1
+    assert not res["passed"]
+    rows = export.read_csv(tmp_path / "decisions.csv")
+    for r in rows:
+        if r["decision"] == "adjudicate":
+            r["reviewer_decision"] = "press_communication"
+    export.write_csv(tmp_path / "decisions.csv", operate.RELABEL_COLUMNS, rows)
+    assert not operate.gate_intent_relabel([a, b], tmp_path, models, signed_off=False)["passed"]
+    res = operate.gate_intent_relabel([a, b], tmp_path, models, signed_off=True)
+    assert res["passed"]  # the reviewer's decision survived the re-gate
+
+
+def test_relabel_never_writes_a_test_split_change_without_a_person(tmp_path):
+    """The test split scores models later: a change the two models agree on is only proposed
+    there, and its adjudication needs a person's initials."""
+    t = _row("correspondence", "email", "x", {"intent": "update", "intent_source": "llm_zero_shot"}, fn="t.")
+    models = ["deepseek/m", "anthropic/h"]
+    recs = [{"document_id": tasks._ids(t)[0], "filename": "t.", "model": m,
+             "pass_a": {"intent": "notice", "evidence": "q"}, "pass_b": {"intent": "notice", "evidence": "q"}}
+            for m in models]
+    (tmp_path / "intent-labels.jsonl").write_text("".join(json.dumps(r) + "\n" for r in recs), encoding="utf-8")
+    res = operate.gate_intent_relabel([t], tmp_path, models, signed_off=True)
+    row = export.read_csv(tmp_path / "decisions.csv")[0]
+    assert res["decisions"] == {"adjudicate": 1} and row["new_intent"] == "" and "notice" in row["reason"]
+    row["reviewer_decision"] = "notice"
+    export.write_csv(tmp_path / "decisions.csv", operate.RELABEL_COLUMNS, [row])
+    res = operate.gate_intent_relabel([t], tmp_path, models, signed_off=True)
+    assert res["test_adjudications_without_initials"] == 1 and not res["passed"]
+    row["reviewed_by"] = "JJB"
+    export.write_csv(tmp_path / "decisions.csv", operate.RELABEL_COLUMNS, [row])
+    assert operate.gate_intent_relabel([t], tmp_path, models, signed_off=True)["passed"]
+
+
+def test_intent_relabel_runs_exactly_two_models():
+    rows = [_row("correspondence", "email", "Please send the report.", {"intent_status": "auto_labeled"})]
+    kw = dict(task="intent", chunk_spec=None, provider="openrouter", reasoning="off", initials=None, cap_usd=None,
+              max_wall_seconds=None, out_dir=Path("/nonexistent"), dry_run=True)
+    two = ["deepseek/deepseek-v4.1-flash-1017", "anthropic/claude-haiku-5.5"]
+    assert runner.execute(rows, rows, set_name="relabel", models=two, **kw) == 0
+    with pytest.raises(SystemExit, match="second-model"):
+        runner.execute(rows, rows, set_name="relabel", models=two[:1], **kw)
+    with pytest.raises(SystemExit, match="runs one model"):
+        runner.execute(rows, rows, set_name="flagged", models=two, **kw)
+
+
+def test_a_winner_approved_on_another_prompt_does_not_run(monkeypatch):
+    """A prompt edit after a bake-off approval needs a new calibration before the winner is used."""
+    row = _row("correspondence", "email", "Please send the report.", {"intent_status": "auto_labeled"})
+    want = tasks.build("intent", row, "a", set_name="relabel").prompt_sha256
+    entry = {"id": "4a", "task": "intent", "set": "relabel", "models": ["winner_of_3", "anthropic/claude-haiku-5.5"],
+             "reasoning": "winner_of_3"}
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [{"chunk": "3", "prompt_sha256": ["old"]}])
+    assert "re-run chunk 3" in operate.stale_winner("v10", entry, [row])
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [{"chunk": "3", "prompt_sha256": ["old", want]}])
+    assert operate.stale_winner("v10", entry, [row]) == ""
+    assert operate.stale_winner("v10", {**entry, "models": ["m"], "reasoning": "off"}, [row]) == ""
+
+
+def test_cuad_inspect_reads_string_gold_spans():
+    assert operate._span_text("the licensee shall not") == "the licensee shall not"
+    assert operate._span_text({"text": "a span"}) == "a span" and operate._span_text(None) == ""
+
+
+def test_no_step_or_chunk_needs_a_skipped_chunk():
+    """A skipped chunk is never approved, so anything that needs it could never start."""
+    camp = campaign("v10")
+    skipped = {str(c["id"]) for c in camp["chunks"] if c.get("skip")
+               and all(o.get("skip") for o in camp["chunks"] if str(o["id"]) == str(c["id"]))}
+    for c in [*camp["chunks"], *(camp.get("steps") or [])]:
+        assert not skipped & {str(n) for n in c.get("needs") or []}, (c["id"], skipped)

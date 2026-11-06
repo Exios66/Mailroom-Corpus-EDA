@@ -1112,12 +1112,24 @@ def _queue_row(row: Mapping[str, Any], purpose: str) -> dict:
 def cuad_calibration_sample(rows: Sequence[Mapping[str, Any]], n: int = CUAD_CALIBRATION_SAMPLE) -> list[Mapping]:
     """Stratified (by subclass) deterministic sample of golden CUAD rows that
     fit the 32k window — the same envelope the EX-10 pass ran in."""
+    return _cuad_stratified(rows, n, RANDOM_STATE, frozenset())
+
+
+def cuad_holdout_sample(rows: Sequence[Mapping[str, Any]], n: int = CUAD_CALIBRATION_SAMPLE) -> list[Mapping]:
+    """A second stratified sample from the same golden pool, disjoint from calibration:
+    a prompt revised on calibration failures must also pass on contracts it never saw."""
+    cal = frozenset(r["filename"] for r in cuad_calibration_sample(rows))
+    return _cuad_stratified(rows, n, RANDOM_STATE + 1, cal)
+
+
+def _cuad_stratified(rows: Sequence[Mapping[str, Any]], n: int, seed: int,
+                     exclude: frozenset) -> list[Mapping]:
     pool = [r for r in rows if r["expected"] == "contract" and r["source_corpus"] == GOLDEN_CUAD_SOURCE
-            and (r["gt_fields"].get("context_window_band") or "") != ">32k"]
+            and (r["gt_fields"].get("context_window_band") or "") != ">32k" and r["filename"] not in exclude]
     by_sub: dict[str, list] = defaultdict(list)
     for r in sorted(pool, key=lambda r: r["filename"]):
         by_sub[r.get("expected_subclass") or ""].append(r)
-    rng = random.Random(RANDOM_STATE)
+    rng = random.Random(seed)
     for v in by_sub.values():
         rng.shuffle(v)
     picked: list[Mapping] = []
