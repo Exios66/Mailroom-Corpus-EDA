@@ -38,6 +38,10 @@ TAIL_CHARS = 16_000
 #: document past about 100k tokens (one 616k-character EX-10 exhibit) is still windowed.
 CUAD_HEAD_CHARS = 360_000
 CUAD_TAIL_CHARS = 40_000
+#: Contract entities read as much as CUAD does: a 64k-character window cut the middle out of
+#: 140 of 597 contracts, where a clause both models then miss was recorded as absent (2026-11-06).
+CONTRACT_HEAD_CHARS = CUAD_HEAD_CHARS
+CONTRACT_TAIL_CHARS = CUAD_TAIL_CHARS
 MERGER_HEAD_CHARS = 24_000
 CONSIDERATION_HEAD_CHARS = 6_000
 #: Tasks whose ``deterministic`` field is asked on every row, so the derivable rows serve
@@ -307,7 +311,14 @@ def build_contract_entities(row: Mapping[str, Any], *, expert_hints: bool = True
         "family_definition": fam.get("definition") or "no family definition",
         "party_roles": ", ".join(vocabulary("contract_party_role")),
         "family_field_hints": hints, "expert_span_hints": spans,
-    })
+    }, window(str(row["doc_text"]), CONTRACT_HEAD_CHARS, CONTRACT_TAIL_CHARS),
+        {"window": [CONTRACT_HEAD_CHARS, CONTRACT_TAIL_CHARS]})
+
+
+def reads_in_part(row: Mapping[str, Any], task: str) -> bool:
+    """True when ``task`` shows the model only part of ``row``'s text, so finding nothing
+    is not evidence of absence (contract entities only, as approved 2026-11-06)."""
+    return task == "contract_entities" and len(str(row["doc_text"])) > CONTRACT_HEAD_CHARS + CONTRACT_TAIL_CHARS
 
 
 _SPAN_HINT_CATEGORIES = ("Document Name", "Parties", "Agreement Date", "Effective Date", "Expiration Date",

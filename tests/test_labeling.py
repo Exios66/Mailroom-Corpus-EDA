@@ -832,7 +832,7 @@ def test_campaign_needs_order_and_output_dirs():
             assert d not in seen_dirs, d
             seen_dirs.add(d)
     # $30 plus the 904-email intent relabel the user added on 2026-11-06 (caps $1.95)
-    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 31.5
+    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 33.5  # +$1.85 of 5b-5e cap for whole-contract reading (approved 2026-11-06)
 
 
 def test_every_cap_covers_its_projection_with_headroom():
@@ -2778,3 +2778,30 @@ def test_no_step_or_chunk_needs_a_skipped_chunk():
                and all(o.get("skip") for o in camp["chunks"] if str(o["id"]) == str(c["id"]))}
     for c in [*camp["chunks"], *(camp.get("steps") or [])]:
         assert not skipped & {str(n) for n in c.get("needs") or []}, (c["id"], skipped)
+
+
+def test_contract_entities_reads_long_contracts_in_full(rows):
+    """Contract entities see up to the CUAD window, so a 100k-character middle is read."""
+    filler = "x" * 50_000
+    row = {**rows[0], "doc_text": rows[0]["doc_text"] + filler + " PAYMENT-MIDDLE-MARKER " + filler}
+    assert "PAYMENT-MIDDLE-MARKER" in tasks.build("contract_entities", row, set_name="pilot").messages[1]["content"]
+    huge = {**rows[0], "doc_text": rows[0]["doc_text"] + "x" * 500_000}
+    assert "omitted" in tasks.build("contract_entities", huge, set_name="pilot").messages[1]["content"]
+
+
+def test_a_contract_read_in_part_records_no_absence(rows):
+    """Both models finding nothing in a windowed contract leaves the field pending, not absent."""
+    models = ["z-ai/glm-5.3-flashx-legal", "deepseek/deepseek-v4.1-flash"]
+    short = rows[0]
+    long_ = {**rows[0], "document_id": "c2", "filename": "c2.txt", "doc_text": rows[0]["doc_text"] + "x" * 500_000}
+    calls = []
+    for r in (short, long_):
+        fields = {n: {"value": None, "status": "not_found", "evidence": ""}
+                  for n in tasks._task_fields(r, "contract_entities")}
+        calls += [{"document_id": r["document_id"], "model": m, "variant": "", "provider": "openrouter", "reasoning": "off", "prompt_sha256": "p", "labeled_utc": "2026-11-06T00:00:00Z", "response": {"fields": fields}}
+                  for m in models]
+    field_rows, _ = runner.field_decisions([short, long_], calls, "contract_entities", models)
+    absent_ok = {n for n, s in tasks._task_fields(short, "contract_entities").items() if s["absence"] == "absent_ok"}
+    by = {(f["document_id"], f["field"]): f["decision"] for f in field_rows}
+    assert {by[("c1", n)] for n in absent_ok} == {"absent"}
+    assert {by[("c2", n)] for n in absent_ok} == {"unlabeled"}
