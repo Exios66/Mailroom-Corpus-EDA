@@ -295,9 +295,15 @@ def test_every_class_record_fits_its_arrow_schema():
         assert table.column_names == list(v10.class_schema(d["expected"]).names)
 
 
-def test_default_record_is_blind_and_drops_build_internal_and_label_derived_metadata():
+def test_default_record_is_blind_and_carries_no_metadata():
+    """Metadata gives away class, subclass and some gold values, so the blind config has none."""
     rec = v10.default_record(v10.derive_row(contract_row()))
-    assert list(rec) == ["filename", "document_id", "doc_text", "prompt", "metadata"]
+    assert list(rec) == ["filename", "document_id", "doc_text", "prompt"]
+
+
+def test_source_metadata_record_drops_build_internal_and_label_derived_keys():
+    rec = v10.source_metadata_record(v10.derive_row(contract_row()))
+    assert list(rec) == ["document_id", "filename", "metadata"]
     for k in ("built_by", "sample_method", "source_provenance", "maud_categories", "applicable_categories"):
         assert k not in rec["metadata"]
     assert rec["metadata"]["subject"] == "hi"

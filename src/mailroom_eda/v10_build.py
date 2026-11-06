@@ -368,19 +368,30 @@ def class_schema(cls: str):
 # default (blind), routing, long tables, legacy
 # ---------------------------------------------------------------------------
 
-#: Metadata keys the blind ``default`` config drops: build bookkeeping, and two keys
-#: derived from the clause annotations (per-document MAUD category counts; the CUAD
-#: category list), which would leak label information to a blind scorer.
+#: Metadata keys ``source_metadata`` drops: build bookkeeping, and two keys derived
+#: from the clause annotations (per-document MAUD category counts; the CUAD category
+#: list).
 DROPPED_METADATA_KEYS = frozenset({"built_by", "sample_method", "source_provenance",
                                    "maud_categories", "applicable_categories"})
-DEFAULT_COLUMNS = ("filename", "document_id", "doc_text", "prompt", "metadata")
+#: The blind ``default`` config carries no metadata at all. In v9.x its metadata gave
+#: away the class (which keys are non-empty), the subclass (``category``, ``lob``,
+#: ``claim_subtype``, ``exhibit_description``) and some gold values
+#: (``source_row_id`` == ``claim_number``), so a model could answer without reading
+#: the text. Metadata moves to the non-blind ``source_metadata`` config.
+DEFAULT_COLUMNS = ("filename", "document_id", "doc_text", "prompt")
+SOURCE_METADATA_COLUMNS = ("document_id", "filename", "metadata")
 
 
 def default_record(row: Mapping[str, Any]) -> dict[str, Any]:
-    """The blind ``default`` record: text and label-free metadata only."""
-    md = {k: v for k, v in (row.get("metadata") or {}).items() if k not in DROPPED_METADATA_KEYS}
+    """The blind ``default`` record: the text and join keys only."""
     return {"filename": row["filename"], "document_id": row["document_id"], "doc_text": row["doc_text"],
-            "prompt": "", "metadata": md}
+            "prompt": ""}
+
+
+def source_metadata_record(row: Mapping[str, Any]) -> dict[str, Any]:
+    """The non-blind ``source_metadata`` record: source metadata minus build-internal keys."""
+    md = {k: v for k, v in (row.get("metadata") or {}).items() if k not in DROPPED_METADATA_KEYS}
+    return {"document_id": row["document_id"], "filename": row["filename"], "metadata": md}
 
 
 def routing_record(row: Mapping[str, Any], rec: Mapping[str, Any] | None = None) -> dict[str, Any]:
