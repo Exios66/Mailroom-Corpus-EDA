@@ -112,7 +112,7 @@ def build_payload(provider: str, model: str, messages: Sequence[Mapping[str, str
     """
     if reasoning not in REASONING:
         raise ValueError(f"reasoning must be one of {REASONING}")
-    route = dict(route or {})
+    route = effective_route(route, reasoning)
     body: dict[str, Any] = {
         "model": model,
         "messages": [dict(m) for m in messages],
@@ -140,6 +140,30 @@ def build_payload(provider: str, model: str, messages: Sequence[Mapping[str, str
     else:
         body["chat_template_kwargs"] = {"enable_thinking": reasoning != "off"}
     return body
+
+
+def effective_route(route: Mapping[str, Any] | None, reasoning: str) -> dict[str, Any]:
+    """The route for one reasoning level: ``by_reasoning[<level>]`` overlays the base keys.
+
+    Pinning providers per level matters because they do not honour reasoning alike (on
+    2026-11-06 one DeepSeek provider spent 0 reasoning tokens at ``low``, another 241),
+    so a calibration covers only the providers that serve its level.
+    """
+    route = dict(route or {})
+    overlay = (route.pop("by_reasoning", None) or {}).get(reasoning) or {}
+    return {**route, **overlay}
+
+
+def _slug(name: str) -> str:
+    return "".join(ch for ch in str(name).lower() if ch.isalnum())
+
+
+def served_outside_route(route: Mapping[str, Any] | None, reasoning: str, served: Any) -> list[str]:
+    """Served provider names (display names such as ``CoreWeave``) outside the route's ``only`` pin."""
+    only = {_slug(p) for p in effective_route(route, reasoning).get("only") or []}
+    if not only:
+        return []
+    return sorted(str(p) for p in served if p and _slug(p) not in only)
 
 
 def model_route(model: str) -> dict[str, Any]:

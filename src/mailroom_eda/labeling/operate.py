@@ -204,7 +204,8 @@ def ping_problems(log: Sequence[Mapping[str, Any]], routes: Sequence[tuple[str, 
     now = now or datetime.now(timezone.utc)
     out = []
     for model, reasoning in routes:
-        mine = sorted((r for r in log if r.get("model") == model and str(r.get("reasoning")) == reasoning),
+        mine = sorted((r for r in log if r.get("model") == model and str(r.get("reasoning")) == reasoning
+                       and not r.get("pinned")),
                       key=lambda r: str(r.get("utc") or ""))
         name = f"{model} reasoning={reasoning}"
         if not mine:
@@ -453,8 +454,21 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
                prompt_sha256=sorted({c["prompt_sha256"] for c in calls}),
                served_providers=sorted({c.get("served_provider") or "" for c in calls} - {""}),
                spent_usd=round(sum(c.get("cost_usd") or 0 for c in every), 4), scored_utc=_now())
+    outside = pin_violations(runner.current_prompt_calls(rows, entry["task"], calls, entry["set"]), reasoning)
+    if outside:
+        res.update(passed=False, served_outside_pin=outside)
     (out_dir / "gate.json").write_text(json.dumps(res, indent=1) + "\n", encoding="utf-8")
     return res
+
+
+def pin_violations(calls: Sequence[Mapping[str, Any]], reasoning: str) -> list[str]:
+    """``"<model> via <provider>"`` for each answer served outside its model's route pin."""
+    out: set[str] = set()
+    for c in calls:
+        for p in providers.served_outside_route(providers.model_route(c["model"]), reasoning,
+                                                {c.get("served_provider")}):
+            out.add(f"{c['model']} via {p}")
+    return sorted(out)
 
 
 def cmd_gate(args: argparse.Namespace) -> int:
@@ -710,26 +724,38 @@ def cmd_ping(args: argparse.Namespace, chat=providers.chat, key_status=providers
             {"role": "user", "content": 'Return {"ok": true, "word": "mailroom"}.'}]
     failures = 0
     log = args.out / "ping.jsonl"
+    per_provider = bool(getattr(args, "per_provider", False))
     for model, reasoning in sorted(used):
         if models_registry()["models"].get(model, {}).get("provider") != "openrouter":
             continue
-        reserved = budget.reserve(model, 50, 300)
-        rec = {"model": model, "reasoning": reasoning, "initials": args.initials, "utc": _now()}
-        try:
-            comp = chat(backend, model, msgs, PING_SCHEMA, reasoning=reasoning, max_tokens=300)
-        except providers.ProviderError as err:
-            budget.release(reserved)
-            failures += 1
-            export.append_journal(log, {**rec, "error": str(err)})
-            print(f"FAIL  {model} reasoning={reasoning}: {err}")
-            continue
-        cost = budget.settle(model, comp.prompt_tokens, comp.completion_tokens, comp.cost_usd, reserved)
-        good = comp.parsed == {"ok": True, "word": "mailroom"} and comp.used_schema
-        failures += not good
-        export.append_journal(log, {**rec, "served_provider": comp.served_provider, "served_model": comp.served_model,
-                                    "used_schema": comp.used_schema, "response": comp.parsed, "cost_usd": cost})
-        print(f"{'PASS' if good else 'FAIL'}  {model} reasoning={reasoning} via {comp.served_provider or '?'} "
-              f"schema={'strict' if comp.used_schema else 'json_object fallback'} ${cost:.6f}")
+        base = providers.effective_route(providers.model_route(model), reasoning)
+        # the route as a whole, then (with --per-provider) each pinned provider alone
+        targets: list[str | None] = [None] + (list(base.get("only") or []) if per_provider else [])
+        for pinned in targets:
+            reserved = budget.reserve(model, 50, 300 + runner.REASONING_ALLOWANCE)
+            rec = {"model": model, "reasoning": reasoning, "initials": args.initials, "utc": _now(),
+                   **({"pinned": pinned} if pinned else {})}
+            kw = {"route": {**base, "only": [pinned]}} if pinned else {}
+            name = f"{model} reasoning={reasoning}" + (f" pinned={pinned}" if pinned else "")
+            try:
+                comp = chat(backend, model, msgs, PING_SCHEMA, reasoning=reasoning,
+                            max_tokens=300 + (runner.REASONING_ALLOWANCE if reasoning != "off" else 0), **kw)
+            except providers.ProviderError as err:
+                budget.release(reserved)
+                failures += pinned is None
+                export.append_journal(log, {**rec, "error": str(err)})
+                print(f"FAIL  {name}: {err}")
+                continue
+            cost = budget.settle(model, comp.prompt_tokens, comp.completion_tokens, comp.cost_usd, reserved)
+            good = comp.parsed == {"ok": True, "word": "mailroom"} and comp.used_schema
+            failures += (not good) and pinned is None
+            export.append_journal(log, {**rec, "served_provider": comp.served_provider,
+                                        "served_model": comp.served_model, "used_schema": comp.used_schema,
+                                        "response": comp.parsed, "reasoning_tokens": comp.reasoning_tokens,
+                                        "cost_usd": cost})
+            print(f"{'PASS' if good else 'FAIL'}  {name} via {comp.served_provider or '?'} "
+                  f"schema={'strict' if comp.used_schema else 'json_object fallback'} "
+                  f"reasoning_tokens={comp.reasoning_tokens} ${cost:.6f}")
     print(f"spent ${budget.spent_usd:.6f}")
     return 1 if failures else 0
 
@@ -876,5 +902,7 @@ def add_commands(sub: Any) -> None:
     common(p)
     p.add_argument("--initials", required=True)
     p.add_argument("--cap-usd", type=float, default=0.05)
+    p.add_argument("--per-provider", action="store_true",
+                   help="also ping each pinned provider alone and log its reasoning tokens")
     p.set_defaults(operate=cmd_ping)
 

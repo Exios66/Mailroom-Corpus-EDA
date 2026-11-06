@@ -1455,3 +1455,59 @@ def test_chunk_refuses_a_paid_run_on_an_unpinged_route(tmp_path, monkeypatch):
                               cap_usd=None, out=tmp_path, workers=1)
     with pytest.raises(SystemExit, match="labeling ping"):
         operate.cmd_chunk(args)
+
+
+def test_route_can_pin_providers_per_reasoning_level():
+    """by_reasoning narrows the provider pin for one reasoning level and leaves the others alone."""
+    route = {"only": ["deepinfra", "coreweave", "inference-net"], "seed": True,
+             "by_reasoning": {"low": {"only": ["coreweave"]}}}
+    low = providers.build_payload("openrouter", "m", [{"role": "user", "content": "x"}], None,
+                                  reasoning="low", route=route)
+    off = providers.build_payload("openrouter", "m", [{"role": "user", "content": "x"}], None,
+                                  reasoning="off", route=route)
+    assert low["provider"]["only"] == ["coreweave"]
+    assert off["provider"]["only"] == ["deepinfra", "coreweave", "inference-net"]
+    assert "by_reasoning" not in low["provider"]
+
+
+def test_served_providers_outside_the_pin_are_named():
+    """Served display names (CoreWeave, Z.AI) are matched to route slugs (coreweave, z-ai)."""
+    route = {"only": ["deepinfra", "coreweave", "inference-net", "z-ai"],
+             "by_reasoning": {"low": {"only": ["coreweave"]}}}
+    assert providers.served_outside_route(route, "off", {"CoreWeave", "InferenceNet", "Z.AI"}) == []
+    assert providers.served_outside_route(route, "low", {"CoreWeave", "DeepInfra"}) == ["DeepInfra"]
+
+
+def test_pin_violations_list_answers_served_outside_their_route(monkeypatch):
+    """A gate fails when any scored answer was served by a provider outside its model's pin."""
+    monkeypatch.setattr(providers, "model_route", lambda m: {"only": ["coreweave", "deepinfra"],
+                                                            "by_reasoning": {"low": {"only": ["coreweave"]}}})
+    calls = [{"model": "m", "served_provider": "CoreWeave"}, {"model": "m", "served_provider": "DeepInfra"}]
+    assert operate.pin_violations(calls, "off") == []
+    assert operate.pin_violations(calls, "low") == ["m via DeepInfra"]
+
+
+def test_ping_per_provider_pins_each_provider_and_records_reasoning_tokens(tmp_path, monkeypatch):
+    """--per-provider sends one request pinned to each provider of a route and logs its reasoning tokens."""
+    import argparse
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.setattr(operate, "campaign", lambda name: {"chunks": [
+        {"id": "3", "models": ["deepseek/deepseek-v4.1-flash"], "reasoning": "low"}]})
+    sent = []
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens, route=None):
+        """Fake chat: reasoning only on coreweave."""
+        sent.append((model, reasoning, tuple((route or {}).get("only") or ())))
+        rt = 200 if route and route.get("only") == ["coreweave"] else 0
+        return providers.Completion('{"ok": true, "word": "mailroom"}', {"ok": True, "word": "mailroom"},
+                                    model, (route or {}).get("only", ["?"])[0], 20, 5, rt, 0.00001, "stop", True)
+
+    args = argparse.Namespace(campaign="v10", initials="JB", cap_usd=0.05, out=tmp_path, per_provider=True)
+    assert operate.cmd_ping(args, chat=chat, key_status=lambda b: {"limit_remaining": 10}) == 0
+    pinned = [s for s in sent if s[0] == "deepseek/deepseek-v4.1-flash" and s[1] == "low" and len(s[2]) == 1]
+    assert {s[2][0] for s in pinned} == {"deepinfra", "atlas-cloud", "coreweave", "inference-net"}
+    log = export.read_journal(tmp_path / "ping.jsonl")
+    cw = [r for r in log if r.get("pinned") == "coreweave" and r["reasoning"] == "low"]
+    assert cw and cw[0]["reasoning_tokens"] == 200
+    # per-provider records never decide whether the route as a whole is verified
+    assert operate.ping_problems([r for r in log if r.get("pinned")], [("deepseek/deepseek-v4.1-flash", "low")])
