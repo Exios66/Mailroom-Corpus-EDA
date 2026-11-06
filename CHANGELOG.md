@@ -8,6 +8,13 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 
 ## Unreleased
 
+- Dataset card rewritten and published to the Hub (v9.3, 2026-11-06), with a dataset `CHANGELOG.md`
+  (Keep a Changelog, SemVer for data) on the Hub; source in
+  `docs/dataset-cards/mailroom-dataset-CHANGELOG.md`. The v10 card generator's `license_name`
+  now passes the Hub metadata check, override labels count as `llm` / `reviewer`, field notes
+  fill the description column, and the card links the Hub changelog.
+  The card also states which blind `default` metadata fields reveal the class, subclass or
+  MAUD annotation counts (a v9.x limitation that v10's blind config removes).
 - v10 labeling playbook (`src/mailroom_eda/labeling/`). It is offline until a person runs a
   chunk; no dataset is regenerated or published.
   - Campaign commands read every setting from `campaigns/v10/campaign.yaml`:

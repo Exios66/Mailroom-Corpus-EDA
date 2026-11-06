@@ -18,7 +18,7 @@ from typing import Any, Mapping, Sequence
 from . import v10_build as v10
 
 REPO = "Lucius-Morningstar/mailroom-dataset"
-CHANGELOG = "https://github.com/Exios66/Mailroom-Corpus-EDA/blob/main/CHANGELOG.md"
+CHANGELOG = f"https://huggingface.co/datasets/{REPO}/blob/main/CHANGELOG.md"
 #: per-source licenses, unchanged from the v9 card
 SOURCE_LICENSES = {
     "theatticusproject/cuad": ("contract", "CUAD v1", "CC BY 4.0"),
@@ -35,7 +35,11 @@ PROVENANCE_KINDS = ("gold", "deterministic", "llm", "reviewer")
 
 
 def _kind(prov: str) -> str:
+    """Who produced a value. An override names its labeler: a two-model relabel is ``llm``;
+    a reviewer decision or an accepted gold correction is ``reviewer``."""
     p = str(prov or "")
+    if p.startswith("override:"):
+        return "llm" if p.startswith("override:relabel:") else "reviewer"
     if p.startswith("reviewer:"):
         return "reviewer"
     for k in ("gold", "deterministic", "llm"):
@@ -72,7 +76,7 @@ def stats(stage: Path) -> dict[str, Any]:
             applicable = [r for r in rows if r["presence"][name] != "not_applicable"]
             covered = sum(1 for r in applicable if r["presence"][name] in ("populated", "schema_documented_absence"))
             per[name] = {"type": spec["type"], "applicable": len(applicable), "covered": covered,
-                         "description": str(spec.get("description") or "").strip().split("\n")[0]}
+                         "description": str(spec.get("description") or spec.get("note") or "").strip().split("\n")[0]}
             for r in applicable:
                 if r["presence"][name] == "populated":
                     prov[_kind(r["provenance"][name])] += 1
@@ -92,7 +96,7 @@ def _approvals(campaign: str = "v10") -> list[dict[str, Any]]:
 
 def _yaml(s: Mapping[str, Any]) -> str:
     lines = ["---", "pretty_name: \"Mailroom Dataset v10\"", "license: other",
-             "license_name: mixed per-source licenses",
+             "license_name: mixed-per-source",
              f"license_link: https://huggingface.co/datasets/{REPO}#sources-and-licenses",
              "language:", "- en", "task_categories:", "- text-classification", "- token-classification",
              "- question-answering", "task_ids:", "- multi-class-classification", "- named-entity-recognition",
@@ -204,7 +208,7 @@ def render(stage: Path, campaign: str = "v10") -> str:
              "| v10 | typed per-class configs, blind `default`, evidence and provenance, label completion |",
              "| v9.4 | duplicate removal and label completion |",
              "| v9 (v1) | successor of mailroom-corpus v8 |", "",
-             f"Full history: [CHANGELOG]({CHANGELOG}).", "",
+             f"Release notes: [`CHANGELOG.md`]({CHANGELOG}).", "",
              "## Citation", "", "```bibtex", "@misc{mailroom_dataset,",
              "  title        = {Mailroom Dataset: An Evaluation and Ingress Simulation Corpus for Legal Document Triage},",
              "  author       = {Morningstar, Lucius},", "  year         = {2026},",
