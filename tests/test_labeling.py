@@ -837,6 +837,18 @@ def test_campaign_needs_order_and_output_dirs():
     assert sum(c["cap_usd"] for c in camp["chunks"]) <= 30.0
 
 
+def test_every_cap_covers_its_projection_with_headroom():
+    """A cap below 1.4x its projection stops the chunk before its last calls (the cap check
+    reserves the worst case per call)."""
+    stage = runner.DEFAULT_STAGE / "ground_truth_hardened.jsonl"
+    if not stage.exists():
+        pytest.skip("v9.4 stage not built (data/ is gitignored)")
+    costs = runner.campaign_costs(runner.load_stage(runner.DEFAULT_STAGE), "v10")
+    low = [(c["id"], c["projected_usd"], c["cap_usd"]) for c in costs["chunks"]
+           if c["cap_usd"] < 1.4 * c["projected_usd"] - 1e-9]
+    assert not low, low
+
+
 def test_winner_placeholders_resolve_from_approvals(tmp_path, monkeypatch):
     """Winner placeholders resolve from approvals."""
     path = tmp_path / "approved.yaml"
@@ -1801,6 +1813,8 @@ def test_checkpoint_strips_spend_but_keeps_label_names(tmp_path):
     assert "cost_usd" not in calls and "reused_cost_usd" not in calls and calls["input_sha256"] == "ab"
     labels = json.loads(staged["labels/1.3_cuad-calibration/cuad-labels.jsonl"].read_text())
     assert "Price Restrictions" in labels["labels"]
+    kept = checkpoint.scrub({"fields": {"exercise_price": "$12.50", "list_price": "x"}, "cost_usd": 1, "cost": 2})
+    assert kept == {"fields": {"exercise_price": "$12.50", "list_price": "x"}}
     runs = json.loads(staged["labels/1.3_cuad-calibration/runs.jsonl"].read_text())
     assert runs == {"projection": {}, "result": {"calls": 3}}
     assert staged["labels/1.3_cuad-calibration/documents.csv"].read_text().splitlines()[0] == '"document_id","status"'

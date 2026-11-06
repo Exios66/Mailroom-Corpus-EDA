@@ -68,8 +68,10 @@ L="env PYTHONPATH=src python -m mailroom_eda.labeling"
    instead of the tiny prompt (only the real-document probe shows whether a provider reasons:
    DeepSeek spent about 30 tokens on the tiny prompt and 336 to over 2,300 on a real email); a provider that reports 0 reasoning tokens at `low` belongs
    outside that level's `by_reasoning` pin in `models.yaml`. GLM-legal and MiniMax refuse
-   reasoning off (HTTP 400); no chunk runs them at off. Add `--chunk <id>` (repeatable) to ping
-   only the routes those chunks use, so a deferred route that is not ready yet does not block them.
+   reasoning off (HTTP 400). Chunks 5, 6 and 9 still list GLM-legal at off: they are deferred
+   until the re-plan after the bake-off (plan Task 7), so a plain `ping` fails on those routes.
+   Until then, ping only the chunks you are about to run with `--chunk <id>` (repeatable), for
+   example `--chunk 1 --chunk 1h --chunk 3` for the bake-off.
 
    Every line must say `PASS ... schema=strict`. A `json_object fallback` means that route
    stopped supporting strict schemas; stop and run `$L prices`.

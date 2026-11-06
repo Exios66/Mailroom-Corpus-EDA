@@ -32,10 +32,11 @@ STAGING_REPO = "Lucius-Morningstar/mailroom-dataset-v10-staging"
 LABELS_DIR = "labels"
 APPROVALS_FILE = "campaign/approved.yaml"
 SUFFIXES = {".jsonl", ".json", ".csv", ".md", ".yaml"}
-#: spend stays in the local logs (user directive): never staged. Matches snake_case spend
-#: keys (``cost_usd``, ``api_cost_cap_usd``, ``spent_usd``), not label names such as the
-#: CUAD category ``Price Restrictions``.
-SPEND_KEY = re.compile(r"(^|_)(cost|usd|spend|spent|price|headroom)(_|$)")
+#: spend stays in the local logs (user directive): never staged. Every spend key the
+#: labeling code writes ends in ``_usd`` (``cost_usd``, ``api_cost_cap_usd``, ``spent_usd``,
+#: ``projected_usd``) or is ``cost``; label fields such as the corporate ``exercise_price`` or
+#: the CUAD category ``Price Restrictions`` must survive.
+SPEND_KEY = re.compile(r"(^|_)usd$|^cost$")
 #: lines of a markdown or yaml note that state spend
 SPEND_LINE = re.compile(r"\$\d|\bUSD\b|(^|_)(cost|spent|headroom)(_|$|\b)", re.I)
 

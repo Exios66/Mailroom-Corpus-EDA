@@ -25,59 +25,59 @@ exact windowed prompts, typical output per call, x1.25 for retries and repairs;
 
 ## Recommended plan, chunk by chunk
 
-Projected total **$20.42**; the chunk caps add up to **$29.76**.
+Projected total **$20.42**; the chunk caps add up to **$29.95**.
 Two-model chunks are priced for both models.
 
 | chunk | task | set | slice | docs | calls | models | reasoning | projected USD | cap USD |
 |---|---|---|---|---:|---:|---|---|---:|---:|
-| 1 | cuad | calibration | all | 40 | 40 | `deepseek-v4.1-flash` | low | 0.21 | 0.35 |
-| 1 | cuad | calibration | all | 40 | 40 | `glm-5.3-flashx-legal` | low | 0.38 | 0.63 |
-| 1 | cuad | calibration | all | 40 | 40 | `deepseek-v4.1-flash` | off | 0.16 | 0.30 |
-| 1 | cuad | calibration | all | 40 | 40 | `deepseek-v4.1-flash-1017` | off | 0.31 | 0.55 |
-| 1 | cuad | calibration | all | 40 | 40 | `gpt-6-luna-pro` | off | 0.12 | 0.25 |
-| 1 | cuad | calibration | all | 40 | 40 | `claude-haiku-5.5` | off | 0.12 | 0.25 |
-| 1 | cuad | calibration | all | 40 | 40 | `minimax-m3.1-flash` | low | 0.19 | 0.35 |
-| 1h | cuad | holdout | all | 40 | 40 | `deepseek-v4.1-flash` | low | 0.22 | 0.33 |
-| 1h | cuad | holdout | all | 40 | 40 | `glm-5.3-flashx-legal` | low | 0.39 | 0.59 |
-| 1h | cuad | holdout | all | 40 | 40 | `deepseek-v4.1-flash` | off | 0.17 | 0.26 |
-| 1h | cuad | holdout | all | 40 | 40 | `deepseek-v4.1-flash-1017` | off | 0.32 | 0.48 |
-| 1h | cuad | holdout | all | 40 | 40 | `gpt-6-luna-pro` | off | 0.12 | 0.18 |
-| 1h | cuad | holdout | all | 40 | 40 | `claude-haiku-5.5` | off | 0.12 | 0.18 |
-| 1h | cuad | holdout | all | 40 | 40 | `minimax-m3.1-flash` | low | 0.19 | 0.29 |
-| 2a | cuad | pending | 1/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.29 | 0.55 |
-| 2b | cuad | pending | 2/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.30 | 0.55 |
-| 2c | cuad | pending | 3/3 | 29 | 29 | `winner_of_1` | winner_of_1 | 0.22 | 0.45 |
+| 1 | cuad | calibration | all | 40 | 40 | `deepseek-v4.1-flash` | low | 0.21 | 0.30 |
+| 1 | cuad | calibration | all | 40 | 40 | `glm-5.3-flashx-legal` | low | 0.38 | 0.55 |
+| 1 | cuad | calibration | all | 40 | 40 | `deepseek-v4.1-flash` | off | 0.16 | 0.25 |
+| 1 | cuad | calibration | all | 40 | 40 | `deepseek-v4.1-flash-1017` | off | 0.31 | 0.45 |
+| 1 | cuad | calibration | all | 40 | 40 | `gpt-6-luna-pro` | off | 0.12 | 0.20 |
+| 1 | cuad | calibration | all | 40 | 40 | `claude-haiku-5.5` | off | 0.12 | 0.20 |
+| 1 | cuad | calibration | all | 40 | 40 | `minimax-m3.1-flash` | low | 0.19 | 0.30 |
+| 1h | cuad | holdout | all | 40 | 40 | `deepseek-v4.1-flash` | low | 0.22 | 0.35 |
+| 1h | cuad | holdout | all | 40 | 40 | `glm-5.3-flashx-legal` | low | 0.39 | 0.55 |
+| 1h | cuad | holdout | all | 40 | 40 | `deepseek-v4.1-flash` | off | 0.17 | 0.25 |
+| 1h | cuad | holdout | all | 40 | 40 | `deepseek-v4.1-flash-1017` | off | 0.32 | 0.50 |
+| 1h | cuad | holdout | all | 40 | 40 | `gpt-6-luna-pro` | off | 0.12 | 0.20 |
+| 1h | cuad | holdout | all | 40 | 40 | `claude-haiku-5.5` | off | 0.12 | 0.20 |
+| 1h | cuad | holdout | all | 40 | 40 | `minimax-m3.1-flash` | low | 0.19 | 0.30 |
+| 2a | cuad | pending | 1/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.29 | 0.45 |
+| 2b | cuad | pending | 2/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.30 | 0.45 |
+| 2c | cuad | pending | 3/3 | 29 | 29 | `winner_of_1` | winner_of_1 | 0.22 | 0.35 |
 | 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash` | off | 0.05 | 0.10 |
 | 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash` | low | 0.19 | 0.30 |
-| 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash-1017` | off | 0.09 | 0.20 |
+| 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash-1017` | off | 0.09 | 0.15 |
 | 3 | intent | calibration | all | 96 | 192 | `gpt-6-luna-pro` | off | 0.03 | 0.10 |
 | 3 | intent | calibration | all | 96 | 192 | `claude-haiku-5.5` | off | 0.03 | 0.10 |
 | 3 | intent | calibration | all | 96 | 192 | `minimax-m3.1-flash` | low | 0.08 | 0.15 |
-| 4 | intent | flagged | all | 25 | 50 | `winner_of_3` | winner_of_3 | 0.11 | 0.17 |
-| 5a | contract_entities | calibration | all | 40 | 80 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.32 | 0.75 |
-| 5b | contract_entities | pilot | all | 52 | 104 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.48 | 1.00 |
-| 5c | contract_entities | remainder | 1/3 | 182 | 364 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 1.56 | 2.40 |
-| 5d | contract_entities | remainder | 2/3 | 182 | 364 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 1.72 | 2.60 |
-| 5e | contract_entities | remainder | 3/3 | 181 | 362 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 1.65 | 2.50 |
-| 6c0 | merger_consideration | calibration | all | 95 | 190 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.24 | 0.60 |
-| 6c1 | merger_consideration | pending | all | 56 | 112 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.16 | 0.40 |
-| 6a | merger_entities | pilot | all | 13 | 26 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.17 | 0.40 |
+| 4 | intent | flagged | all | 25 | 50 | `winner_of_3` | winner_of_3 | 0.11 | 0.15 |
+| 5a | contract_entities | calibration | all | 40 | 80 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.32 | 0.50 |
+| 5b | contract_entities | pilot | all | 52 | 104 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.48 | 0.70 |
+| 5c | contract_entities | remainder | 1/3 | 182 | 364 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 1.56 | 2.20 |
+| 5d | contract_entities | remainder | 2/3 | 182 | 364 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 1.72 | 2.45 |
+| 5e | contract_entities | remainder | 3/3 | 181 | 362 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 1.65 | 2.35 |
+| 6c0 | merger_consideration | calibration | all | 95 | 190 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.24 | 0.35 |
+| 6c1 | merger_consideration | pending | all | 56 | 112 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.16 | 0.25 |
+| 6a | merger_entities | pilot | all | 13 | 26 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.17 | 0.25 |
 | 6b | merger_entities | remainder | 1/2 | 69 | 138 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.91 | 1.30 |
 | 6c | merger_entities | remainder | 2/2 | 69 | 138 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.91 | 1.30 |
-| 7a | correspondence | pilot | all | 38 | 76 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.10 | 0.25 |
-| 7b | correspondence | remainder | 1/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.61 | 0.50 |
-| 7c | correspondence | remainder | 2/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.61 | 0.50 |
-| 7d | correspondence | remainder | 3/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.60 | 0.50 |
-| 7e | correspondence | remainder | 4/4 | 239 | 478 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.60 | 0.50 |
-| 8a | claim_checklist | pilot | all | 30 | 60 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.08 | 0.25 |
-| 8b | claim_checklist | remainder | 1/4 | 268 | 536 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.66 | 0.50 |
-| 8c | claim_checklist | remainder | 2/4 | 268 | 536 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.66 | 0.50 |
-| 8d | claim_checklist | remainder | 3/4 | 268 | 536 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.66 | 0.50 |
-| 8e | claim_checklist | remainder | 4/4 | 266 | 532 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.82 | 0.75 |
-| 9a | corporate | pilot | all | 29 | 58 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.16 | 0.50 |
-| 9b | corporate | remainder | 1/4 | 104 | 208 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.60 | 0.90 |
-| 9c | corporate | remainder | 2/4 | 104 | 208 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.52 | 0.80 |
-| 9d | corporate | remainder | 3/4 | 104 | 208 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.55 | 0.85 |
-| 9e | corporate | remainder | 4/4 | 103 | 206 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.67 | 1.05 |
+| 7a | correspondence | pilot | all | 38 | 76 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.10 | 0.15 |
+| 7b | correspondence | remainder | 1/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.61 | 0.90 |
+| 7c | correspondence | remainder | 2/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.61 | 0.85 |
+| 7d | correspondence | remainder | 3/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.60 | 0.85 |
+| 7e | correspondence | remainder | 4/4 | 239 | 478 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.60 | 0.85 |
+| 8a | claim_checklist | pilot | all | 30 | 60 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.08 | 0.15 |
+| 8b | claim_checklist | remainder | 1/4 | 268 | 536 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.66 | 0.95 |
+| 8c | claim_checklist | remainder | 2/4 | 268 | 536 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.66 | 0.95 |
+| 8d | claim_checklist | remainder | 3/4 | 268 | 536 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.66 | 0.95 |
+| 8e | claim_checklist | remainder | 4/4 | 266 | 532 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.82 | 1.20 |
+| 9a | corporate | pilot | all | 29 | 58 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.16 | 0.25 |
+| 9b | corporate | remainder | 1/4 | 104 | 208 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.60 | 0.85 |
+| 9c | corporate | remainder | 2/4 | 104 | 208 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.52 | 0.75 |
+| 9d | corporate | remainder | 3/4 | 104 | 208 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.55 | 0.80 |
+| 9e | corporate | remainder | 4/4 | 103 | 206 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.67 | 0.95 |
 
 `winner_of_1` is priced as `glm-5.3-flashx-legal` at low; `winner_of_3` as `deepseek-v4.1-flash-1017` at low (the costliest arms).
