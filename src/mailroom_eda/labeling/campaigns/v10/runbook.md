@@ -167,7 +167,7 @@ the labels root is gitignored, because this GitHub repo is public. A paid run re
   checkout is missing (never overwriting local files), so a later run reuses those answers
   instead of buying them again.
 
-## Funded now (2026-11-06 18:10 UTC: $8.99 credit, $5.99 usable above the $3 reserve)
+## Funded now (2026-11-06: $8.92 credit, $5.92 usable above the $3 reserve, after Jev)
 
 The full campaign projects to $21.40, so only this prefix runs before a top-up. Running
 totals count from the $5.99 usable after the relabel and the Jev calibration. It is ordered
@@ -177,7 +177,7 @@ so every paid step feeds a decision. Each chunk starts only when usable credit c
 |---|---|---:|---:|
 | 1 | `3`: intent bake-off; done 2026-11-06 (6 arms, then arms 1, 3, 5, 6 on the new prompt) | spent 0.36 | — |
 | 2 | `4a`–`4c`: re-read the 904 machine-made intents (below); supersedes `4`. Answers done; gate waits on the 23 test-split decisions | spent 0.50 | — |
-| 2j | Jev 1.14 intent QA (below): v1 calibration done | spent 0.005 | ≤ 0.10 |
+| 2j | Jev 1.14 intent QA (below): v1–v4 calibrations, noise check, audit of 819 train rows done | spent 0.081 | — |
 | 3 | `1`: CUAD bake-off, 7 arms | 1.48 | ≤ 1.58 |
 | 4 | `1h`: CUAD holdout, only the arms `bakeoff 1` did not exclude | ≤ 1.53 | ≤ 3.11 |
 | 5 | merger window A/B (below) | 0.36 | ≤ 3.47 |
@@ -259,9 +259,30 @@ $L jev audit --initials XX --api-cost-cap-usd 0.10         # refused until the p
   gets probability below `jev.flag_below` (0.30), for a reviewer.
 - Refinement: change the instructions or criteria only from calibration misses, read against
   the email; each change is a new prompt sha and re-asks the 96 gold (about $0.005).
-- v1 (2026-11-06): κ 0.735, accuracy 0.781 (21 misses), below the bar. Most misses put
-  `request` or `meeting_invite` on emails the gold calls `update`, and `notice` on gold
-  `update`/`request`.
+- Calibrations (2026-11-06, 96 gold; snapshots `jev_intent-calibrate/prompt-v<n>.json`):
+
+  | prompt | sha | accuracy | κ | misses | v1 hits lost |
+  |---|---|---:|---:|---:|---:|
+  | v1 | `6bf9331b95a6` | 0.781 | 0.735 | 21 | — |
+  | v2 | `bdb07bfcfae9` | 0.813 | 0.776 | 18 | 6 |
+  | v3 | `704ec69ae1be` | 0.833 | 0.800 | 16 | 5 |
+  | v4 (live) | `9f283f818cdb` | 0.875 | 0.849 | 12 | 1 (a noise row) |
+
+  v2 added: judge the newest message (an answer to a quoted ask reports); suggestions, courtesy
+  "let me know" and standing procedures are not explicit asks; reporter news articles are
+  update; out-of-office replies (not all automatic mail) are other. v2 over-reached on wire
+  news releases, directives and action proposals; v3 fixed those (wire releases are
+  press_communication; an instruction to act is request; a proposal asking for agreement is
+  request). v4 fixed v3's over-reach (a deadline-for-objections notice stays notice; a brief
+  point plus a direct question is request; vendor order confirmations are update).
+- Overfitting: every version was tuned and scored on the same 96 gold, so v4's κ is optimistic.
+  Stopped at v4 for that reason. Jev only flags rows for a reviewer; it never writes a label.
+- Noise: the 31 rows any version missed were re-asked on v3 (`jev_intent-noise-v3`); 1 flipped.
+- Gold disputes: 5 of v4's 12 misses look like gold errors against the written definitions
+  (`jev_intent-calibrate/gold-disputes-v4.csv`, with 4 ambiguous and 3 gold-right). They are
+  not applied; the user decides, then `gold-corrections.csv` and a free re-score.
+- Audit (v4): 819 train rows, $0.0555, 163 flagged (`jev_intent-audit/flags-9f283f818cdb.csv`):
+  121 llm_zero_shot, 27 aeslc_join, 15 heuristic. Every flag gets a full-text read.
 
 ## Merger window A/B (before chunk 6; about $0.36)
 
@@ -356,8 +377,9 @@ Labels
       changes, 7 keeps; each `reviewer_note` says so).
 - [ ] JJB signs off: `gate 4a|4b|4c --signed-off --approve --initials JJB`.
 - [ ] Claude reads the unread middles of the 7 long train emails; clears their provisional notes.
-- [ ] Jev: refine the prompt from the v1 misses, re-calibrate; audit the train relabel rows only
-      at κ ≥ 0.75; a reviewer reads every flagged row.
+- [x] Jev: prompt refined v1→v4 (κ 0.735→0.849), audit of 819 train rows done (163 flags).
+- [ ] JJB decides the 5 proposed gold corrections in `gold-disputes-v4.csv`.
+- [ ] Claude reads all 163 Jev flags in full and records a decision on each.
 - [ ] Step 3: chunk 1 CUAD bake-off (7 arms), `bakeoff 1`, approve the winner.
 - [ ] Step 4: chunk 1h holdout for the surviving arms; `bakeoff 1` again.
 - [ ] Step 5: merger window A/B.
