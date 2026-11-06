@@ -54,9 +54,12 @@ def _now() -> str:
 
 def chunk_entries(name: str, chunk_id: str) -> list[dict[str, Any]]:
     """All arms of one chunk id, in campaign order."""
-    entries = [c for c in campaign(name)["chunks"] if str(c["id"]) == str(chunk_id)]
+    camp = campaign(name)
+    entries = [c for c in camp["chunks"] if str(c["id"]) == str(chunk_id)] \
+        or [c for c in camp.get("steps") or [] if str(c["id"]) == str(chunk_id)]
     if not entries:
-        ids = sorted({str(c["id"]) for c in campaign(name)["chunks"]}, key=lambda x: (len(x), x))
+        ids = sorted({str(c["id"]) for c in camp["chunks"] + (camp.get("steps") or [])},
+                     key=lambda x: (len(x), x))
         raise SystemExit(f"no chunk {chunk_id!r} in campaign {name}; chunks: {', '.join(ids)}")
     return entries
 
@@ -261,6 +264,11 @@ def next_chunks(name: str, approvals: Sequence[Mapping[str, Any]]) -> list[str]:
             lines.append(f"next chunk: {cid} ({c['task']} / {c['set']}); `labeling chunk {cid} --dry-run` shows it")
     if held:
         lines.append(f"waiting on an external release (requires:): {', '.join(held)}")
+    for st in campaign(name).get("steps") or []:
+        sid = str(st["id"])
+        if not lines and sid not in done and all(str(n) in done for n in st.get("needs") or []):
+            hint = " (`labeling adjudicate` lists what is open)" if st["task"] == "adjudication" else ""
+            lines.append(f"next step: {sid} ({st['task']}); `labeling gate {sid}` scores it{hint}")
     return lines
 
 
@@ -612,6 +620,8 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
     """Score one chunk arm's gate from its output directory (offline)."""
     from .. import v9_4_revision as v94  # noqa: PLC0415
 
+    if entry["gate"]["kind"] == "resolved":
+        return gate_resolved(name, entry, out, stage)
     out_dir = chunk_dir(out, entry, arm)
     if not (out_dir / "calls.jsonl").exists():
         raise SystemExit(f"{out_dir} has no calls.jsonl; run `labeling chunk {entry['id']}` first")
@@ -667,6 +677,102 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
     return res
 
 
+# ---------------------------------------------------------------- adjudication (step 10)
+
+ADJUDICATION_DIR = "adjudication"
+OPEN_COLUMNS = ("chunk", *export.FIELD_COLUMNS)
+#: chunk tasks whose output is cuad-labels/intent-labels, not fields.csv
+NON_FIELD_TASKS = {"cuad", "intent"}
+
+
+def _merge_open_verdicts(chunk_out: Path, label: str, open_rows: Mapping[tuple[str, str, str], Mapping[str, str]]
+                         ) -> int:
+    """Copy reviewer columns filled in ``adjudication/open.csv`` into the chunk's adjudication.csv."""
+    path = chunk_out / "adjudication.csv"
+    if not path.exists():
+        return 0
+    rows = export.read_csv(path)
+    changed = 0
+    for r in rows:
+        o = open_rows.get((label, r["document_id"], r["field"]))
+        if o and any(o.get(c) for c in runner.REVIEWER_COLUMNS) \
+                and any(o.get(c, "") != r.get(c, "") for c in runner.REVIEWER_COLUMNS):
+            r.update({c: o.get(c, "") for c in runner.REVIEWER_COLUMNS})
+            changed += 1
+    if changed:
+        export.write_csv(path, export.FIELD_COLUMNS, rows)
+    return changed
+
+
+def adjudication_items(name: str, out: Path, stage: Path, *, only: str | None = None,
+                       rows: Sequence[Mapping[str, Any]] | None = None) -> tuple[list[dict[str, Any]], int]:
+    """Every field of an approved chunk still at ``final_decision == adjudicate``.
+
+    Verdicts already typed into ``adjudication/open.csv`` are first copied into each
+    chunk's ``adjudication.csv``; then ``runner.review`` rebuilds the chunk (it keeps the
+    reviewer columns), so a verdict entered in either place counts. Returns the open rows
+    and how many verdicts were copied.
+    """
+    rows = runner.load_stage(stage) if rows is None else rows
+    open_path = Path(out) / ADJUDICATION_DIR / "open.csv"
+    typed = {(r["chunk"], r["document_id"], r["field"]): r
+             for r in (export.read_csv(open_path) if open_path.exists() else [])}
+    items: list[dict[str, Any]] = []
+    copied = 0
+    for a in load_approvals(name):
+        cid = str(a["chunk"])
+        if only and cid != str(only):
+            continue
+        entry, arm = chunk_entry(name, cid, a.get("arm"))
+        if "models" not in entry or entry["task"] in NON_FIELD_TASKS:
+            continue
+        label = f"{cid}{f'.{arm}' if arm else ''}"
+        d = chunk_dir(Path(out), entry, arm)
+        if not (d / "calls.jsonl").exists():
+            raise SystemExit(f"approved chunk {label}: {d} has no calls.jsonl; restore it first "
+                             "(`labeling checkpoint --restore`)")
+        copied += _merge_open_verdicts(d, label, typed)
+        runner.review(rows, entry["task"], d, reasoning=a.get("reasoning"))
+        items += [{"chunk": label, **f} for f in export.read_csv(d / "fields.csv")
+                  if f.get("final_decision") == "adjudicate"]
+    return items, copied
+
+
+def gate_resolved(name: str, entry: Mapping[str, Any], out: Path, stage: Path) -> dict[str, Any]:
+    """Step gate: every ``needs`` chunk is approved and none has an open adjudication item."""
+    done = {str(a["chunk"]) for a in load_approvals(name)}
+    unapproved = [str(n) for n in entry.get("needs") or [] if str(n) not in done]
+    items, _ = adjudication_items(name, out, stage)
+    per_chunk = dict(Counter(i["chunk"] for i in items))
+    res = {"kind": "resolved", "open_items": len(items), "per_chunk": per_chunk,
+           "per_field": dict(Counter(f"{i['chunk']}/{i['field']}" for i in items)),
+           "unapproved_needs": unapproved, "passed": not items and not unapproved,
+           "how": "fill reviewer_verdict in adjudication/open.csv, then `labeling adjudicate` and re-gate",
+           "chunk": entry["id"], "arm": None, "task": entry["task"], "models": [], "provider": "none",
+           "reasoning": "none", "prompt_sha256": [], "served_providers": [], "spent_usd": 0.0,
+           "scored_utc": _now()}
+    d = Path(out) / ADJUDICATION_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "gate.json").write_text(json.dumps(res, indent=1) + "\n", encoding="utf-8")
+    return res
+
+
+def cmd_adjudicate(args: argparse.Namespace) -> int:
+    """Rebuild every approved field chunk and list its open items in ``adjudication/open.csv``."""
+    auto_restore(args)
+    items, copied = adjudication_items(args.campaign, args.out, args.stage, only=args.chunk)
+    path = Path(args.out) / ADJUDICATION_DIR / "open.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    export.write_csv(path, OPEN_COLUMNS, items)
+    if copied:
+        print(f"copied {copied} verdicts from open.csv into their chunks")
+    per = Counter((i["chunk"], i["field"]) for i in items)
+    for (chunk, field), n in sorted(per.items()):
+        print(f"{chunk:<6} {field:<32} {n:>5} open")
+    print(f"{len(items)} open items -> {path}")
+    return auto_checkpoint(args, f"adjudicate ({len(items)} open)")
+
+
 def pin_violations(calls: Sequence[Mapping[str, Any]], reasoning: str) -> list[str]:
     """``"<model> via <provider>"`` for each answer served outside its model's route pin."""
     out: set[str] = set()
@@ -705,7 +811,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
     auto_restore(args)
     res = gate_result(args.campaign, entry, arm, args.out, args.stage, signed_off=args.signed_off)
-    if res["provider"] != args.provider:
+    if res["kind"] != "resolved" and res["provider"] != args.provider:
         raise SystemExit(f"--provider {args.provider}, but chunk {entry['id']} ran on {res['provider']} "
                          f"(runs.jsonl); the gate scores the models the chunk ran")
     print(json.dumps(res, indent=1))
@@ -764,6 +870,15 @@ def cmd_status(args: argparse.Namespace) -> int:
         label = f"{cid}{f'.{arm}' if arm else ''}"
         print(f"{label:<6} {entry['task']:<18} {entry['set']:<12} {entry.get('chunk') or 'all':<5} "
               f"{ok:>9} {spent:>8.4f} {entry['cap_usd']:>6.2f}  {state}")
+    for st in camp.get("steps") or []:
+        sid = str(st["id"])
+        gate_path = Path(args.out) / ADJUDICATION_DIR / "gate.json" if st["task"] == "adjudication" else None
+        gate = json.loads(gate_path.read_text()) if gate_path and gate_path.exists() else None
+        state = ("gate passed" if gate and gate["passed"] else
+                 f"gate failed ({gate.get('open_items', '?')} open)" if gate else "not scored")
+        if sid in approved:
+            state += f"; approved by {approved[sid]['approved_by']}"
+        print(f"{sid:<6} {st['task']:<18} {st.get('set', ''):<12} {'':<5} {'':>9} {'':>8} {'':>6}  {state}")
     return 0
 
 
@@ -1187,6 +1302,12 @@ def add_commands(sub: Any) -> None:
     p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
     p.add_argument("--no-checkpoint", action="store_true")
     p.set_defaults(operate=cmd_gate)
+
+    p = sub.add_parser("adjudicate", help="list every approved chunk's open adjudication items (offline)")
+    common(p)
+    p.add_argument("--chunk", help="only this approved chunk id")
+    p.add_argument("--no-checkpoint", action="store_true")
+    p.set_defaults(operate=cmd_adjudicate)
 
     p = sub.add_parser("checkpoint", help=f"upload label output to the private {checkpoint.STAGING_REPO}")
     common(p)

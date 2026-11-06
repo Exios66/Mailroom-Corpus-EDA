@@ -2165,3 +2165,70 @@ def test_sweep_runs_each_arm_once_confirmed_and_never_approves(tmp_path, monkeyp
         operate.cmd_sweep(_sweep_args(tmp_path, initials=None), confirm=lambda q: "yes", run_chunk=lambda ns: 0)
     path = operate.approvals_path("v10")
     assert not path.exists() or "7b" not in path.read_text()  # nothing approved
+
+
+# ---------------------------------------------------------------- adjudication step 10
+
+def _approved_field_chunk(tmp_path, monkeypatch, decisions):
+    """Chunk 7b approved, with a fields.csv whose final decisions are ``decisions``."""
+    entry, arm = operate.chunk_entry("v10", "7b", None)
+    d = operate.chunk_dir(tmp_path, entry, arm)
+    d.mkdir(parents=True)
+    (d / "calls.jsonl").write_text("{}\n")
+    rows = [{"document_id": f"DOC-{i}", "field": "intent", "decision": dec, "final_decision": dec,
+             "model_a_value": "x", "model_b_value": "y"} for i, dec in enumerate(decisions)]
+    export.write_csv(d / "fields.csv", export.FIELD_COLUMNS, rows)
+    export.write_csv(d / "adjudication.csv", export.FIELD_COLUMNS, [r for r in rows if r["decision"] == "adjudicate"])
+    approvals = [{"chunk": "7b", "arm": None, "reasoning": "low", "approved_by": "JB"}]
+    monkeypatch.setattr(operate, "load_approvals", lambda name: approvals)
+
+    def review(rows_, task, out_dir, reasoning=None):
+        """Stand-in for runner.review: apply adjudication.csv verdicts to fields.csv."""
+        adj = {(r["document_id"], r["field"]): r for r in export.read_csv(out_dir / "adjudication.csv")}
+        fields = export.read_csv(out_dir / "fields.csv")
+        for f in fields:
+            v = adj.get((f["document_id"], f["field"]), {}).get("reviewer_verdict")
+            if v:
+                f["reviewer_verdict"], f["final_decision"] = v, "accept"
+        export.write_csv(out_dir / "fields.csv", export.FIELD_COLUMNS, fields)
+
+    monkeypatch.setattr(runner, "review", review)
+    monkeypatch.setattr(runner, "load_stage", lambda stage: [])
+    return d, approvals
+
+
+def test_adjudicate_lists_open_items_and_reads_verdicts_back(tmp_path, monkeypatch):
+    """open.csv lists every open item; a verdict typed there reaches the chunk and closes the item."""
+    import argparse
+    _approved_field_chunk(tmp_path, monkeypatch, ["accept", "adjudicate", "adjudicate"])
+    args = argparse.Namespace(campaign="v10", out=tmp_path, stage=tmp_path, chunk=None, no_checkpoint=True)
+    assert operate.cmd_adjudicate(args) == 0
+    open_rows = export.read_csv(tmp_path / "adjudication" / "open.csv")
+    assert [(r["chunk"], r["document_id"]) for r in open_rows] == [("7b", "DOC-1"), ("7b", "DOC-2")]
+    open_rows[0]["reviewer_verdict"] = "a"
+    export.write_csv(tmp_path / "adjudication" / "open.csv", operate.OPEN_COLUMNS, open_rows)
+    items, copied = operate.adjudication_items("v10", tmp_path, tmp_path, rows=[])
+    assert copied == 1 and [i["document_id"] for i in items] == ["DOC-2"]
+
+
+def test_resolved_gate_passes_only_with_no_open_items(tmp_path, monkeypatch):
+    """Step 10 fails while anything is open or a needed chunk is unapproved, and records counts."""
+    entry, _ = operate.chunk_entry("v10", "10", None)
+    assert entry["task"] == "adjudication" and "9e" in entry["needs"]
+    _approved_field_chunk(tmp_path, monkeypatch, ["accept", "adjudicate"])
+    res = operate.gate_result("v10", entry, None, tmp_path, tmp_path)
+    assert not res["passed"] and res["open_items"] == 1 and res["per_chunk"] == {"7b": 1}
+    assert "9e" in res["unapproved_needs"] and (tmp_path / "adjudication" / "gate.json").exists()
+    every = [{"chunk": c, "arm": None, "reasoning": "low", "approved_by": "JB"} for c in entry["needs"]]
+    monkeypatch.setattr(operate, "load_approvals", lambda name: every)
+    monkeypatch.setattr(operate, "adjudication_items", lambda *a, **k: ([], 0))
+    assert operate.gate_result("v10", entry, None, tmp_path, tmp_path)["passed"]
+    assert any(line.startswith("next step: 10") for line in operate.next_chunks("v10", every))
+
+
+def test_steps_stay_out_of_costs_ping_and_sweep():
+    """Step 10 makes no model call: it is not a chunk to price, ping or sweep."""
+    camp = campaign("v10")
+    assert "10" not in {str(c["id"]) for c in camp["chunks"]}
+    plan, why = operate.sweep_plan("v10", [{"chunk": "7a"}], "7e", start="7b")
+    assert all(str(e["id"]) != "10" for e, _ in plan)
