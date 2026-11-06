@@ -141,3 +141,13 @@ steps:
 # A rebuilt overlay is refused until this pin moves.
 interim_overlay: {manifest_sha256: "318045d37a6931507132cc34cfcd13fdb83cfeb0a02615d61d6c7abf24d41720",
                   sandbox_commit: "55ea9d701ca468e5194c4713c40ca58effcb2b80"}
+
+# Jev intent QA (`labeling jev calibrate|audit`, labeling/jev.py): TypeSafe's decisions model
+# checks intent labels and never writes one. total_cap_usd bounds every Jev journal together;
+# audit is refused until the current prompt sha calibrates at kappa_floor on the full gold.
+jev:
+  model: typesafe/jev-1.14
+  price_per_m_input_usd: 0.042
+  total_cap_usd: 0.30
+  kappa_floor: 0.75
+  flag_below: 0.30

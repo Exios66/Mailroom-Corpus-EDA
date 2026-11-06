@@ -1592,6 +1592,8 @@ def modal_check(env: Mapping[str, str] | None = None,
     host = urllib.parse.urlparse(backend.base_url).hostname or ""
     if not host.endswith(".modal.run") and host not in ("localhost", "127.0.0.1"):
         return False, f"VLLM_BASE_URL host {host!r} is not a *.modal.run app URL"
+    if host.endswith(".modal.run") and urllib.parse.urlparse(backend.base_url).scheme != "https":
+        return False, "VLLM_BASE_URL must be https:// for a *.modal.run host (the API key is sent)"
     data = fetch(f"{backend.base_url}/models", headers={"Authorization": f"Bearer {backend.api_key}"})
     served = sorted(str(m.get("id")) for m in (data or {}).get("data") or [])
     want = modal_models()
@@ -1772,6 +1774,9 @@ def add_commands(sub: Any) -> None:
         p.add_argument("--no-restore", action="store_true",
                        help=f"do not first pull staged files missing locally from {checkpoint.STAGING_REPO}")
 
+    from . import jev  # noqa: PLC0415
+
+    jev.add_command(sub, common)
     p = sub.add_parser("chunk", help="run one campaign chunk as campaign.yaml defines it")
     common(p)
     p.add_argument("id")
