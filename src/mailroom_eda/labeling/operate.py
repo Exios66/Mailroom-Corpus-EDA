@@ -1,0 +1,682 @@
+"""Operator commands for running a campaign chunk by chunk.
+
+    labeling stage                      build data/v9_4/stage if it is missing, then check its sha
+    labeling doctor                     every readiness check, offline and live (no paid call)
+    labeling prices                     live OpenRouter prices and pinned-provider parameters
+    labeling ping   --initials XX       one tiny paid request per approved model (< $0.01)
+    labeling status                     every chunk: progress, spend, gate, approval
+    labeling chunk  <id> [--arm N] --initials XX [--dry-run]
+                                        run a campaign chunk exactly as campaign.yaml defines it
+    labeling gate   <id> [--arm N] [--approve --initials XX] [--signed-off]
+                                        score the chunk's gate; --approve records a pass
+
+A chunk's output directory is ``<out>/<id>[.<arm>]_<task>-<set>[-<i>of<n>]``. Approvals go
+to ``campaigns/<name>/approved.yaml``; a chunk whose model is ``winner_of_<id>`` reads its
+model and reasoning from the approved arm of that chunk.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import random
+import subprocess
+import sys
+import urllib.request
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Mapping, Sequence
+
+import yaml
+
+from . import export, providers, runner, spend, tasks, verify
+from .registry import CAMPAIGNS_DIR, campaign, dojo_snapshot, fields_registry, models_registry
+
+ROOT = runner.ROOT
+PUBLIC_MODELS_URL = "https://openrouter.ai/api/v1/models"
+#: Parameters every pinned provider must support (``seed`` only when the route sends it).
+REQUIRED_PARAMETERS = ("max_tokens", "temperature", "response_format", "structured_outputs", "reasoning")
+REVIEW_MIN = 30
+AGREEMENT_MAX_ADJUDICATE = 0.30
+SAMPLE_SIZE = 20
+
+
+def _now() -> str:
+    """UTC timestamp."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ---------------------------------------------------------------- campaign chunks
+
+def chunk_entries(name: str, chunk_id: str) -> list[dict[str, Any]]:
+    """All arms of one chunk id, in campaign order."""
+    entries = [c for c in campaign(name)["chunks"] if str(c["id"]) == str(chunk_id)]
+    if not entries:
+        ids = sorted({str(c["id"]) for c in campaign(name)["chunks"]}, key=lambda x: (len(x), x))
+        raise SystemExit(f"no chunk {chunk_id!r} in campaign {name}; chunks: {', '.join(ids)}")
+    return entries
+
+
+def chunk_entry(name: str, chunk_id: str, arm: int | None) -> tuple[dict[str, Any], int | None]:
+    """One arm of a chunk (``arm`` is 1-based; required when the chunk has several)."""
+    entries = chunk_entries(name, chunk_id)
+    if len(entries) == 1:
+        if arm not in (None, 1):
+            raise SystemExit(f"chunk {chunk_id} has one arm")
+        return entries[0], None
+    if arm is None or not 1 <= arm <= len(entries):
+        arms = "; ".join(f"--arm {i}: {e['models'][0]} reasoning {e['reasoning']}"
+                         for i, e in enumerate(entries, 1))
+        raise SystemExit(f"chunk {chunk_id} has {len(entries)} arms; pick one ({arms})")
+    return entries[arm - 1], arm
+
+
+def chunk_dir(out: Path, entry: Mapping[str, Any], arm: int | None) -> Path:
+    """Output directory for a campaign chunk arm."""
+    name = f"{entry['id']}{f'.{arm}' if arm else ''}_{entry['task']}-{entry['set']}"
+    if entry.get("chunk"):
+        i, n = str(entry["chunk"]).split("/")
+        name += f"-{i}of{n}"
+    return out / name
+
+
+def approvals_path(name: str) -> Path:
+    """``campaigns/<name>/approved.yaml``."""
+    return CAMPAIGNS_DIR / name / "approved.yaml"
+
+
+def load_approvals(name: str) -> list[dict[str, Any]]:
+    """Approved chunk configurations (empty before the first sign-off)."""
+    path = approvals_path(name)
+    if not path.exists():
+        return []
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return list(data.get("approved") or [])
+
+
+def resolve(name: str, entry: Mapping[str, Any]) -> tuple[list[str], str]:
+    """Models and reasoning for a chunk, replacing ``winner_of_<id>`` with the approved arm."""
+    approvals = load_approvals(name)
+
+    def winner(ref: str) -> dict[str, Any]:
+        cid = ref.removeprefix("winner_of_")
+        hits = [a for a in approvals if str(a["chunk"]) == cid]
+        if not hits:
+            raise SystemExit(f"chunk {entry['id']} uses the winner of chunk {cid}, which has no approved arm "
+                             f"yet: run `labeling gate {cid} --arm N --approve --initials XX` first")
+        return hits[-1]
+
+    models = [winner(m)["models"][0] if str(m).startswith("winner_of_") else m for m in entry["models"]]
+    reasoning = str(entry["reasoning"])
+    if reasoning.startswith("winner_of_"):
+        reasoning = winner(reasoning)["reasoning"]
+    return models, reasoning
+
+
+def cmd_chunk(args: argparse.Namespace) -> int:
+    """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit."""
+    entry, arm = chunk_entry(args.campaign, args.id, args.arm)
+    models, reasoning = resolve(args.campaign, entry)
+    for need in entry.get("needs") or []:
+        if not any(str(a["chunk"]) == str(need) for a in load_approvals(args.campaign)):
+            raise SystemExit(f"chunk {entry['id']} starts after chunk {need} is approved")
+    rows = runner.load_stage(args.stage)
+    picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
+    camp = campaign(args.campaign)
+    return runner.execute(
+        rows, picked, task=entry["task"], set_name=entry["set"], chunk_spec=entry.get("chunk"), models=models,
+        provider=args.provider, reasoning=reasoning, initials=args.initials,
+        cap_usd=float(args.cap_usd or entry["cap_usd"]),
+        max_wall_seconds=float(entry.get("max_wall_seconds") or camp["max_wall_seconds"]),
+        out_dir=chunk_dir(args.out, entry, arm), dry_run=args.dry_run, workers=args.workers,
+        chunk_id=f"{entry['id']}{f'.{arm}' if arm else ''}")
+
+
+# ---------------------------------------------------------------- gates
+
+def _gold_tokens(spans: Sequence[Any]) -> set[str]:
+    """Token union of gold CUAD spans."""
+    out: set[str] = set()
+    for s in spans:
+        out |= set(verify.tokens(s.get("text") if isinstance(s, dict) else s))
+    return out
+
+
+#: Contract entity fields with an expert CUAD category that states them.
+CUAD_GOLD_FIELDS = {
+    "document_name": "Document Name", "parties": "Parties", "agreement_date": "Agreement Date",
+    "effective_date": "Effective Date", "expiration_date": "Expiration Date",
+    "renewal_terms": "Renewal Term", "termination_notice_period": "Notice Period To Terminate Renewal",
+    "governing_law": "Governing Law",
+}
+
+
+def matches_cuad_gold(value: Any, type_: str, spans: Sequence[Any]) -> bool:
+    """Does an accepted value agree with the expert CUAD spans for its category?
+
+    Dates must equal a date parsed from a gold span (when any parses); everything else
+    needs at least 80% of its tokens inside the gold spans' tokens.
+    """
+    if type_ == "date":
+        gold_dates = {verify.parse_date(s.get("text") if isinstance(s, dict) else s) for s in spans} - {None}
+        if gold_dates:
+            return verify.parse_date(value) in gold_dates
+    items = value if isinstance(value, list) else [value]
+    gold = _gold_tokens(spans)
+    toks = [t for i in items for t in verify.tokens(i)]
+    return bool(toks) and sum(t in gold for t in toks) / len(toks) >= 0.8
+
+
+def gate_field_accuracy(rows: Sequence[Mapping[str, Any]], out_dir: Path, floor: float) -> dict[str, Any]:
+    """Per-field accuracy of accepted contract values against expert CUAD spans."""
+    by_id = {tasks._ids(r)[0]: r for r in rows}
+    per: dict[str, Counter] = {f: Counter() for f in CUAD_GOLD_FIELDS}
+    for f in export.read_csv(out_dir / "fields.csv"):
+        if f["field"] not in CUAD_GOLD_FIELDS:
+            continue
+        row = by_id.get(f["document_id"])
+        labels = tasks._json_obj(tasks.gt_fields(row).get("cuad_clause_labels")) if row else {}
+        spans = (labels or {}).get(CUAD_GOLD_FIELDS[f["field"]]) or []
+        if not spans:
+            continue
+        c = per[f["field"]]
+        c["gold"] += 1
+        if f["decision"] != "accept":
+            c["not_accepted"] += 1
+            continue
+        raw = f["model_a_value"]
+        value = json.loads(raw) if raw[:1] == "[" else raw
+        c["correct" if matches_cuad_gold(value, f["type"], spans) else "wrong"] += 1
+    fields = {}
+    for name, c in per.items():
+        scored = c["correct"] + c["wrong"]
+        fields[name] = {**dict(c), "accuracy": round(c["correct"] / scored, 4) if scored else None}
+    scored = {k: v for k, v in fields.items() if (v["correct"] + v.get("wrong", 0)) >= 5}
+    ok = bool(scored) and all(v["accuracy"] >= floor for v in scored.values())
+    return {"kind": "field_accuracy", "floor": floor, "fields": fields, "passed": ok,
+            "note": "fields with fewer than 5 scored values are reported but not gated"}
+
+
+def gate_human_verdicts(out_dir: Path, floor: float) -> dict[str, Any]:
+    """Precision of accepted values among the rows a reviewer marked correct or wrong."""
+    rows = export.read_csv(out_dir / "fields.csv")
+    accepted = [r for r in rows if r["decision"] == "accept"]
+    marked = [r for r in accepted if r.get("reviewer_verdict") in ("correct", "wrong")]
+    need = min(REVIEW_MIN, len(accepted))
+    correct = sum(r["reviewer_verdict"] == "correct" for r in marked)
+    precision = round(correct / len(marked), 4) if marked else None
+    ok = len(marked) >= need and precision is not None and precision >= floor
+    return {"kind": "human_verdicts", "floor": floor, "accepted_rows": len(accepted), "reviewed": len(marked),
+            "reviews_needed": need, "precision": precision, "passed": ok,
+            "how": "in fields.csv, set reviewer_verdict to correct or wrong on accepted rows"}
+
+
+def gate_agreement(out_dir: Path, signed_off: bool) -> dict[str, Any]:
+    """Decision mix, failed calls, and a fixed sample of accepted rows for a human read."""
+    rows = export.read_csv(out_dir / "fields.csv")
+    calls = export.read_journal(out_dir / "calls.jsonl")
+    ok_keys = {(c["document_id"], c["model"]) for c in calls if not c.get("error")}
+    failed = {(c["document_id"], c["model"]) for c in calls if c.get("error")} - ok_keys
+    mix = Counter(r["decision"] for r in rows)
+    adj = mix["adjudicate"] / len(rows) if rows else 0.0
+    accepted = [r for r in rows if r["decision"] == "accept"]
+    sample = random.Random(42).sample(accepted, min(SAMPLE_SIZE, len(accepted)))
+    export.write_csv(out_dir / "sample.csv", export.FIELD_COLUMNS, sample)
+    ok = bool(rows) and not failed and adj <= AGREEMENT_MAX_ADJUDICATE and signed_off
+    return {"kind": "agreement", "decisions": dict(mix), "adjudicate_share": round(adj, 4),
+            "max_adjudicate_share": AGREEMENT_MAX_ADJUDICATE, "unanswered_calls": len(failed),
+            "sample_csv": str(out_dir / "sample.csv"), "signed_off": signed_off, "passed": ok,
+            "how": "read sample.csv, then re-run with --signed-off"}
+
+
+def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path, stage: Path,
+                signed_off: bool = False) -> dict[str, Any]:
+    """Score one chunk arm's gate from its output directory (offline)."""
+    from .. import v9_4_revision as v94  # noqa: PLC0415
+
+    out_dir = chunk_dir(out, entry, arm)
+    if not (out_dir / "calls.jsonl").exists():
+        raise SystemExit(f"{out_dir} has no calls.jsonl; run `labeling chunk {entry['id']}` first")
+    rows = runner.load_stage(stage)
+    picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
+    models, reasoning = resolve(name, entry)
+    runner.review(rows, entry["task"], out_dir, reasoning=reasoning)
+    gate = dict(entry["gate"])
+    kind = gate.pop("kind")
+    if kind == "cuad_f1":
+        res = v94.score_cuad_calibration(picked, export.read_journal(out_dir / "cuad-labels.jsonl"),
+                                         runner.cuad_vocab(rows))
+        ok = (res["documents"] == res["expected_documents"] and res["micro_f1"] >= gate["micro_f1"]
+              and res["micro_precision"] >= gate["precision"])
+        res = {"kind": kind, **{k: v for k, v in res.items() if k != "per_category"}, "floors": gate, "passed": ok}
+    elif kind == "intent_kappa":
+        res = v94.score_intent_calibration(picked, export.read_journal(out_dir / "intent-labels.jsonl"))
+        ok = res["documents"] == res["expected_documents"] and res["cohen_kappa"] >= gate["kappa"]
+        res = {"kind": kind, **res, "floors": gate, "passed": ok}
+    elif kind == "field_accuracy":
+        res = gate_field_accuracy(rows, out_dir, gate["accuracy"])
+    elif kind == "human_verdicts":
+        res = gate_human_verdicts(out_dir, gate["precision"])
+    elif kind == "agreement":
+        res = gate_agreement(out_dir, signed_off)
+    elif kind == "review":
+        docs = export.read_csv(out_dir / "documents.csv") if (out_dir / "documents.csv").exists() else []
+        res = {"kind": kind, "documents": len(docs), "expected_documents": len(picked),
+               "signed_off": signed_off, "passed": signed_off and len(docs) == len(picked),
+               "how": "read documents.csv / spans.csv, then re-run with --signed-off"}
+    else:
+        raise SystemExit(f"unknown gate kind {kind!r}")
+    calls = [c for c in export.read_journal(out_dir / "calls.jsonl")
+             if not c.get("error") and c.get("reasoning") == reasoning]
+    res.update(chunk=entry["id"], arm=arm, task=entry["task"], models=models, reasoning=reasoning,
+               prompt_sha256=sorted({c["prompt_sha256"] for c in calls}),
+               served_providers=sorted({c.get("served_provider") or "" for c in calls} - {""}),
+               spent_usd=round(sum(c.get("cost_usd") or 0 for c in calls), 4), scored_utc=_now())
+    (out_dir / "gate.json").write_text(json.dumps(res, indent=1) + "\n", encoding="utf-8")
+    return res
+
+
+def cmd_gate(args: argparse.Namespace) -> int:
+    """Score a chunk's gate; with --approve, record a pass in approved.yaml."""
+    entry, arm = chunk_entry(args.campaign, args.id, args.arm)
+    res = gate_result(args.campaign, entry, arm, args.out, args.stage, signed_off=args.signed_off)
+    print(json.dumps(res, indent=1))
+    if not args.approve:
+        return 0 if res["passed"] else 1
+    if not res["passed"]:
+        raise SystemExit("gate did not pass; nothing approved")
+    if not args.initials or not spend.INITIALS_RE.match(args.initials):
+        raise SystemExit("--approve needs --initials (a human's 2-6 capital letters)")
+    approvals = load_approvals(args.campaign)
+    same = [a for a in approvals if str(a["chunk"]) == str(entry["id"])]
+    if same and not args.replace:
+        raise SystemExit(f"chunk {entry['id']} already has an approved arm; pass --replace to change it")
+    approvals = [a for a in approvals if str(a["chunk"]) != str(entry["id"])] if args.replace else approvals
+    approvals.append({
+        "chunk": str(entry["id"]), "arm": arm, "task": entry["task"], "set": entry["set"],
+        "slice": entry.get("chunk"), "models": res["models"], "provider": args.provider,
+        "reasoning": res["reasoning"], "temperature": 0, "prompt_sha256": res["prompt_sha256"],
+        "served_providers": res["served_providers"],
+        "gate": {k: v for k, v in res.items() if k in ("kind", "micro_f1", "micro_precision", "cohen_kappa",
+                                                       "precision", "adjudicate_share", "passed")},
+        "approved_by": args.initials, "approved_utc": _now()})
+    path = approvals_path(args.campaign)
+    path.write_text("# Written by `labeling gate --approve`; commit it with the chunk's output.\n"
+                    + yaml.safe_dump({"approved": approvals}, sort_keys=False), encoding="utf-8")
+    print(f"approved chunk {entry['id']}{f' arm {arm}' if arm else ''} -> {path}")
+    return 0
+
+
+# ---------------------------------------------------------------- status
+
+def cmd_status(args: argparse.Namespace) -> int:
+    """One line per chunk arm: calls answered, spend, gate, approval."""
+    camp = campaign(args.campaign)
+    approved = {str(a["chunk"]): a for a in load_approvals(args.campaign)}
+    seen: Counter = Counter()
+    counts = Counter(str(c["id"]) for c in camp["chunks"])
+    print(f"{'chunk':<6} {'task':<18} {'set':<12} {'slice':<5} {'answered':>9} {'spent':>8} {'cap':>6}  gate / approval")
+    for entry in camp["chunks"]:
+        cid = str(entry["id"])
+        seen[cid] += 1
+        arm = seen[cid] if counts[cid] > 1 else None
+        d = chunk_dir(args.out, entry, arm)
+        calls = export.read_journal(d / "calls.jsonl")
+        ok = sum(1 for c in calls if not c.get("error"))
+        spent = sum(c.get("cost_usd") or 0 for c in calls)
+        gate = json.loads((d / "gate.json").read_text()) if (d / "gate.json").exists() else None
+        state = "not run" if not calls else ("gate passed" if gate and gate["passed"] else
+                                             "gate failed" if gate else "ran, gate not scored")
+        appr = approved.get(cid)
+        if appr and (arm is None or appr.get("arm") == arm):
+            state += f"; approved by {appr['approved_by']}"
+        label = f"{cid}{f'.{arm}' if arm else ''}"
+        print(f"{label:<6} {entry['task']:<18} {entry['set']:<12} {entry.get('chunk') or 'all':<5} "
+              f"{ok:>9} {spent:>8.4f} {entry['cap_usd']:>6.2f}  {state}")
+    return 0
+
+
+# ---------------------------------------------------------------- live checks (no key needed)
+
+def _get_json(url: str, timeout: float = 30.0, headers: Mapping[str, str] | None = None) -> Any:
+    """GET a JSON document."""
+    req = urllib.request.Request(url, headers=dict(headers or {}))
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def price_report(fetch: Callable[[str], Any] = _get_json) -> dict[str, Any]:
+    """Compare models.yaml with the live OpenRouter catalog and each model's endpoints."""
+    reg = models_registry()
+    catalog = {m["id"]: m for m in fetch(PUBLIC_MODELS_URL)["data"]}
+    problems: list[str] = []
+    out: dict[str, Any] = {}
+    for model, spec in reg["models"].items():
+        if spec["provider"] != "openrouter":
+            continue
+        live = catalog.get(model)
+        if live is None:
+            problems.append(f"{model}: not in the OpenRouter catalog")
+            continue
+        route = spec.get("route") or {}
+        eps = fetch(f"{PUBLIC_MODELS_URL}/{model}/endpoints")["data"]["endpoints"]
+        need = set(REQUIRED_PARAMETERS) | ({"seed"} if route.get("seed") else set())
+        cap = route.get("max_price") or {}
+        usable = []
+        for ep in eps:
+            slug = str(ep.get("tag") or "").split("/")[0]
+            if route.get("only") and slug not in route["only"]:
+                continue
+            if route.get("quantizations") and ep.get("quantization") not in route["quantizations"]:
+                continue
+            p_in = float(ep["pricing"]["prompt"]) * 1e6
+            p_out = float(ep["pricing"]["completion"]) * 1e6
+            if cap and (p_in > cap["prompt"] + 1e-9 or p_out > cap["completion"] + 1e-9):
+                continue
+            missing = sorted(need - set(ep.get("supported_parameters") or []))
+            usable.append({"tag": ep.get("tag"), "quantization": ep.get("quantization"), "prompt": round(p_in, 4),
+                           "completion": round(p_out, 4), "context": ep.get("context_length"),
+                           "missing_parameters": missing})
+        serving = [u for u in usable if not u["missing_parameters"]]
+        if not serving:
+            problems.append(f"{model}: no pinned endpoint supports {sorted(need)} within max_price")
+        if serving:
+            worst_in = max(u["prompt"] for u in serving)
+            worst_out = max(u["completion"] for u in serving)
+            if worst_in > spec["prompt"] + 1e-9 or worst_out > spec["completion"] + 1e-9:
+                problems.append(f"{model}: models.yaml price {spec['prompt']}/{spec['completion']} is below the "
+                                f"priciest pinned endpoint {worst_in}/{worst_out}")
+        out[model] = {"list_price": [round(float(live["pricing"]["prompt"]) * 1e6, 4),
+                                     round(float(live["pricing"]["completion"]) * 1e6, 4)],
+                      "yaml_price": [spec["prompt"], spec["completion"]], "context": live.get("context_length"),
+                      "serving_endpoints": serving,
+                      "skipped_endpoints": [u for u in usable if u["missing_parameters"]]}
+    for model, spec in (reg.get("comparison") or {}).items():
+        live = catalog.get(model)
+        if live is None:
+            problems.append(f"comparison {model}: not in the OpenRouter catalog")
+    return {"checked": reg["checked"], "models": out, "problems": problems}
+
+
+def cmd_prices(args: argparse.Namespace) -> int:
+    """Print the live price and routing report; exit 1 on a problem."""
+    rep = price_report()
+    print(json.dumps(rep, indent=1))
+    return 1 if rep["problems"] else 0
+
+
+# ---------------------------------------------------------------- stage
+
+def cmd_stage(args: argparse.Namespace) -> int:
+    """Build the v9.4 stage from the public Hub tag when it is missing, then check its sha."""
+    target = args.stage / "ground_truth_hardened.jsonl"
+    if not target.exists():
+        env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+        for module, extra in (("mailroom_eda.v9_3_revision", []),
+                              ("mailroom_eda.v9_4_revision", ["--no-cuad-journal", "--no-audit"])):
+            print(f"building: python -m {module} {' '.join(extra)}", file=sys.stderr)
+            subprocess.run([sys.executable, "-m", module, *extra], cwd=ROOT, env=env, check=True)
+    return 0 if _stage_check(args.stage, args.campaign)[0] else 1
+
+
+def _stage_check(stage: Path, name: str) -> tuple[bool, str]:
+    """Does the stage exist and match the campaign's pinned sha?"""
+    target = stage / "ground_truth_hardened.jsonl"
+    if not target.exists():
+        return False, f"missing {target}: run `labeling stage`"
+    h = hashlib.sha256(target.read_bytes()).hexdigest()
+    want = campaign(name).get("stage_sha256")
+    if want and h != want:
+        return False, f"stage sha {h[:12]} != campaign stage_sha256 {want[:12]} (selections and costs differ)"
+    print(f"stage OK: {target} sha256 {h[:12]}", file=sys.stderr)
+    return True, f"sha256 {h[:12]}"
+
+
+# ---------------------------------------------------------------- doctor and ping
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Run every readiness check and print PASS/FAIL lines. Makes no paid call."""
+    results: list[tuple[str, bool, str]] = []
+
+    def check(name: str, fn: Callable[[], tuple[bool, str]]) -> None:
+        try:
+            ok, msg = fn()
+        except Exception as err:  # noqa: BLE001 - report every failure, keep checking
+            ok, msg = False, f"{type(err).__name__}: {err}"
+        results.append((name, ok, msg))
+
+    check("python >= 3.11", lambda: (sys.version_info >= (3, 11), sys.version.split()[0]))
+    check("stage", lambda: _stage_check(args.stage, args.campaign))
+    pin = fields_registry()["dojo_pin"]
+    snap = dojo_snapshot()
+    check("dojo snapshot pin", lambda: ((snap["dojo_version"], snap["dojo_commit"]) == (pin["version"], pin["commit"]),
+                                        f"llm-dojo-scoring {pin['version']}"))
+
+    def prompts_synced() -> tuple[bool, str]:
+        proc = subprocess.run([sys.executable, str(ROOT / "scripts/labeling/sync_plan_prompts.py"), "--check"],
+                              capture_output=True, text=True)
+        return proc.returncode == 0, proc.stdout.strip()
+
+    check("plan prompts", prompts_synced)
+
+    def costs_current() -> tuple[bool, str]:
+        rows = runner.load_stage(args.stage)
+        text = runner.render_costs(runner.campaign_costs(rows, args.campaign))
+        path = CAMPAIGNS_DIR / args.campaign / "costs.md"
+        return path.read_text(encoding="utf-8") == text, "costs.md matches models.yaml and the stage"
+
+    check("costs.md", costs_current)
+
+    def prices() -> tuple[bool, str]:
+        rep = price_report()
+        n = {m: len(v["serving_endpoints"]) for m, v in rep["models"].items()}
+        return not rep["problems"], "; ".join(rep["problems"]) or f"serving endpoints per model: {n}"
+
+    check("live prices and routing", prices)
+
+    def key() -> tuple[bool, str]:
+        if not os.environ.get("OPENROUTER_API_KEY"):
+            return False, "OPENROUTER_API_KEY is not set in this shell"
+        data = providers.key_status(providers.Backend.from_env("openrouter"))
+        rem = data.get("limit_remaining")
+        reserve = models_registry().get("key_reserve_usd", 3.0)
+        if rem is None:
+            return True, f"key OK, no credit limit; usage so far ${float(data.get('usage') or 0):.2f}"
+        return float(rem) > reserve, f"key OK, ${float(rem):.2f} remaining (reserve ${reserve:.2f})"
+
+    check("OpenRouter key", key)
+    approvals = load_approvals(args.campaign)
+    check("approvals", lambda: (True, f"{len(approvals)} chunks approved"))
+    width = max(len(n) for n, _, _ in results)
+    for name, ok, msg in results:
+        print(f"{'PASS' if ok else 'FAIL'}  {name:<{width}}  {msg}")
+    done = {str(a["chunk"]) for a in approvals}
+    nxt = next((c for c in campaign(args.campaign)["chunks"] if str(c["id"]) not in done), None)
+    if nxt:
+        print(f"next chunk: {nxt['id']} ({nxt['task']} / {nxt['set']}); "
+              f"`labeling chunk {nxt['id']} --dry-run` shows it")
+    return 0 if all(ok for _, ok, _ in results) else 1
+
+
+PING_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["ok", "word"],
+               "properties": {"ok": {"type": "boolean"}, "word": {"type": "string"}}}
+
+
+def cmd_ping(args: argparse.Namespace, chat=providers.chat, key_status=providers.key_status) -> int:
+    """One strict-schema request per approved OpenRouter model and reasoning level in use."""
+    spend.require_run_flags(initials=args.initials, cap_usd=args.cap_usd, max_wall_seconds=300)
+    backend = providers.Backend.from_env("openrouter")
+    spend.check_key_headroom(key_status(backend), args.cap_usd)
+    budget = spend.Budget(args.cap_usd, 300)
+    used = {(m, str(c["reasoning"])) for c in campaign(args.campaign)["chunks"] for m in c["models"]
+            if not str(m).startswith("winner_of_") and not str(c["reasoning"]).startswith("winner_of_")}
+    used |= {("z-ai/glm-5.3-flashx-legal", "off"), ("deepseek/deepseek-v4.1-flash", "low")}
+    msgs = [{"role": "system", "content": "Reply with JSON only."},
+            {"role": "user", "content": 'Return {"ok": true, "word": "mailroom"}.'}]
+    failures = 0
+    log = args.out / "ping.jsonl"
+    for model, reasoning in sorted(used):
+        if models_registry()["models"].get(model, {}).get("provider") != "openrouter":
+            continue
+        reserved = budget.reserve(model, 50, 300)
+        rec = {"model": model, "reasoning": reasoning, "initials": args.initials, "utc": _now()}
+        try:
+            comp = chat(backend, model, msgs, PING_SCHEMA, reasoning=reasoning, max_tokens=300)
+        except providers.ProviderError as err:
+            budget.release(reserved)
+            failures += 1
+            export.append_journal(log, {**rec, "error": str(err)})
+            print(f"FAIL  {model} reasoning={reasoning}: {err}")
+            continue
+        cost = budget.settle(model, comp.prompt_tokens, comp.completion_tokens, comp.cost_usd, reserved)
+        good = comp.parsed == {"ok": True, "word": "mailroom"} and comp.used_schema
+        failures += not good
+        export.append_journal(log, {**rec, "served_provider": comp.served_provider, "served_model": comp.served_model,
+                                    "used_schema": comp.used_schema, "response": comp.parsed, "cost_usd": cost})
+        print(f"{'PASS' if good else 'FAIL'}  {model} reasoning={reasoning} via {comp.served_provider or '?'} "
+              f"schema={'strict' if comp.used_schema else 'json_object fallback'} ${cost:.6f}")
+    print(f"spent ${budget.spent_usd:.6f}")
+    return 1 if failures else 0
+
+
+# ---------------------------------------------------------------- argparse
+
+def check_class(folder: Path) -> tuple[list[str], dict[str, str]]:
+    """Validate a proposed class folder against the live registry, offline.
+
+    The folder's ``fields.yaml`` (``vocabularies``, ``classes``, ``tasks``) is merged into a
+    copy of ``labeling/fields.yaml`` and its ``prompts/`` beside the live prompts; then
+    ``validate_registry`` runs and each new task renders one request for a placeholder row.
+    Returns (problems, {task: rendered user message}).
+    """
+    import copy  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    from unittest import mock  # noqa: PLC0415
+
+    from . import registry  # noqa: PLC0415
+
+    folder = Path(folder)
+    spec_path = folder / "fields.yaml"
+    if not spec_path.exists():
+        return [f"{spec_path}: missing"], {}
+    extra = yaml.safe_load(spec_path.read_text(encoding="utf-8")) or {}
+    merged = copy.deepcopy(fields_registry())
+    problems: list[str] = []
+    for section in ("vocabularies", "classes", "tasks"):
+        for key, value in (extra.get(section) or {}).items():
+            if key in (merged.get(section) or {}):
+                problems.append(f"{section}.{key} already exists in labeling/fields.yaml")
+            merged.setdefault(section, {})[key] = value
+    for t in extra.get("tasks") or {}:
+        if t in tasks.BUILDERS:
+            problems.append(f"task {t}: shadows a built-in task")
+    samples: dict[str, str] = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        for src in registry.PROMPTS_DIR.glob("*.md"):
+            shutil.copy(src, tmp_dir / src.name)
+        for src in sorted((folder / "prompts").glob("*.md")):
+            if (tmp_dir / src.name).exists():
+                problems.append(f"prompts/{src.name}: would overwrite a live prompt")
+            shutil.copy(src, tmp_dir / src.name)
+        problems += registry.validate_registry(merged, prompts_dir=tmp_dir)
+        if problems:
+            return problems, samples
+        registry.prompt.cache_clear()
+        try:
+            with mock.patch.object(registry, "fields_registry", lambda: merged), \
+                    mock.patch.object(registry, "PROMPTS_DIR", tmp_dir):
+                for t, spec in (extra.get("tasks") or {}).items():
+                    cls = spec["class"]
+                    subs = (merged["classes"][cls].get("subclasses") or ["unknown"])
+                    row = {"filename": f"check-class-{cls}.txt", "expected": cls,
+                           "expected_subclass": subs[0], "gt_fields": "{}",
+                           "doc_text": "PLACEHOLDER DOCUMENT TEXT"}
+                    try:
+                        req = tasks.build_generic(row, t)
+                    except Exception as e:  # noqa: BLE001 - report every failure as a problem
+                        problems.append(f"task {t}: building a request failed: {e!r}")
+                        continue
+                    props = set(req.schema["properties"]["fields"]["properties"])
+                    want = {k for k, f in merged["classes"][cls]["fields"].items() if f.get("task") == t}
+                    if props != want:
+                        problems.append(f"task {t}: schema fields {sorted(props)} differ from fields.yaml {sorted(want)}")
+                    samples[t] = req.messages[-1]["content"]
+        finally:
+            registry.prompt.cache_clear()
+    return problems, samples
+
+
+def cmd_check_class(args: argparse.Namespace) -> int:
+    """``check-class``: print problems (exit 1) or the rendered sample request (exit 0)."""
+    problems, samples = check_class(args.folder)
+    for p in problems:
+        print(f"PROBLEM  {p}")
+    if problems:
+        print(f"{len(problems)} problem(s); fix them before merging the class.")
+        return 1
+    for t, text in samples.items():
+        print(f"--- task {t}: sample user message for a placeholder row ---")
+        print(text[:4000])
+    print(f"OK: {args.folder} is consistent with labeling/fields.yaml and the prompt rules.")
+    return 0
+
+
+def add_commands(sub: Any) -> None:
+    """Register the operator commands on the runner's subparsers."""
+    def common(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--campaign", default="v10")
+        p.add_argument("--stage", type=Path, default=runner.DEFAULT_STAGE)
+        p.add_argument("--out", type=Path, default=runner.DEFAULT_OUT)
+
+    p = sub.add_parser("chunk", help="run one campaign chunk as campaign.yaml defines it")
+    common(p)
+    p.add_argument("id")
+    p.add_argument("--arm", type=int)
+    p.add_argument("--initials")
+    p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
+    p.add_argument("--cap-usd", type=float, help="override the campaign cap (lower only is sensible)")
+    p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(operate=cmd_chunk)
+
+    p = sub.add_parser("gate", help="score a chunk's gate; --approve records a pass")
+    common(p)
+    p.add_argument("id")
+    p.add_argument("--arm", type=int)
+    p.add_argument("--approve", action="store_true")
+    p.add_argument("--replace", action="store_true")
+    p.add_argument("--signed-off", action="store_true", help="you read the chunk's CSVs / sample.csv")
+    p.add_argument("--initials")
+    p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
+    p.set_defaults(operate=cmd_gate)
+
+    p = sub.add_parser("status", help="progress, spend, gate and approval for every chunk")
+    common(p)
+    p.set_defaults(operate=cmd_status)
+
+    p = sub.add_parser("prices", help="live OpenRouter prices and pinned-provider parameters (no key)")
+    common(p)
+    p.set_defaults(operate=cmd_prices)
+
+    p = sub.add_parser("stage", help="build data/v9_4/stage if missing, then check its sha")
+    common(p)
+    p.set_defaults(operate=cmd_stage)
+
+    p = sub.add_parser("doctor", help="every readiness check (no paid call)")
+    common(p)
+    p.set_defaults(operate=cmd_doctor)
+
+    p = sub.add_parser("check-class", help="validate a proposed new document class folder (offline)")
+    p.add_argument("folder", type=Path, help="a folder with fields.yaml and prompts/ (see new_doc_types/)")
+    p.set_defaults(operate=cmd_check_class)
+
+    p = sub.add_parser("ping", help="one tiny paid request per approved model (about $0.001)")
+    common(p)
+    p.add_argument("--initials", required=True)
+    p.add_argument("--cap-usd", type=float, default=0.05)
+    p.set_defaults(operate=cmd_ping)
+

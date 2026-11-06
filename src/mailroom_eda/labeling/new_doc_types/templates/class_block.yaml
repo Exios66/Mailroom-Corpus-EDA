@@ -1,0 +1,35 @@
+# Template: one new document class for fields.yaml.
+# Copy into a folder of your own (see examples/commercial_lease/fields.yaml), replace
+# every <...>, then run:  python -m mailroom_eda.labeling check-class <folder>
+# When it is clean, merge the three blocks into labeling/fields.yaml.
+#
+# type:     a Dojo scoring type: name | label | free_text | id | date | money |
+#           entity_list | entity_list:name | entity_list:free_text
+# source:   llm (new labels) | gold (already in the rows) | deterministic (computed)
+# absence:  absent_ok | evidence_only | never_absent
+# dojo:     proposed, until the class is in a released llm-dojo-scoring; then delete it
+
+vocabularies:
+  <class>_intent: [<intent_a>, <intent_b>, other]
+  <closed_list>: [<value_a>, <value_b>, other]
+
+classes:
+  <class>:
+    specialist: <class_plural>_specialist
+    dojo: proposed
+    subclasses: [<subclass_a>, <subclass_b>, other]
+    fields:
+      document_name: {type: name, source: llm, task: <class>_entities, absence: absent_ok,
+                      description: "the document's title as printed", where: "the first page"}
+      <field>: {type: <type>, source: llm, task: <class>_entities, absence: absent_ok,
+                description: "<one line: what the value is and how to write it>",
+                where: "<where in the document it usually is>"}
+      <label_field>: {type: label, source: llm, task: <class>_entities, absence: absent_ok,
+                      vocabulary: <closed_list>, description: "<how to choose>"}
+      intent: {type: label, source: llm, task: <class>_entities, absence: never_absent,
+               vocabulary: <class>_intent, description: "<what the document is for>"}
+
+tasks:
+  <class>_entities: {class: <class>, prompt: <class>_entities, two_model: true,
+                     pilot_per_stratum: 3, max_tokens: 3000, typical_output: 1200,
+                     window: [12000, 4000]}

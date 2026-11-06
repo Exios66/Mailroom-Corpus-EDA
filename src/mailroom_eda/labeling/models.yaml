@@ -1,0 +1,59 @@
+# Approved labeling configurations. A journal record is ingested only when its
+# (model, provider, reasoning, prompt_sha256, temperature) tuple also has a passing
+# calibration or pilot (campaigns/<name>/approved.yaml, written by `labeling gate --approve`).
+#
+# Verified against the live OpenRouter catalog on `checked` (GET /api/v1/models and
+# /api/v1/models/<id>/endpoints). `labeling prices` re-checks prices, context and the
+# pinned providers' parameters without a key; `labeling doctor` runs it before a chunk.
+#
+# route (OpenRouter provider routing, sent as the request's `provider` object):
+#   only           the provider slugs a request may be served by. Pinned so a calibration
+#                  covers the providers that serve the chunk; fp4/mxfp4 endpoints are excluded.
+#   quantizations  optional allowlist of endpoint quantizations
+#   max_price      USD per 1M tokens; an endpoint above it is never used
+#   seed           send `seed` (only where every pinned provider supports it; with
+#                  require_parameters a provider that lacks a sent parameter is skipped)
+# prompt / completion: USD per 1M tokens used for estimates and the spend gate. They are
+# the most expensive pinned endpoint's price, so the gate's worst case is never low.
+checked: "2026-11-06"
+key_reserve_usd: 3.0
+models:
+  z-ai/glm-5.3-flashx-legal:
+    provider: openrouter
+    prompt: 0.37
+    completion: 1.25
+    context: 1048576
+    max_completion: 131072
+    roles: [legal_primary]
+    route: {only: [z-ai], max_price: {prompt: 0.37, completion: 1.25}, seed: false}
+  deepseek/deepseek-v4.1-flash:
+    provider: openrouter
+    prompt: 0.15
+    completion: 0.65
+    context: 1040000
+    max_completion: 393216
+    roles: [general_primary, legal_second_opinion]
+    route: {only: [deepinfra, atlas-cloud, coreweave, inference-net], quantizations: [fp8],
+            max_price: {prompt: 0.15, completion: 0.65}, seed: true}
+  minimax/minimax-m3.1-flash:
+    provider: openrouter
+    prompt: 0.15
+    completion: 0.60
+    context: 1048576
+    max_completion: 524288
+    roles: [general_second_opinion]
+    route: {only: [parasail, together, fireworks, sambanova], max_price: {prompt: 0.15, completion: 0.60},
+            seed: false}
+  Qwen/Qwen3-32B-FP8:
+    provider: modal
+    # Modal bills GPU time, not tokens: one H100 at about $3.95/hour.
+    gpu_usd_per_hour: 3.95
+    context: 32768
+    roles: [fallback]
+# Priced for comparison in costs.md only; not approved for ingest (model-level list price).
+comparison:
+  deepseek/deepseek-v4.1-flash-1017: {prompt: 0.30, completion: 1.20}
+  z-ai/glm-5.3-flash: {prompt: 0.15, completion: 0.50}
+  qwen/qwen3.8-flash: {prompt: 0.15, completion: 0.47}
+  openai/gpt-6-luna: {prompt: 0.10, completion: 0.50}
+  google/gemini-3.5-flash-lite: {prompt: 0.30, completion: 2.50}
