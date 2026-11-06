@@ -8,6 +8,9 @@ Tasks:
 * ``contract_entities``, ``merger_entities``, ``correspondence``, ``claim_checklist``,
   ``corporate``: field extraction with evidence, run by two models whose answers are
   compared field by field (``verify.decide``).
+* ``merger_consideration``: the merger Type of Consideration label from the conversion
+  clauses. It is asked on every merger, so the 95 rows with the expert MAUD answer act as
+  calibration gold for the 56 without it.
 
 Rows are v9.4/v10 stage rows (``expected``, ``expected_subclass``, ``doc_text``,
 ``gt_fields`` as a dict or JSON string). The window rules are fixed, so a replay sees the
@@ -40,6 +43,18 @@ MERGER_SECTIONS = (
     ("Notices", r"\bnotices\b"),
 )
 _HEADING_LINE = r"(?im)^[^\S\n]*(?:section\s+)?(?:\d+(?:\.\d+)*\.?\s+)?[^\n]{0,20}%s"
+CONSIDERATION_HEAD_CHARS = 6_000
+CONSIDERATION_SECTION_CHARS = 4_000
+CONSIDERATION_SECTIONS = (
+    ("Conversion of Shares", r"(conversion\s+of\s+(capital\s+)?(stock|shares|securities)"
+                             r"|effects?\s+(of\s+the\s+mergers?\s+)?on\s+(the\s+)?(capital\s+stock|company\s+common)"
+                             r"|treatment\s+of\s+(securities|shares))"),
+    ("Merger Consideration", r"(merger\s+consideration|offer\s+price|consideration\s+for\s+the\s+(merger|offer))"),
+    ("Election", r"(election\s+procedures?|cash\s+election|stock\s+election|proration)"),
+)
+#: Tasks whose ``deterministic`` field is asked on every row, so the derivable rows serve
+#: as calibration gold for the rest.
+CALIBRATED_DETERMINISTIC = {"merger_consideration": "merger_consideration"}
 
 
 def gt_fields(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -86,6 +101,35 @@ def merger_window(text: str) -> tuple[str, str]:
     parts.append("[... signature pages ...]\n" + text[-8_000:])
     desc = (f"the first {MERGER_HEAD_CHARS:,} characters, the located sections ({', '.join(found) or 'none'})"
             " and the signature pages")
+    return "\n\n".join(parts), desc
+
+
+def consideration_window(text: str) -> tuple[str, str]:
+    """Opening pages plus the conversion, merger-consideration and election sections.
+
+    Each section is the first heading-like hit after the opening; when no heading matches,
+    the first plain mention is used. The window stays under 20,000 characters.
+    """
+    budget = CONSIDERATION_HEAD_CHARS + len(CONSIDERATION_SECTIONS) * CONSIDERATION_SECTION_CHARS
+    if len(text) <= budget:
+        return text, "the full document"
+    parts = [text[:CONSIDERATION_HEAD_CHARS]]
+    found, taken = [], []
+    for label, pat in CONSIDERATION_SECTIONS:
+        m = next((c for c in re.finditer(_HEADING_LINE % pat, text) if c.start() >= CONSIDERATION_HEAD_CHARS), None)
+        if m is None:
+            m = next((c for c in re.finditer(pat, text, re.I) if c.start() >= CONSIDERATION_HEAD_CHARS), None)
+        if m is None:
+            continue
+        start = m.start()
+        if any(s <= start < s + CONSIDERATION_SECTION_CHARS for s in taken):
+            found.append(label)  # already inside an earlier excerpt
+            continue
+        taken.append(start)
+        parts.append(f"[... section located for {label} ...]\n" + text[start:start + CONSIDERATION_SECTION_CHARS])
+        found.append(label)
+    desc = (f"the first {CONSIDERATION_HEAD_CHARS:,} characters and the located sections "
+            f"({', '.join(found) or 'none'})")
     return "\n\n".join(parts), desc
 
 
@@ -143,7 +187,8 @@ def _task_fields(row: Mapping[str, Any], task: str) -> dict[str, dict[str, Any]]
     ``deterministic`` fields that name the task only where they cannot be derived (e.g.
     ``merger_consideration`` without an expert MAUD answer).
     """
-    sub = row.get("expected_subclass") if row["expected"] == "corporate_record" else None
+    # A corporate row with no subclass gets the ``other`` schema, never every subclass's.
+    sub = (row.get("expected_subclass") or "other") if row["expected"] == "corporate_record" else None
     gt = gt_fields(row)
     out = {}
     for k, v in class_fields(row["expected"], sub).items():
@@ -151,7 +196,8 @@ def _task_fields(row: Mapping[str, Any], task: str) -> dict[str, dict[str, Any]]
             continue
         src = v.get("source")
         if (src == "llm" or (src == "gold" and gt.get(k) in (None, "", "[]", []))
-                or (src == "deterministic" and deterministic_value(row, k) is None)):
+                or (src == "deterministic" and (CALIBRATED_DETERMINISTIC.get(task) == k
+                                                or deterministic_value(row, k) is None))):
             out[k] = v
     return out
 
@@ -189,7 +235,7 @@ def build_cuad(row: Mapping[str, Any], *, repair_problems: Sequence[str] = (),
                   "type": "object", "additionalProperties": False, "required": ["category", "text"],
                   "properties": {"category": {"type": "string", "enum": [c["name"] for c in cats]},
                                  "text": {"type": "string"}}}}}}
-    return Request("cuad", doc_id, msgs, schema, {}, prompt_bundle_sha(names),
+    return Request("cuad", doc_id, msgs, schema, {}, prompt_bundle_sha(names, {"categories": cats}),
                    "repair" if repair_problems else "")
 
 
@@ -216,7 +262,8 @@ def build_intent(row: Mapping[str, Any], variant: str) -> Request:
     return Request("intent", doc_id,
                    [{"role": "system", "content": prompt("intent_system").render({})},
                     {"role": "user", "content": user}],
-                   schema, {}, prompt_bundle_sha(["intent_system", "intent_user"]), variant)
+                   schema, {}, prompt_bundle_sha(["intent_system", "intent_user"], {"vocabulary": vocab}),
+                   variant)
 
 
 def _extraction(row: Mapping[str, Any], task: str, template: str, values: dict[str, Any],
@@ -234,14 +281,28 @@ def _extraction(row: Mapping[str, Any], task: str, template: str, values: dict[s
     system = prompt("extract_rules").render({})
     return Request(task, doc_id, [{"role": "system", "content": system},
                                   {"role": "user", "content": user}],
-                   extraction_schema(fields), fields, prompt_bundle_sha(["extract_rules", template]))
+                   extraction_schema(fields), fields,
+                   prompt_bundle_sha(["extract_rules", template], _task_config(fields)))
 
 
-def build_contract_entities(row: Mapping[str, Any]) -> Request:
-    """ContractExtraction v2 entity fields (the CUAD checklist is the ``cuad`` task)."""
+def _task_config(fields: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    """What besides the templates shapes a task's prompt and schema: the field specs and
+    the vocabularies they name. Hashed into ``prompt_sha256`` so a re-run after an edit to
+    either does not reuse old answers."""
+    vocabs = sorted({str(f["vocabulary"]) for f in fields.values() if f.get("vocabulary")})
+    return {"fields": {k: dict(v) for k, v in sorted(fields.items())},
+            "vocabularies": {v: vocabulary(v) for v in vocabs}}
+
+
+def build_contract_entities(row: Mapping[str, Any], *, expert_hints: bool = True) -> Request:
+    """ContractExtraction v2 entity fields (the CUAD checklist is the ``cuad`` task).
+
+    ``expert_hints=False`` (the calibration set) leaves out the expert CUAD spans: those
+    rows are scored against the same spans, so showing them would leak the answer.
+    """
     fam = cuad_family(row.get("expected_subclass") or "") or {}
     hints = "; ".join(f"{f['name']}: {f['description']}" for f in fam.get("family_fields", [])) or "none"
-    spans = _expert_span_hints(row)
+    spans = _expert_span_hints(row) if expert_hints else ""
     return _extraction(row, "contract_entities", "contract_entities", {
         "subclass": fam.get("key") or row.get("expected_subclass") or "unknown",
         "family_definition": fam.get("definition") or "no family definition",
@@ -271,21 +332,18 @@ def _expert_span_hints(row: Mapping[str, Any]) -> str:
             + "\n".join(lines))
 
 
-def _consideration_line(row: Mapping[str, Any]) -> str:
-    """Ask for merger_consideration only where the expert MAUD answer does not give it."""
-    if "merger_consideration" in _task_fields(row, "merger_entities"):
-        return ("- merger_consideration (label): " + " | ".join(vocabulary("merger_consideration"))
-                + ". How target shares are paid for, from the Conversion of Shares section; "
-                "other when it is none of these.")
-    return "merger_consideration is not asked: it comes from the expert MAUD answer."
-
-
 def build_merger_entities(row: Mapping[str, Any]) -> Request:
-    """MergerAgreementExtraction v2 entity fields."""
+    """MergerAgreementExtraction v2 entity fields (consideration is its own task)."""
     return _extraction(row, "merger_entities", "merger_entities", {
         "merger_intents": " | ".join(vocabulary("merger_intent")),
-        "consideration_line": _consideration_line(row),
     }, merger_window(str(row["doc_text"])))
+
+
+def build_merger_consideration(row: Mapping[str, Any]) -> Request:
+    """The merger Type of Consideration label, from a window of the conversion clauses."""
+    return _extraction(row, "merger_consideration", "merger_consideration", {
+        "consideration_options": " | ".join(vocabulary("merger_consideration")),
+    }, consideration_window(str(row["doc_text"])))
 
 
 def build_correspondence(row: Mapping[str, Any]) -> Request:
@@ -333,17 +391,19 @@ BUILDERS: dict[str, Callable[..., Request]] = {
     "cuad": build_cuad,
     "contract_entities": build_contract_entities,
     "merger_entities": build_merger_entities,
+    "merger_consideration": build_merger_consideration,
     "correspondence": build_correspondence,
     "claim_checklist": build_claim_checklist,
     "corporate": build_corporate,
 }
 TASK_CLASSES = {
     "cuad": "contract", "intent": "correspondence", "contract_entities": "contract",
-    "merger_entities": "merger_agreement", "correspondence": "correspondence",
+    "merger_entities": "merger_agreement", "merger_consideration": "merger_agreement",
+    "correspondence": "correspondence",
     "claim_checklist": "insurance_claim", "corporate": "corporate_record",
 }
-TWO_MODEL_TASKS = frozenset({"contract_entities", "merger_entities", "correspondence",
-                             "claim_checklist", "corporate"})
+TWO_MODEL_TASKS = frozenset({"contract_entities", "merger_entities", "merger_consideration",
+                             "correspondence", "claim_checklist", "corporate"})
 
 
 
@@ -367,7 +427,7 @@ def build_generic(row: Mapping[str, Any], task: str) -> Request:
 
 
 def generic_tasks() -> dict[str, dict[str, Any]]:
-    """Tasks declared in ``fields.yaml`` under ``tasks:`` (see ``new_doc_types/``)."""
+    """Tasks declared in ``fields.yaml`` under ``tasks:`` (see ``integrations/``)."""
     from .registry import fields_registry  # noqa: PLC0415
 
     return dict(fields_registry().get("tasks") or {})
@@ -388,8 +448,11 @@ def _register_generic_tasks() -> None:
 _register_generic_tasks()
 
 
-def build(task: str, row: Mapping[str, Any], variant: str = "") -> Request:
-    """Dispatch to the task builder."""
+def build(task: str, row: Mapping[str, Any], variant: str = "", *, set_name: str = "") -> Request:
+    """Dispatch to the task builder. ``set_name`` matters only for ``contract_entities``,
+    whose calibration set is built without the expert span hints."""
     if task == "intent":
         return build_intent(row, variant or "a")
+    if task == "contract_entities":
+        return build_contract_entities(row, expert_hints=set_name != "calibration")
     return BUILDERS[task](row)

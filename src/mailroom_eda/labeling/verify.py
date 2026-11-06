@@ -4,9 +4,11 @@ A field value is accepted only when all of these hold:
 
 1. **Evidence is verbatim.** The quoted evidence occurs in ``doc_text``, allowing only
    whitespace differences and dropped markdown marks (``*``, ``_``, ``#``).
-2. **The value is grounded.** For names, ids, money, dates and name lists, the value's
-   tokens occur in the document. Free text must share most of its tokens with the
-   document. Labels must be in their vocabulary.
+2. **The value is grounded.** Names, ids and name lists: every token occurs in the
+   document; names, ids, money and dates must also occur in their own evidence quote.
+   Dates must match a full date written in the text (or the exact printed string);
+   money must match an amount in the text exactly, decimals included. Free text must
+   share most of its tokens with the document. Labels must be in their vocabulary.
 3. **Two models agree** after normalising for the field's Dojo scoring type, or one
    model's value is accepted after a human verdict in the review CSV.
 
@@ -47,8 +49,9 @@ def fold(text: str) -> tuple[str, list[int]]:
             chars.append(" ")
             idx.append(pending)
             pending = None
-        chars.append(ch.lower())
-        idx.append(i)
+        low = ch.lower()  # may be longer than one character ("İ" -> "i̇")
+        chars.append(low)
+        idx.extend([i] * len(low))
     return "".join(chars), idx
 
 
@@ -83,12 +86,54 @@ class DocIndex:
     folded: tuple[str, list[int]]
     tokens: frozenset[str]
     numbers: frozenset[str]
+    dates: frozenset[date] = frozenset()
 
     @classmethod
     def build(cls, text: str) -> "DocIndex":
-        """Index ``text``: folded form, token set, and digit strings with separators removed."""
-        nums = frozenset(n.replace(",", "").split(".")[0] for n in _NUMBER.findall(text))
-        return cls(text, fold(text), frozenset(tokens(text)), nums)
+        """Index ``text``: folded form, token set, numbers (separators removed, decimals
+        kept, trailing zero decimals dropped) and every date written in it."""
+        nums = frozenset(_num(n) for n in _NUMBER.findall(text))
+        return cls(text, fold(text), frozenset(tokens(text)), nums, frozenset(find_dates(text)))
+
+
+def _num(s: str) -> str:
+    """Canonical digit string: separators removed, ``.00``-style decimals dropped."""
+    s = s.replace(",", "")
+    if "." in s:
+        whole, frac = s.split(".", 1)
+        frac = frac.rstrip("0")
+        return f"{whole}.{frac}" if frac else whole
+    return s
+
+
+_DATE_WRITTEN = re.compile(
+    r"\b(?:(?P<m1>[A-Za-z]{3,9})\.?\s+(?P<d1>\d{1,2})(?:st|nd|rd|th)?,?\s+(?P<y1>\d{4})"
+    r"|(?P<d2>\d{1,2})(?:st|nd|rd|th)?\s+(?:day\s+of\s+)?(?P<m2>[A-Za-z]{3,9}),?\s+(?P<y2>\d{4})"
+    r"|(?P<y3>\d{4})-(?P<mo3>\d{2})-(?P<d3>\d{2})"
+    r"|(?P<mo4>\d{1,2})/(?P<d4>\d{1,2})/(?P<y4>\d{4}))\b")
+
+
+def find_dates(text: str) -> list[date]:
+    """Every full date (day, month and year) written in ``text``."""
+    out: list[date] = []
+    for m in _DATE_WRITTEN.finditer(text):
+        g = m.groupdict()
+        try:
+            if g["y1"]:
+                mon = _MONTHS.get(g["m1"].lower())
+                if mon:
+                    out.append(date(int(g["y1"]), mon, int(g["d1"])))
+            elif g["y2"]:
+                mon = _MONTHS.get(g["m2"].lower())
+                if mon:
+                    out.append(date(int(g["y2"]), mon, int(g["d2"])))
+            elif g["y3"]:
+                out.append(date(int(g["y3"]), int(g["mo3"]), int(g["d3"])))
+            else:
+                out.append(date(int(g["y4"]), int(g["mo4"]), int(g["d4"])))
+        except ValueError:
+            continue
+    return out
 
 
 def tokens(text: Any) -> list[str]:
@@ -125,7 +170,7 @@ def parse_date(value: Any) -> date | None:
 
 
 def parse_money(value: Any) -> float | None:
-    """Parse "$1,250,000", "1.5 million", "USD 400" or a number."""
+    """Parse "$1,250,000", "1.5 million", "USD 400", "-$75", "($75)" or a number."""
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
@@ -135,6 +180,9 @@ def parse_money(value: Any) -> float | None:
     if not m:
         return None
     n = float(m[1])
+    before = s[:m.start()].strip()
+    if before.endswith("-") or before.startswith("-") or (before.startswith("(") and ")" in s[m.end():]):
+        n = -n
     mult = {"million": 1e6, "m": 1e6, "billion": 1e9, "bn": 1e9, "b": 1e9, "thousand": 1e3,
             "k": 1e3}.get((m[2] or "").strip(), 1.0)
     return n * mult
@@ -202,23 +250,26 @@ def grounded(value: Any, type_: str, doc: DocIndex, *, vocab: Sequence[str] | No
         return all(grounded(i, inner, doc) for i in items)
     if type_ == "date":
         d = parse_date(value)
-        if d is None:
-            return set(tokens(value)) <= doc.tokens
-        months = {k for k, v in _MONTHS.items() if v == d.month}
-        month_ok = bool(months & doc.tokens) or f"{d.month:02d}" in doc.tokens or str(d.month) in doc.tokens
-        return str(d.year) in doc.tokens and month_ok
+        if d is not None:
+            return d in doc.dates
+        # Not a full date: only the exact printed string counts, and it needs a digit.
+        s = str(value).strip()
+        return bool(re.search(r"\d", s)) and locate(doc.text, s, doc.folded) is not None
     if type_ == "money":
-        digits = [n.replace(",", "").split(".")[0] for n in _NUMBER.findall(str(value))]
+        digits = [_num(n) for n in _NUMBER.findall(str(value))]
         if not digits:
             return False
-        if re.search(r"million|billion|thousand", str(value), re.I):
-            return all(d in doc.numbers or d in doc.tokens for d in digits)
         return all(d in doc.numbers for d in digits)
     toks = tokens(value)
     if not toks:
         return False
     hit = sum(t in doc.tokens for t in toks) / len(toks)
     return hit >= (0.6 if type_ == "free_text" else 1.0)
+
+
+#: Scalar types whose value must appear in its own evidence quote. Lists may cite one
+#: quote for several items, labels are judgements, and free text is a paraphrase.
+_EVIDENCE_BOUND = frozenset({"name", "id", "money", "date"})
 
 
 @dataclass(frozen=True)
@@ -249,6 +300,12 @@ def check_field(raw: Mapping[str, Any] | None, type_: str, doc: DocIndex, *,
     else:
         verbatim = bool(evidence) and locate(doc.text, evidence, doc.folded) is not None
     ground = status != "present" or grounded(value, type_, doc, vocab=vocab)
+    if status == "present" and ground and verbatim and type_ in _EVIDENCE_BOUND:
+        # The value must be supported by its own evidence quote, not just somewhere
+        # in the document.
+        span = locate(doc.text, evidence, doc.folded)
+        if span is not None:
+            ground = grounded(value, type_, DocIndex.build(doc.text[span[0]:span[1]]), vocab=vocab)
     return FieldResult(value, status, evidence, verbatim, ground)
 
 
@@ -266,6 +323,8 @@ def decide(a: FieldResult, b: FieldResult | None, type_: str, absence: str) -> t
             return "accept", a.value, "both models agree"
         return "adjudicate", None, "models disagree"
     if a.status == b.status == "documented_absent" and a.verbatim_ok and b.verbatim_ok:
+        if absence == "never_absent":
+            return "adjudicate", None, "never_absent field quoted as absent"
         return "absent", None, "both quote an absence statement"
     if a.status == b.status == "not_found":
         if absence == "absent_ok":

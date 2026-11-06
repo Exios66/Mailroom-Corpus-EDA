@@ -124,13 +124,18 @@ def prompt(name: str) -> Prompt:
     return Prompt(name, path.read_text(encoding="utf-8"))
 
 
-def prompt_bundle_sha(names: list[str]) -> str:
-    """One hash for the ordered set of templates a task uses."""
+def prompt_bundle_sha(names: list[str], config: Any = None) -> str:
+    """One hash for the ordered set of templates a task uses, plus ``config``: the field
+    specs, vocabularies and Dojo catalog slice that are rendered into the prompt or schema.
+    Editing any of them changes the hash, so a re-run sends fresh calls."""
     h = hashlib.sha256()
     for n in names:
         h.update(n.encode())
         h.update(b"\0")
         h.update(prompt(n).sha256.encode())
+    if config is not None:
+        h.update(b"\0config\0")
+        h.update(json.dumps(config, sort_keys=True, default=str).encode())
     return h.hexdigest()
 
 

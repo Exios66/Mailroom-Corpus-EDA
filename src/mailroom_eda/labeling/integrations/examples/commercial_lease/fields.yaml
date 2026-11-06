@@ -1,4 +1,4 @@
-# Proposed class: commercial_lease. A worked example for new_doc_types/README.md.
+# Proposed class: commercial_lease. A worked example for integrations/GUIDE_new_doc_type.md.
 # Not merged into labeling/fields.yaml: merge it only after llm-dojo-scoring has the class.
 # Check it with:  python -m mailroom_eda.labeling check-class <this folder>
 

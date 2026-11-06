@@ -5,7 +5,7 @@ not in `labeling/fields.yaml`, the dataset or any consumer. It shows exactly wha
 looks like, and `check-class` proves it is consistent.
 
 ```bash
-PYTHONPATH=src python -m mailroom_eda.labeling check-class src/mailroom_eda/labeling/new_doc_types/examples/commercial_lease
+PYTHONPATH=src python -m mailroom_eda.labeling check-class src/mailroom_eda/labeling/integrations/examples/commercial_lease
 ```
 
 | file | becomes |
@@ -39,10 +39,11 @@ PYTHONPATH=src python -m mailroom_eda.labeling check-class src/mailroom_eda/labe
 2. **ALeaseBERT benchmark (calibration only).** Leivaditi, Rossi and Kanoulas,
    *A Benchmark for Lease Contract Review* (2020) annotated 179 English commercial leases for
    entities (parties, dates, property, rent, term and more) and red-flag clauses. It is
-   released under CC BY-NC-SA 4.0: non-commercial and share-alike. Use it to measure label
-   accuracy, never as published rows, unless the whole release takes the same licence.
-   Confirm where the data is currently hosted before planning on it; the paper links the
-   original repository.
+   released under CC BY-NC 4.0 (non-commercial; attribution; no share-alike), per its
+   University of Amsterdam DARE record (https://dare.uva.nl/id/1e78cacc-e2b9-49f9-90cf-ccbec54a41b5,
+   DOI 10.21942/uva.19732993.v1). The arXiv paper (2010.10386) is CC BY-NC-SA; that licence
+   covers the paper, not the data. Use the data to measure label accuracy, never as
+   published rows, unless the whole release accepts non-commercial terms.
 
 Do not scrape commercial lease-abstraction services: their documents are not licensed for
 redistribution.

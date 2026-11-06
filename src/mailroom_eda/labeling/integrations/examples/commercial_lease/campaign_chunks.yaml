@@ -4,7 +4,7 @@
 # Sizes assume about 300 lease exhibits; adjust the slice count to the real row count
 # (about 150 rows per slice keeps each one under its cap).
 #
-# Calibration against labeled gold (ALeaseBERT, see README.md) is optional and needs code:
+# Calibration against labeled gold (ALeaseBERT, see this example's README.md) is optional and needs code:
 # a `calibration` set in runner.select and a gold mapping like operate.CUAD_GOLD_FIELDS.
 # Without it the human-verdict pilot is the quality gate, as for correspondence and claims.
 

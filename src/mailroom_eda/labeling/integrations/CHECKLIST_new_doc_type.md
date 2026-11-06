@@ -5,12 +5,14 @@ lands. `<class>` is the new class key (for example `commercial_lease`) and `<spe
 its specialist (for example `commercial_leases_specialist`). Paths are relative to each
 repository's root.
 
-Run `find_touchpoints.py` against each checkout too: it finds anything this list misses
-because the code moved.
+Run `find_touchpoints.py --class <class>:<specialist>` against each checkout too: it finds
+anything this list misses because the code moved. Fill the lockstep table in `README.md`
+as each PR merges, and close with `check_lockstep.py` exiting 0.
 
 ## 0. Decision (no code)
 
-- [ ] The class meets every criterion in `README.md` step 1, written up in the issue
+- [ ] The class meets every criterion in `GUIDE_new_doc_type.md` step 1, written up in the issue
+- [ ] The class is in `CANDIDATES.md` (or added there), with its niche and overlap risk
 - [ ] Sources chosen, with a licence for each; non-redistributable text marked calibration-only
 - [ ] Field list (10 to 20 fields) with a Dojo scoring type for each
 - [ ] Subclass list (5 to 10), each with at least 15 documents
@@ -27,7 +29,8 @@ because the code moved.
 - [ ] `schemas/scored_enums.py`: closed label enums
 - [ ] `schemas/extraction_schemas.py`: the class's document-type schema
 - [ ] `schemas/sorter_guide.py`: class description and cues for the sorter
-- [ ] `metrics/registry.py`, `metrics/profiles.py`: specialist metric surfaces
+- [ ] `metrics/registry.py`, `metrics/profiles.py`: specialist metric surfaces and a metrics profile for `<specialist>`
+- [ ] `LIVE_SPECIALISTS` and the sorter label set include `<specialist>` / `<class>`
 - [ ] `scoring/extraction_scope.py`: `LIVE_SCHEMA_FIELDS`
 - [ ] `schemas/data/extraction_status.json`: regenerated
 - [ ] Tests: schema parity, a fixture row scored end to end, sorter label set
@@ -65,14 +68,16 @@ because the code moved.
 
 - [ ] `src/config/taxonomy.yaml`: class, specialist, confidence bands
 - [ ] `src/schemas/documents.py`: extraction model and class map
-- [ ] `src/agents/<specialist>.py`
-- [ ] New frozen prompt version under `src/llm/` (old versions stay frozen)
+- [ ] `src/agents/<specialist>.py`, modelled on `src/agents/contracts_specialist.py`
+- [ ] New frozen prompt version: `src/llm/frozen_vN/<specialist>.txt` plus `lineage.json` (copy every existing specialist prompt into `frozen_vN` unchanged; `frozen_v1` and older stay frozen)
+- [ ] `src/config/taxonomy.yaml`: the specialist's confidence bands and escalation threshold
 - [ ] `src/langchain_agents/`: classifier, sorter, specialist agents, prompts, doc inventories
-- [ ] `src/graph/build_graph.py`: routing edge
+- [ ] `src/graph/build_graph.py`: routing edge from the sorter to `<specialist>`
+- [ ] The sorter and classifier prompts name the class and its cues (from the Dojo `sorter_guide.py`)
 - [ ] `src/pipeline/hf_corpora.py`: corpus size, class counts, configs
 - [ ] `src/observability/`: specialist suite, ground-truth loaders, honest gaps
 - [ ] `src/scripts/run_hf_pilot.py`, `sync_hf_ground_truth.py`, `sync_dataset.py`: class keys
-- [ ] Dojo pin bumped; tests updated
+- [ ] Dojo pin bumped in `pyproject.toml` to the step-1 release; `src/tests/test_hf_corpora.py` and the specialist tests updated
 
 ## 5. local-mailroom-sandbox
 
@@ -81,7 +86,7 @@ because the code moved.
 - [ ] `src/mailroom_sandbox/job/spec.py`: per-revision corpus size and class counts
 - [ ] `src/mailroom_sandbox/corpus.py`: ground-truth field lists
 - [ ] `src/mailroom_sandbox/gt_labeler.py`, `prompt_registry.py`, `eval/`
-- [ ] `scripts/sync_specialist_prompts.py`, `scripts/estimate_spend.py`
+- [ ] `scripts/sync_specialist_prompts.py` (pulls the new frozen prompt), `scripts/estimate_spend.py`
 - [ ] Run configs for the new revision; old configs left pinned
 - [ ] `tests/test_vendor_drift.py` and `tests/test_dojo_source.py` pass
 
@@ -90,4 +95,5 @@ because the code moved.
 - [ ] Every gate passes on the final stage
 - [ ] New dataset tag published; older tags untouched
 - [ ] Pins bumped in this repository, llm-mailroom and the sandbox
+- [ ] `check_lockstep.py --rows <new size>` exits 0
 - [ ] Card versioning table and CHANGELOG updated

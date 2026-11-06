@@ -71,7 +71,8 @@ The repo is added with `add_repo` (push access) when this phase starts.
 
 ### G2. llm-mailroom (standalone repo)
 
-- **Do this before any v10 publish:** the `_viewer_rows` calls in `run_hf_pilot.py` and `sync_hf_ground_truth.py` pass the revision. `hf_corpus_loader` puts the revision into the cache key, and refuses viewer URLs that aren't scoped to a revision.
+- **Do this before any v10 publish:** the Hub dataset viewer's `/rows` API serves only the current main branch and takes no revision parameter, so it cannot serve a pinned run. For pinned runs, `run_hf_pilot.py` and `sync_hf_ground_truth.py` stop using `_viewer_rows` and load with `datasets.load_dataset(repo, config, revision=<pin>)` (or read that revision's parquet files with `huggingface_hub.hf_hub_download(..., revision=<pin>)`). `hf_corpus_loader` puts the revision into the cache key and **fails closed**: a pinned request that would have to fall back to the viewer raises instead of silently reading main. The viewer stays only for unpinned, interactive browsing.
+- **Merger subclasses in v10:** the 56 MAUD mergers whose v9 subclass is `other` carry their labeled consideration (`all_cash`, `all_stock`, `mixed_cash_stock`, `mixed_cash_stock_election`, or `other` where a human confirmed it) in the v10 `subclass` column. `expected_subclass` in the legacy configs stays `other`. Stratified samplers that read `subclass` see the new distribution; pinned v9 runs are unaffected. Row count, split and `n_docs` are unchanged.
 - **`schemas/documents.py` + `config/taxonomy.yaml`:** Contract and Merger v2 fields and types mirrored from the Dojo, and the `label` enums. New `llm/frozen_v2/{contracts,merger_agreement}_specialist.txt` prompts; `frozen_v1` stays frozen. Bump the prompt version.
 - **`pipeline/hf_corpora.py`:** `FULL_CORPUS_SCHEMA="v10"`, the v10 pin, a per-class `configs` map, and `n_docs` 3,292.
 - **`pipeline/hf_corpus_loader.py`:** `load_class_gt`, `load_routing`, long-table loaders joined on `document_id` with `filename` as the fallback, and numpy-to-list conversion.
@@ -116,6 +117,7 @@ The repo is added with `add_repo` (push access) when this phase starts.
 - **`gt_label_ex10.py`:** make `metadata` optional and re-verify spans.
 - **Hard-coded config names and revisions:** `export_sorter_handoff` derives the config name; update the dashboard prose revisions and the `data/cache/README.md`.
 - **Run configs:** add v10 run YAMLs and leave the v9 YAMLs pinned.
+- **Merger strata:** any sampler or report keyed on merger subclass reads the v10 `subclass` (the 56 `other` rows now carry their labeled consideration) and keeps `source_subclass` for v9 comparisons; the per-revision class counts are unchanged (151 mergers).
 - **Tests:**
   - parametrize `test_sand032_configs`, `test_gt_labeler:54-64`, `test_modernbert_feeder`, `test_cli_wiring`;
   - add `test_corpus` fixtures for a typed config, a cleaned text with a matching hash, and raw vs canonical subclasses.

@@ -2,8 +2,10 @@
 # chunks:, then regenerate costs.md with:  python -m mailroom_eda.labeling costs --campaign <name>
 #
 # Order: a pilot (stratified, a human reviews every field), then the remainder in slices,
-# each gated on two-model agreement. If a labeled public dataset exists, put a calibration
-# chunk with gate field_accuracy (or cuad_f1-style) before the pilot.
+# each gated on two-model agreement. Use only the sets pilot, remainder and all: the
+# calibration set exists for contract_entities, cuad, intent and merger_consideration only.
+# A calibration chunk against a labeled public dataset first needs that set added to
+# runner.select and a gate kind in operate.gate_result (see ../GUIDE_new_doc_type.md).
 # Models: legal text uses the legal model plus a second opinion; other text uses the two
 # general models. Keep reasoning "off" for extraction.
 

@@ -582,21 +582,36 @@ def test_review_keeps_reviewer_verdicts(tmp_path, rows):
         runner.review([row], "correspondence", tmp_path)
 
 
-def test_merger_consideration_is_asked_only_without_maud_answer(rows):
+def test_merger_consideration_is_its_own_task(rows):
     from mailroom_eda.labeling import derive
 
     m = rows[1]
     maud = {"Type of Consideration": {"answer": "All Cash"}}
     confirmed = {**m, "gt_fields": {"maud_clause_labels": json.dumps(maud)}}
     assert derive.merger_consideration(confirmed) == "all_cash"
-    assert "merger_consideration" not in tasks._task_fields(confirmed, "merger_entities")
     unknown = {**m, "expected_subclass": "other"}
     assert derive.merger_consideration(unknown) is None
-    req = tasks.build("merger_entities", unknown)
-    assert "merger_consideration" in req.fields
-    assert "- merger_consideration (label)" in req.messages[1]["content"]
+    for r in (confirmed, unknown):  # merger_entities never asks it; the new task always does
+        assert "merger_consideration" not in tasks.build("merger_entities", r).fields
+        req = tasks.build("merger_consideration", r)
+        assert list(req.fields) == ["merger_consideration"]
+        assert "mixed_cash_stock_election" in req.messages[1]["content"]
+    assert "consideration_line" not in prompt("merger_entities").placeholders
+    picked = {s: [r["filename"] for r in runner.select([confirmed, {**unknown, "filename": "u.txt"}],
+                                                        "merger_consideration", s)]
+              for s in ("calibration", "pending")}
+    assert picked == {"calibration": [confirmed["filename"]], "pending": ["u.txt"]}
     with pytest.raises(ValueError):
         derive.merger_consideration({**confirmed, "expected_subclass": "all_stock"})
+
+
+def test_consideration_window_keeps_conversion_clause():
+    filler = "Lorem ipsum dolor sit amet. " * 4000
+    text = ("AGREEMENT AND PLAN OF MERGER\n" + filler + "\nARTICLE II\nEFFECT OF THE MERGER ON CAPITAL STOCK\n"
+            "Each Share shall be converted into the right to receive $10.00 in cash.\n" + filler)
+    win, desc = tasks.consideration_window(text)
+    assert len(win) < 20_000 and "converted into the right to receive $10.00" in win
+    assert "Conversion of Shares" in desc
 
 
 def test_derived_subclasses_and_specialists(rows):
@@ -751,7 +766,7 @@ def test_ping_sends_one_strict_request_per_model(tmp_path, monkeypatch):
 
 # ---------------------------------------------------------------- registry validation and new classes
 
-LEASE_DIR = ROOT / "src/mailroom_eda/labeling/new_doc_types/examples/commercial_lease"
+LEASE_DIR = ROOT / "src/mailroom_eda/labeling/integrations/examples/commercial_lease"
 
 
 def test_live_registry_validates():
@@ -805,10 +820,332 @@ def test_find_touchpoints_flags_registries(tmp_path):
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "skip.py").write_text('X = ["contract", "merger_agreement", "corporate_record"]\n')
     out = tmp_path / "report.md"
-    script = ROOT / "src/mailroom_eda/labeling/new_doc_types/find_touchpoints.py"
+    script = ROOT / "src/mailroom_eda/labeling/integrations/find_touchpoints.py"
     subprocess.run([sys.executable, str(script), "--repo", str(tmp_path), "--markdown", str(out)], check=True,
                    capture_output=True)
     text = out.read_text()
     assert "`pkg/classes.py`" in text.split("Class-specific code")[0]
     assert "`pkg/one.py`" in text.split("Class-specific code")[1]
     assert "skip.py" not in text
+
+
+# ---------------------------------------------------------------- PR 42 review regressions
+
+def test_journal_keeps_records_with_unicode_line_separators(tmp_path):
+    path = tmp_path / "calls.jsonl"
+    export.append_journal(path, {"document_id": "d1", "content": "a\u2028b\u2029c\u0085d"})
+    export.append_journal(path, {"document_id": "d2"})
+    assert [r["document_id"] for r in export.read_journal(path)] == ["d1", "d2"]
+    assert export.read_journal(path)[0]["content"] == "a\u2028b\u2029c\u0085d"
+
+
+def test_csv_cells_cannot_start_a_formula(tmp_path):
+    rows = [{"document_id": "d", "field": f"f{i}", "model_a_value": v}
+            for i, v in enumerate(["=HYPERLINK(1)", "+1", "-2", "@x", "'q", "plain"])]
+    export.write_csv(tmp_path / "x.csv", export.FIELD_COLUMNS, rows)
+    raw = (tmp_path / "x.csv").read_text()
+    assert '"=HYPERLINK' not in raw and '"\'=HYPERLINK' in raw
+    back = export.read_csv(tmp_path / "x.csv")
+    assert [r["model_a_value"] for r in back] == ["=HYPERLINK(1)", "+1", "-2", "@x", "'q", "plain"]
+
+
+def test_field_accuracy_gate_tolerates_fields_with_no_scored_values(tmp_path, rows):
+    row = rows[0]
+    export.write_csv(tmp_path / "fields.csv", export.FIELD_COLUMNS, [])
+    res = operate.gate_field_accuracy([row], tmp_path, 0.85)
+    assert res["passed"] is False and all(v["accuracy"] is None for v in res["fields"].values())
+
+
+def test_chunk_refuses_external_requires_without_ack(tmp_path, monkeypatch):
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [])
+    import argparse
+
+    args = argparse.Namespace(campaign="v10", id="5a", arm=None, dry_run=False, ack_requires=False,
+                              provider="openrouter", model_map=[], stage=tmp_path, initials="JB",
+                              cap_usd=None, out=tmp_path, workers=1)
+    with pytest.raises(SystemExit, match="--ack-requires"):
+        operate.cmd_chunk(args)
+    lines = operate.next_chunks("v10", [{"chunk": c} for c in ("1", "2a", "2b", "2c", "3", "4")])
+    assert any("5a" in line and "external" in line for line in lines)
+    assert not any(line.startswith("next chunk: 5a") for line in lines)
+
+
+def test_modal_fallback_maps_models_and_is_priced():
+    modal = [m for m, s in models_registry()["models"].items() if s["provider"] == "modal"]
+    assert len(modal) == 1
+    assert operate.provider_models(["z-ai/glm-5.3-flashx-legal"], "modal") == modal
+    with pytest.raises(SystemExit, match="second modal model"):
+        operate.provider_models(["z-ai/glm-5.3-flashx-legal", "deepseek/deepseek-v4.1-flash"], "modal")
+    with pytest.raises(SystemExit, match="model-map"):
+        operate.provider_models(["a/b"], "modal", ["a/b=not-approved"])
+    assert spend.token_cost(modal[0], 1_000_000, 250_000) > 0
+
+
+def test_agreement_gate_blocks_a_partial_chunk(tmp_path, rows):
+    row = rows[2]
+    req = tasks.build("correspondence", row)
+    ans = {"fields": {f: {"value": None, "status": "not_found", "evidence": ""} for f in req.fields}}
+    models = ["deepseek/deepseek-v4.1-flash", "minimax/minimax-m3.1-flash"]
+    runner.run_chunk([row], task="correspondence", models=models[:1],
+                     backend=providers.Backend("openrouter", "u", "k"), reasoning="off",
+                     budget=spend.Budget(1.0, 3600), out_dir=tmp_path, chat=_fake_chat({models[0]: ans}))
+    runner.review([row], "correspondence", tmp_path)
+    doc = tasks._ids(row)[0]
+    res = operate.gate_agreement(tmp_path, True, {(doc, m) for m in models})
+    assert res["unanswered_calls"] == 1 and res["passed"] is False
+
+
+def test_billed_failures_are_settled_and_journaled(tmp_path, rows):
+    row = rows[2]
+    model = "deepseek/deepseek-v4.1-flash"
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens):
+        raise providers.ProviderError("truncated", usage={"prompt_tokens": 1000, "completion_tokens": 500,
+                                                           "cost_usd": 0.003})
+
+    budget = spend.Budget(1.0, 3600)
+    res = runner.run_chunk([row], task="correspondence", models=[model],
+                           backend=providers.Backend("openrouter", "u", "k"), reasoning="off",
+                           budget=budget, out_dir=tmp_path, chat=chat)
+    assert res["errors"] == 1
+    rec = export.read_journal(tmp_path / "calls.jsonl")[0]
+    assert rec["error"] and rec["cost_usd"] > 0
+    assert res["spent_usd"] > 0
+
+
+def test_parse_completion_bills_and_rejects_non_object_json():
+    usage = {"prompt_tokens": 10, "completion_tokens": 5, "cost": 0.001}
+    for content, finish in (("[1, 2]", "stop"), ("hi", "stop"), ("{", "length")):
+        with pytest.raises(providers.ProviderError) as err:
+            providers.parse_completion({"choices": [{"message": {"content": content}, "finish_reason": finish}],
+                                        "usage": usage}, used_schema=False)
+        assert err.value.usage and err.value.usage.get("prompt_tokens") == 10
+
+
+def test_chat_converts_unreadable_bodies_to_provider_error():
+    import http.client
+
+    def post(url, key, body, timeout):
+        raise http.client.IncompleteRead(b"{", 10)
+
+    b = providers.Backend("openrouter", "https://or/api/v1", "k")
+    with pytest.raises(providers.ProviderError, match="could not be read"):
+        providers.chat(b, "a/b", [], None, post=post, sleep=lambda s: None)
+
+
+def test_prompt_sha_changes_with_vocabulary_and_field_specs(rows, monkeypatch):
+    row = rows[2]
+    before = tasks.build("correspondence", row).prompt_sha256
+    reg = fields_registry()
+    vocab = list(reg["vocabularies"]["urgency"])
+    monkeypatch.setitem(reg["vocabularies"], "urgency", vocab + ["someday"])
+    assert tasks.build("correspondence", row).prompt_sha256 != before
+
+
+def test_resume_resends_after_a_prompt_change(tmp_path, rows):
+    row = rows[2]
+    req = tasks.build("correspondence", row)
+    ans = {"fields": {f: {"value": None, "status": "not_found", "evidence": ""} for f in req.fields}}
+    model = "deepseek/deepseek-v4.1-flash"
+    kw = dict(task="correspondence", models=[model], backend=providers.Backend("openrouter", "u", "k"),
+              reasoning="off", budget=spend.Budget(1.0, 3600), out_dir=tmp_path)
+    runner.run_chunk([row], chat=_fake_chat({model: ans}), **kw)
+    calls = export.read_journal(tmp_path / "calls.jsonl")
+    calls[0]["prompt_sha256"] = "old"
+    (tmp_path / "calls.jsonl").write_text(json.dumps(calls[0]) + "\n")
+    again = runner.run_chunk([row], chat=_fake_chat({model: ans}), **kw)
+    assert again["calls"] == 1
+
+
+def test_failed_cuad_repair_is_retried(tmp_path, rows):
+    row = {**rows[0], "id": "c1"}
+    vocab = [c["name"] for c in dojo_snapshot()["cuad_categories"]]
+    bad = {"clauses": [{"category": "Governing Law", "text": "governed by the laws of Ohio"}]}
+    good = {"clauses": [{"category": "Governing Law", "text": "governed by the laws of the State of Delaware"}]}
+    model = "z-ai/glm-5.3-flashx-legal"
+    seen = []
+
+    def failing(backend, m, messages, schema, *, reasoning, max_tokens):
+        seen.append(len(messages))
+        if len(messages) > 2:
+            raise providers.ProviderError("down")
+        return providers.Completion(json.dumps(bad), bad, m, "P", 100, 50, 0, 0.0001, "stop", True)
+
+    kw = dict(task="cuad", models=[model], backend=providers.Backend("openrouter", "u", "k"), reasoning="off",
+              budget=spend.Budget(1.0, 3600), out_dir=tmp_path, vocab=vocab)
+    runner.run_chunk([row], chat=failing, **kw)
+    assert seen == [2, 4]
+    seen.clear()
+
+    def fixing(backend, m, messages, schema, *, reasoning, max_tokens):
+        seen.append(len(messages))
+        return providers.Completion(json.dumps(good), good, m, "P", 100, 50, 0, 0.0001, "stop", True)
+
+    runner.run_chunk([row], chat=fixing, **kw)
+    assert seen == [4]  # only the repair is re-sent
+
+
+def test_review_applies_reviewer_verdicts(tmp_path, rows):
+    row = rows[2]
+    req = tasks.build("correspondence", row)
+    base = {f: {"value": None, "status": "not_found", "evidence": ""} for f in req.fields}
+    a = {"fields": {**base, "urgency": {"value": "time-sensitive", "status": "present", "evidence": "by Friday"}}}
+    b = {"fields": {**base, "urgency": {"value": "urgent", "status": "present", "evidence": "by Friday"}}}
+    models = ["deepseek/deepseek-v4.1-flash", "minimax/minimax-m3.1-flash"]
+    runner.run_chunk([row], task="correspondence", models=models, backend=providers.Backend("openrouter", "u", "k"),
+                     reasoning="off", budget=spend.Budget(1.0, 3600), out_dir=tmp_path,
+                     chat=_fake_chat(dict(zip(models, (a, b)))))
+    runner.review([row], "correspondence", tmp_path)
+    for verdict, extra, decision, value in (("b", {}, "accept", "urgent"),
+                                            ("value", {"reviewer_value": "routine"}, "accept", "routine"),
+                                            ("reject", {}, "unlabeled", "")):
+        adj = export.read_csv(tmp_path / "adjudication.csv")
+        adj[0].update({"reviewer_verdict": verdict, **extra})
+        export.write_csv(tmp_path / "adjudication.csv", export.FIELD_COLUMNS, adj)
+        runner.review([row], "correspondence", tmp_path)
+        f = {r["field"]: r for r in export.read_csv(tmp_path / "fields.csv")}["urgency"]
+        assert (f["final_decision"], f["final_value"]) == (decision, value)
+
+
+def test_run_flags_reject_nan_and_infinite_limits():
+    for cap, wall in ((float("nan"), 60), (float("inf"), 60), (1.0, float("nan")), (1.0, float("inf"))):
+        with pytest.raises(spend.SpendError):
+            spend.require_run_flags(initials="JB", cap_usd=cap, max_wall_seconds=wall)
+
+
+def test_corporate_row_without_subclass_gets_other_fields():
+    row = _row("corporate_record", "", CORP_TEXT, document_id="k0")
+    assert set(tasks._task_fields(row, "corporate")) == set(tasks._task_fields(
+        {**row, "expected_subclass": "other"}, "corporate"))
+
+
+def test_fold_keeps_offsets_when_lowercase_expands():
+    doc = "İstanbul Holdings A.Ş. agrees"
+    folded, idx = verify.fold(doc)
+    assert len(folded) == len(idx)
+    assert verify.locate(doc, "holdings a.ş. AGREES") == (doc.index("Holdings"), len(doc))
+
+
+def test_money_keeps_sign_and_decimals():
+    assert verify.parse_money("-$75") == -75 and verify.parse_money("($1,250.50)") == -1250.5
+    doc = verify.DocIndex.build("The fee is $12.50 per share and $1,000.00 in total.")
+    assert verify.grounded("$12.50", "money", doc)
+    assert verify.grounded("$1,000", "money", doc)
+    assert not verify.grounded("$12", "money", doc)
+    assert not verify.grounded("$12.99", "money", doc)
+
+
+def test_dates_need_a_full_written_match():
+    doc = verify.DocIndex.build("This Agreement is dated as of the 5th day of March, 2004. Term ends 3/31/2006.")
+    assert verify.grounded("2004-03-05", "date", doc)
+    assert verify.grounded("March 31, 2006", "date", doc)
+    assert not verify.grounded("2004-03-17", "date", doc)
+    assert not verify.grounded("--", "date", doc)
+    assert not verify.grounded("...", "name", doc)
+
+
+def test_never_absent_field_quoted_as_absent_goes_to_adjudication():
+    doc = verify.DocIndex.build("No intent is stated in this letter.")
+    raw = {"value": None, "status": "documented_absent", "evidence": "No intent is stated"}
+    a = verify.check_field(raw, "label", doc)
+    assert verify.decide(a, a, "label", "never_absent")[0] == "adjudicate"
+    assert verify.decide(a, a, "label", "absent_ok")[0] == "absent"
+
+
+def test_value_must_appear_in_its_own_evidence():
+    doc = verify.DocIndex.build("Parent shall pay $25,000,000. The Company shall pay $10,000,000.")
+    ok = verify.check_field({"value": "$25,000,000", "status": "present", "evidence": "Parent shall pay $25,000,000"},
+                            "money", doc)
+    bad = verify.check_field({"value": "$25,000,000", "status": "present",
+                              "evidence": "The Company shall pay $10,000,000"}, "money", doc)
+    assert ok.usable and not bad.usable
+
+
+def test_contract_calibration_hides_expert_span_hints(rows):
+    labels = {"Parties": [{"text": "Acme Corp."}], "Governing Law": [{"text": "laws of the State of Delaware"}]}
+    row = {**rows[0], "gt_fields": {"cuad_clause_labels": json.dumps(labels)}}
+    assert "Expert CUAD spans" in tasks.build("contract_entities", row, set_name="pilot").messages[1]["content"]
+    cal = tasks.build("contract_entities", row, set_name="calibration")
+    assert "Expert CUAD spans" not in cal.messages[1]["content"]
+
+
+def test_consideration_gate_scores_models_against_maud(tmp_path, rows):
+    m = rows[1]
+    rws = []
+    for i, ans in enumerate(["All Cash", "All Stock"]):
+        rws.append({**m, "document_id": f"m{i}", "filename": f"m{i}.txt",
+                    "gt_fields": {"maud_clause_labels": json.dumps({"Type of Consideration": {"answer": ans}})}})
+    models = ["z-ai/glm-5.3-flashx-legal", "deepseek/deepseek-v4.1-flash"]
+    ev = "Each Share shall be converted into the right to receive $12.50 in cash."
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens):
+        val = "all_cash" if model == models[0] or "m0" in messages[1]["content"] else "all_stock"
+        a = {"fields": {"merger_consideration": {"value": val, "status": "present", "evidence": ev}}}
+        return providers.Completion(json.dumps(a), a, model, "P", 100, 50, 0, 0.0001, "stop", True)
+
+    runner.run_chunk(rws, task="merger_consideration", models=models,
+                     backend=providers.Backend("openrouter", "u", "k"), reasoning="off",
+                     budget=spend.Budget(1.0, 3600), out_dir=tmp_path, chat=chat, set_name="calibration")
+    runner.review(rws, "merger_consideration", tmp_path)
+    res = operate.gate_consideration_accuracy(rws, tmp_path, 0.95, models)
+    assert res["models"][models[0]]["accuracy"] == 0.5
+    assert res["models"][models[0]]["confusion"]["all_stock"] == {"allcash": 1}
+    assert res["passed"] is False
+
+
+def test_consideration_chunks_gate_the_merger_entities_chunks():
+    chunks = {str(c["id"]): c for c in campaign("v10")["chunks"]}
+    assert chunks["6c0"]["gate"]["kind"] == "consideration_accuracy"
+    assert chunks["6c1"]["needs"] == ["6c0"]
+    for cid in ("6a", "6b", "6c"):
+        assert "6c1" in chunks[cid]["needs"]
+
+
+def test_find_touchpoints_extra_classes_nested_data_and_missing_repo(tmp_path):
+    (tmp_path / "schemas" / "data").mkdir(parents=True)
+    (tmp_path / "schemas" / "data" / "status.json").write_text(
+        '{"contract": 1, "merger_agreement": 2, "corporate_record": 3}\n')
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "lease.py").write_text('if row["expected"] == "commercial_lease":\n    pass\n')
+    script = ROOT / "src/mailroom_eda/labeling/integrations/find_touchpoints.py"
+    out = tmp_path / "r.md"
+    subprocess.run([sys.executable, str(script), "--repo", str(tmp_path), "--class", "commercial_lease",
+                    "--markdown", str(out)], check=True, capture_output=True)
+    text = out.read_text()
+    assert "schemas/data/status.json" in text and "pkg/lease.py" in text
+    missing = subprocess.run([sys.executable, str(script), "--repo", str(tmp_path / "nope")], capture_output=True)
+    assert missing.returncode == 1
+
+
+def _write(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+
+
+def test_check_lockstep_reports_drift(tmp_path):
+    eda, mr, sb = tmp_path / "eda", tmp_path / "mr", tmp_path / "sb"
+    sha = "1cd4aba76d82eea20c6e8dfcc0d760881bf84924"
+    _write(eda / "src/mailroom_eda/labeling/fields.yaml", f'dojo_pin: {{version: "0.28.0", commit: "{sha}"}}\n')
+    _write(eda / "src/mailroom_eda/config.py", 'REPO_TAG = "v10"\n')
+    _write(mr / "pyproject.toml", '"llm-dojo-scoring @ git+https://github.com/x/llm-dojo-scoring.git@v0.28.0",\n')
+    _write(mr / "src/pipeline/hf_corpora.py", 'FULL_CORPUS_REVISION = "v10"\n"docclass-merged": {\n "n_docs": 3292,\n')
+    _write(sb / "src/mailroom_sandbox/cli.py",
+           f'    ("llm-dojo-scoring", "v0.28.0",\n     "https://github.com/x/llm-dojo-scoring.git", "{sha}"),\n')
+    _write(sb / "requirements/dojo-release.txt", f"llm-dojo-scoring @ git+https://github.com/x/llm-dojo-scoring.git@{sha}\n")
+    _write(sb / "vendor/llm-dojo-scoring/src/llm_dojo_scoring/__init__.py", '__version__ = "0.28.0"\n')
+    _write(sb / "src/mailroom_sandbox/job/spec.py", 'FAMILY_HF_TAG = "v10"\nFAMILY_CORPUS_SIZE = 3292\n')
+    script = ROOT / "src/mailroom_eda/labeling/integrations/check_lockstep.py"
+    args = [sys.executable, str(script), "--eda", str(eda), "--mailroom", str(mr), "--sandbox", str(sb)]
+    assert subprocess.run(args + ["--rows", "3292"], capture_output=True).returncode == 0
+    _write(sb / "src/mailroom_sandbox/job/spec.py", 'FAMILY_HF_TAG = "v9.1"\nFAMILY_CORPUS_SIZE = 3302\n')
+    lag = subprocess.run(args, capture_output=True, text=True)
+    assert lag.returncode == 1 and "Dataset tag" in lag.stderr and "Corpus size" in lag.stderr
+
+
+def test_integration_docs_exist_and_old_folder_points_to_them():
+    base = ROOT / "src/mailroom_eda/labeling"
+    for name in ("README.md", "GUIDE_new_doc_type.md", "CHECKLIST_new_doc_type.md",
+                 "CHECKLIST_expanded_labeling.md", "CANDIDATES.md"):
+        assert (base / "integrations" / name).is_file(), name
+    assert "integrations" in (base / "new_doc_types/README.md").read_text()
+    assert "CC BY-NC-SA 4.0" not in (base / "integrations/examples/commercial_lease/README.md").read_text()

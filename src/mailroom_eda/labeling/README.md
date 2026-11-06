@@ -57,7 +57,7 @@ the field registry, the prompts, the model list with prices, the campaign plan a
 | `runner.py` | the low-level command line: `select`, `estimate`, `run`, `review`, `costs` |
 | `operate.py` | the campaign commands: `stage`, `doctor`, `prices`, `ping`, `chunk`, `gate`, `status`, `check-class` |
 | `derive.py` | deterministic labels (CUAD family, merger consideration, communication type, specialist) |
-| `new_doc_types/` | how to add a sixth document class, with a checklist, templates and a worked commercial-lease example |
+| `integrations/` | the cross-repository runbook for any integration change (a new document type or expanded labeling on the core five): release order, version lockstep table (`check_lockstep.py`), drift checks, both checklists, candidate document types with sources and licences, templates and a worked commercial-lease example |
 
 ## Quick reference
 
@@ -91,5 +91,6 @@ flag; a paid `run` also needs `--initials`, `--api-cost-cap-usd` and `--max-wall
   `fields.yaml` and its `dojo_pin`, and run `tests/test_labeling.py`.
 - **A new campaign.** Copy `campaigns/v10/` to `campaigns/<name>/` and pass
   `--campaign <name>` to `costs`.
-- **A new document class.** Follow `new_doc_types/README.md`; check the proposal with
-  `python -m mailroom_eda.labeling check-class <folder>`.
+- **A new document class or new labels.** Start at `integrations/README.md` (release order across the
+  four repositories); for a class follow `integrations/GUIDE_new_doc_type.md` and check the proposal
+  with `python -m mailroom_eda.labeling check-class <folder>`.

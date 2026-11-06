@@ -52,8 +52,9 @@ uv member (no build).
     (`scripts/build/build_v9_4_dedup_labels.py`, `scripts/audit/verify_v9_4_conformance.py`)
   - `labeling/` — v10 label-completion playbook (OpenRouter or Modal): field registry,
     prompts, pinned provider routing, spend gate, campaign chunks and gates; start at
-    `labeling/campaigns/v10/runbook.md`. `labeling/new_doc_types/` explains how to add a
-    document class (checklist, templates, `check-class`)
+    `labeling/campaigns/v10/runbook.md`. `labeling/integrations/` is the cross-repo runbook for
+    new document types and expanded labeling (lockstep table, drift checks, checklists,
+    candidate types, `check-class`)
   - `docclass_uploader.py` — docclass v7 publish, surgical card render, leak guard
   - `intent_backfill.py` — correspondence intent hydration (issue #5):
     cross-walk, Enron/AESLC sha256 join, constrained LLM pass, provenance

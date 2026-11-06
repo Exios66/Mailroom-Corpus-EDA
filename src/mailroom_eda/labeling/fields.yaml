@@ -76,7 +76,7 @@ classes:
       outside_date: {type: date, source: llm, task: merger_entities, absence: absent_ok, dojo: v2}
       financial_advisors: {type: "entity_list:name", source: llm, task: merger_entities, absence: absent_ok, dojo: v2}
       legal_counsel: {type: "entity_list:name", source: llm, task: merger_entities, absence: absent_ok, dojo: v2}
-      merger_consideration: {type: name, retype: label, source: deterministic, task: merger_entities, absence: never_absent, vocabulary: merger_consideration, note: "the merger subclass where the expert MAUD Type of Consideration answer confirms it; the merger_entities task labels the rows without that answer"}
+      merger_consideration: {type: name, retype: label, source: deterministic, task: merger_consideration, absence: never_absent, vocabulary: merger_consideration, note: "the merger subclass where the expert MAUD Type of Consideration answer confirms it (95 rows); the merger_consideration task labels the 56 rows without that answer, after calibrating on the 95"}
       maud_clauses: {type: "entity_list:free_text", source: gold, absence: never_absent}
       intent: {type: name, retype: label, source: llm, task: merger_entities, absence: never_absent, vocabulary: merger_intent}
       subject_matter: {type: free_text, source: llm, task: merger_entities, absence: never_absent}

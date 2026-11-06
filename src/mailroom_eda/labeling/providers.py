@@ -13,6 +13,7 @@ environment only and never written anywhere.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import random
@@ -31,7 +32,21 @@ _SCHEMA_WORDS = ("schema", "response_format", "structured", "json_object", "json
 
 
 class ProviderError(RuntimeError):
-    """A request failed after its retries, or returned an unusable body."""
+    """A request failed after its retries, or returned an unusable body.
+
+    ``usage`` is set when the provider billed the failed call (a truncated or non-JSON
+    answer still costs its tokens): ``{"prompt_tokens", "completion_tokens", "cost_usd"}``.
+    The runner books it against the budget instead of releasing the reservation.
+    """
+
+    def __init__(self, message: str, usage: Mapping[str, Any] | None = None) -> None:
+        """``usage`` carries the billed tokens and cost when the provider charged for the call."""
+        super().__init__(message)
+        self.usage = dict(usage) if usage else None
+
+
+class _ReadError(Exception):
+    """A 200 response whose body could not be read or decoded (never retried: it may be billed)."""
 
 
 @dataclass(frozen=True)
@@ -138,7 +153,11 @@ def _post(url: str, key: str, body: Mapping[str, Any], timeout: float) -> tuple[
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status, dict(resp.headers), json.loads(resp.read() or b"{}")
+            status, headers = resp.status, dict(resp.headers)
+            try:
+                return status, headers, json.loads(resp.read() or b"{}")
+            except (http.client.HTTPException, ValueError, OSError) as err:
+                raise _ReadError(f"HTTP {status} body could not be read: {type(err).__name__}: {err}") from err
     except urllib.error.HTTPError as err:
         raw = err.read() or b"{}"
         try:
@@ -170,15 +189,22 @@ def parse_completion(payload: Mapping[str, Any], *, used_schema: bool) -> Comple
         content = content.strip("`")
         content = content[content.find("{"):] if "{" in content else content
     finish = choices[0].get("finish_reason") or ""
-    if finish == "length":
-        raise ProviderError("response truncated (finish_reason=length); raise max_tokens or shorten the window")
-    try:
-        parsed = json.loads(content)
-    except ValueError as err:
-        raise ProviderError(f"response is not JSON: {content[:200]!r}") from err
     usage = payload.get("usage") or {}
     details = usage.get("completion_tokens_details") or {}
     cost = usage.get("cost")
+    billed = {"prompt_tokens": int(usage.get("prompt_tokens") or 0),
+              "completion_tokens": int(usage.get("completion_tokens") or 0),
+              "cost_usd": float(cost) if isinstance(cost, (int, float)) else None}
+    billed = billed if (billed["prompt_tokens"] or billed["completion_tokens"] or billed["cost_usd"]) else None
+    if finish == "length":
+        raise ProviderError("response truncated (finish_reason=length); raise max_tokens or shorten the window",
+                            billed)
+    try:
+        parsed = json.loads(content)
+    except ValueError as err:
+        raise ProviderError(f"response is not JSON: {content[:200]!r}", billed) from err
+    if not isinstance(parsed, dict):
+        raise ProviderError(f"response is JSON but not an object: {content[:200]!r}", billed)
     return Completion(
         content=content, parsed=parsed,
         served_model=str(payload.get("model") or ""),
@@ -214,6 +240,8 @@ def chat(backend: Backend, model: str, messages: Sequence[Mapping[str, str]],
                              route=model_route(model) if route is None else route)
         try:
             status, headers, payload = post(url, backend.api_key, body, timeout)
+        except (_ReadError, http.client.HTTPException) as err:
+            raise ProviderError(f"response could not be read: {err}") from err
         except (urllib.error.URLError, TimeoutError, ConnectionError) as err:
             last = f"network error: {err}"
             sleep(_retry_after({}, attempt))

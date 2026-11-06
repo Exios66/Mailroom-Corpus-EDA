@@ -46,8 +46,13 @@ models:
             seed: false}
   Qwen/Qwen3-32B-FP8:
     provider: modal
-    # Modal bills GPU time, not tokens: one H100 at about $3.95/hour.
+    # Modal bills GPU time, not tokens: one H100 at about $3.95/hour. The token prices
+    # below are a conservative token-equivalent so the spend cap still works: they assume
+    # at least 1M prompt tokens and 0.25M output tokens per GPU-hour, which vLLM on one H100
+    # exceeds for this model. The real bill is the app's GPU time in the Modal dashboard.
     gpu_usd_per_hour: 3.95
+    prompt: 3.95
+    completion: 15.80
     context: 32768
     roles: [fallback]
 # Priced for comparison in costs.md only; not approved for ingest (model-level list price).

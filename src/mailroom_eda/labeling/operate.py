@@ -31,7 +31,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
-from . import export, providers, runner, spend, tasks, verify
+from . import derive, export, providers, runner, spend, tasks, verify
 from .registry import CAMPAIGNS_DIR, campaign, dojo_snapshot, fields_registry, models_registry
 
 ROOT = runner.ROOT
@@ -101,6 +101,7 @@ def resolve(name: str, entry: Mapping[str, Any]) -> tuple[list[str], str]:
     approvals = load_approvals(name)
 
     def winner(ref: str) -> dict[str, Any]:
+        """The approved entry of the chunk a ``winner_of_<id>`` placeholder names."""
         cid = ref.removeprefix("winner_of_")
         hits = [a for a in approvals if str(a["chunk"]) == cid]
         if not hits:
@@ -115,6 +116,55 @@ def resolve(name: str, entry: Mapping[str, Any]) -> tuple[list[str], str]:
     return models, reasoning
 
 
+def provider_models(models: Sequence[str], provider: str, model_map: Sequence[str] = ()) -> list[str]:
+    """The models a chunk uses on a non-default provider.
+
+    ``model_map`` entries are ``campaign_model=provider_model``; a campaign model without
+    an entry maps to the provider's only approved model. Two campaign models that map to
+    the same provider model are refused: a two-model chunk needs two different models.
+    """
+    approved = [m for m, s in models_registry()["models"].items() if s["provider"] == provider]
+    if not approved:
+        raise SystemExit(f"models.yaml has no approved {provider} model")
+    mapping = {}
+    for item in model_map:
+        src, _, dst = item.partition("=")
+        if not dst or dst not in approved:
+            raise SystemExit(f"--model-map {item!r}: use campaign_model=<one of {approved}>")
+        mapping[src] = dst
+    out = []
+    for m in models:
+        if m in mapping:
+            out.append(mapping[m])
+        elif len(approved) == 1:
+            out.append(approved[0])
+        else:
+            raise SystemExit(f"--model-map is needed for {m}: {provider} has several approved models {approved}")
+    if len(set(out)) != len(out):
+        raise SystemExit(f"this chunk uses two models, but they both map to {out[0]} on {provider}. Approve a "
+                         f"second {provider} model in models.yaml, or run this chunk on openrouter.")
+    return out
+
+
+def next_chunks(name: str, approvals: Sequence[Mapping[str, Any]]) -> list[str]:
+    """Lines naming the next runnable chunk and any chunk held by an external ``requires``."""
+    done = {str(a["chunk"]) for a in approvals}
+    lines, held = [], []
+    for c in campaign(name)["chunks"]:
+        cid = str(c["id"])
+        if cid in done or not all(str(n) in done for n in c.get("needs") or []):
+            continue
+        if c.get("requires"):
+            if cid not in held:
+                held.append(cid)
+            continue
+        if not lines:
+            lines.append(f"next chunk: {cid} ({c['task']} / {c['set']}); `labeling chunk {cid} --dry-run` shows it")
+    if held:
+        lines.append(f"waiting on an external release (requires:): {', '.join(held)}")
+    return lines
+
+
 def cmd_chunk(args: argparse.Namespace) -> int:
     """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
@@ -122,6 +172,11 @@ def cmd_chunk(args: argparse.Namespace) -> int:
     for need in entry.get("needs") or []:
         if not any(str(a["chunk"]) == str(need) for a in load_approvals(args.campaign)):
             raise SystemExit(f"chunk {entry['id']} starts after chunk {need} is approved")
+    if entry.get("requires") and not args.dry_run and not args.ack_requires:
+        raise SystemExit(f"chunk {entry['id']} requires {entry['requires']}; once that has landed, "
+                         f"re-run with --ack-requires")
+    if args.provider != "openrouter":
+        models = provider_models(models, args.provider, args.model_map)
     rows = runner.load_stage(args.stage)
     picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
     camp = campaign(args.campaign)
@@ -183,20 +238,66 @@ def gate_field_accuracy(rows: Sequence[Mapping[str, Any]], out_dir: Path, floor:
             continue
         c = per[f["field"]]
         c["gold"] += 1
-        if f["decision"] != "accept":
+        if f["final_decision"] != "accept":
             c["not_accepted"] += 1
             continue
-        raw = f["model_a_value"]
+        raw = f["final_value"]
         value = json.loads(raw) if raw[:1] == "[" else raw
         c["correct" if matches_cuad_gold(value, f["type"], spans) else "wrong"] += 1
     fields = {}
     for name, c in per.items():
         scored = c["correct"] + c["wrong"]
         fields[name] = {**dict(c), "accuracy": round(c["correct"] / scored, 4) if scored else None}
-    scored = {k: v for k, v in fields.items() if (v["correct"] + v.get("wrong", 0)) >= 5}
+    scored = {k: v for k, v in fields.items() if (v.get("correct", 0) + v.get("wrong", 0)) >= 5}
     ok = bool(scored) and all(v["accuracy"] >= floor for v in scored.values())
     return {"kind": "field_accuracy", "floor": floor, "fields": fields, "passed": ok,
             "note": "fields with fewer than 5 scored values are reported but not gated"}
+
+
+def gate_consideration_accuracy(rows: Sequence[Mapping[str, Any]], out_dir: Path, floor: float,
+                                models: Sequence[str]) -> dict[str, Any]:
+    """Each model's ``merger_consideration`` answers against the expert MAUD answer.
+
+    Every selected row must be answered by every model; a missing, ``not_found`` or wrong
+    answer counts against the model. Passes when every model reaches ``floor``. The
+    result carries a confusion table per model (gold -> answered -> count) and the
+    accuracy of the values the two models agreed on.
+    """
+    gold = {tasks._ids(r)[0]: derive.maud_consideration_answer(r) for r in rows}
+    gold = {k: v for k, v in gold.items() if v}
+    path = out_dir / "fields.csv"
+    found = [f for f in export.read_csv(path) if f["field"] == "merger_consideration"] if path.exists() else []
+    answers: dict[str, dict[str, str]] = {m: {} for m in models}
+    agreed = Counter()
+    for f in found:
+        if f["document_id"] not in gold:
+            continue
+        for slot in ("a", "b"):
+            m = f.get(f"model_{slot}")
+            if m in answers:
+                val = f.get(f"model_{slot}_value") if f.get(f"model_{slot}_status") == "present" else ""
+                answers[m][f["document_id"]] = verify.normalize(val, "label") or "(none)"
+        if f.get("final_decision") == "accept":
+            ok = verify.normalize(f.get("final_value"), "label") == verify.normalize(gold[f["document_id"]], "label")
+            agreed["correct" if ok else "wrong"] += 1
+    per_model = {}
+    for m in models:
+        got = answers[m]
+        confusion: dict[str, Counter] = {}
+        correct = 0
+        for doc, g in gold.items():
+            a = got.get(doc, "(missing)")
+            confusion.setdefault(g, Counter())[a] += 1
+            correct += a == verify.normalize(g, "label")
+        acc = round(correct / len(gold), 4) if gold else None
+        per_model[m] = {"answered": len(got), "correct": correct, "accuracy": acc,
+                        "confusion": {g: dict(c) for g, c in sorted(confusion.items())}}
+    scored = agreed["correct"] + agreed["wrong"]
+    ok = bool(gold) and all(v["accuracy"] is not None and v["accuracy"] >= floor
+                            and v["answered"] == len(gold) for v in per_model.values())
+    return {"kind": "consideration_accuracy", "floor": floor, "gold_rows": len(gold), "models": per_model,
+            "agreed": {**dict(agreed), "accuracy": round(agreed["correct"] / scored, 4) if scored else None},
+            "passed": ok}
 
 
 def gate_human_verdicts(out_dir: Path, floor: float) -> dict[str, Any]:
@@ -213,12 +314,19 @@ def gate_human_verdicts(out_dir: Path, floor: float) -> dict[str, Any]:
             "how": "in fields.csv, set reviewer_verdict to correct or wrong on accepted rows"}
 
 
-def gate_agreement(out_dir: Path, signed_off: bool) -> dict[str, Any]:
-    """Decision mix, failed calls, and a fixed sample of accepted rows for a human read."""
+def gate_agreement(out_dir: Path, signed_off: bool,
+                   expected: set[tuple[str, str]] | None = None) -> dict[str, Any]:
+    """Decision mix, unanswered calls, and a fixed sample of accepted rows for a human read.
+
+    ``expected`` is every (document_id, model) pair the chunk should have answered; a pair
+    with no successful call (failed, or never sent because the run stopped) blocks the gate.
+    """
     rows = export.read_csv(out_dir / "fields.csv")
     calls = export.read_journal(out_dir / "calls.jsonl")
     ok_keys = {(c["document_id"], c["model"]) for c in calls if not c.get("error")}
     failed = {(c["document_id"], c["model"]) for c in calls if c.get("error")} - ok_keys
+    if expected is not None:
+        failed |= expected - ok_keys
     mix = Counter(r["decision"] for r in rows)
     adj = mix["adjudicate"] / len(rows) if rows else 0.0
     accepted = [r for r in rows if r["decision"] == "accept"]
@@ -260,7 +368,9 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
     elif kind == "human_verdicts":
         res = gate_human_verdicts(out_dir, gate["precision"])
     elif kind == "agreement":
-        res = gate_agreement(out_dir, signed_off)
+        res = gate_agreement(out_dir, signed_off, {(tasks._ids(r)[0], m) for r in picked for m in models})
+    elif kind == "consideration_accuracy":
+        res = gate_consideration_accuracy(picked, out_dir, gate["accuracy"], models)
     elif kind == "review":
         docs = export.read_csv(out_dir / "documents.csv") if (out_dir / "documents.csv").exists() else []
         res = {"kind": kind, "documents": len(docs), "expected_documents": len(picked),
@@ -268,12 +378,12 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
                "how": "read documents.csv / spans.csv, then re-run with --signed-off"}
     else:
         raise SystemExit(f"unknown gate kind {kind!r}")
-    calls = [c for c in export.read_journal(out_dir / "calls.jsonl")
-             if not c.get("error") and c.get("reasoning") == reasoning]
+    every = [c for c in export.read_journal(out_dir / "calls.jsonl") if c.get("reasoning") == reasoning]
+    calls = [c for c in every if not c.get("error")]
     res.update(chunk=entry["id"], arm=arm, task=entry["task"], models=models, reasoning=reasoning,
                prompt_sha256=sorted({c["prompt_sha256"] for c in calls}),
                served_providers=sorted({c.get("served_provider") or "" for c in calls} - {""}),
-               spent_usd=round(sum(c.get("cost_usd") or 0 for c in calls), 4), scored_utc=_now())
+               spent_usd=round(sum(c.get("cost_usd") or 0 for c in every), 4), scored_utc=_now())
     (out_dir / "gate.json").write_text(json.dumps(res, indent=1) + "\n", encoding="utf-8")
     return res
 
@@ -412,6 +522,9 @@ def cmd_prices(args: argparse.Namespace) -> int:
 def cmd_stage(args: argparse.Namespace) -> int:
     """Build the v9.4 stage from the public Hub tag when it is missing, then check its sha."""
     target = args.stage / "ground_truth_hardened.jsonl"
+    if not target.exists() and args.stage.resolve() != runner.DEFAULT_STAGE.resolve():
+        raise SystemExit(f"{target} is missing; `labeling stage` builds only the default stage "
+                         f"({runner.DEFAULT_STAGE}). Build that, then copy it or pass --stage to it.")
     if not target.exists():
         env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
         for module, extra in (("mailroom_eda.v9_3_revision", []),
@@ -441,6 +554,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     results: list[tuple[str, bool, str]] = []
 
     def check(name: str, fn: Callable[[], tuple[bool, str]]) -> None:
+        """Run one doctor check and record its result."""
         try:
             ok, msg = fn()
         except Exception as err:  # noqa: BLE001 - report every failure, keep checking
@@ -455,6 +569,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                                         f"llm-dojo-scoring {pin['version']}"))
 
     def prompts_synced() -> tuple[bool, str]:
+        """The plan quotes every prompt verbatim."""
         proc = subprocess.run([sys.executable, str(ROOT / "scripts/labeling/sync_plan_prompts.py"), "--check"],
                               capture_output=True, text=True)
         return proc.returncode == 0, proc.stdout.strip()
@@ -462,6 +577,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     check("plan prompts", prompts_synced)
 
     def costs_current() -> tuple[bool, str]:
+        """``costs.md`` matches the campaign and the stage."""
         rows = runner.load_stage(args.stage)
         text = runner.render_costs(runner.campaign_costs(rows, args.campaign))
         path = CAMPAIGNS_DIR / args.campaign / "costs.md"
@@ -470,6 +586,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     check("costs.md", costs_current)
 
     def prices() -> tuple[bool, str]:
+        """The live OpenRouter catalog still serves every route at the listed prices."""
         rep = price_report()
         n = {m: len(v["serving_endpoints"]) for m, v in rep["models"].items()}
         return not rep["problems"], "; ".join(rep["problems"]) or f"serving endpoints per model: {n}"
@@ -477,6 +594,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     check("live prices and routing", prices)
 
     def key() -> tuple[bool, str]:
+        """An OpenRouter key is set (its value is never printed)."""
         if not os.environ.get("OPENROUTER_API_KEY"):
             return False, "OPENROUTER_API_KEY is not set in this shell"
         data = providers.key_status(providers.Backend.from_env("openrouter"))
@@ -492,11 +610,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     width = max(len(n) for n, _, _ in results)
     for name, ok, msg in results:
         print(f"{'PASS' if ok else 'FAIL'}  {name:<{width}}  {msg}")
-    done = {str(a["chunk"]) for a in approvals}
-    nxt = next((c for c in campaign(args.campaign)["chunks"] if str(c["id"]) not in done), None)
-    if nxt:
-        print(f"next chunk: {nxt['id']} ({nxt['task']} / {nxt['set']}); "
-              f"`labeling chunk {nxt['id']} --dry-run` shows it")
+    for line in next_chunks(args.campaign, approvals):
+        print(line)
     return 0 if all(ok for _, ok, _ in results) else 1
 
 
@@ -628,6 +743,7 @@ def cmd_check_class(args: argparse.Namespace) -> int:
 def add_commands(sub: Any) -> None:
     """Register the operator commands on the runner's subparsers."""
     def common(p: argparse.ArgumentParser) -> None:
+        """Options every subcommand takes."""
         p.add_argument("--campaign", default="v10")
         p.add_argument("--stage", type=Path, default=runner.DEFAULT_STAGE)
         p.add_argument("--out", type=Path, default=runner.DEFAULT_OUT)
@@ -640,6 +756,10 @@ def add_commands(sub: Any) -> None:
     p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
     p.add_argument("--cap-usd", type=float, help="override the campaign cap (lower only is sensible)")
     p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--model-map", action="append", default=[], metavar="CAMPAIGN_MODEL=PROVIDER_MODEL",
+                   help="with --provider modal: which approved Modal model replaces a campaign model")
+    p.add_argument("--ack-requires", action="store_true",
+                   help="the external release named by the chunk's requires: has landed")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(operate=cmd_chunk)
 

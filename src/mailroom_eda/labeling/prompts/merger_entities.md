@@ -17,7 +17,6 @@ Document: a merger agreement (MAUD). Shown: ${window_description}. Fields:
 - intent (label): ${merger_intents} (an amendment to an existing merger agreement is amend_merger).
 - subject_matter (free_text): one grounded sentence on who acquires whom and how.
 - keywords (entity_list:name): up to 8 phrases copied from the text.
-${consideration_line}
 <document>
 ${doc_text_window}
 </document>

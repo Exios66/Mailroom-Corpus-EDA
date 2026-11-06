@@ -4,7 +4,9 @@ The journal is append-only JSONL, flushed and fsync'd per record, so an interrup
 chunk resumes without re-sending finished documents. The CSVs are for people: one
 row per document, one row per (document, field), and for CUAD one row per span. They
 use ``QUOTE_ALL`` and escape newlines as ``\\n``, so they open cleanly in a
-spreadsheet. ``read_csv`` reverses the escaping.
+spreadsheet. A cell that a spreadsheet would read as a formula (it starts with ``=``,
+``+``, ``-``, ``@`` or a tab) is prefixed with ``'``; so is a cell that already starts with
+``'``. ``read_csv`` reverses both.
 """
 from __future__ import annotations
 
@@ -23,7 +25,7 @@ FIELD_COLUMNS = (
     "document_id", "doc_class", "subclass", "field", "type", "model_a", "model_a_value",
     "model_a_status", "model_a_evidence", "model_b", "model_b_value", "model_b_status",
     "model_b_evidence", "agree", "verbatim_ok", "decision", "reason", "reviewer_verdict",
-    "reviewer_value", "reviewer_note",
+    "reviewer_value", "reviewer_note", "final_decision", "final_value",
 )
 SPAN_COLUMNS = (
     "document_id", "category", "start", "end", "text", "verbatim_ok", "probe_ok",
@@ -45,7 +47,9 @@ def read_journal(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     out = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    # Split on "\n" only: json.dumps(ensure_ascii=False) writes U+2028, U+2029 and U+0085
+    # unescaped, and str.splitlines() would cut a record at them.
+    for line in path.read_text(encoding="utf-8").split("\n"):
         if not line.strip():
             continue
         try:
@@ -63,11 +67,18 @@ def _cell(value: Any) -> str:
         return "true" if value else "false"
     if isinstance(value, (list, dict)):
         value = json.dumps(value, ensure_ascii=False)
-    return str(value).replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
+    text = str(value).replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
+    return "'" + text if text[:1] in _FORMULA_START else text
+
+
+#: Leading characters a spreadsheet treats as a formula, plus the quote used to escape them.
+_FORMULA_START = frozenset("=+-@\t'")
 
 
 def _uncell(value: str) -> str:
     """Reverse ``_cell``'s escaping."""
+    if value[:1] == "'":
+        value = value[1:]
     out, i = [], 0
     while i < len(value):
         ch = value[i]

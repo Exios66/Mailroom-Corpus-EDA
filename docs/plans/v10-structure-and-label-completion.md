@@ -161,6 +161,11 @@ labeling/{providers,spend,runner,verify,export}.py
   - Also remap the journals that already exist in the sandbox (CUAD EX-10) and the interim overlay.
 - **Types:** native numbers, bools, ISO dates and lists. The 6 `N/A` dates become null with a presence code.
 - **Subclasses:** the legacy `expected_subclass` raw values **stay unchanged**, so llm-mailroom stratification and sandbox strata keys still work. The new configs carry `subclass` (the Dojo canonical key) plus `source_subclass` (the raw value).
+- **The 56 merger rows with subclass `other`** are kept. They are MAUD rows with full expert clause labels (15–17 MAUD categories each, like the other 95) and lack only the expert Type of Consideration answer. Chunks `6c0`/`6c1` (`merger_consideration` task, Part E) label that answer, so in the new configs:
+  - each of the 56 gets `subclass` = its adjudicated `merger_consideration` label, with `provenance.subclass = "llm:<configuration>"`; `source_subclass` and the legacy `expected_subclass` stay `other`;
+  - a row a human adjudicates as genuinely `other` keeps `other`, with its evidence quote;
+  - `merger_consideration` is `populated` on all 151 mergers (95 from the expert answer, 56 from the task), and the 95 keep the expert value whatever the models answered in calibration.
+- **Splits are unchanged.** The md5 rule is untouched and no row is added or removed: 3,292 rows (train 2,971 / test 321) and 151 mergers. Only the merger subclass distribution in the new configs changes (today all_cash 57, all_stock 24, mixed_cash_stock 13, mixed_cash_stock_election 1, other 56; the 56 split 48 train / 8 test); the card's composition and per-subclass tables are rendered from the data, so they follow.
 - **New configs drop:** the empty and constant columns, `source_filename`, the nested mirrors, and build-internal metadata keys.
 - **`default` keeps:** `filename`, `doc_text` and `metadata`, minus the build-internal keys (`gt_label_ex10` needs `metadata`), plus `document_id`. It stays the **first config**, because llm-mailroom calls `load_dataset` without a config name.
 - **`prompt`** is dropped from the new configs. It stays as an empty column in the legacy and default configs for one release.
@@ -192,9 +197,10 @@ labeling/{providers,spend,runner,verify,export}.py
 7. The blind config is label-free.
 8. The manifest is complete.
 9. Calibration is re-derived per configuration.
-10. **Coverage:** every applicable field on every row is `populated` or `schema_documented_absence`, otherwise the residue is listed. `publish_ready` requires the residue to be 0 or accepted by the user.
-11. Every number on the card is rendered from the data (`--check`).
-12. Every config loads offline with `datasets` from local parquet.
+10. **Merger consideration:** every merger has a non-null `merger_consideration` with an expert source or an evidence quote, and `subclass` equals it on every merger row.
+11. **Coverage:** every applicable field on every row is `populated` or `schema_documented_absence`, otherwise the residue is listed. `publish_ready` requires the residue to be 0 or accepted by the user.
+12. Every number on the card is rendered from the data (`--check`).
+13. Every config loads offline with `datasets` from local parquet.
 
 ### C4. Dataset card (`src/mailroom_eda/card_v10.py`, rendered from data and `fields.yaml`)
 
@@ -405,7 +411,7 @@ ${doc_text_window}
 
 ### `merger_entities.md`
 
-MergerAgreementExtraction v2. `merger_consideration` comes from the subclass where the expert MAUD "Type of Consideration" answer confirms it (95 rows); `consideration_line` asks the model for it only on the 56 rows without that answer, instead of labeling them `other` by default.
+MergerAgreementExtraction v2. `merger_consideration` is not asked here: it is its own task (`merger_consideration.md`, below).
 
 ```text
 Document: a merger agreement (MAUD). Shown: ${window_description}. Fields:
@@ -427,7 +433,30 @@ Document: a merger agreement (MAUD). Shown: ${window_description}. Fields:
 - intent (label): ${merger_intents} (an amendment to an existing merger agreement is amend_merger).
 - subject_matter (free_text): one grounded sentence on who acquires whom and how.
 - keywords (entity_list:name): up to 8 phrases copied from the text.
-${consideration_line}
+<document>
+${doc_text_window}
+</document>
+```
+
+### `merger_consideration.md`
+
+The merger Type of Consideration label. `merger_consideration` comes from the subclass where the expert MAUD "Type of Consideration" answer confirms it (95 rows). The 56 MAUD rows with subclass `other` have full MAUD clause labels but no consideration answer, so this task labels them. It runs on a window of the opening 6,000 characters plus the located Conversion of Shares, Merger Consideration and Election sections (under 20,000 characters on every merger in the stage). Chunk `6c0` asks it on the 95 rows with the expert answer and gates both models at 0.95 accuracy (`consideration_accuracy`, with a confusion table); only then does `6c1` label the 56, under the two-model agreement gate, with disagreements adjudicated. The 95 rows keep the expert value whatever the models answer.
+
+```text
+Document: a merger agreement (MAUD). Shown: ${window_description}. One field:
+- merger_consideration (label): how the target's shares are paid for at the Effective Time,
+  read from the Conversion of Shares / Effect on Capital Stock / Merger Consideration
+  sections. One of: ${consideration_options}.
+  - all_cash: each share converts into the right to receive cash only.
+  - all_stock: each share converts into shares of the acquirer (or its parent) only, with
+    cash only in lieu of fractional shares.
+  - mixed_cash_stock: each share receives a fixed combination of cash and stock.
+  - mixed_cash_stock_election: holders elect cash or stock (or a mix), usually subject to
+    proration; any election between cash and stock is this, not mixed_cash_stock.
+  - other: none of these (for example units, contingent value rights only, or no
+    conversion of target shares at all). Say why in the evidence.
+  Cash in lieu of fractional shares, dissenting shares and cancelled treasury shares do
+  not change the answer. evidence: the verbatim sentence that converts each share.
 <document>
 ${doc_text_window}
 </document>
@@ -492,7 +521,7 @@ The machine-readable sequence is `src/mailroom_eda/labeling/campaigns/v10/campai
 
 | # | chunk | config | rows | cap | gate to proceed |
 |---|---|---|---|---|---|
-| 0 | build: cleanup, layout, specialist fix, deterministic fields, card | none | all | — | C3 gates 1–8, 11 and 12 pass. Deterministic fields: `cuad_family`, `merger_consideration`, `communication_type` |
+| 0 | build: cleanup, layout, specialist fix, deterministic fields, card | none | all | — | C3 gates 1–8, 12 and 13 pass. Deterministic fields: `cuad_family`, `merger_consideration`, `communication_type` |
 | 1 | CUAD bake-off | GLM-legal off, GLM-legal low, DeepSeek off | 40 × 3 arms | $0.75 / $0.85 / $0.40 | micro-F1 ≥ 0.75 and P ≥ 0.80, else STOP |
 | 2a–c | CUAD on EX-10 | winner of #1 | 89 (30/30/29) | $0.60 each | spans re-verify; the user reviews `spans.csv` |
 | 3 | intent calibration | DeepSeek off, DeepSeek low | 96 × 2 passes × 2 arms | $0.15 / $0.20 | κ ≥ 0.75 |
@@ -500,7 +529,9 @@ The machine-readable sequence is `src/mailroom_eda/labeling/campaigns/v10/campai
 | 5a | contract entity calibration | GLM-legal + DeepSeek | 40 | $0.75 | per-field accuracy ≥ 0.85 against gold derived from the expert CUAD spans (Parties, dates, Governing Law, Renewal Term) |
 | 5b | contract entity pilot (2 per CUAD family) | as 5a | 52 | $1.00 | human verdicts ≥ 0.90 |
 | 5c–e | contract entities | as 5a | 545 (182/182/181) | $3.00 each | agreement, verbatim checks, adjudication CSV |
-| 6a | merger pilot (3 per subclass) | GLM-legal + DeepSeek | 13 | $0.40 | the user fills `reviewer_verdict`; agreed-field precision ≥ 0.90 |
+| 6c0 | merger consideration calibration | GLM-legal + DeepSeek | 95 | $0.60 | each model ≥ 0.95 accuracy against the expert MAUD answer (`consideration_accuracy`, confusion table) |
+| 6c1 | merger consideration for the 56 `other` rows | as 6c0 | 56 | $0.40 | agreement; disagreements adjudicated |
+| 6a | merger pilot (3 per subclass) | GLM-legal + DeepSeek | 13 | $0.40 | needs 6c1; the user fills `reviewer_verdict`; agreed-field precision ≥ 0.90 |
 | 6b–c | merger remainder | as 6a | 138 (69/69) | $1.50 each | agreement and verbatim checks |
 | 7a | correspondence pilot (5 per subclass) | DeepSeek + MiniMax | 38 | $0.25 | human verdicts ≥ 0.90 |
 | 7b–e | correspondence | as 7a | 962 | $0.50 each | agreement; enum checks |
@@ -509,11 +540,11 @@ The machine-readable sequence is `src/mailroom_eda/labeling/campaigns/v10/campai
 | 9a | corporate pilot (3 per subclass) | GLM-legal + DeepSeek | 29 | $0.50 | human verdicts ≥ 0.90 |
 | 9b–e | corporate | as 9a | 415 | $1.00, $1.00, $1.00, $1.25 | agreement; verbatim checks |
 | 10 | adjudication | human, via `adjudication.csv` | residue | $0 | every item resolved |
-| 11 | re-stage, all gates, render the card | none | — | — | gates 1–12 pass |
+| 11 | re-stage, all gates, render the card | none | — | — | gates 1–13 pass |
 
-Each chunk is run with `labeling chunk <id> --initials XX` and approved with `labeling gate <id> --approve --initials XX` (`campaigns/v10/runbook.md`); `needs:` in `campaign.yaml` enforces the order.
+Each chunk is run with `labeling chunk <id> [--arm N] --initials XX` and approved with `labeling gate <id> [--arm N] [--signed-off] --approve --initials XX` (`--arm` for bake-off chunks, `--signed-off` for agreement gates after reading `sample.csv`; see `campaigns/v10/runbook.md`). `needs:` in `campaign.yaml` enforces the order, and a chunk with `requires:` (5a, 6a) also needs `--ack-requires` once the external release has landed.
 
-Stop rules: a failed gate or a reached cap stops the sequence. Nothing is ingested without its calibration or pilot. Any chunk can run on Modal with `--provider modal`.
+Stop rules: a failed gate or a reached cap stops the sequence. Nothing is ingested without its calibration or pilot. One-model chunks can run on Modal with `--provider modal` (the campaign model maps to the approved `Qwen/Qwen3-32B-FP8`, or as named by `--model-map`); two-model chunks need a second approved Modal model, so they stay on OpenRouter until one exists. The Modal model is a separate configuration and is calibrated before it labels anything.
 
 The sandbox's interim overlay corrections (CUAD parties and dates) are imported as candidates in 5a/5b and verified like any other label, so they aren't lost to the hash change.
 

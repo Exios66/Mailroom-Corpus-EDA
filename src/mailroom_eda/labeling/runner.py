@@ -31,20 +31,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from . import export, providers, spend, tasks, verify
+from . import derive, export, providers, spend, tasks, verify
 from .registry import campaign, models_registry, vocabulary
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_STAGE = ROOT / "data" / "v9_4" / "stage"
 DEFAULT_OUT = ROOT / "docs" / "reports" / "audits" / "v10_labels"
 SETS = ("calibration", "pilot", "remainder", "pending", "flagged", "all")
-PILOT_PER_STRATUM = {"contract_entities": 2, "merger_entities": 3, "correspondence": 5,
+PILOT_PER_STRATUM = {"contract_entities": 2, "merger_entities": 3, "merger_consideration": 3, "correspondence": 5,
                      "claim_checklist": 5, "corporate": 3}
 #: Output-token budget per call, by task (also the worst case the spend gate reserves).
 MAX_TOKENS = {"cuad": 8192, "intent": 400, "contract_entities": 3000, "merger_entities": 3500,
+              "merger_consideration": 600,
               "correspondence": 1200, "claim_checklist": 1500, "corporate": 2500}
 #: Typical output tokens per call, for estimates (measured from the field counts).
 TYPICAL_OUTPUT = {"cuad": 2500, "intent": 120, "contract_entities": 1200, "merger_entities": 1500,
+                  "merger_consideration": 200,
                   "correspondence": 450, "claim_checklist": 500, "corporate": 800}
 RETRY_FACTOR = 1.25
 
@@ -104,6 +106,16 @@ def select(rows: Sequence[Mapping[str, Any]], task: str, set_name: str) -> list[
             out = [r for r in pool if v94.is_pending_cuad(r)]
         else:
             raise SystemExit("cuad sets: calibration, pending")
+    elif task == "merger_consideration":
+        # calibration: the 95 mergers with the expert MAUD answer; pending: the 56 without.
+        if set_name == "calibration":
+            out = [r for r in pool if derive.maud_consideration_answer(r)]
+        elif set_name == "pending":
+            out = [r for r in pool if not derive.maud_consideration_answer(r)]
+        elif set_name == "all":
+            out = pool
+        else:
+            raise SystemExit("merger_consideration sets: calibration, pending, all")
     elif task == "intent":
         if set_name == "calibration":
             out = v94.manual_intent_rows(rows)
@@ -144,12 +156,13 @@ def _variants(task: str) -> tuple[str, ...]:
     return ("a", "b") if task == "intent" else ("",)
 
 
-def estimate(rows: Sequence[Mapping[str, Any]], task: str, models: Sequence[str]) -> dict[str, Any]:
+def estimate(rows: Sequence[Mapping[str, Any]], task: str, models: Sequence[str],
+             set_name: str = "") -> dict[str, Any]:
     """Projected tokens and cost per model for these rows (no network)."""
     prompt_tokens = calls = 0
     for r in rows:
         for v in _variants(task):
-            req = tasks.build(task, r, v)
+            req = tasks.build(task, r, v, set_name=set_name)
             prompt_tokens += sum(spend.estimate_tokens(m["content"]) for m in req.messages)
             calls += 1
     out_tokens = calls * typical_output(task)
@@ -201,9 +214,13 @@ def chunk_name(task: str, set_name: str, spec: str | None, reasoning: str = "off
     return base if reasoning == "off" else f"{base}-reasoning-{reasoning}"
 
 
-def _done(calls_path: Path, reasoning: str | None = None) -> set[tuple[str, str, str]]:
-    """(document_id, model, variant) triples already answered without error (at ``reasoning``)."""
-    return {(c["document_id"], c["model"], c.get("variant", ""))
+def _done(calls_path: Path, reasoning: str | None = None) -> set[tuple[str, str, str, str]]:
+    """(document_id, model, variant, prompt_sha256) already answered without error (at ``reasoning``).
+
+    The prompt sha is part of the key, so after a prompt or registry edit a re-run sends
+    the new prompt instead of reusing answers to the old one.
+    """
+    return {(c["document_id"], c["model"], c.get("variant", ""), c.get("prompt_sha256", ""))
             for c in export.read_journal(calls_path)
             if not c.get("error") and (reasoning is None or c.get("reasoning") == reasoning)}
 
@@ -215,7 +232,7 @@ class _Stop(Exception):
 def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[str],
               backend: providers.Backend, reasoning: str, budget: spend.Budget, out_dir: Path,
               vocab: Sequence[str] = (), chat=providers.chat, workers: int = 1,
-              progress: Any = None) -> dict[str, Any]:
+              progress: Any = None, set_name: str = "") -> dict[str, Any]:
     """Send every (row, model, variant) not yet answered; append to ``calls.jsonl``.
 
     CUAD answers with rejected spans get one repair call (variant ``repair``) that replays
@@ -237,10 +254,12 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
     stop_reason: list[str] = []
 
     def journal(rec: Mapping[str, Any]) -> None:
+        """Append one record to the journal under the lock."""
         with lock:
             export.append_journal(calls_path, rec)
 
     def one(model: str, req: tasks.Request, rec: dict) -> providers.Completion | None:
+        """Send one call inside the budget; journal it (with any billed error) and return it."""
         if stop.is_set():
             raise _Stop()
         ptoks = sum(spend.estimate_tokens(m["content"]) for m in req.messages)
@@ -254,8 +273,15 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
             comp = chat(backend, model, req.messages, req.schema, reasoning=reasoning,
                         max_tokens=max_tokens(task))
         except providers.ProviderError as err:
-            budget.release(reserved)
-            journal({**rec, "error": str(err)})
+            billed = getattr(err, "usage", None)
+            if billed:  # a truncated or unparseable answer is still billed: book it
+                cost = budget.settle(model, billed["prompt_tokens"], billed["completion_tokens"],
+                                     billed["cost_usd"], reserved)
+                journal({**rec, "error": str(err), "prompt_tokens": billed["prompt_tokens"],
+                         "completion_tokens": billed["completion_tokens"], "cost_usd": round(cost, 6)})
+            else:
+                budget.release(reserved)
+                journal({**rec, "error": str(err)})
             with lock:
                 stats["errors"] += 1
             return None
@@ -267,36 +293,61 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
                  "cost_usd": round(cost, 6)})
         return comp
 
-    def job(r: Mapping[str, Any], v: str, model: str) -> None:
-        req = tasks.build(task, r, v)
-        rec = {"task": task, "document_id": req.document_id, "filename": r["filename"], "variant": v,
-               "model": model, "provider": backend.provider, "reasoning": reasoning, "temperature": 0,
-               "prompt_sha256": req.prompt_sha256, "labeled_utc": _now()}
-        comp = one(model, req, rec)
-        if comp is None:
+    def repair(r: Mapping[str, Any], model: str, first: providers.Completion | Mapping[str, Any],
+               rec: dict) -> None:
+        """Send the CUAD repair call when the first answer has rejected spans."""
+        parsed = first.parsed if isinstance(first, providers.Completion) else first["response"]
+        content = first.content if isinstance(first, providers.Completion) else first.get("content", "")
+        problems = cuad_problems(r, parsed, vocab)
+        if not problems:
             return
-        with lock:
-            stats["calls"] += 1
-        if task != "cuad":
+        fix = tasks.build_cuad(r, repair_problems=problems[:40], prior_answer=content)
+        if (rec["document_id"], model, "repair", fix.prompt_sha256) in done:
             return
-        problems = cuad_problems(r, comp.parsed, vocab)
-        if not problems or (req.document_id, model, "repair") in done:
-            return
-        fix = tasks.build_cuad(r, repair_problems=problems[:40], prior_answer=comp.content)
         rec = {**rec, "variant": "repair", "prompt_sha256": fix.prompt_sha256,
                "repair_problems": problems[:40], "labeled_utc": _now()}
         if one(model, fix, rec) is not None:
             with lock:
                 stats["repairs"] += 1
 
+    def job(r: Mapping[str, Any], v: str, model: str, req: tasks.Request, first: Mapping[str, Any] | None) -> None:
+        """One planned call: a first answer (and its repair), or only a missing repair."""
+        rec = {"task": task, "document_id": req.document_id, "filename": r["filename"], "variant": v,
+               "model": model, "provider": backend.provider, "reasoning": reasoning, "temperature": 0,
+               "prompt_sha256": req.prompt_sha256, "labeled_utc": _now()}
+        if first is not None:  # answered on an earlier run; only its CUAD repair may be missing
+            repair(r, model, first, rec)
+            return
+        comp = one(model, req, rec)
+        if comp is None:
+            return
+        with lock:
+            stats["calls"] += 1
+        if task == "cuad":
+            repair(r, model, comp, rec)
+
     jobs = []
+    answered = {}  # first answers already in the journal, for CUAD repairs still missing
+    if task == "cuad":
+        for c in export.read_journal(calls_path):
+            if not c.get("error") and c.get("reasoning") == reasoning and not c.get("variant"):
+                answered[(c["document_id"], c["model"], c.get("prompt_sha256", ""))] = c
     for r in rows:
         for v in _variants(task):
+            req = tasks.build(task, r, v, set_name=set_name)
             for model in models:
-                if (tasks._ids(r)[0], model, v) in done:
-                    stats["skipped"] += 1
+                key = (req.document_id, model, v, req.prompt_sha256)
+                if key not in done:
+                    jobs.append((r, v, model, req, None))
+                elif task == "cuad" and (req.document_id, model, req.prompt_sha256) in answered:
+                    first = answered[(req.document_id, model, req.prompt_sha256)]
+                    if cuad_problems(r, first.get("response") or {}, vocab) and not any(
+                            d[:3] == (req.document_id, model, "repair") for d in done):
+                        jobs.append((r, v, model, req, first))
+                    else:
+                        stats["skipped"] += 1
                 else:
-                    jobs.append((r, v, model))
+                    stats["skipped"] += 1
     finished = 0
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         futures = [pool.submit(job, *j) for j in jobs]
@@ -428,8 +479,7 @@ def field_decisions(rows: Sequence[Mapping[str, Any]], calls: Sequence[Mapping[s
                     row.update({f"model_{slot}": m, f"model_{slot}_value": res.value,
                                 f"model_{slot}_status": res.status, f"model_{slot}_evidence": res.evidence})
             row["verbatim_ok"] = all(x.verbatim_ok for x in results if x is not None)
-            if decision == "accept":
-                row["model_a_value"] = value if row.get("model_a_value") is None else row["model_a_value"]
+            row["accepted_value"] = value if decision == "accept" else None
             field_rows.append(row)
         first = next(c for c in got if c)
         doc_rows.append({
@@ -508,14 +558,53 @@ def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
         return {"records": len(recs)}
     fields, docs = field_decisions(rows, calls, task, models)
     keep = {**_reviewer_columns(out_dir / "fields.csv"), **_reviewer_columns(out_dir / "adjudication.csv")}
+    open_items: Counter = Counter()
     for f in fields:
         f.update(keep.get((f["document_id"], f["field"]), {}))
+        apply_verdict(f)
+        open_items[f["document_id"]] += f["final_decision"] == "adjudicate"
+    for d in docs:
+        d["problems"] = open_items[d["document_id"]]
+        d["status"] = "needs_review" if open_items[d["document_id"]] else "complete"
     export.write_csv(out_dir / "fields.csv", export.FIELD_COLUMNS, fields)
     export.write_csv(out_dir / "adjudication.csv", export.FIELD_COLUMNS,
                      [f for f in fields if f["decision"] == "adjudicate"])
     export.write_csv(out_dir / "documents.csv", export.DOCUMENT_COLUMNS, docs)
     return {"documents": len(docs), "fields": len(fields),
-            "decisions": dict(Counter(f["decision"] for f in fields))}
+            "decisions": dict(Counter(f["decision"] for f in fields)),
+            "final_decisions": dict(Counter(f["final_decision"] for f in fields))}
+
+
+def apply_verdict(f: dict[str, Any]) -> None:
+    """Set ``final_decision`` and ``final_value`` from the model decision and any reviewer verdict.
+
+    ``a``/``b`` take that model's value, ``value`` takes ``reviewer_value``, ``absent`` records
+    a documented absence, ``reject`` and ``wrong`` leave the field unlabeled, and ``correct``
+    confirms an accepted value. With no verdict the model decision stands. Ingest reads only
+    the ``final_*`` columns.
+    """
+    accepted = f.pop("accepted_value", None)
+    verdict = f.get("reviewer_verdict") or ""
+    where = f"{f['document_id']}/{f['field']}"
+    decision, value = f["decision"], accepted
+    if verdict in ("a", "b"):
+        if not f.get(f"model_{verdict}"):
+            raise SystemExit(f"{where}: reviewer_verdict {verdict!r}, but there is no model {verdict} answer")
+        value = f.get(f"model_{verdict}_value")
+        if value in (None, "", []):
+            raise SystemExit(f"{where}: model {verdict} gave no value; use absent, value or reject")
+        decision = "accept"
+    elif verdict == "value":
+        if not f.get("reviewer_value"):
+            raise SystemExit(f"{where}: reviewer_verdict 'value' needs reviewer_value")
+        decision, value = "accept", f["reviewer_value"]
+    elif verdict == "absent":
+        decision, value = "absent", None
+    elif verdict in ("reject", "wrong"):
+        decision, value = "unlabeled", None
+    elif verdict == "correct" and decision != "accept":
+        raise SystemExit(f"{where}: 'correct' confirms an accepted value; this row is {decision!r}")
+    f["final_decision"], f["final_value"] = decision, value
 
 
 # ---------------------------------------------------------------- costs.md
@@ -535,7 +624,7 @@ def campaign_costs(rows: Sequence[Mapping[str, Any]], name: str = "v10") -> dict
         picked = chunk(select(rows, ch["task"], ch["set"]), ch.get("chunk"))
         models = [PLACEHOLDER_MODELS.get(m, m) for m in ch["models"]]
         reasoning = PLACEHOLDER_REASONING.get(str(ch["reasoning"]), str(ch["reasoning"]))
-        est = estimate(picked, ch["task"], models)
+        est = estimate(picked, ch["task"], models, ch["set"])
         factor = REASONING_OUTPUT_FACTOR[reasoning]
         cost = sum(spend.token_cost(m, est["prompt_tokens"], int(est["output_tokens"] * factor))
                    for m in models)
@@ -544,7 +633,7 @@ def campaign_costs(rows: Sequence[Mapping[str, Any]], name: str = "v10") -> dict
                     "output_tokens": int(est["output_tokens"] * factor) * len(models),
                     "projected_usd": round(cost, 4), "priced_models": models, "priced_reasoning": reasoning})
         key = f"{ch['task']}:{ch['set']}:{ch.get('chunk') or ''}"
-        if ch["set"] != "calibration" or ch["task"] in ("cuad", "intent", "contract_entities"):
+        if ch["set"] != "calibration" or ch["task"] in ("cuad", "intent", "contract_entities", "merger_consideration"):
             tokens.setdefault(key, [est["prompt_tokens"], est["output_tokens"]])
     p_tok = sum(v[0] for v in tokens.values())
     o_tok = sum(v[1] for v in tokens.values())
@@ -659,7 +748,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{len(picked)} rows", file=sys.stderr)
         return 0
     if args.cmd == "estimate":
-        print(json.dumps(estimate(picked, args.task, args.models.split(",")), indent=1))
+        print(json.dumps(estimate(picked, args.task, args.models.split(","), args.set_name), indent=1))
         return 0
     if args.cmd == "review":
         out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, args.reasoning)
@@ -690,7 +779,7 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
         raise SystemExit(f"{task} needs --second-model outside pilots (two-model agreement)")
     if task not in tasks.TWO_MODEL_TASKS and len(models) != 1:
         raise SystemExit(f"{task} runs one model")
-    proj = estimate(picked, task, models)
+    proj = estimate(picked, task, models, set_name)
     print(json.dumps({"chunk": chunk_id, "out": str(out_dir), "reasoning": reasoning, **proj}, indent=1))
     if dry_run:
         return 0
@@ -709,7 +798,8 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
         "projection": proj, "started_utc": _now()})
     result = run_chunk(picked, task=task, models=models, backend=backend, reasoning=reasoning,
                        budget=budget, out_dir=out_dir, vocab=cuad_vocab(rows) if task == "cuad" else (),
-                       chat=chat, workers=workers, progress=lambda m: print(m, file=sys.stderr))
+                       chat=chat, workers=workers, progress=lambda m: print(m, file=sys.stderr),
+                       set_name=set_name)
     result["review"] = review(rows, task, out_dir, reasoning=reasoning)
     export.append_journal(out_dir / "runs.jsonl", {"chunk": chunk_id, "finished_utc": _now(), "result": result})
     print(json.dumps(result, indent=1))

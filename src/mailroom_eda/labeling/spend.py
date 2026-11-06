@@ -57,10 +57,10 @@ def require_run_flags(*, initials: str | None, cap_usd: float | None,
     """Refuse a paid run that lacks a human's initials, a cap or a wall limit."""
     if not initials or not INITIALS_RE.match(initials):
         raise SpendError("--initials must be a human operator's 2-6 capital letters")
-    if cap_usd is None or cap_usd <= 0:
-        raise SpendError("--api-cost-cap-usd must be a positive number")
-    if max_wall_seconds is None or max_wall_seconds <= 0:
-        raise SpendError("--max-wall-seconds must be a positive number")
+    if cap_usd is None or not math.isfinite(cap_usd) or cap_usd <= 0:
+        raise SpendError("--api-cost-cap-usd must be a positive, finite number")
+    if max_wall_seconds is None or not math.isfinite(max_wall_seconds) or max_wall_seconds <= 0:
+        raise SpendError("--max-wall-seconds must be a positive, finite number")
 
 
 def check_key_headroom(key_data: Mapping[str, Any], cap_usd: float) -> float:

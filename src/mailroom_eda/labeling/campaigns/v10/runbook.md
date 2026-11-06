@@ -96,12 +96,13 @@ have several arms (a bake-off); add `--arm N` to each command for those.
    |---|---|
    | `documents.csv` | one row per document: status, counts, models, tokens, cost |
    | `fields.csv` | one row per (document, field): both models' values and evidence, the decision and why. On pilots, mark at least 30 accepted rows `correct` or `wrong` in `reviewer_verdict` |
-   | `adjudication.csv` | only the rows a person must decide; fill `reviewer_verdict` (`a` or `b` to take that model's value, `value` with your own `reviewer_value`, `absent` when the document does not state it, `reject` to leave it unlabeled) |
+   | `adjudication.csv` | only the rows a person must decide; fill `reviewer_verdict` (`a` or `b` to take that model's value, `value` with your own `reviewer_value`, `absent` when the document does not state it, `reject` to leave it unlabeled). `$L review` applies each verdict to `final_decision` and `final_value` in `fields.csv`; ingest reads only those two columns |
    | `sample.csv` | agreement chunks: 20 accepted rows to read before signing off |
    | `spans.csv` | CUAD only: every span, whether it was found verbatim, and why it was dropped |
    | `cuad-labels.jsonl`, `intent-labels.jsonl` | the records the v9.4 calibration and ingest code reads |
    | `calls.jsonl` | every raw answer with its model, served provider, reasoning, prompt sha, tokens and cost |
-   | `run.json` | the settings, the projection and the operator's initials |
+   | `runs.jsonl` | one line when a run starts (settings, projection, operator's initials) and one when it finishes (result and review summary); re-runs append |
+   | `gate.json` | written by `$L gate`: the last gate result for this chunk arm |
 
    After editing a CSV, refresh the derived files (offline; reviewer entries are kept):
 
@@ -140,6 +141,7 @@ calibration. A prompt change changes its sha, so earlier calibrations no longer 
 | `cuad_f1` | micro-F1 ≥ 0.75 and precision ≥ 0.80 against the expert CUAD spans (`v9_4_revision.score_cuad_calibration`). For the GLM `low` arm, adopt it only if its micro-F1 beats the `off` arm by 0.02 or more |
 | `intent_kappa` | Cohen's κ ≥ 0.75 against the manual intent labels (`v9_4_revision.score_intent_calibration`) |
 | `field_accuracy` | per-field accuracy ≥ 0.85 against values derived from the expert CUAD spans |
+| `consideration_accuracy` | each model answers every one of the 95 mergers with an expert MAUD Type of Consideration answer, and each reaches ≥ 0.95 accuracy against it; `gate.json` has a confusion table per model |
 | `human_verdicts` | at least 30 accepted `fields.csv` rows reviewed, and at least 90% of them marked correct |
 | `agreement` | no unanswered calls, at most 30% of fields sent to adjudication, and a reviewer read the 20 rows in `sample.csv` (`--signed-off`) |
 | `review` | a person read the CSVs and found no systematic error |
@@ -152,12 +154,28 @@ The v10 build refuses labels whose configuration has no passing calibration or p
 - Chunks 1–4 and 7–9 can run at any time.
 - Chunks 5 and 6 (contract and merger entities) label the v2 schema fields; run them after
   llm-dojo-scoring 0.28.0 has merged, so the fields they fill are the ones the Dojo scores
-  (`docs/plans/v10-consumer-patches.md`, G1).
+  (`docs/plans/v10-consumer-patches.md`, G1). Their first chunks (5a, 6a) carry
+  `requires:`; `$L chunk` refuses them until you confirm the release has landed with
+  `--ack-requires`, and `$L doctor` lists them as waiting instead of offering them next.
+- Chunks 6c0 and 6c1 label `merger_consideration` for the 56 MAUD mergers whose subclass
+  is `other` (they have full MAUD clause labels but no expert Type of Consideration
+  answer). 6c0 calibrates both models on the 95 mergers that do have the answer; 6c1
+  labels the 56. Chunks 6a, 6b and 6c need 6c1. Neither chunk depends on the Dojo
+  release: `merger_consideration` is a v1 field.
 - Chunk 10 is human adjudication. Chunk 11 re-runs the v10 build and every gate.
-- Any chunk can run on Modal instead (`$L chunk <id> --provider modal --initials XX`, with
-  `VLLM_BASE_URL` and `VLLM_API_KEY` set). The Modal model is a different configuration, so
-  calibrate it before it labels anything.
-- Spend: the chunk caps add up to $27.90 and the projection is about $14 (`costs.md`).
+- Any one-model chunk can run on Modal instead:
+  `$L chunk <id> --provider modal --initials XX`, with `VLLM_BASE_URL` and `VLLM_API_KEY`
+  set and the Modal app already deployed by a person (this package never deploys it).
+  The campaign's OpenRouter model is mapped to the one approved Modal model
+  (`Qwen/Qwen3-32B-FP8`); with several approved Modal models, name the mapping with
+  `--model-map <campaign_model>=<modal_model>` (repeatable). A two-model chunk needs two
+  different models, so it runs on Modal only once a second Modal model is approved in
+  `models.yaml`; until then run it on OpenRouter. The Modal model is a different
+  configuration, so calibrate it before it labels anything. Its `models.yaml` token price
+  is a conservative equivalent of the GPU-hour cost (at least 1M prompt and 0.25M output
+  tokens per GPU-hour), so the cap still bounds spend; `costs.md` therefore shows a
+  ceiling for it, not an estimate.
+- Spend: the chunk caps add up to $28.90 and the projection is about $14.70 (`costs.md`).
 
 ## Sign-off log
 
