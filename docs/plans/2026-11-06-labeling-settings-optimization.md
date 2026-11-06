@@ -24,7 +24,7 @@
 ## Review Focus
 
 1. **A cached answer reused after the window changes.** The answer was made on cut-off text, so it must not be reused. The window goes into the prompt sha (Task 1, `test_cuad_window_is_part_of_the_prompt_sha`).
-2. **A bake-off arm that stopped at its cap** (fewer documents than expected) must never win, even when its partial score is higher (Task 5, `test_bakeoff_ignores_incomplete_arms`).
+2. **A score gap that is just chance** (40 contracts, 96 emails) must not pick a model; selection uses paired bootstrap intervals (Task 5, `test_bakeoff_keeps_cheaper_deepseek_unless_costlier_is_significantly_better`). **A bake-off arm that stopped at its cap** (fewer documents than expected) must never win, even when its partial score is higher (Task 5, `test_bakeoff_ignores_incomplete_arms`).
 3. **A second-opinion candidate that is another DeepSeek snapshot** has errors correlated with the primary, so it is not eligible (Task 5, `test_bakeoff_second_opinion_is_another_vendor`).
 4. **A contract longer than the new window** (the 616k-character EX-10 exhibit) is still windowed rather than sent whole, and its description says so (Task 1, `test_cuad_window_sends_calibration_whole_and_caps_giants`).
 5. **A low-reasoning arm whose real reasoning far exceeds the projection** must have a cap that fits the measured tokens (Task 2, `test_costs_use_measured_reasoning_tokens`).
@@ -135,18 +135,24 @@ def test_cuad_window_is_part_of_the_prompt_sha(rows, monkeypatch):
   - always: `passed`, `documents`, `expected_documents`, `spent_usd`, `models`, `reasoning`
   - chunk 1: `micro_f1`, `micro_precision`
   - chunk 3: `cohen_kappa`
-- Produces: `bakeoff_ranking(arms: list[dict], metric: str, tolerance: float = 0.02) -> dict`. It returns `{"primary": arm|None, "second": arm|None, "table": [...]}`.
-  - Eligible arms are complete (`documents == expected_documents`), have no `served_outside_pin` and no `reasoning_not_honoured`, and pass their floors.
-  - `primary` is the best eligible arm whose model starts with `deepseek/`. Ties go to lower `spent_usd`.
-  - `second` is the best eligible arm whose model vendor (the prefix before `/`) is not `deepseek` and whose metric is ≥ `primary[metric] - tolerance`. Ties go to lower cost.
-  - `table` lists every arm with metric, precision (CUAD), cost and an eligibility reason.
+- Produces:
+  - `paired_bootstrap(a: list[dict], b: list[dict], metric: str, n: int = 2000, seed: int = 42) -> tuple[float, float, float]`. It returns (point, lo95, hi95) of metric(b) − metric(a), resampling the shared `document_id`s with replacement. Per-document records carry `tp`/`fp`/`fn` for `micro_f1` (pooled over the resample) and `gold`/`pred` for `cohen_kappa`.
+  - `bakeoff_ranking(arms: list[dict], metric: str, margin: float = 0.05) -> dict`. Each arm is `{"gate": <gate.json>, "docs": [per-document records]}`; arms with the same model may have calibration and holdout docs pooled by the caller. It returns `{"primary": arm|None, "second": arm|None, "table": [...]}`.
+- Rules (2026-11-06 user point: 40 contracts and 96 emails cannot resolve 0.02 gaps, so selection uses paired bootstrap intervals, never a raw score gap):
+  - **Eligible:** complete (`documents == expected_documents`), no `served_outside_pin`, no `reasoning_not_honoured`, and floors passed.
+  - **Primary:** among eligible `deepseek/` arms, the cheapest (lowest `spent_usd`) is the baseline. A costlier DeepSeek arm replaces it only if its bootstrap lo95 versus the baseline is > 0, i.e. significantly better.
+  - **Second:** the eligible arm of another vendor (prefix before `/` ≠ `deepseek`) that is non-inferior to the primary (lo95 of candidate − primary ≥ −margin). Among those, the cheapest wins.
+  - **Exclusion:** an arm whose hi95 versus the primary is < −margin is marked `excluded: clearly worse` and is not run on the holdout.
+  - **Pooling:** for CUAD, the final pick pools each surviving arm's calibration and holdout documents (80 contracts).
+  - **Table:** every arm with point, lo95, hi95, cost and eligibility reason.
   - `cmd_bakeoff` prints the table, writes `<out>/<chunk>.bakeoff.json` and exits 1 when `primary` or `second` is `None`.
-
+- Chunk `1h` (Task 4) therefore has one arm per chunk-1 model, run only for arms the calibration bakeoff did not exclude.
 - [ ] **Step 1: Write the failing tests.**
-  - `test_bakeoff_picks_best_deepseek_and_best_other_vendor_within_tolerance`
-  - `test_bakeoff_ignores_incomplete_arms`: a 30/40-document arm with the top F1 is ineligible
-  - `test_bakeoff_second_opinion_is_another_vendor`: `deepseek-v4.1-flash-1017` is never `second`
-  - `test_bakeoff_has_no_second_when_no_other_vendor_is_close`: every other vendor more than 0.02 below gives `second is None`, and `cmd_bakeoff` returns 1
+  - `test_paired_bootstrap_is_deterministic_and_brackets_the_point`: same inputs give the same triple, and lo95 ≤ point ≤ hi95.
+  - `test_bakeoff_keeps_cheaper_deepseek_unless_costlier_is_significantly_better`: a 0.02 gain on 40 docs keeps the cheaper snapshot, while a gain whose lo95 > 0 switches.
+  - `test_bakeoff_second_opinion_must_be_non_inferior_and_another_vendor`: a vendor 0.10 worse on every document is excluded; `deepseek-v4.1-flash-1017` is never `second`.
+  - `test_bakeoff_ignores_incomplete_arms`: a 30/40-document arm with the top F1 is ineligible.
+  - `test_bakeoff_has_no_second_when_none_is_non_inferior`: `second is None` and `cmd_bakeoff` returns 1.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement** as specified.
 - [ ] **Step 4: Run the suite.** Expected: green.
@@ -215,7 +221,7 @@ The user chose: fix the locator for free, then A/B it against full text (about $
 
   Score consideration accuracy, run `inspect` on the pilot, read every field that differs against the agreement, ledger the findings and report credit.
 
-  Rule: adopt full text for a task only if it raises consideration accuracy by ≥ 0.02, or if the pilot shows facts present only in the full text in ≥ 2 of 13 agreements.
+  Rule: adopt full text for a task only if the paired bootstrap lo95 of (full − located) consideration accuracy over the 95 agreements is > 0, or if the pilot shows a fact present only in the full text in ≥ 2 of 13 agreements (read and confirmed against the agreement).
 
 ### Task 7: Re-plan chunks 2–9 from the measured winners (after the user-authorized bake-off)
 
@@ -228,7 +234,7 @@ The user chose: fix the locator for free, then A/B it against full text (about $
 **Interfaces:**
 - Consumes: `1.bakeoff.json` and `3.bakeoff.json` (`primary`, `second`: model and reasoning).
 - Rules, written into `campaign.yaml`:
-  - **Legal tasks** (`2a`–`2c`, `5a`–`5e`, `6c0`–`6c`, `9a`–`9e`): `models: [<primary of 1>, <legal second>]`. The legal second is `z-ai/glm-5.3-flashx-legal` if it is `second` of chunk 1 or within tolerance of it; otherwise it is `second` of chunk 1.
+  - **Legal tasks** (`2a`–`2c`, `5a`–`5e`, `6c0`–`6c`, `9a`–`9e`): `models: [<primary of 1>, <legal second>]`. The legal second is `z-ai/glm-5.3-flashx-legal` if it is non-inferior to the primary on the pooled 80 contracts; otherwise it is `second` of chunk 1.
   - **General tasks** (`4`, `7a`–`7e`, `8a`–`8e`): `models: [<primary of 3>, <second of 3>]`.
   - **Reasoning:** each chunk takes its source bake-off winner's reasoning. GLM-legal and MiniMax are always `low`.
   - **Caps:** 1.5× the regenerated projection, total ≤ $30.00. If the total exceeds usable credit, the runbook states the top-up needed before the first chunk that does not fit.
