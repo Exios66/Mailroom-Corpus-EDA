@@ -21,7 +21,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .registry import models_registry
 
@@ -44,6 +44,18 @@ def price(model: str) -> tuple[float, float]:
     if not spec or "prompt" not in spec:
         raise SpendError(f"no token price for {model!r} in models.yaml")
     return float(spec["prompt"]), float(spec["completion"])
+
+
+def gpu_spec(model: str) -> tuple[float, float] | None:
+    """``(USD per GPU-second, scale-down tail seconds)`` for a Modal model, else ``None``.
+
+    Modal bills the container's GPU time, not tokens: from the first request (a cold start
+    included, since the request waits for it) to the last answer, plus the idle seconds
+    before the app scales to zero."""
+    spec = models_registry()["models"].get(model) or {}
+    if spec.get("provider") != "modal":
+        return None
+    return float(spec["gpu_usd_per_hour"]) / 3600, float(spec.get("scaledown_seconds", 0))
 
 
 def token_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
@@ -87,6 +99,11 @@ class Budget:
     ``reserve`` books a call's worst case as in flight, so concurrent calls can never
     together exceed the cap; ``settle`` replaces that reservation with the billed cost
     and ``release`` drops it when the call fails.
+
+    A Modal model (:func:`gpu_spec`) is billed by GPU time, not tokens: its calls book
+    nothing per call, and a meter runs from its first reservation to its last answer,
+    plus the scale-down tail. Every reservation checks the meter's cost so far, so a slow
+    or cold-starting Modal leg stops at the cap like a token-billed one.
     """
 
     cap_usd: float
@@ -94,18 +111,49 @@ class Budget:
     spent_usd: float = 0.0
     calls: int = 0
     in_flight_usd: float = 0.0
-    started: float = field(default_factory=time.monotonic)
+    clock: Callable[[], float] = field(default=time.monotonic, repr=False, compare=False)
+    started: float | None = None
+    gpu_usd_per_second: float = 0.0
+    gpu_tail_seconds: float = 0.0
+    gpu_first: float | None = None
+    gpu_last: float | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self.started is None:
+            self.started = self.clock()
+
+    def gpu_seconds(self, now: float | None = None) -> float:
+        """Billed Modal GPU seconds: first send to ``now`` (default: the last answer), plus the tail."""
+        if self.gpu_first is None:
+            return 0.0
+        end = now if now is not None else (self.gpu_last or self.gpu_first)
+        return max(0.0, end - self.gpu_first) + self.gpu_tail_seconds
+
+    def gpu_usd(self, now: float | None = None) -> float:
+        """The Modal GPU cost of :meth:`gpu_seconds`."""
+        return self.gpu_seconds(now) * self.gpu_usd_per_second
+
+    def total_usd(self) -> float:
+        """Token-billed spend plus the Modal GPU time."""
+        return self.spent_usd + self.gpu_usd()
 
     def reserve(self, model: str, prompt_tokens: int, max_tokens: int) -> float:
         """Book the worst-case cost of the next call; raise when it could breach the cap or wall."""
-        worst = token_cost(model, prompt_tokens, max_tokens)
+        gpu = gpu_spec(model)
+        worst = 0.0 if gpu else token_cost(model, prompt_tokens, max_tokens)
         with self._lock:
-            if time.monotonic() - self.started > self.max_wall_seconds:
+            now = self.clock()
+            if now - self.started > self.max_wall_seconds:
                 raise SpendError(f"wall-clock limit {self.max_wall_seconds:.0f}s reached")
-            if self.spent_usd + self.in_flight_usd + worst > self.cap_usd:
+            if gpu and self.gpu_first is None:
+                self.gpu_usd_per_second, self.gpu_tail_seconds = gpu
+                self.gpu_first = now
+            meter = self.gpu_usd(now)
+            if self.spent_usd + self.in_flight_usd + meter + worst > self.cap_usd:
                 raise SpendError(f"next call could cost ${worst:.4f}; spent ${self.spent_usd:.4f} "
-                                 f"(+${self.in_flight_usd:.4f} in flight) of ${self.cap_usd:.2f} cap")
+                                 f"+ GPU time ${meter:.4f} (+${self.in_flight_usd:.4f} in flight) "
+                                 f"of ${self.cap_usd:.2f} cap")
             self.in_flight_usd += worst
         return worst
 
@@ -116,11 +164,16 @@ class Budget:
 
     def settle(self, model: str, prompt_tokens: int, completion_tokens: int,
                billed_usd: float | None, reserved: float = 0.0) -> float:
-        """Book one call (replacing its reservation); returns the amount booked."""
-        cost = billed_usd if billed_usd is not None else token_cost(model, prompt_tokens,
-                                                                     completion_tokens)
+        """Book one call (replacing its reservation); returns the amount booked.
+
+        A Modal call books nothing here: its cost is the GPU meter, which this extends."""
+        gpu = gpu_spec(model)
+        cost = 0.0 if gpu else (billed_usd if billed_usd is not None
+                                else token_cost(model, prompt_tokens, completion_tokens))
         with self._lock:
             self.in_flight_usd = max(0.0, self.in_flight_usd - reserved)
             self.spent_usd += cost
             self.calls += 1
+            if gpu:
+                self.gpu_last = self.clock()
         return cost

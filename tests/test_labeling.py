@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from mailroom_eda.labeling import export, operate, providers, runner, spend, tasks, verify
+from mailroom_eda.labeling import export, ingest, operate, providers, runner, spend, tasks, verify
 from mailroom_eda.labeling.registry import (
     PROMPTS_DIR,
     Prompt,
@@ -1337,7 +1337,8 @@ def test_gate_scores_the_models_the_chunk_ran(tmp_path, monkeypatch, rows):
     req = tasks.build("correspondence", row)
     ans = {"fields": {f: {"value": None, "status": "not_found", "evidence": ""} for f in req.fields}}
     runner.run_chunk([row], task="correspondence", models=[modal], backend=providers.Backend("modal", "u", "k"),
-                     reasoning="off", budget=spend.Budget(1.0, 3600), out_dir=out_dir, chat=_fake_chat({modal: ans}))
+                     reasoning="off", budget=spend.Budget(1.0, 3600), out_dir=out_dir, chat=_fake_chat({modal: ans}),
+                     count_tokens=lambda *a, **kw: (100, 32768))
     export.append_journal(out_dir / "runs.jsonl", {"chunk": "7a", "models": [modal], "provider": "modal",
                                                    "started_utc": "2026-11-06T00:00:00Z"})
     res = operate.gate_result("v10", entry, None, tmp_path, tmp_path)
@@ -2779,3 +2780,181 @@ def test_no_step_or_chunk_needs_a_skipped_chunk():
                and all(o.get("skip") for o in camp["chunks"] if str(o["id"]) == str(c["id"]))}
     for c in [*camp["chunks"], *(camp.get("steps") or [])]:
         assert not skipped & {str(n) for n in c.get("needs") or []}, (c["id"], skipped)
+
+
+# ---------------------------------------------------------------- mixed providers (Modal + OpenRouter)
+
+QWEN, DS = "Qwen/Qwen3-32B-FP8", "deepseek/deepseek-v4.1-flash"
+
+
+def test_chat_timeout_follows_the_provider():
+    """A Modal request may wait out a cold start before a long prefill; OpenRouter keeps 300 s."""
+    seen = {}
+
+    def post(url, key, body, timeout):
+        seen[url] = timeout
+        return 200, {}, {"choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}], "usage": {}}
+
+    providers.chat(providers.Backend("modal", "https://x.modal.run/v1", "k"), QWEN, [], None, post=post)
+    providers.chat(providers.Backend("openrouter", "https://or/api/v1", "k"), DS, [], None, post=post)
+    assert seen == {"https://x.modal.run/v1/chat/completions": providers.TIMEOUT_SECONDS["modal"],
+                    "https://or/api/v1/chat/completions": 300.0}
+    assert providers.TIMEOUT_SECONDS["modal"] >= 1200
+
+
+def test_count_tokens_asks_vllm_tokenize():
+    """The exact prompt length after the chat template, and the served window, from /tokenize."""
+    seen = {}
+
+    def post(url, key, body, timeout):
+        seen.update(url=url, body=body)
+        return 200, {}, {"count": 1234, "max_model_len": 32768, "tokens": []}
+
+    msgs = [{"role": "user", "content": "hi"}]
+    got = providers.count_tokens(providers.Backend("modal", "https://x.modal.run/v1", "k"), QWEN, msgs, post=post)
+    assert got == (1234, 32768)
+    assert seen["url"] == "https://x.modal.run/tokenize"  # vLLM serves it at the root, not under /v1
+    assert seen["body"]["messages"] == msgs and seen["body"]["add_generation_prompt"] is True
+    assert seen["body"]["chat_template_kwargs"] == {"enable_thinking": False}
+    with pytest.raises(providers.ProviderError):
+        providers.count_tokens(providers.Backend("modal", "https://x.modal.run/v1", "k"), QWEN, msgs,
+                               post=lambda *a: (503, {}, {"error": "booting"}))
+    with pytest.raises(ValueError):
+        providers.count_tokens(providers.Backend("openrouter", "https://or/api/v1", "k"), DS, msgs, post=post)
+
+
+def test_budget_charges_modal_gpu_time_not_tokens():
+    """A Modal model costs its GPU-seconds (first send to last answer, plus the scale-down tail)."""
+    now = [0.0]
+    b = spend.Budget(1.0, 3600, clock=lambda: now[0])
+    rate, tail = spend.gpu_spec(QWEN)
+    assert rate == pytest.approx(3.95 / 3600) and tail == 120
+    assert spend.gpu_spec(DS) is None
+    r = b.reserve(QWEN, 30_000, 3_000)
+    assert r == 0.0  # no token reservation: the meter books the time
+    now[0] = 100.0
+    assert b.settle(QWEN, 30_000, 900, None, r) == 0.0
+    assert b.spent_usd == 0.0 and b.gpu_seconds() == pytest.approx(220.0)
+    assert b.total_usd() == pytest.approx(220 * 3.95 / 3600)
+    b.reserve(DS, 1000, 100)
+    b.settle(DS, 1000, 100, 0.01)
+    assert b.total_usd() == pytest.approx(0.01 + 220 * 3.95 / 3600)
+    tight = spend.Budget(0.20, 3600, clock=lambda: now[0])
+    now[0] = 0.0
+    tight.reserve(QWEN, 10, 10)
+    now[0] = 60.0  # 60 s + the 120 s tail = $0.1975: the next call could pass the cap
+    tight.settle(QWEN, 10, 10, None)
+    now[0] = 70.0
+    with pytest.raises(spend.SpendError, match="GPU"):
+        tight.reserve(QWEN, 10, 10)
+
+
+def _mixed_answers(rows):
+    req = tasks.build("correspondence", rows[2])
+    ans = {"fields": {f: {"value": None, "status": "not_found", "evidence": ""} for f in req.fields}}
+    return {QWEN: ans, DS: ans}
+
+
+def test_mixed_chunk_sends_each_model_to_its_own_backend(tmp_path, rows):
+    """Qwen goes to Modal, DeepSeek to OpenRouter; each call records its provider; GPU time is booked."""
+    sent = []
+    answers = _mixed_answers(rows)
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens):
+        sent.append((model, backend.provider))
+        return providers.Completion(json.dumps(answers[model]), answers[model], model, "", 100, 50, 0,
+                                    None if backend.provider == "modal" else 0.0001, "stop", True)
+
+    backends = {QWEN: providers.Backend("modal", "https://x.modal.run/v1", "k"),
+                DS: providers.Backend("openrouter", "https://or/api/v1", "k")}
+    res = runner.run_chunk([rows[2]], task="correspondence", models=[QWEN, DS], backends=backends,
+                           reasoning="off", budget=spend.Budget(1.0, 3600), out_dir=tmp_path, chat=chat,
+                           count_tokens=lambda b, m, msgs, **kw: (500, 32768))
+    assert set(sent) == {(DS, "openrouter"), (QWEN, "modal")} and len(sent) == 2
+    calls = {c["model"]: c for c in export.read_journal(tmp_path / "calls.jsonl")}
+    assert calls[QWEN]["provider"] == "modal" and calls[DS]["provider"] == "openrouter"
+    assert res["calls"] == 2 and res["gpu_seconds"] >= 120 and res["gpu_usd"] > 0
+    assert res["spent_usd"] == pytest.approx(0.0001 + res["gpu_usd"], abs=1e-4)
+
+
+def test_over_context_request_is_reported_not_sent(tmp_path, rows):
+    """A prompt that cannot fit the served window with its answer budget is journaled, never sent."""
+    sent = []
+
+    def chat(backend, model, *a, **kw):
+        sent.append(model)
+        raise AssertionError("must not be sent")
+
+    res = runner.run_chunk([rows[2]], task="correspondence", models=[QWEN],
+                           backends={QWEN: providers.Backend("modal", "https://x.modal.run/v1", "k")},
+                           reasoning="off", budget=spend.Budget(1.0, 3600), out_dir=tmp_path, chat=chat,
+                           count_tokens=lambda b, m, msgs, **kw: (32_000, 32_768))
+    assert sent == [] and res["over_context"] == 1 and not res.get("errors")
+    (rec,) = export.read_journal(tmp_path / "calls.jsonl")
+    assert rec["error"].startswith("over_context: 32000 prompt") and "32768" in rec["error"]
+
+
+def test_mixed_models_swaps_one_campaign_model_and_reads_each_provider():
+    """--provider mixed --model-map A=B: B replaces A; each model's provider comes from models.yaml."""
+    models, prov = operate.mixed_models(["z-ai/glm-5.3-flashx-legal", DS], [f"{DS}={QWEN}"])
+    assert models == ["z-ai/glm-5.3-flashx-legal", QWEN]
+    assert prov == {"z-ai/glm-5.3-flashx-legal": "openrouter", QWEN: "modal"}
+    with pytest.raises(SystemExit, match="not a model of this chunk"):
+        operate.mixed_models([DS], [f"not/a-model={QWEN}"])
+    with pytest.raises(SystemExit, match="not an approved"):
+        operate.mixed_models([DS], [f"{DS}=not/a-model"])
+    with pytest.raises(SystemExit, match="one provider"):
+        operate.mixed_models([DS], [])  # nothing mixed: run it on that provider instead
+
+
+def test_calibration_matches_each_models_provider():
+    """A mixed chunk is calibrated only by a calibration that ran each model on the same provider."""
+    base = {"task": "merger_consideration", "reasoning": "off", "prompt_sha256": ["p1"],
+            "temperature": {QWEN: 0, DS: 0}, "models": [QWEN, DS]}
+    mixed = {**base, "chunk": "6c1", "set": "pending", "provider": "mixed",
+             "providers": {QWEN: "modal", DS: "openrouter"}}
+    cal = {**base, "chunk": "6c0", "set": "calibration", "provider": "mixed",
+           "providers": {QWEN: "modal", DS: "openrouter"}}
+    assert ingest.configuration(QWEN, mixed).startswith(f"{QWEN}@modal/")
+    assert ingest.configuration(DS, mixed).startswith(f"{DS}@openrouter/")
+    ingest.check_calibrated([cal, mixed])
+    wrong = {**cal, "provider": "openrouter", "providers": None}
+    with pytest.raises(SystemExit, match="uncalibrated"):
+        ingest.check_calibrated([wrong, mixed])
+
+
+def test_gate_and_approval_keep_each_models_provider(tmp_path, monkeypatch, rows):
+    """A mixed chunk's gate and approval record where each model ran, so ingest can match it."""
+    entry = {"id": "7a", "task": "correspondence", "set": "pilot", "models": [DS, "minimax/minimax-m3.1-flash"],
+             "reasoning": "off", "cap_usd": 0.25, "gate": {"kind": "human_verdicts", "precision": 0.9}}
+    row = rows[2]
+    monkeypatch.setattr(runner, "load_stage", lambda stage: [row])
+    monkeypatch.setattr(operate, "chunk_entry", lambda name, cid, arm: (entry, None))
+    out_dir = operate.chunk_dir(tmp_path, entry, None)
+    answers = _mixed_answers(rows)
+    prov = {QWEN: "modal", DS: "openrouter"}
+    runner.run_chunk([row], task="correspondence", models=[QWEN, DS], reasoning="off",
+                     backends={QWEN: providers.Backend("modal", "https://x.modal.run/v1", "k"),
+                               DS: providers.Backend("openrouter", "https://or/api/v1", "k")},
+                     budget=spend.Budget(1.0, 3600), out_dir=out_dir, chat=_fake_chat(answers),
+                     count_tokens=lambda *a, **kw: (100, 32768))
+    export.append_journal(out_dir / "runs.jsonl", {"chunk": "7a", "models": [QWEN, DS], "provider": "mixed",
+                                                   "providers": prov, "started_utc": "2026-11-06T00:00:00Z"})
+    res = operate.gate_result("v10", entry, None, tmp_path, tmp_path)
+    assert res["provider"] == "mixed" and res["providers"] == prov
+    assert {ingest.configuration(m, res).split("@")[1].split("/")[0] for m in res["models"]} == {"modal",
+                                                                                                    "openrouter"}
+
+
+def test_modal_projection_is_gpu_time_and_a_cap_below_a_cold_start_is_refused(tmp_path, rows):
+    """The dry run prices Modal by GPU time (cold start + per-call slots + tail); a cap that cannot
+    cover the cold start would buy a boot and no labels, so the run is refused before it starts."""
+    spec = models_registry()["models"][QWEN]
+    est = runner.estimate([rows[2]], "correspondence", [QWEN, DS])
+    seconds = spec["cold_boot_seconds"] + spec["scaledown_seconds"] + spec["seconds_per_call"] / spec["in_flight"]
+    assert est["cost_usd"][QWEN] == pytest.approx(round(seconds * spec["gpu_usd_per_hour"] / 3600, 4))
+    assert est["gpu_seconds"] == {QWEN: pytest.approx(seconds)}
+    with pytest.raises(SystemExit, match="cold start"):
+        runner.execute([rows[2]], [rows[2]], task="correspondence", set_name="pilot", chunk_spec=None,
+                       models=[QWEN, DS], provider={QWEN: "modal", DS: "openrouter"}, reasoning="off",
+                       initials="JB", cap_usd=0.35, max_wall_seconds=600, out_dir=tmp_path)

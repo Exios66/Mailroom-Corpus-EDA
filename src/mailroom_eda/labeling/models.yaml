@@ -86,11 +86,19 @@ models:
             seed: false, temperature: false}
   Qwen/Qwen3-32B-FP8:
     provider: modal
-    # Modal bills GPU time, not tokens: one H100 at about $3.95/hour. The token prices
-    # below are a conservative token-equivalent so the spend cap still works: they assume
-    # at least 1M prompt tokens and 0.25M output tokens per GPU-hour, which vLLM on one H100
-    # exceeds for this model. The real bill is the app's GPU time in the Modal dashboard.
+    # Modal bills GPU time, not tokens: one H100 at about $3.95/hour. The spend cap books
+    # that time (spend.Budget): first request, a cold start included, to last answer, plus
+    # scaledown_seconds idle (the sandbox posture's MODAL_VLLM_SCALEDOWN_SECONDS). The token
+    # prices below are only a conservative token-equivalent for dry-run projections (at
+    # least 1M prompt and 0.25M output tokens per GPU-hour, which vLLM on one H100 exceeds).
     gpu_usd_per_hour: 3.95
+    scaledown_seconds: 120
+    # The sandbox labeler's cost model (mailroom_sandbox.gt_labeler): a cold start (32B weight
+    # load + graph capture), and a conservative wall per document with 8 in flight. Dry runs
+    # project GPU time from these; the run itself books the measured time.
+    cold_boot_seconds: 420
+    seconds_per_call: 70
+    in_flight: 8
     prompt: 3.95
     completion: 15.80
     context: 32768

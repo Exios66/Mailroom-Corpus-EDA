@@ -182,14 +182,26 @@ def estimate(rows: Sequence[Mapping[str, Any]], task: str, models: Sequence[str]
             calls += 1
     out_tokens = calls * typical_output(task)
     p_tok, o_tok = int(prompt_tokens * RETRY_FACTOR), int(out_tokens * RETRY_FACTOR)
-    costs = {}
+    costs, gpu = {}, {}
     for m in models:
+        if spend.gpu_spec(m):  # Modal bills GPU time: a cold start, the calls' slots, the tail
+            gpu[m] = gpu_projection_seconds(m, calls)
+            costs[m] = round(gpu[m] * spend.gpu_spec(m)[0], 4)
+            continue
         try:
             costs[m] = round(spend.token_cost(m, p_tok, o_tok), 4)
         except spend.SpendError:
             costs[m] = None
     return {"task": task, "documents": len(rows), "calls": calls, "prompt_tokens": p_tok,
-            "output_tokens": o_tok, "cost_usd": costs}
+            "output_tokens": o_tok, "cost_usd": costs, **({"gpu_seconds": gpu} if gpu else {})}
+
+
+def gpu_projection_seconds(model: str, calls: int) -> float:
+    """Projected billed GPU seconds for ``calls`` on a Modal model (``models.yaml``): a cold
+    start, each call's slot at ``in_flight`` concurrency, and the scale-down tail."""
+    spec = models_registry()["models"][model]
+    return (float(spec["cold_boot_seconds"]) + float(spec["scaledown_seconds"])
+            + calls * float(spec["seconds_per_call"]) / max(1, int(spec["in_flight"])))
 
 
 def cuad_vocab(rows: Sequence[Mapping[str, Any]]) -> list[str]:
@@ -263,7 +275,7 @@ class _Stop(Exception):
 
 
 def import_reusable(calls_path: Path, roots: Sequence[Path], rows: Sequence[Mapping[str, Any]], *,
-                    task: str, models: Sequence[str], reasoning: str, provider: str,
+                    task: str, models: Sequence[str], reasoning: str, provider: str | Mapping[str, str],
                     set_name: str = "") -> int:
     """Copy answers this chunk would otherwise buy again from other journals under ``roots``.
 
@@ -272,6 +284,7 @@ def import_reusable(calls_path: Path, roots: Sequence[Path], rows: Sequence[Mapp
     and it has no error. Each copy keeps ``reused_from`` (the source journal), so the
     chunk's own journal stays self-contained. Returns the number of records copied.
     """
+    prov = dict(provider) if isinstance(provider, Mapping) else {m: provider for m in models}
     done = _done(calls_path, reasoning)
     wanted: dict[tuple[str, str, str, str], str | None] = {}  # key -> rendered input sha
     for r in rows:
@@ -293,7 +306,7 @@ def import_reusable(calls_path: Path, roots: Sequence[Path], rows: Sequence[Mapp
         firsts: set[tuple[str, str]] = set()  # (document, model) first answers copied from src
         for c in export.read_journal(src):
             key = (c.get("document_id"), c.get("model"), c.get("variant", ""), c.get("prompt_sha256", ""))
-            if key not in wanted or not _reusable(c, reasoning, provider):
+            if key not in wanted or not _reusable(c, reasoning, prov.get(str(key[1]), "")):
                 continue
             if key[2] == "repair":
                 # a repair follows from its first answer and the document; reuse it only with
@@ -320,11 +333,32 @@ def _reusable(c: Mapping[str, Any], reasoning: str, provider: str) -> bool:
                                                    {c.get("served_provider")}))
 
 
+def over_context(backend: providers.Backend, model: str, messages: Sequence[Mapping[str, str]],
+                 answer_tokens: int, reasoning: str = "off", count_tokens=providers.count_tokens) -> str:
+    """Why this prompt plus its answer budget cannot fit the model's window, or ``""``.
+
+    Modal: the exact count and the served ``max_model_len`` from vLLM (an over-long request
+    is refused there outright). Elsewhere: the planning estimate against ``models.yaml``
+    ``context``; a model without one is not checked."""
+    if backend.provider == "modal":
+        n, window = count_tokens(backend, model, messages, reasoning=reasoning)
+    else:
+        window = int((models_registry()["models"].get(model) or {}).get("context") or 0)
+        if not window:
+            return ""
+        n = sum(spend.estimate_tokens(m["content"]) for m in messages)
+    if n + answer_tokens > window:
+        return f"over_context: {n} prompt + {answer_tokens} answer tokens > the {window}-token window"
+    return ""
+
+
 def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[str],
-              backend: providers.Backend, reasoning: str, budget: spend.Budget, out_dir: Path,
+              reasoning: str, budget: spend.Budget, out_dir: Path,
+              backend: providers.Backend | None = None,
+              backends: Mapping[str, providers.Backend] | None = None,
               vocab: Sequence[str] = (), chat=providers.chat, workers: int = 1,
               progress: Any = None, set_name: str = "",
-              reuse_from: Sequence[Path] = ()) -> dict[str, Any]:
+              reuse_from: Sequence[Path] = (), count_tokens=providers.count_tokens) -> dict[str, Any]:
     """Send every (row, model, variant) not yet answered; append to ``calls.jsonl``.
 
     First, identical answers already paid for in other journals under ``reuse_from``
@@ -334,18 +368,28 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
     the first answer. ``workers`` calls run at once; the budget books every in-flight
     call's worst case, so together they never pass the cap. Stops cleanly at the cap or
     wall limit; everything finished so far is kept, so a re-run continues where it stopped.
+
+    ``backends`` maps each model to its own backend (a mixed chunk: one model on Modal,
+    the other on OpenRouter); ``backend`` serves every model otherwise. Before each call the
+    prompt plus its answer budget is checked against the model's window (exactly, through
+    vLLM's ``/tokenize``, on Modal; by estimate against ``models.yaml`` ``context``
+    elsewhere): one that cannot fit is journaled as ``over_context`` and never sent.
     """
     import threading  # noqa: PLC0415
     from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: PLC0415
 
     if task == "cuad" and not vocab:
         raise ValueError("cuad runs need the CUAD vocabulary")
+    bk = dict(backends) if backends else {m: backend for m in models}
+    if any(bk.get(m) is None for m in models):
+        raise ValueError("every model needs a backend")
     out_dir.mkdir(parents=True, exist_ok=True)
     calls_path = out_dir / "calls.jsonl"
     stats: Counter = Counter()
     if reuse_from:
         reused = import_reusable(calls_path, reuse_from, rows, task=task, models=models,
-                                 reasoning=reasoning, provider=backend.provider, set_name=set_name)
+                                 reasoning=reasoning, provider={m: bk[m].provider for m in models},
+                                 set_name=set_name)
         if reused:
             stats["reused"] = reused
     done = _done(calls_path, reasoning)
@@ -363,6 +407,19 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
         rec = {**rec, "input_sha256": tasks.input_sha256(req.messages)}
         if stop.is_set():
             raise _Stop()
+        try:
+            over = over_context(bk[model], model, req.messages, max_tokens(task, reasoning), reasoning,
+                                count_tokens)
+        except providers.ProviderError as err:
+            journal({**rec, "error": str(err)})
+            with lock:
+                stats["errors"] += 1
+            return None
+        if over:
+            journal({**rec, "error": over})
+            with lock:
+                stats["over_context"] += 1
+            return None
         ptoks = sum(spend.estimate_tokens(m["content"]) for m in req.messages)
         try:
             reserved = budget.reserve(model, ptoks, max_tokens(task, reasoning))
@@ -371,7 +428,7 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
             stop_reason.append(str(err))
             raise _Stop() from err
         try:
-            comp = chat(backend, model, req.messages, req.schema, reasoning=reasoning,
+            comp = chat(bk[model], model, req.messages, req.schema, reasoning=reasoning,
                         max_tokens=max_tokens(task, reasoning))
         except providers.ProviderError as err:
             billed = getattr(err, "usage", None)
@@ -414,7 +471,7 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
     def job(r: Mapping[str, Any], v: str, model: str, req: tasks.Request, first: Mapping[str, Any] | None) -> None:
         """One planned call: a first answer (and its repair), or only a missing repair."""
         rec = {"task": task, "document_id": req.document_id, "filename": r["filename"], "variant": v,
-               "model": model, "provider": backend.provider, "reasoning": reasoning,
+               "model": model, "provider": bk[model].provider, "reasoning": reasoning,
                "temperature": providers.temperature(model),
                "prompt_sha256": req.prompt_sha256, "labeled_utc": _now()}
         if first is not None:  # answered on an earlier run; only its CUAD repair may be missing
@@ -461,14 +518,16 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
                     pass
                 finished += 1
                 if progress and (finished % 25 == 0 or finished == len(jobs)):
-                    progress(f"{finished}/{len(jobs)} jobs, ${budget.spent_usd:.4f} spent, "
+                    progress(f"{finished}/{len(jobs)} jobs, ${budget.total_usd():.4f} spent, "
                              f"{stats['errors']} errors")
         except KeyboardInterrupt:
             stop.set()
             for f in futures:
                 f.cancel()
             raise
-    out = {**stats, "spent_usd": round(budget.spent_usd, 4)}
+    out = {**stats, "spent_usd": round(budget.total_usd(), 4)}
+    if budget.gpu_first is not None:  # the Modal leg: billed GPU time, a cold start included
+        out.update(gpu_seconds=round(budget.gpu_seconds(), 1), gpu_usd=round(budget.gpu_usd(), 4))
     if stop_reason:
         out.update(stopped=1, stop_reason=stop_reason[0])
     return out
@@ -1000,8 +1059,15 @@ def _checkpoint(args: argparse.Namespace, why: str, rc: int) -> int:
                                                       no_checkpoint=args.no_checkpoint), why, rc)
 
 
+def provider_label(prov: Mapping[str, str]) -> str:
+    """``openrouter`` / ``modal`` when every model shares it, else ``mixed``."""
+    kinds = set(prov.values())
+    return kinds.pop() if len(kinds) == 1 else "mixed"
+
+
 def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any]], *, task: str,
-            set_name: str, chunk_spec: str | None, models: Sequence[str], provider: str, reasoning: str,
+            set_name: str, chunk_spec: str | None, models: Sequence[str], provider: str | Mapping[str, str],
+            reasoning: str,
             initials: str | None, cap_usd: float | None, max_wall_seconds: float | None, out_dir: Path,
             dry_run: bool = False, workers: int = 4, chunk_id: str | None = None,
             chat=providers.chat, key_status=providers.key_status,
@@ -1011,11 +1077,15 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
     (0 done, 2 stopped at the cap or wall, 3 finished with failed calls to re-run).
 
     Identical answers under ``reuse_from`` (default: the labels root, ``out_dir``'s
-    parent, which holds every chunk and smoke run) are reused instead of bought again."""
+    parent, which holds every chunk and smoke run) are reused instead of bought again.
+
+    ``provider`` is one provider for every model, or a ``{model: provider}`` map for a mixed
+    chunk (each model must be approved on its provider in ``models.yaml``)."""
     approved = models_registry()["models"]
+    prov = dict(provider) if isinstance(provider, Mapping) else {m: provider for m in models}
     for m in models:
-        if m not in approved or approved[m]["provider"] != provider:
-            raise SystemExit(f"{m} is not an approved {provider} model in models.yaml")
+        if m not in approved or approved[m]["provider"] != prov.get(m):
+            raise SystemExit(f"{m} is not an approved {prov.get(m)} model in models.yaml")
     if len(set(models)) != len(models):
         raise SystemExit("the two models must differ")
     # pilots and calibration sets are measured (by reading, or against expert gold), never
@@ -1031,6 +1101,11 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
     print(json.dumps({"chunk": chunk_id, "out": str(out_dir), "reasoning": reasoning, **proj}, indent=1))
     if dry_run:
         return 0
+    for m in models:  # a cap that cannot cover a cold start buys a boot and no labels
+        floor = gpu_projection_seconds(m, 0) * spend.gpu_spec(m)[0] if spend.gpu_spec(m) else 0.0
+        if cap_usd is not None and floor > cap_usd:
+            raise SystemExit(f"cap ${cap_usd:.2f} cannot cover {m}'s Modal cold start and scale-down "
+                             f"(${floor:.2f}); dry-run for the projection and pass --cap-usd above it")
     spend.require_run_flags(initials=initials, cap_usd=cap_usd, max_wall_seconds=max_wall_seconds)
     if require_checkpoint:
         from . import checkpoint  # noqa: PLC0415
@@ -1038,20 +1113,22 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
         if not checkpoint.token_ready():  # paid answers need somewhere to survive a lost checkout
             raise SystemExit(f"no HF token: paid answers checkpoint to the private {checkpoint.STAGING_REPO}; "
                              "set HF_TOKEN, or pass --no-checkpoint")
-    backend = providers.Backend.from_env(provider)
-    if provider == "openrouter":
-        headroom = spend.check_key_headroom(key_status(backend), cap_usd)
+    backends = {p: providers.Backend.from_env(p) for p in sorted(set(prov.values()))}
+    if "openrouter" in backends:
+        headroom = spend.check_key_headroom(key_status(backends["openrouter"]), cap_usd)
         print(f"key headroom after reserve: {'unlimited' if headroom == float('inf') else f'${headroom:.2f}'}",
               file=sys.stderr)
     budget = spend.Budget(cap_usd, max_wall_seconds)
     out_dir.mkdir(parents=True, exist_ok=True)
     export.append_journal(out_dir / "runs.jsonl", {
         "chunk": chunk_id, "task": task, "set": set_name, "slice": chunk_spec, "models": list(models),
-        "provider": provider, "reasoning": reasoning, "initials": initials, "api_cost_cap_usd": cap_usd,
+        "provider": provider_label(prov), **({"providers": prov} if len(set(prov.values())) > 1 else {}),
+        "reasoning": reasoning, "initials": initials, "api_cost_cap_usd": cap_usd,
         "max_wall_seconds": max_wall_seconds, "workers": workers, "documents": len(picked),
         "projection": proj, **({"ack_requires": ack_requires} if ack_requires else {}),
         "started_utc": _now()})
-    result = run_chunk(picked, task=task, models=models, backend=backend, reasoning=reasoning,
+    result = run_chunk(picked, task=task, models=models, backends={m: backends[prov[m]] for m in models},
+                       reasoning=reasoning,
                        budget=budget, out_dir=out_dir, vocab=cuad_vocab(rows) if task == "cuad" else (),
                        chat=chat, workers=workers, progress=lambda m: print(m, file=sys.stderr),
                        set_name=set_name,

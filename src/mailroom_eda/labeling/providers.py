@@ -25,6 +25,10 @@ from typing import Any, Callable, Mapping, Sequence
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 PROVIDERS = ("modal", "openrouter")
+#: Seconds one request may take. A Modal request can wait out a cold start (about 7 min to
+#: load the 32B weights and capture graphs) and then a long prefill, so it gets the app's
+#: 20-min startup timeout plus room; OpenRouter answers or fails well inside 5 min.
+TIMEOUT_SECONDS = {"openrouter": 300.0, "modal": 1500.0}
 REASONING = ("off", "low")
 RETRY_STATUS = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 SCHEMA_REJECT_STATUS = frozenset({400, 422})
@@ -270,7 +274,7 @@ def parse_completion(payload: Mapping[str, Any], *, used_schema: bool) -> Comple
 
 def chat(backend: Backend, model: str, messages: Sequence[Mapping[str, str]],
          schema: Mapping[str, Any] | None, *, reasoning: str = "off", max_tokens: int = 4096,
-         attempts: int = 5, timeout: float = 300.0,
+         attempts: int = 5, timeout: float | None = None,
          post: Callable[[str, str, Mapping[str, Any], float], tuple[int, dict, dict]] = _post,
          sleep: Callable[[float], None] = time.sleep,
          route: Mapping[str, Any] | None = None) -> Completion:
@@ -278,7 +282,8 @@ def chat(backend: Backend, model: str, messages: Sequence[Mapping[str, str]],
 
     Retries on 408/409/425/429/500/502/503/504 and network errors, honoring
     ``Retry-After`` up to 120 seconds. ``attempts`` includes the initial request and
-    any schema fallback; ``timeout`` is the timeout in seconds per request. If the
+    any schema fallback; ``timeout`` is the timeout in seconds per request (default:
+    :data:`TIMEOUT_SECONDS` for the backend's provider). If the
     provider rejects the JSON schema (a 400/422 whose error names the schema or response
     format) the request is repeated in plain JSON mode; the caller's validation then does
     the schema's job. Other HTTP failures, unreadable responses, and invalid completions
@@ -287,6 +292,7 @@ def chat(backend: Backend, model: str, messages: Sequence[Mapping[str, str]],
     are injectable for tests.
     """
     url = f"{backend.base_url}/chat/completions"
+    timeout = TIMEOUT_SECONDS.get(backend.provider, 300.0) if timeout is None else timeout
     use_schema = schema is not None
     last = ""
     for attempt in range(attempts):
@@ -315,6 +321,28 @@ def chat(backend: Backend, model: str, messages: Sequence[Mapping[str, str]],
             continue
         raise ProviderError(last)
     raise ProviderError(f"gave up after {attempts} attempts; last: {last}")
+
+
+def count_tokens(backend: Backend, model: str, messages: Sequence[Mapping[str, str]], *,
+                 reasoning: str = "off",
+                 post: Callable[[str, str, Mapping[str, Any], float], tuple[int, dict, dict]] = _post,
+                 timeout: float | None = None) -> tuple[int, int]:
+    """``(prompt tokens after the chat template, served max_model_len)`` from vLLM's
+    ``/tokenize``: exact, and no generation is billed. Modal only (OpenRouter has no such
+    endpoint). Raises ``ProviderError`` unless it answers 200 with both numbers."""
+    if backend.provider != "modal":
+        raise ValueError("count_tokens asks the Modal vLLM app; OpenRouter has no /tokenize")
+    root = backend.base_url.rstrip("/").removesuffix("/v1")
+    body = {"model": model, "messages": [dict(m) for m in messages], "add_generation_prompt": True,
+            "chat_template_kwargs": {"enable_thinking": reasoning != "off"}}
+    try:
+        status, _, payload = post(f"{root}/tokenize", backend.api_key, body,
+                                  TIMEOUT_SECONDS["modal"] if timeout is None else timeout)
+    except (_ReadError, http.client.HTTPException, urllib.error.URLError, TimeoutError, ConnectionError) as err:
+        raise ProviderError(f"/tokenize failed: {err}") from err
+    if status != 200 or not isinstance(payload.get("count"), int) or not payload.get("max_model_len"):
+        raise ProviderError(f"/tokenize HTTP {status}: {str(payload)[:200]}")
+    return int(payload["count"]), int(payload["max_model_len"])
 
 
 def key_status(backend: Backend, *, timeout: float = 30.0) -> dict[str, Any]:
