@@ -87,6 +87,31 @@ def approvals_path(name: str) -> Path:
     return CAMPAIGNS_DIR / name / "approved.yaml"
 
 
+def funding_status(remaining: float | None, reserve: float, chunks: Sequence[Mapping[str, Any]], *,
+                   approved: set[str]) -> tuple[bool, str]:
+    """Can the key's credit pay for the next chunk, and for the rest of the campaign?
+
+    Usable credit is ``remaining`` minus ``reserve``. Fails only when it does not cover
+    the next unapproved chunk's caps (every arm of it); a shortfall on the remaining caps
+    is reported in the message. ``remaining=None`` means the key has no credit limit.
+    """
+    todo = [c for c in chunks if str(c["id"]) not in approved]
+    caps = sum(float(c.get("cap_usd") or 0) for c in todo)
+    if remaining is None:
+        return True, f"no credit limit; ${caps:.2f} in remaining caps"
+    usable = float(remaining) - reserve
+    msg = f"${usable:.2f} usable, ${caps:.2f} in remaining caps"
+    if usable < caps:
+        msg += f" (short by ${caps - usable:.2f}: add credit before the later chunks)"
+    if not todo:
+        return True, msg
+    nxt = str(todo[0]["id"])
+    need = sum(float(c.get("cap_usd") or 0) for c in todo if str(c["id"]) == nxt)
+    if usable < need:
+        return False, f"next chunk {nxt} needs ${need:.2f}; {msg}"
+    return True, msg
+
+
 def load_approvals(name: str) -> list[dict[str, Any]]:
     """Approved chunk configurations (empty before the first sign-off)."""
     path = approvals_path(name)
@@ -610,12 +635,18 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         data = providers.key_status(providers.Backend.from_env("openrouter"))
         rem = data.get("limit_remaining")
         reserve = models_registry().get("key_reserve_usd", 3.0)
+        funding.append(None if rem is None else float(rem))
         if rem is None:
             return True, f"key OK, no credit limit; usage so far ${float(data.get('usage') or 0):.2f}"
         return float(rem) > reserve, f"key OK, ${float(rem):.2f} remaining (reserve ${reserve:.2f})"
 
+    funding: list[float | None] = []
     check("OpenRouter key", key)
     approvals = load_approvals(args.campaign)
+    if funding:
+        check("funding", lambda: funding_status(
+            funding[0], models_registry().get("key_reserve_usd", 3.0), campaign(args.campaign)["chunks"],
+            approved={str(a["chunk"]) for a in approvals}))
     check("approvals", lambda: (True, f"{len(approvals)} chunks approved"))
     width = max(len(n) for n, _, _ in results)
     for name, ok, msg in results:

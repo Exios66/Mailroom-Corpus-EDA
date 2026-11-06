@@ -1413,3 +1413,16 @@ def test_review_scores_only_answers_to_the_current_prompt(tmp_path, rows):
     (rec,) = export.read_journal(tmp_path / "intent-labels.jsonl")
     assert rec["pass_a"]["intent"] == rec["pass_b"]["intent"] == "update"
     assert len(export.read_journal(tmp_path / "calls.jsonl")) == 4  # nothing deleted
+
+
+def test_funding_status_compares_usable_credit_with_the_remaining_caps():
+    """Usable credit (after the reserve) must cover the next chunk; a shortfall on the rest is reported."""
+    chunks = [{"id": "1", "cap_usd": 0.75}, {"id": "1", "cap_usd": 0.40}, {"id": "3", "cap_usd": 2.0}]
+    ok, msg = operate.funding_status(8.0, 3.0, chunks, approved={"1"})
+    assert ok and "$5.00 usable" in msg and "$2.00 in remaining caps" in msg and "short" not in msg
+    ok, msg = operate.funding_status(4.2, 3.0, chunks, approved=set())
+    assert ok and "short by $1.95" in msg  # both arms of chunk 1 ($1.15) fit; the rest does not
+    ok, msg = operate.funding_status(3.5, 3.0, chunks, approved=set())
+    assert not ok and "next chunk 1 needs $1.15" in msg
+    ok, msg = operate.funding_status(None, 3.0, chunks, approved=set())
+    assert ok and "no credit limit" in msg
