@@ -292,7 +292,7 @@ Layout uses clean tables, collapsible long lists, and no internal ticket ids in 
 **Recommended mix:**
 - GLM-legal + DeepSeek for contracts, mergers and corporate records.
 - DeepSeek + MiniMax for correspondence and insurance.
-- **About $20.36 projected (two models on every extraction chunk, every bake-off arm on calibration and holdout); the per-chunk caps add up to $29.76.** The chunk-by-chunk table is in `costs.md`.
+- **About $20.42 projected (two models on every extraction chunk, every bake-off arm on calibration and holdout); the per-chunk caps add up to $29.76.** The chunk-by-chunk table is in `costs.md`.
 - Prices are re-checked before every chunk, and `costs.md` is regenerated (`labeling costs`; `--check` fails when it is stale).
 
 ## Part E: prompts
