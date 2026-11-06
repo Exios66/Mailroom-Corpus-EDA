@@ -1394,3 +1394,22 @@ def test_answers_from_a_different_configuration_are_not_reused(tmp_path, rows):
     runner.run_chunk([rows[2]], reasoning="off", out_dir=tmp_path / "a", **common)
     res = runner.run_chunk([rows[2]], reasoning="low", out_dir=tmp_path / "b", reuse_from=[tmp_path], **common)
     assert res["calls"] == 2 and res.get("reused", 0) == 0
+
+
+def test_review_scores_only_answers_to_the_current_prompt(tmp_path, rows):
+    """After a prompt edit, answers to the old prompt stay in the journal but are not scored."""
+    row = rows[2]
+    new = {"intent": "update", "confidence": 0.9, "evidence": "x"}
+    runner.run_chunk([row], task="intent", models=["deepseek/deepseek-v4.1-flash"],
+                     backend=providers.Backend("openrouter", "u", "k"), reasoning="off",
+                     budget=spend.Budget(1.0, 3600), out_dir=tmp_path,
+                     chat=_fake_chat({"deepseek/deepseek-v4.1-flash": new}))
+    journal = export.read_journal(tmp_path / "calls.jsonl")
+    stale = [{**c, "prompt_sha256": "0" * 64, "content": json.dumps({**new, "intent": "notice"}),
+              "response": {**new, "intent": "notice"}, "labeled_utc": "2099-01-01T00:00:00Z"} for c in journal]
+    for c in stale:  # appended last, so a naive "latest answer wins" review would pick them
+        export.append_journal(tmp_path / "calls.jsonl", c)
+    runner.review([row], "intent", tmp_path)
+    (rec,) = export.read_journal(tmp_path / "intent-labels.jsonl")
+    assert rec["pass_a"]["intent"] == rec["pass_b"]["intent"] == "update"
+    assert len(export.read_journal(tmp_path / "calls.jsonl")) == 4  # nothing deleted

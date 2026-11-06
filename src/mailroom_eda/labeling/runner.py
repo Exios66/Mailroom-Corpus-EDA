@@ -588,11 +588,42 @@ def _document_tokens(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
     return {str(r.get("document_id")): spend.estimate_tokens(str(r.get("doc_text") or "")) for r in rows}
 
 
+def current_prompt_calls(rows: Sequence[Mapping[str, Any]], task: str, calls: Sequence[Mapping[str, Any]],
+                         set_name: str = "") -> list[Mapping[str, Any]]:
+    """The calls whose prompt sha is the one this task would send today.
+
+    After a prompt or registry edit, answers to the old prompt stay in the journal (they
+    were paid for) but must not be scored together with answers to the new one.
+    """
+    by_id = {str(r.get("document_id")): r for r in rows}
+    want: dict[tuple[str, str], str] = {}
+    out = []
+    for c in calls:
+        doc, v = str(c.get("document_id")), c.get("variant", "")
+        if doc not in by_id:
+            continue
+        if (doc, v) not in want:
+            r = by_id[doc]
+            want[(doc, v)] = (tasks.build_cuad(r, repair_problems=["-"], prior_answer="").prompt_sha256
+                              if v == "repair" else tasks.build(task, r, v, set_name=set_name).prompt_sha256)
+        if c.get("prompt_sha256") == want[(doc, v)]:
+            out.append(c)
+    return out
+
+
+def _run_set(out_dir: Path) -> str:
+    """The ``set`` the chunk directory was last run with (``runs.jsonl``), or ``""``."""
+    runs = [r for r in export.read_journal(out_dir / "runs.jsonl") if r.get("set")] \
+        if (out_dir / "runs.jsonl").exists() else []
+    return str(runs[-1]["set"]) if runs else ""
+
+
 def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
            reasoning: str | None = None) -> dict[str, Any]:
     """Rebuild the derived journals and CSVs for one chunk directory (calls at ``reasoning``)."""
     calls = [c for c in export.read_journal(out_dir / "calls.jsonl")
              if reasoning is None or c.get("reasoning") == reasoning]
+    calls = current_prompt_calls(rows, task, calls, _run_set(out_dir))
     usage = _usage_by_document(calls)
     doc_tokens = _document_tokens(rows)
     models = sorted({c["model"] for c in calls if not c.get("error")},
