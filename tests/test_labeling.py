@@ -1998,3 +1998,133 @@ def test_one_model_may_run_a_calibration_set_but_not_a_labeling_set():
                        models=["deepseek/deepseek-v4.1-flash"], provider="openrouter", reasoning="off",
                        initials=None, cap_usd=None, max_wall_seconds=None, out_dir=Path("/nonexistent"),
                        dry_run=True)
+
+
+# ---------------------------------------------------------------- bake-off ranking (Task 5)
+
+def _cuad_docs(n, tp, fp, fn, start=0):
+    """n per-document CUAD records with the same counts."""
+    return [{"document_id": f"DOC-{i:04d}", "tp": tp, "fp": fp, "fn": fn} for i in range(start, start + n)]
+
+
+def _arm(model, docs, cost, reasoning="off", **gate):
+    return {"gate": {"models": [model], "reasoning": reasoning, "passed": True, "documents": len(docs),
+                     "expected_documents": len(docs), "answer_cost_usd": cost, "spent_usd": cost, **gate},
+            "docs": docs}
+
+
+def test_paired_bootstrap_is_deterministic_and_brackets_the_point():
+    a = _cuad_docs(20, 8, 2, 2) + _cuad_docs(20, 6, 3, 3, start=20)
+    b = _cuad_docs(20, 9, 1, 1) + _cuad_docs(20, 6, 3, 3, start=20)
+    one = operate.paired_bootstrap(a, b, "micro_f1")
+    assert one == operate.paired_bootstrap(a, b, "micro_f1")
+    assert one[1] <= one[0] <= one[2] and one[0] > 0
+
+
+def test_bakeoff_keeps_cheaper_deepseek_unless_costlier_is_significantly_better():
+    import random
+    rng = random.Random(1)
+    base = [{"document_id": f"DOC-{i:04d}", "tp": rng.randint(5, 10), "fp": rng.randint(0, 3), "fn": rng.randint(0, 3)}
+            for i in range(40)]
+    # a small mixed gain (some documents better, some worse): not significant
+    noisy = [dict(d, fp=max(0, d["fp"] + (-1 if i % 2 else 1) * (i % 3 == 0)), tp=d["tp"] + (i % 7 == 0))
+             for i, d in enumerate(base)]
+    cheap = _arm("deepseek/deepseek-v4.1-flash", base, 0.16)
+    pricey = _arm("deepseek/deepseek-v4.1-flash-1017", noisy, 0.31)
+    rank = operate.bakeoff_ranking([cheap, pricey, _arm("openai/gpt-6-luna-pro", base, 0.12)], "micro_f1")
+    assert rank["primary"]["gate"]["models"] == ["deepseek/deepseek-v4.1-flash"]
+    # a gain on every document is significant: the costlier snapshot wins
+    better = _arm("deepseek/deepseek-v4.1-flash-1017", [dict(d, fp=0, fn=0) for d in base], 0.31)
+    rank = operate.bakeoff_ranking([cheap, better, _arm("openai/gpt-6-luna-pro", base, 0.12)], "micro_f1")
+    assert rank["primary"]["gate"]["models"] == ["deepseek/deepseek-v4.1-flash-1017"]
+
+
+def test_bakeoff_second_opinion_must_be_non_inferior_and_another_vendor():
+    base = _cuad_docs(40, 8, 1, 1)
+    worse = _cuad_docs(40, 6, 3, 3)  # about 0.2 F1 worse on every document
+    arms = [_arm("deepseek/deepseek-v4.1-flash", base, 0.16),
+            _arm("deepseek/deepseek-v4.1-flash-1017", base, 0.31),
+            _arm("anthropic/claude-haiku-5.5", worse, 0.05),
+            _arm("openai/gpt-6-luna-pro", base, 0.12),
+            _arm("minimax/minimax-m3.1-flash", base, 0.19, reasoning="low")]
+    rank = operate.bakeoff_ranking(arms, "micro_f1")
+    assert rank["second"]["gate"]["models"] == ["openai/gpt-6-luna-pro"]  # cheapest non-inferior
+    row = next(r for r in rank["table"] if r["model"] == "anthropic/claude-haiku-5.5")
+    assert row["excluded"] == "clearly worse"
+    assert all(r["model"] != "deepseek/deepseek-v4.1-flash-1017" or not r["second"] for r in rank["table"])
+
+
+def test_bakeoff_ignores_incomplete_and_unpinned_arms():
+    base = _cuad_docs(40, 7, 2, 2)
+    short = _arm("deepseek/deepseek-v4.1-flash-1017", _cuad_docs(30, 10, 0, 0), 0.01)
+    short["gate"]["expected_documents"] = 40
+    off_pin = _arm("openai/gpt-6-luna-pro", _cuad_docs(40, 10, 0, 0), 0.01, served_outside_pin=["Azure"])
+    rank = operate.bakeoff_ranking([_arm("deepseek/deepseek-v4.1-flash", base, 0.16), short, off_pin,
+                                    _arm("anthropic/claude-haiku-5.5", base, 0.12)], "micro_f1")
+    assert rank["primary"]["gate"]["models"] == ["deepseek/deepseek-v4.1-flash"]
+    reasons = {r["model"]: r["eligible"] for r in rank["table"]}
+    assert reasons["deepseek/deepseek-v4.1-flash-1017"].startswith("incomplete")
+    assert reasons["openai/gpt-6-luna-pro"].startswith("served outside pin")
+    assert rank["second"]["gate"]["models"] == ["anthropic/claude-haiku-5.5"]
+
+
+def test_bakeoff_has_no_second_when_none_is_non_inferior(tmp_path, monkeypatch, capsys):
+    import argparse
+    base = _cuad_docs(40, 8, 1, 1)
+    arms = [_arm("deepseek/deepseek-v4.1-flash", base, 0.16), _arm("openai/gpt-6-luna-pro", _cuad_docs(40, 5, 4, 4), 0.12)]
+    rank = operate.bakeoff_ranking(arms, "micro_f1")
+    assert rank["second"] is None
+    monkeypatch.setattr(operate, "bakeoff_arms", lambda name, chunk_id, out: (arms, "micro_f1"))
+    args = argparse.Namespace(campaign="v10", id="1", out=tmp_path, margin=0.05)
+    assert operate.cmd_bakeoff(args) == 1
+    saved = json.loads((tmp_path / "1.bakeoff.json").read_text())
+    assert saved["second"] is None and saved["primary"]["model"] == "deepseek/deepseek-v4.1-flash"
+
+
+def test_intent_bootstrap_uses_kappa():
+    gold = ["notice", "request", "update", "other"] * 24
+    a = [{"document_id": f"D{i}", "gold": g, "pred": g if i % 5 else "other"} for i, g in enumerate(gold)]
+    b = [{"document_id": f"D{i}", "gold": g, "pred": g} for i, g in enumerate(gold)]
+    point, lo, hi = operate.paired_bootstrap(a, b, "cohen_kappa")
+    assert lo > 0 and point > 0
+
+
+def test_approving_a_bakeoff_arm_follows_the_bakeoff_pick(tmp_path):
+    """The approved arm becomes winner_of_<id>: it must be the arm the bake-off picked."""
+    entry = {"id": "1", "task": "cuad"}
+    res = {"models": ["openai/gpt-6-luna-pro"], "reasoning": "off"}
+    with pytest.raises(SystemExit, match="labeling bakeoff 1"):
+        operate.bakeoff_guard("v10", entry, res, tmp_path)
+    (tmp_path / "1.bakeoff.json").write_text(json.dumps(
+        {"primary": {"model": "deepseek/deepseek-v4.1-flash", "reasoning": "off", "arm": 3}}))
+    with pytest.raises(SystemExit, match="bake-off picked deepseek"):
+        operate.bakeoff_guard("v10", entry, res, tmp_path)
+    operate.bakeoff_guard("v10", {"id": "1h"}, {"models": ["deepseek/deepseek-v4.1-flash"], "reasoning": "off"},
+                          tmp_path)  # the holdout follows chunk 1's pick
+    operate.bakeoff_guard("v10", entry, res, tmp_path, override=True)
+    operate.bakeoff_guard("v10", {"id": "4"}, res, tmp_path)  # one arm: not a bake-off
+
+
+# ---------------------------------------------------------------- inspect report (Task 6)
+
+def test_inspect_report_shows_gold_answers_and_quote_context():
+    """Disagreements come first; both answers, the gold, the quote in context, and an
+    unlocatable quote marked NOT FOUND."""
+    agree = _row("correspondence", None, "Please pay invoice 7 by Friday or we will sue.",
+                 gt={"intent": "payment_demand"}, fn="a.txt")
+    split = _row("correspondence", None, "The board meeting moved to Tuesday at noon.",
+                 gt={"intent": "update"}, fn="b.txt")
+    recs = [
+        {"document_id": tasks._ids(agree)[0], "filename": "a.txt", "model": "m",
+         "pass_a": {"intent": "payment_demand", "confidence": 0.9, "evidence": "pay invoice 7"},
+         "pass_b": {"intent": "payment_demand", "confidence": 0.9, "evidence": "pay invoice 7"}},
+        {"document_id": tasks._ids(split)[0], "filename": "b.txt", "model": "m",
+         "pass_a": {"intent": "meeting_invite", "confidence": 0.6, "evidence": "board meeting moved"},
+         "pass_b": {"intent": "update", "confidence": 0.7, "evidence": "this sentence is not in the email"}}]
+    calls = [{"document_id": tasks._ids(split)[0], "served_provider": "CoreWeave", "variant": "a"}]
+    md = operate.inspect_report([agree, split], recs, "intent", n=2, calls=calls)
+    first, second = md.index(tasks._ids(split)[0]), md.index(tasks._ids(agree)[0])
+    assert first < second  # the disagreement is read first
+    assert "meeting_invite" in md and "gold: `update`" in md and "CoreWeave" in md
+    assert "The **board meeting moved** to Tuesday at noon" in md
+    assert "NOT FOUND" in md

@@ -167,6 +167,27 @@ the labels root is gitignored, because this GitHub repo is public. A paid run re
   checkout is missing (never overwriting local files), so a later run reuses those answers
   instead of buying them again.
 
+## Funded now (2026-11-06: $9.12 credit, $6.12 usable above the $3 reserve)
+
+The full campaign projects to $20.42, so only this prefix runs before a top-up. It is ordered
+so every paid step feeds a decision. Each chunk starts only when usable credit covers its cap.
+
+| step | chunks | projected USD | running total |
+|---|---|---:|---:|
+| 1 | `3`: intent bake-off, 6 arms (`--chunk 3` ping first) | 0.47 | 0.47 |
+| 2 | `4`: 25 flagged intents with the chunk-3 winner | 0.11 | 0.58 |
+| 3 | `1`: CUAD bake-off, 7 arms | 1.48 | 2.07 |
+| 4 | `1h`: CUAD holdout, only the arms `bakeoff 1` did not exclude | ≤ 1.53 | ≤ 3.59 |
+| 5 | merger window A/B (below) | 0.36 | ≤ 3.95 |
+| 6 | `2a`–`2c`: CUAD on the 89 EX-10 contracts with the chunk-1 winner | ≤ 0.81 | ≤ 4.77 |
+| 7 | `7a`, `8a`: correspondence and claim-checklist pilots | 0.18 | ≤ 4.94 |
+
+- Steps 2 and 6 are priced at the costliest possible winner; a DeepSeek winner costs less.
+- About $1.18 stays unspent as slack for repairs and re-runs.
+- Chunks 5, 6, 9 and the remainders of 7 and 8 (about $15.5) wait for a top-up and for the
+  post-bake-off re-plan (plan Task 7).
+- Report credit after every step.
+
 ## Merger window A/B (before chunk 6; about $0.36)
 
 Does the section-aware merger window (`labeling/sections.py`) miss facts that the whole
@@ -191,6 +212,23 @@ PYTHONPATH=src .venv/bin/python scripts/labeling/merger_window_ab.py
   each one against the agreement and fill `only_in_full` (`yes` when the fact is stated only
   where the window does not reach). Adopt full text for merger_entities only if `yes` holds
   in at least 2 of the 13 agreements. Otherwise keep the located window.
+
+Before any `gate --approve`, Claude runs `labeling inspect` and reads `inspect.md` against the
+documents:
+
+```bash
+$L inspect docs/reports/audits/v10_labels/<dir> [--n 8]     # disagreements first, quotes in context
+$L bakeoff 1      # after every chunk-1 arm is gated (and again after 1h: it pools the holdout)
+$L bakeoff 3
+```
+
+`bakeoff` ranks the arms by paired bootstrap (2,000 resamples, seed 42):
+- the cheapest eligible DeepSeek arm is the primary, unless a costlier one is significantly better (lo95 > 0);
+- the second opinion is the cheapest other-vendor arm within 0.05 of the primary (lo95 ≥ −0.05);
+- an arm with hi95 < −0.05 is clearly worse and skips the holdout.
+
+`gate --approve` on a bake-off chunk accepts only the arm `bakeoff` picked, because chunks 2 and 4
+use that arm (`winner_of_*`).
 
 ## Gates
 
