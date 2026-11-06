@@ -1804,22 +1804,17 @@ def _labels_tree(root):
     return d
 
 
-def test_checkpoint_strips_spend_but_keeps_label_names(tmp_path):
-    """Spend never leaves the local logs; a CUAD category named Price Restrictions stays."""
+def test_checkpoint_backs_up_files_byte_for_byte_with_spend(tmp_path):
+    """The private backup is part of the logs: a restore must bring back the spending records
+    (2026-11-06: a stripped backup lost them), and the card declares no blind config."""
     from mailroom_eda.labeling import checkpoint
-    _labels_tree(tmp_path / "labels")
+    d = _labels_tree(tmp_path / "labels")
     staged = checkpoint.stage(tmp_path / "labels", None, tmp_path / "out")
-    calls = json.loads(staged["labels/1.3_cuad-calibration/calls.jsonl"].read_text())
-    assert "cost_usd" not in calls and "reused_cost_usd" not in calls and calls["input_sha256"] == "ab"
-    labels = json.loads(staged["labels/1.3_cuad-calibration/cuad-labels.jsonl"].read_text())
-    assert "Price Restrictions" in labels["labels"]
-    kept = checkpoint.scrub({"fields": {"exercise_price": "$12.50", "list_price": "x"}, "cost_usd": 1, "cost": 2})
-    assert kept == {"fields": {"exercise_price": "$12.50", "list_price": "x"}}
-    runs = json.loads(staged["labels/1.3_cuad-calibration/runs.jsonl"].read_text())
-    assert runs == {"projection": {}, "result": {"calls": 3}}
-    assert staged["labels/1.3_cuad-calibration/documents.csv"].read_text().splitlines()[0] == '"document_id","status"'
+    for name in ("calls.jsonl", "cuad-labels.jsonl", "documents.csv", "runs.jsonl"):
+        assert staged[f"labels/1.3_cuad-calibration/{name}"].read_bytes() == (d / name).read_bytes()
+    assert '"cost_usd": 0.01' in staged["labels/1.3_cuad-calibration/calls.jsonl"].read_text()
     card = staged["README.md"].read_text()
-    assert "config_name: labels" in card and "default" in card  # declares only the GT-side config
+    assert "config_name: labels" in card and "config_name: default" not in card
 
 
 def test_checkpoint_uploads_privately_and_verifies(tmp_path):

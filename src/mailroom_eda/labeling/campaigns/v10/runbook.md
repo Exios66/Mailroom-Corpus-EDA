@@ -107,7 +107,7 @@ have several arms (a bake-off); add `--arm N` to each command for those.
 
    | file | what to do with it |
    |---|---|
-   | `documents.csv` | one row per document: status, counts, models, tokens (spend is in `calls.jsonl` and `run.json`, never in a published file) |
+   | `documents.csv` | one row per document: status, counts, models, tokens (spend is in `calls.jsonl` and `runs.jsonl`, never in a published file) |
    | `fields.csv` | one row per (document, field): both models' values and evidence, the decision and why. On pilots, mark at least 30 accepted rows `correct` or `wrong` in `reviewer_verdict` |
    | `adjudication.csv` | only the rows a person must decide; fill `reviewer_verdict` (`a` or `b` to take that model's value, `value` with your own `reviewer_value`, `absent` when the document does not state it, `reject` to leave it unlabeled). `$L review` applies each verdict to `final_decision` and `final_value` in `fields.csv`; ingest reads only those two columns |
    | `sample.csv` | agreement chunks: 20 accepted rows to read before signing off |
@@ -158,8 +158,8 @@ sha-verified (`labeling/checkpoint.py`). That staging repo is the only copy off 
 the labels root is gitignored, because this GitHub repo is public. A paid run refuses to start without an HF token
 (`HF_TOKEN`, or `huggingface-cli login`); a failed upload exits 4 and leaves the output on disk.
 
-- Spend never leaves the local logs: snake_case `cost`/`usd`/`spend`/`price` keys and CSV
-  columns are dropped from the staged copy.
+- Files are backed up byte-for-byte, spend included: the repo is private, so it is part of
+  the logs. The published dataset never carries spend.
 - Labels stay on the ground-truth side: the card declares one `labels` config and no blind
   `default` config. The published `mailroom-dataset` is never written; a public staging repo
   is refused.
