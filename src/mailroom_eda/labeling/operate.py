@@ -252,6 +252,8 @@ def ping_problems(log: Sequence[Mapping[str, Any]], routes: Sequence[tuple[str, 
 def cmd_chunk(args: argparse.Namespace) -> int:
     """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
+    if entry.get("skip"):
+        raise SystemExit(f"chunk {entry['id']} arm {arm} is skipped: {entry['skip']}")
     models, reasoning = resolve(args.campaign, entry)
     for need in entry.get("needs") or []:
         if not any(str(a["chunk"]) == str(need) for a in load_approvals(args.campaign)):
@@ -578,6 +580,8 @@ def _arm_cost(arm: Mapping[str, Any]) -> float:
 
 def _ineligible(arm: Mapping[str, Any]) -> str:
     g = arm["gate"]
+    if g.get("skipped"):
+        return f"skipped: {g['skipped']}"
     if g.get("documents") != g.get("expected_documents"):
         return f"incomplete ({g.get('documents')}/{g.get('expected_documents')})"
     if g.get("served_outside_pin"):
@@ -633,6 +637,10 @@ def bakeoff_arms(name: str, chunk_id: str, out: Path) -> tuple[list[dict[str, An
     arms = []
     for i, entry in enumerate(entries, 1):
         path = chunk_dir(out, entry, i) / "gate.json"
+        if entry.get("skip"):
+            arms.append({"gate": {"models": entry["models"], "reasoning": entry["reasoning"], "arm": i,
+                                  "skipped": entry["skip"], "passed": False}, "docs": []})
+            continue
         if not path.exists():
             arms.append({"gate": {"models": entry["models"], "reasoning": entry["reasoning"], "arm": i,
                                   "documents": 0, "expected_documents": None, "passed": False}, "docs": []})

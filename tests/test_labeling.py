@@ -2123,3 +2123,20 @@ def test_inspect_report_shows_gold_answers_and_quote_context():
     assert "meeting_invite" in md and "gold: `update`" in md and "CoreWeave" in md
     assert "The **board meeting moved** to Tuesday at noon" in md
     assert "NOT FOUND" in md
+
+
+def test_skipped_arm_neither_runs_nor_costs_nor_ranks(tmp_path):
+    """A bake-off arm marked skip: keeps its arm number (output directories stay stable),
+    refuses to run, projects $0 and ranks as ineligible."""
+    import argparse
+    camp = campaign("v10")
+    skipped = [(c, i) for i, c in enumerate((c for c in camp["chunks"] if str(c["id"]) == "3"), 1) if c.get("skip")]
+    assert [c["models"][0] for c, _ in skipped] == ["deepseek/deepseek-v4.1-flash", "openai/gpt-6-luna-pro"]
+    entry, arm = skipped[0]
+    args = argparse.Namespace(campaign="v10", id="3", arm=arm, dry_run=True, ack_requires=False,
+                              provider="openrouter", model_map=[], stage=tmp_path, initials="JB",
+                              cap_usd=None, out=tmp_path, workers=1)
+    with pytest.raises(SystemExit, match="skipped"):
+        operate.cmd_chunk(args)
+    arms, _ = operate.bakeoff_arms("v10", "3", tmp_path)
+    assert operate._ineligible(arms[arm - 1]).startswith("skipped")

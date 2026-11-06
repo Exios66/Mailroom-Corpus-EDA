@@ -64,17 +64,17 @@ chunks:
   # Chunk 3 is the intent model bake-off on the 96 human-labeled emails (same candidates).
   - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 0.10,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 1: DeepSeek v4.1 Flash, off"}
-  - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash], reasoning: "low", cap_usd: 0.30,
+  - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash], reasoning: "low", skip: "2026-11-06 run: no κ gain over off (0.680 vs 0.686) at 4x the cost, and one email ran its reasoning past the allowance", cap_usd: 0.10,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 2: DeepSeek v4.1 Flash, low"}
   - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash-1017], reasoning: "off", cap_usd: 0.15,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 3: DeepSeek v4.1 Flash 1017, off"}
-  - {id: "3",  task: intent, set: calibration, models: [openai/gpt-6-luna-pro], reasoning: "off", cap_usd: 0.10,
+  - {id: "3",  task: intent, set: calibration, models: [openai/gpt-6-luna-pro], reasoning: "off", skip: "2026-11-06 run: κ 0.543, clearly the weakest intent arm", cap_usd: 0.10,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 4: GPT-6 Luna Pro"}
   - {id: "3",  task: intent, set: calibration, models: [anthropic/claude-haiku-5.5], reasoning: "off", cap_usd: 0.10,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 5: Claude Haiku 5.5"}
   - {id: "3",  task: intent, set: calibration, models: [minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.15,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 6: MiniMax M3.1 Flash, low"}
-  - {id: "4", needs: ["3"],  task: intent, set: flagged, models: [winner_of_3], reasoning: winner_of_3, cap_usd: 0.15, gate: {kind: review}}
+  - {id: "4", needs: ["3"],  task: intent, set: flagged, models: [winner_of_3], reasoning: winner_of_3, cap_usd: 0.20, gate: {kind: review}}
   - {id: "5a", task: contract_entities, set: calibration, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 0.50, gate: {kind: field_accuracy, accuracy: 0.85}, requires: "llm-dojo-scoring 0.28.0 (G1)"}
   - {id: "5b", needs: ["5a"], task: contract_entities, set: pilot, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],

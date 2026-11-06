@@ -793,7 +793,7 @@ def campaign_costs(rows: Sequence[Mapping[str, Any]], name: str = "v10") -> dict
         reasoning = PLACEHOLDER_REASONING.get(str(ch["reasoning"]), str(ch["reasoning"]))
         est = estimate(picked, ch["task"], models, ch["set"])
         outputs = {m: projected_output(m, ch["task"], reasoning, est) for m in models}
-        cost = sum(spend.token_cost(m, est["prompt_tokens"], outputs[m]) for m in models)
+        cost = 0.0 if ch.get("skip") else sum(spend.token_cost(m, est["prompt_tokens"], outputs[m]) for m in models)
         out.append({**ch, "documents": est["documents"], "calls": est["calls"] * len(models),
                     "prompt_tokens": est["prompt_tokens"] * len(models),
                     "output_tokens": sum(outputs.values()),
