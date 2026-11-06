@@ -1,0 +1,39 @@
+# Approved labeling configurations. A journal record is ingested only when its
+# (model, provider, reasoning, prompt_sha256, temperature) tuple also has a passing
+# calibration or pilot (see README.md). Prices are USD per 1M tokens from the public
+# OpenRouter model list (GET https://openrouter.ai/api/v1/models). Re-check them before
+# every chunk, update `checked`, and regenerate costs.md with `labeling costs`.
+checked: "2026-11-05"
+key_reserve_usd: 3.0
+models:
+  z-ai/glm-5.3-flashx-legal:
+    provider: openrouter
+    prompt: 0.37
+    completion: 1.25
+    context: 1000000
+    roles: [legal_primary]
+  deepseek/deepseek-v4.1-flash:
+    provider: openrouter
+    prompt: 0.045
+    completion: 0.50
+    context: 1000000
+    roles: [general_primary, legal_second_opinion]
+  minimax/minimax-m3.1-flash:
+    provider: openrouter
+    prompt: 0.075
+    completion: 0.30
+    context: 1000000
+    roles: [general_second_opinion]
+  Qwen/Qwen3-32B-FP8:
+    provider: modal
+    # Modal bills GPU time, not tokens: one H100 at about $3.95/hour.
+    gpu_usd_per_hour: 3.95
+    context: 32768
+    roles: [fallback]
+# Priced for comparison in costs.md only; not approved for ingest.
+comparison:
+  deepseek/deepseek-v4.1-flash-1017: {prompt: 0.15, completion: 0.60}
+  z-ai/glm-5.3-flash: {prompt: 0.15, completion: 0.50}
+  qwen/qwen3.8-flash: {prompt: 0.15, completion: 0.47}
+  openai/gpt-6-luna: {prompt: 0.10, completion: 0.50}
+  google/gemini-3.5-flash-lite: {prompt: 0.30, completion: 2.50}
