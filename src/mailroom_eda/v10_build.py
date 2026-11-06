@@ -546,6 +546,20 @@ PARQUET_OPTIONS = {"compression": "zstd", "compression_level": 9, "use_dictionar
                    "write_statistics": True, "data_page_version": "2.0", "row_group_size": 1 << 16}
 
 
+def check_target(row: Mapping[str, Any], field: str, label: Any) -> None:
+    """Refuse a gold correction aimed at another file or at gold that has since moved."""
+    target = getattr(label, "target", None)
+    if target is None:
+        return
+    filename, was = target
+    if filename != row["filename"]:
+        raise SystemExit(f"gold correction for {row['document_id']} {field}: filename {filename!r}, "
+                         f"the row is {row['filename']!r}")
+    now = _gt(row).get(LEGACY_KEY.get(field, field))
+    if str(now or "") != was:
+        raise SystemExit(f"gold correction for {row['filename']} {field}: gold_was {was!r}, the row has {now!r}")
+
+
 def prepare_rows(rows: Sequence[Mapping[str, Any]], labels: Mapping[str, Mapping[str, Any]] | None = None
                  ) -> list[dict[str, Any]]:
     """Derived rows in stage order, each with its ingested labels and merger subclass applied."""
@@ -556,6 +570,8 @@ def prepare_rows(rows: Sequence[Mapping[str, Any]], labels: Mapping[str, Mapping
         d = derive_row(r)
         d["source_doc_text"] = str(r.get("doc_text") or "")
         mine = dict((labels or {}).get(str(r["document_id"]), {}))
+        for name, lab in mine.items():
+            check_target(d, name, lab)
         d["labels"] = mine
         ms = ingest.merger_subclass(d, mine)
         if ms is not None:

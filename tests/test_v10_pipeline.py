@@ -369,7 +369,7 @@ def _relabel_root(tmp_path, decisions, corrections=None):
             "reviewer_decision", "reviewed_by"]
     export.write_csv(d / "decisions.csv", cols, [{c: r.get(c, "") for c in cols} for r in decisions])
     if corrections is not None:
-        cols = ["document_id", "filename", "field", "gold_now", "decided_by"]
+        cols = ["document_id", "filename", "field", "gold_was", "gold_now", "decided_by"]
         export.write_csv(root / operate.GOLD_CORRECTIONS, cols, corrections)
     return root
 
@@ -393,7 +393,7 @@ DECISIONS = [
 def test_relabel_writes_changes_as_overrides_and_holds_test_proposals(tmp_path, monkeypatch):
     monkeypatch.setattr(operate, "load_second_opinions", lambda name: [_calibration([H], 5)])
     root = _relabel_root(tmp_path, DECISIONS, [{"document_id": "D8", "filename": "f", "field": "intent",
-                                                "gold_now": "other", "decided_by": "JJB"}])
+                                                "gold_was": "notice", "gold_now": "other", "decided_by": "JJB"}])
     got = ingest.ingest("v10", root, [_calibration([A], 3), _relabel_approval()])
     labs = {d: f["intent"] for d, f in got.labels.items()}
     assert {d: lab.value for d, lab in labs.items()} == {"D1": "request", "D3": "update", "D6": "analysis",
@@ -467,6 +467,60 @@ def test_labelled_build_overrides_gold_intent_and_gate_6_allows_it(tmp_path, mon
     _rewrite_ground_truth(out, target["document_id"], lambda r: r.update(annotation_method="llm_zero_shot"))
     g = _gates(out, src, [6])
     assert not g[6]["passed"] and "annotation_method" in g[6]["detail"]
+    # ... and that the legacy value is the class record's value, not just any value
+    _rewrite_ground_truth(out, target["document_id"], lambda r: r.update(annotation_method="human_annotated"))
+    _rewrite_ground_truth(out, target["document_id"], lambda r: r.update(gt_fields=json.dumps(
+        {**json.loads(r["gt_fields"]), "intent": "analysis"})))
+    g = _gates(out, src, [6])
+    assert not g[6]["passed"] and "gt_correspondence" in g[6]["detail"], g[6]["detail"]
+
+
+def _correction_build(tmp_path, monkeypatch, **change):
+    rows = _rows()
+    target = next(r for r in rows if r["filename"] == "e1.txt")
+    target["gt_fields"]["intent"] = "notice"
+    pres = json.loads(target["gt_fields"]["gt_presence"])
+    pres["intent"] = "populated"
+    target["gt_fields"]["gt_presence"] = json.dumps(pres, sort_keys=True)
+    src = tmp_path / "v9_4"
+    monkeypatch.setattr(sys.modules[__name__], "_rows", lambda: rows)
+    _stage(src)
+    fix = {"document_id": target["document_id"], "filename": "e1.txt", "field": "intent", "gold_was": "notice",
+           "gold_now": "request", "decided_by": "JJB", **change}
+    root = _relabel_root(tmp_path, [], [fix])
+    approvals = [_calibration([A], 3), _relabel_approval()]
+    monkeypatch.setattr(operate, "load_approvals", lambda name: approvals)
+    monkeypatch.setattr(operate, "load_second_opinions", lambda name: [_calibration([H], 5)])
+    out = tmp_path / "out"
+    v10.build(src, out, labels_root=root)
+    return out, src, target
+
+
+def test_gold_correction_applies_when_its_target_matches(tmp_path, monkeypatch):
+    out, src, target = _correction_build(tmp_path, monkeypatch)
+    st = conf.Stage(out, src)
+    mail = {r["document_id"]: r for r in st.rows("gt_correspondence")}[target["document_id"]]
+    assert mail["intent"] == "request" and mail["provenance"]["intent"] == "override:gold_correction:JJB"
+    assert _gates(out, src, [6])[6]["passed"]
+
+
+@pytest.mark.parametrize("change, why", [({"gold_was": "update"}, "gold_was"),
+                                         ({"filename": "e2.txt"}, "filename")])
+def test_gold_correction_refuses_a_stale_or_mistargeted_row(tmp_path, monkeypatch, change, why):
+    with pytest.raises(SystemExit, match=why):
+        _correction_build(tmp_path, monkeypatch, **change)
+
+
+def test_gold_correction_values_are_typed_like_the_field(tmp_path, monkeypatch):
+    monkeypatch.setattr(operate, "load_second_opinions", lambda name: [_calibration([H], 5)])
+    root = _relabel_root(tmp_path, [], [
+        {"document_id": "C1", "filename": "c", "field": "contract_value", "gold_was": "",
+         "gold_now": "$1,250,000", "decided_by": "JJB"},
+        {"document_id": "M1", "filename": "m", "field": "additional_recipients", "gold_was": "",
+         "gold_now": '["Ann Lee"]', "decided_by": "JJB"}])
+    got = ingest.ingest("v10", root, [_calibration([A], 3), _relabel_approval()])
+    assert got.labels["C1"]["contract_value"].value == 1250000.0
+    assert got.labels["M1"]["additional_recipients"].value == ["Ann Lee"]
 
 
 def _rewrite_ground_truth(out, document_id, change):
