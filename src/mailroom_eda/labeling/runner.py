@@ -986,7 +986,10 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
     # ingested as labels, so one model is enough there; everywhere else two must agree
     if task in tasks.TWO_MODEL_TASKS and len(models) != 2 and set_name not in ("pilot", "calibration"):
         raise SystemExit(f"{task} needs --second-model outside pilots and calibration (two-model agreement)")
-    if task not in tasks.TWO_MODEL_TASKS and len(models) != 1:
+    if task == "intent" and set_name == "relabel":
+        if len(models) != 2:  # rewriting existing labels needs a second opinion that agrees
+            raise SystemExit("the intent relabel needs --second-model (two-model agreement)")
+    elif task not in tasks.TWO_MODEL_TASKS and len(models) != 1:
         raise SystemExit(f"{task} runs one model")
     proj = estimate(picked, task, models, set_name)
     print(json.dumps({"chunk": chunk_id, "out": str(out_dir), "reasoning": reasoning, **proj}, indent=1))

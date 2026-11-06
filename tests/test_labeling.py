@@ -2316,3 +2316,15 @@ def test_relabel_never_writes_a_test_split_change_without_a_person(tmp_path):
     row["reviewed_by"] = "JJB"
     export.write_csv(tmp_path / "decisions.csv", operate.RELABEL_COLUMNS, [row])
     assert operate.gate_intent_relabel([t], tmp_path, models, signed_off=True)["passed"]
+
+
+def test_intent_relabel_runs_exactly_two_models():
+    rows = [_row("correspondence", "email", "Please send the report.", {"intent_status": "auto_labeled"})]
+    kw = dict(task="intent", chunk_spec=None, provider="openrouter", reasoning="off", initials=None, cap_usd=None,
+              max_wall_seconds=None, out_dir=Path("/nonexistent"), dry_run=True)
+    two = ["deepseek/deepseek-v4.1-flash-1017", "anthropic/claude-haiku-5.5"]
+    assert runner.execute(rows, rows, set_name="relabel", models=two, **kw) == 0
+    with pytest.raises(SystemExit, match="second-model"):
+        runner.execute(rows, rows, set_name="relabel", models=two[:1], **kw)
+    with pytest.raises(SystemExit, match="runs one model"):
+        runner.execute(rows, rows, set_name="flagged", models=two, **kw)
