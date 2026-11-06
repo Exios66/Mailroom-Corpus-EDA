@@ -7,25 +7,25 @@ exact windowed prompts, typical output per call, x1.25 for retries and repairs;
 
 ## Whole campaign on one model
 
-21.5M prompt and 3.8M output tokens: every task once, each extraction task on one model.
+24.3M prompt and 3.8M output tokens: every task once, each extraction task on one model.
 
 | model | USD |
 |---|---:|
-| `openai/gpt-6-luna-pro` | 4.05 |
-| `anthropic/claude-haiku-5.5` | 4.05 |
-| `openai/gpt-6-luna` | 4.05 |
-| `qwen/qwen3.8-flash` | 5.02 |
-| `z-ai/glm-5.3-flash` | 5.13 |
-| `minimax/minimax-m3.1-flash` | 5.51 |
-| `deepseek/deepseek-v4.1-flash` | 5.70 |
-| `deepseek/deepseek-v4.1-flash-1017` | 11.02 |
-| `z-ai/glm-5.3-flashx-legal` | 12.72 |
-| `google/gemini-3.5-flash-lite` | 15.97 |
-| `Qwen/Qwen3-32B-FP8` | 145.10 |
+| `openai/gpt-6-luna-pro` | 4.33 |
+| `anthropic/claude-haiku-5.5` | 4.33 |
+| `openai/gpt-6-luna` | 4.33 |
+| `qwen/qwen3.8-flash` | 5.43 |
+| `z-ai/glm-5.3-flash` | 5.55 |
+| `minimax/minimax-m3.1-flash` | 5.93 |
+| `deepseek/deepseek-v4.1-flash` | 6.12 |
+| `deepseek/deepseek-v4.1-flash-1017` | 11.86 |
+| `z-ai/glm-5.3-flashx-legal` | 13.75 |
+| `google/gemini-3.5-flash-lite` | 16.81 |
+| `Qwen/Qwen3-32B-FP8` | 156.13 |
 
 ## Recommended plan, chunk by chunk
 
-Projected total **$21.40**; the chunk caps add up to **$31.35**.
+Projected total **$22.85**; the chunk caps add up to **$33.35**.
 Two-model chunks are priced for both models.
 
 | chunk | task | set | slice | docs | calls | models | reasoning | projected USD | cap USD |
@@ -57,11 +57,11 @@ Two-model chunks are priced for both models.
 | 4a | intent | relabel | 1/3 | 302 | 1208 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.43 | 0.65 |
 | 4b | intent | relabel | 2/3 | 302 | 1208 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.43 | 0.65 |
 | 4c | intent | relabel | 3/3 | 300 | 1200 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.42 | 0.65 |
-| 5a | contract_entities | calibration | all | 40 | 80 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.32 | 0.50 |
-| 5b | contract_entities | pilot | all | 52 | 104 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.48 | 0.70 |
-| 5c | contract_entities | remainder | 1/3 | 182 | 364 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 1.56 | 2.20 |
-| 5d | contract_entities | remainder | 2/3 | 182 | 364 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 1.72 | 2.45 |
-| 5e | contract_entities | remainder | 3/3 | 181 | 362 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 1.65 | 2.35 |
+| 5a | contract_entities | calibration | all | 40 | 80 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.35 | 0.50 |
+| 5b | contract_entities | pilot | all | 52 | 104 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.61 | 0.90 |
+| 5c | contract_entities | remainder | 1/3 | 182 | 364 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 2.02 | 2.85 |
+| 5d | contract_entities | remainder | 2/3 | 182 | 364 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 2.15 | 3.05 |
+| 5e | contract_entities | remainder | 3/3 | 181 | 362 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 2.05 | 2.90 |
 | 6c0 | merger_consideration | calibration | all | 95 | 190 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.24 | 0.35 |
 | 6c1 | merger_consideration | pending | all | 56 | 112 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.16 | 0.25 |
 | 6a | merger_entities | pilot | all | 13 | 26 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.17 | 0.25 |

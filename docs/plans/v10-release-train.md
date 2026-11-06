@@ -24,11 +24,11 @@ keep working the whole way.
 
 | check | where | now | release being cut |
 |---|---|---|---|
-| Dojo release version | EDA `fields.yaml` `dojo_pin` | 0.27.2 | 0.28.0 |
+| Dojo release version | EDA `fields.yaml` `dojo_pin` | 0.28.0 | 0.28.0 |
 | | sandbox `_VENDOR_PINS` | v0.27.2 (or an untagged commit, sandbox PR 249) | v0.28.0 |
 | | sandbox vendored `__version__` | 0.27.2 | 0.28.0 |
 | | llm-mailroom `pyproject.toml` | v0.22.0 | v0.28.0 |
-| Dojo commit | EDA / sandbox pin / `dojo-release.txt` | `1cd4aba7…` (agree) | the 0.28.0 tag's commit |
+| Dojo commit | EDA / sandbox pin / `dojo-release.txt` | EDA `cab97680…` (the v0.28.0 tag); sandbox `1cd4aba7…` until G3 | `cab97680…` |
 | Dataset tag | EDA `config.REPO_TAG` | v9.2 | v10 (rewritten by the publish) |
 | | llm-mailroom `FULL_CORPUS_REVISION` | v9.1 | v10 |
 | | sandbox `FAMILY_HF_TAG` | v9.1 | v10 |
@@ -39,8 +39,10 @@ vendored `__version__`, and the sha joins the commit row (full shas only).
 
 ## G1: llm-dojo-scoring 0.28.0
 
-Status: **not started.** Blocks chunks 5a and 6a (their `requires:` is checked against
-`dojo_pin.version`), gate 4 (fields.yaml vs the Dojo) and every later step.
+Status: **tagged** `v0.28.0` at `cab976807854129d1cfea4897dbff5b6e337a62b` (2026-11-06). The
+EDA side is done: `fields.yaml` pins it, `dojo_snapshot/dojo_schemas.json` is regenerated from
+the tag, and every field matches the released types (no `dojo: v2` / `retype` left), so
+chunks 5a and 6a are unblocked. The lockstep rows stay red until G2 and G3 move their pins.
 
 - [ ] Contract v2 and merger v2 extraction schemas (`schemas/cuad_schema.py`, `schemas/maud_schema.py`), `MERGER_INTENTS`.
 - [ ] `label` retypes in `scoring/suites.py` (`cuad_family`, `merger_consideration`, merger `intent`, `urgency`, `communication_type`, `claim_type`, `coverage_determination`).

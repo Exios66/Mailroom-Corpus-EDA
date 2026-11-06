@@ -80,15 +80,12 @@ def test_fields_match_pinned_dojo_types():
     for cls, types in dft.items():
         fields = reg[cls]["fields"]
         for name, spec in fields.items():
-            if spec.get("dojo") == "v2" or spec.get("subclass_entity"):
-                assert name not in types or spec.get("dojo") != "v2", (cls, name)
+            if spec.get("subclass_entity"):
                 continue
-            assert name in types, f"{cls}.{name} is neither a Dojo field nor marked dojo: v2"
+            assert "dojo" not in spec and "retype" not in spec, (cls, name)  # G1 shipped in 0.28.0
+            assert name in types, f"{cls}.{name} is not a Dojo field"
             assert spec["type"] == types[name], (cls, name, spec["type"], types[name])
-        missing = set(types) - set(fields)
-        # The parse-compat merger fields on the contract map are dropped by G1.
-        expected_missing = {"merger_consideration", "maud_clauses"} if cls == "contract" else set()
-        assert missing == expected_missing, (cls, missing)
+        assert set(types) == {n for n, s in fields.items() if not s.get("subclass_entity")}, cls
 
 
 def test_fields_have_valid_policy_and_source():
@@ -835,7 +832,7 @@ def test_campaign_needs_order_and_output_dirs():
             assert d not in seen_dirs, d
             seen_dirs.add(d)
     # $30 plus the 904-email intent relabel the user added on 2026-11-06 (caps $1.95)
-    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 31.5
+    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 33.5  # +$1.85 of 5b-5e cap for whole-contract reading (approved 2026-11-06)
 
 
 def test_every_cap_covers_its_projection_with_headroom():
@@ -988,6 +985,7 @@ def test_field_accuracy_gate_tolerates_fields_with_no_scored_values(tmp_path, ro
 def test_chunk_refuses_external_requires_without_ack(tmp_path, monkeypatch):
     """Chunk refuses external requires without ack."""
     monkeypatch.setattr(operate, "load_approvals", lambda name: [])
+    monkeypatch.setattr(operate, "fields_registry", lambda: {"dojo_pin": {"version": "0.27.2"}})  # before G1
     import argparse
 
     args = argparse.Namespace(campaign="v10", id="5a", arm=None, dry_run=False, ack_requires=False,
@@ -2358,8 +2356,9 @@ def test_modal_check_lists_the_served_model():
 
 # ---------------------------------------------------------------- sweep
 
-def test_sweep_plan_stops_at_an_unapproved_predecessor_or_requires():
+def test_sweep_plan_stops_at_an_unapproved_predecessor_or_requires(monkeypatch):
     """The plan follows campaign order, skips approved chunks and never runs past a missing approval."""
+    monkeypatch.setattr(operate, "fields_registry", lambda: {"dojo_pin": {"version": "0.27.2"}})  # before G1
     plan, why = operate.sweep_plan("v10", [], "9e")
     assert {str(e["id"]) for e, _ in plan} == {"1"} and len(plan) == 7 and "1h" in why and "needs chunk 1" in why
     approved = [{"chunk": c} for c in ("1", "1h")]
@@ -2779,3 +2778,30 @@ def test_no_step_or_chunk_needs_a_skipped_chunk():
                and all(o.get("skip") for o in camp["chunks"] if str(o["id"]) == str(c["id"]))}
     for c in [*camp["chunks"], *(camp.get("steps") or [])]:
         assert not skipped & {str(n) for n in c.get("needs") or []}, (c["id"], skipped)
+
+
+def test_contract_entities_reads_long_contracts_in_full(rows):
+    """Contract entities see up to the CUAD window, so a 100k-character middle is read."""
+    filler = "x" * 50_000
+    row = {**rows[0], "doc_text": rows[0]["doc_text"] + filler + " PAYMENT-MIDDLE-MARKER " + filler}
+    assert "PAYMENT-MIDDLE-MARKER" in tasks.build("contract_entities", row, set_name="pilot").messages[1]["content"]
+    huge = {**rows[0], "doc_text": rows[0]["doc_text"] + "x" * 500_000}
+    assert "omitted" in tasks.build("contract_entities", huge, set_name="pilot").messages[1]["content"]
+
+
+def test_a_contract_read_in_part_records_no_absence(rows):
+    """Both models finding nothing in a windowed contract leaves the field pending, not absent."""
+    models = ["z-ai/glm-5.3-flashx-legal", "deepseek/deepseek-v4.1-flash"]
+    short = rows[0]
+    long_ = {**rows[0], "document_id": "c2", "filename": "c2.txt", "doc_text": rows[0]["doc_text"] + "x" * 500_000}
+    calls = []
+    for r in (short, long_):
+        fields = {n: {"value": None, "status": "not_found", "evidence": ""}
+                  for n in tasks._task_fields(r, "contract_entities")}
+        calls += [{"document_id": r["document_id"], "model": m, "variant": "", "provider": "openrouter", "reasoning": "off", "prompt_sha256": "p", "labeled_utc": "2026-11-06T00:00:00Z", "response": {"fields": fields}}
+                  for m in models]
+    field_rows, _ = runner.field_decisions([short, long_], calls, "contract_entities", models)
+    absent_ok = {n for n, s in tasks._task_fields(short, "contract_entities").items() if s["absence"] == "absent_ok"}
+    by = {(f["document_id"], f["field"]): f["decision"] for f in field_rows}
+    assert {by[("c1", n)] for n in absent_ok} == {"absent"}
+    assert {by[("c2", n)] for n in absent_ok} == {"unlabeled"}
