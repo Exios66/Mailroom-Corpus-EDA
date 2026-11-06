@@ -1422,6 +1422,9 @@ def add_commands(sub: Any) -> None:
         p.add_argument("--stage", type=Path, default=runner.DEFAULT_STAGE)
         p.add_argument("--out", type=Path, default=runner.DEFAULT_OUT)
 
+    from . import jev  # noqa: PLC0415
+
+    jev.add_command(sub, common)
     p = sub.add_parser("chunk", help="run one campaign chunk as campaign.yaml defines it")
     common(p)
     p.add_argument("id")

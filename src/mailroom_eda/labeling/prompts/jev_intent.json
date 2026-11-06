@@ -1,0 +1,15 @@
+{
+ "version": 1,
+ "instructions": "Classify the PRIMARY intent of this business email (Enron corpus): what the email's author wants the recipient to know or do. Forwards: when the newest message adds nothing of its own beyond a pointer (FYI, see below, a one-line comment), judge the forwarded content; when the newest message makes its own ask, notice or point, judge that. Tie-breaks: an explicit ask beats an update; a meeting ask is meeting_invite; a formal notice beats an update; use other only when no label fits.",
+ "criteria": {
+  "payment_demand": "Asks the recipient to pay, settle or cure an amount owed or a default.",
+  "notice": "Formally informs of a fact, breach, termination, change or intention with contractual, legal or procedural effect, including operational notices to many parties (an outage, a capacity or nomination change, a notice to all interested parties).",
+  "analysis": "Assesses options, risks, positions, terms, legislation or data; it reasons rather than reports. A memo that analyses stays analysis even if it also mentions a call.",
+  "request": "Asks the recipient for information, a document, approval or an action (not a meeting), even when the ask sits inside a status report.",
+  "update": "Reports status, progress, events or figures without an ask or formal notice.",
+  "meeting_invite": "The main point is to propose, schedule, move, confirm or cancel a meeting or call (a revised call schedule counts); a passing mention of a call inside other content does not.",
+  "press_communication": "A press release or public, media-facing statement, forwarded or not.",
+  "other": "None of the above: personal notes, empty forwards, auto-replies, and marketing, newsletters or spam from outside vendors."
+ },
+ "model": "typesafe/jev-1.14"
+}

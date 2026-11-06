@@ -129,3 +129,13 @@ chunks:
   - {id: "9c", needs: ["9a"], task: corporate, set: remainder, chunk: "2/4", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 0.75, gate: {kind: agreement}}
   - {id: "9d", needs: ["9a"], task: corporate, set: remainder, chunk: "3/4", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 0.80, gate: {kind: agreement}}
   - {id: "9e", needs: ["9a"], task: corporate, set: remainder, chunk: "4/4", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 0.95, gate: {kind: agreement}}
+
+# Jev intent QA (`labeling jev calibrate|audit`, labeling/jev.py): TypeSafe's decisions model
+# checks intent labels and never writes one. total_cap_usd bounds every Jev journal together;
+# audit is refused until the current prompt sha calibrates at kappa_floor on the full gold.
+jev:
+  model: typesafe/jev-1.14
+  price_per_m_input_usd: 0.042
+  total_cap_usd: 0.30
+  kappa_floor: 0.75
+  flag_below: 0.30
