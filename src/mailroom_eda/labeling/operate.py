@@ -31,7 +31,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
-from . import derive, export, providers, runner, spend, tasks, verify
+from . import checkpoint, derive, export, providers, runner, spend, tasks, verify
 from .registry import CAMPAIGNS_DIR, campaign, dojo_snapshot, fields_registry, models_registry
 
 ROOT = runner.ROOT
@@ -85,6 +85,31 @@ def chunk_dir(out: Path, entry: Mapping[str, Any], arm: int | None) -> Path:
 def approvals_path(name: str) -> Path:
     """``campaigns/<name>/approved.yaml``."""
     return CAMPAIGNS_DIR / name / "approved.yaml"
+
+
+def auto_checkpoint(args: argparse.Namespace, why: str, rc: int = 0, *, api: Any = None) -> int:
+    """Checkpoint the labels root after ``why``; a failed upload turns a clean exit into 4."""
+    if getattr(args, "no_checkpoint", False):
+        print(f"checkpoint skipped (--no-checkpoint) after {why}", file=sys.stderr)
+        return rc
+    try:
+        res = checkpoint.checkpoint(Path(args.out), approvals_path(getattr(args, "campaign", "v10")),
+                                    f"checkpoint: {why}", api=api)
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 - the run's output is on disk either way
+        print(f"CHECKPOINT FAILED after {why}: {exc}\n  output is on disk; retry with "
+              "`labeling checkpoint`", file=sys.stderr)
+        return rc or 4
+    print(f"checkpointed {res['files']} files to {res['repo']} (verified)", file=sys.stderr)
+    return rc
+
+
+def cmd_checkpoint(args: argparse.Namespace) -> int:
+    """Upload the labels root to the private staging repo, or --restore missing files from it."""
+    if args.restore:
+        wrote = checkpoint.restore(Path(args.out))
+        print(f"restored {len(wrote)} files into {args.out}")
+        return 0
+    return auto_checkpoint(argparse.Namespace(out=args.out, campaign=args.campaign), "manual checkpoint")
 
 
 def funding_status(remaining: float | None, reserve: float, chunks: Sequence[Mapping[str, Any]], *,
@@ -246,13 +271,15 @@ def cmd_chunk(args: argparse.Namespace) -> int:
     rows = runner.load_stage(args.stage)
     picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
     camp = campaign(args.campaign)
-    return runner.execute(
+    rc = runner.execute(
         rows, picked, task=entry["task"], set_name=entry["set"], chunk_spec=entry.get("chunk"), models=models,
         provider=args.provider, reasoning=reasoning, initials=args.initials,
         cap_usd=float(args.cap_usd or entry["cap_usd"]),
         max_wall_seconds=float(entry.get("max_wall_seconds") or camp["max_wall_seconds"]),
         out_dir=chunk_dir(args.out, entry, arm), dry_run=args.dry_run, workers=args.workers,
-        chunk_id=f"{entry['id']}{f'.{arm}' if arm else ''}")
+        chunk_id=f"{entry['id']}{f'.{arm}' if arm else ''}",
+        require_checkpoint=not getattr(args, "no_checkpoint", False))
+    return rc if args.dry_run else auto_checkpoint(args, f"chunk {entry['id']}{f'.{arm}' if arm else ''} run", rc)
 
 
 # ---------------------------------------------------------------- gates
@@ -533,7 +560,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
     path.write_text("# Written by `labeling gate --approve`; commit it with the chunk's output.\n"
                     + yaml.safe_dump({"approved": approvals}, sort_keys=False), encoding="utf-8")
     print(f"approved chunk {entry['id']}{f' arm {arm}' if arm else ''} -> {path}")
-    return 0
+    return auto_checkpoint(args, f"chunk {entry['id']} approved by {args.initials}")
 
 
 # ---------------------------------------------------------------- status
@@ -917,6 +944,8 @@ def add_commands(sub: Any) -> None:
     p.add_argument("--ack-requires", action="store_true",
                    help="the external release named by the chunk's requires: has landed")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--no-checkpoint", action="store_true",
+                   help="do not upload the answers to the private HF staging repo (not recommended)")
     p.set_defaults(operate=cmd_chunk)
 
     p = sub.add_parser("gate", help="score a chunk's gate; --approve records a pass")
@@ -928,7 +957,13 @@ def add_commands(sub: Any) -> None:
     p.add_argument("--signed-off", action="store_true", help="you read the chunk's CSVs / sample.csv")
     p.add_argument("--initials")
     p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
+    p.add_argument("--no-checkpoint", action="store_true")
     p.set_defaults(operate=cmd_gate)
+
+    p = sub.add_parser("checkpoint", help=f"upload label output to the private {checkpoint.STAGING_REPO}")
+    common(p)
+    p.add_argument("--restore", action="store_true", help="download staged files missing locally")
+    p.set_defaults(operate=cmd_checkpoint)
 
     p = sub.add_parser("status", help="progress, spend, gate and approval for every chunk")
     common(p)

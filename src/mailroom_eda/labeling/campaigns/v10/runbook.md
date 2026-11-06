@@ -145,6 +145,23 @@ have several arms (a bake-off); add `--arm N` to each command for those.
 If a gate fails, stop: fix the prompt or the model choice and re-run that chunk's
 calibration. A prompt change changes its sha, so earlier calibrations no longer cover it.
 
+## Checkpoints (private Hugging Face staging copy)
+
+Paid answers are credit already spent, so none should exist only on one disk. After every
+`chunk` / `run`, `review` and `gate --approve`, the labels root and `approved.yaml` are uploaded
+to the **private** `Lucius-Morningstar/mailroom-dataset-v10-staging` and every file is
+sha-verified (`labeling/checkpoint.py`). A paid run refuses to start without an HF token
+(`HF_TOKEN`, or `huggingface-cli login`); a failed upload exits 4 and leaves the output on disk.
+
+- Spend never leaves the local logs: snake_case `cost`/`usd`/`spend`/`price` keys and CSV
+  columns are dropped from the staged copy.
+- Labels stay on the ground-truth side: the card declares one `labels` config and no blind
+  `default` config. The published `mailroom-dataset` is never written; a public staging repo
+  is refused.
+- `$L checkpoint` re-uploads by hand. `$L checkpoint --restore` downloads staged files a
+  checkout is missing (never overwriting local files), so a later run reuses those answers
+  instead of buying them again.
+
 ## Gates
 
 | kind | passes when |

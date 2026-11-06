@@ -881,6 +881,9 @@ def _parser() -> argparse.ArgumentParser:
             p.add_argument("--workers", type=int, default=4)
         if name == "review":
             p.add_argument("--reasoning", default="off", choices=providers.REASONING)
+        if name in ("run", "review"):
+            p.add_argument("--no-checkpoint", action="store_true",
+                           help="do not upload output to the private HF staging repo")
     from . import operate  # noqa: PLC0415
 
     operate.add_commands(sub)
@@ -917,13 +920,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "review":
         out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, args.reasoning)
         print(json.dumps(review(rows, args.task, out_dir, reasoning=args.reasoning), indent=1))
-        return 0
+        return _checkpoint(args, f"review {out_dir.name}", 0)
     models = [args.model] + ([args.second_model] if args.second_model else [])
     out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, args.reasoning)
-    return execute(rows, picked, task=args.task, set_name=args.set_name, chunk_spec=args.chunk, models=models,
-                   provider=args.provider, reasoning=args.reasoning, initials=args.initials,
-                   cap_usd=args.api_cost_cap_usd, max_wall_seconds=args.max_wall_seconds, out_dir=out_dir,
-                   dry_run=args.dry_run, workers=args.workers)
+    rc = execute(rows, picked, task=args.task, set_name=args.set_name, chunk_spec=args.chunk, models=models,
+                 provider=args.provider, reasoning=args.reasoning, initials=args.initials,
+                 cap_usd=args.api_cost_cap_usd, max_wall_seconds=args.max_wall_seconds, out_dir=out_dir,
+                 dry_run=args.dry_run, workers=args.workers, require_checkpoint=not args.no_checkpoint)
+    return rc if args.dry_run else _checkpoint(args, f"run {out_dir.name}", rc)
+
+
+def _checkpoint(args: argparse.Namespace, why: str, rc: int) -> int:
+    """Checkpoint the labels root to the private HF staging repo (``operate.auto_checkpoint``)."""
+    from . import operate  # noqa: PLC0415
+
+    return operate.auto_checkpoint(argparse.Namespace(out=args.out, campaign="v10",
+                                                      no_checkpoint=args.no_checkpoint), why, rc)
 
 
 def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any]], *, task: str,
@@ -931,7 +943,7 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
             initials: str | None, cap_usd: float | None, max_wall_seconds: float | None, out_dir: Path,
             dry_run: bool = False, workers: int = 4, chunk_id: str | None = None,
             chat=providers.chat, key_status=providers.key_status,
-            reuse_from: Sequence[Path] | None = None) -> int:
+            reuse_from: Sequence[Path] | None = None, require_checkpoint: bool = False) -> int:
     """Validate, project, gate the spend, run and review one chunk. Returns an exit code
     (0 done, 2 stopped at the cap or wall, 3 finished with failed calls to re-run).
 
@@ -952,6 +964,12 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
     if dry_run:
         return 0
     spend.require_run_flags(initials=initials, cap_usd=cap_usd, max_wall_seconds=max_wall_seconds)
+    if require_checkpoint:
+        from . import checkpoint  # noqa: PLC0415
+
+        if not checkpoint.token_ready():  # paid answers need somewhere to survive a lost checkout
+            raise SystemExit(f"no HF token: paid answers checkpoint to the private {checkpoint.STAGING_REPO}; "
+                             "set HF_TOKEN, or pass --no-checkpoint")
     backend = providers.Backend.from_env(provider)
     if provider == "openrouter":
         headroom = spend.check_key_headroom(key_status(backend), cap_usd)

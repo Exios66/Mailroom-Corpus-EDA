@@ -1746,3 +1746,129 @@ def test_unreasoned_providers_need_several_zero_token_answers():
     """One zero-token answer from a fallback provider is not evidence it ignores the level."""
     one = [{"model": "m", "served_provider": "AtlasCloud", "reasoning_tokens": 0}]
     assert operate.unreasoned_providers(one, "low") == {}
+
+
+# ---------------------------------------------------------------- HF staging checkpoints
+
+class _FakeHub:
+    """Enough of HfApi for checkpoint: a dataset repo held in memory."""
+
+    def __init__(self, private=True):
+        self.private, self.files, self.created, self.commits = private, {}, [], []
+
+    def create_repo(self, repo_id, repo_type, private, exist_ok):
+        self.created.append((repo_id, private))
+
+    def repo_info(self, repo_id, repo_type):
+        import types
+        return types.SimpleNamespace(private=self.private)
+
+    def upload_folder(self, folder_path, repo_id, repo_type, path_in_repo, commit_message, allow_patterns):
+        root = Path(folder_path)
+        for p in root.rglob("*"):
+            if p.is_file():
+                self.files[p.relative_to(root).as_posix()] = p.read_bytes()
+        self.commits.append(commit_message)
+
+    def list_repo_tree(self, repo_id, repo_type, recursive):
+        import types
+        from mailroom_eda.labeling import checkpoint
+        return [types.SimpleNamespace(path=k, lfs=None, blob_id=checkpoint.git_blob_sha(v))
+                for k, v in self.files.items()]
+
+
+def _labels_tree(root):
+    d = root / "1.3_cuad-calibration"
+    d.mkdir(parents=True)
+    (d / "calls.jsonl").write_text(json.dumps({"document_id": "DOC-1", "cost_usd": 0.01, "reused_cost_usd": 0.01,
+                                               "input_sha256": "ab", "served_provider": "CoreWeave"}) + "\n")
+    (d / "cuad-labels.jsonl").write_text(json.dumps({"document_id": "DOC-1",
+                                                     "labels": {"Price Restrictions": [{"text": "x"}]}}) + "\n")
+    (d / "documents.csv").write_text('"document_id","cost_usd","status"\n"DOC-1","0.01","accepted"\n')
+    (d / "runs.jsonl").write_text(json.dumps({"api_cost_cap_usd": 0.4, "projection": {"cost_usd": {"m": 1}},
+                                              "result": {"spent_usd": 0.08, "calls": 3}}) + "\n")
+    return d
+
+
+def test_checkpoint_strips_spend_but_keeps_label_names(tmp_path):
+    """Spend never leaves the local logs; a CUAD category named Price Restrictions stays."""
+    from mailroom_eda.labeling import checkpoint
+    _labels_tree(tmp_path / "labels")
+    staged = checkpoint.stage(tmp_path / "labels", None, tmp_path / "out")
+    calls = json.loads(staged["labels/1.3_cuad-calibration/calls.jsonl"].read_text())
+    assert "cost_usd" not in calls and "reused_cost_usd" not in calls and calls["input_sha256"] == "ab"
+    labels = json.loads(staged["labels/1.3_cuad-calibration/cuad-labels.jsonl"].read_text())
+    assert "Price Restrictions" in labels["labels"]
+    runs = json.loads(staged["labels/1.3_cuad-calibration/runs.jsonl"].read_text())
+    assert runs == {"projection": {}, "result": {"calls": 3}}
+    assert staged["labels/1.3_cuad-calibration/documents.csv"].read_text().splitlines()[0] == '"document_id","status"'
+    card = staged["README.md"].read_text()
+    assert "config_name: labels" in card and "default" in card  # declares only the GT-side config
+
+
+def test_checkpoint_uploads_privately_and_verifies(tmp_path):
+    """The staging repo is created private, every file is verified, and the published repo is refused."""
+    from mailroom_eda import hf_interface
+    from mailroom_eda.labeling import checkpoint
+    _labels_tree(tmp_path / "labels")
+    hub = _FakeHub()
+    res = checkpoint.checkpoint(tmp_path / "labels", None, "checkpoint: test", api=hub)
+    assert res["verified"] and hub.created == [(checkpoint.STAGING_REPO, True)]
+    assert "labels/1.3_cuad-calibration/cuad-labels.jsonl" in hub.files
+    with pytest.raises(SystemExit, match="public"):
+        checkpoint.checkpoint(tmp_path / "labels", None, "x", api=_FakeHub(private=False))
+    with pytest.raises(SystemExit, match="published"):
+        checkpoint.checkpoint(tmp_path / "labels", None, "x", api=hub, repo_id=hf_interface.REPO_ID)
+
+
+def test_checkpoint_fails_loudly_when_the_upload_does_not_verify(tmp_path):
+    """A Hub copy that differs from what was staged is an error, and the command exits 4."""
+    import argparse
+    from mailroom_eda.labeling import checkpoint
+
+    class Corrupt(_FakeHub):
+        def list_repo_tree(self, **kw):
+            return [type(f)(path=f.path, lfs=None, blob_id="0" * 40) for f in super().list_repo_tree(**kw)]
+
+    _labels_tree(tmp_path / "labels")
+    with pytest.raises(SystemExit, match="did not verify"):
+        checkpoint.checkpoint(tmp_path / "labels", None, "x", api=Corrupt())
+    args = argparse.Namespace(out=tmp_path / "labels", campaign="v10", no_checkpoint=False)
+    assert operate.auto_checkpoint(args, "test", 0, api=Corrupt()) == 4
+    assert operate.auto_checkpoint(args, "test", 2, api=Corrupt()) == 2  # keeps the run's own code
+    assert operate.auto_checkpoint(args, "test", 0, api=_FakeHub()) == 0
+
+
+def test_restore_fills_only_missing_files(tmp_path, monkeypatch):
+    """Restore brings back staged answers a checkout lost and never overwrites local files."""
+    from mailroom_eda.labeling import checkpoint
+    _labels_tree(tmp_path / "labels")
+    hub = _FakeHub()
+    checkpoint.checkpoint(tmp_path / "labels", None, "x", api=hub)
+
+    def download(api, repo_id, filename, local_path):
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(hub.files[filename])
+        return local_path
+
+    monkeypatch.setattr(checkpoint.hf_interface, "download_file", download)
+    fresh = tmp_path / "fresh"
+    (fresh / "1.3_cuad-calibration").mkdir(parents=True)
+    (fresh / "1.3_cuad-calibration" / "documents.csv").write_text("local\n")
+    wrote = checkpoint.restore(fresh, api=hub)
+    assert (fresh / "1.3_cuad-calibration" / "documents.csv").read_text() == "local\n"
+    assert fresh / "1.3_cuad-calibration" / "calls.jsonl" in wrote
+    assert not (fresh / "README.md").exists()
+
+
+def test_paid_run_refuses_without_a_checkpoint_token(tmp_path, monkeypatch):
+    """No paid call starts when its answers could not be checkpointed."""
+    from mailroom_eda.labeling import checkpoint
+    monkeypatch.setattr(checkpoint, "token_ready", lambda: False)
+    rows = [_row("correspondence", None, "Please pay invoice 7 by Friday.")]
+    with pytest.raises(SystemExit, match="HF token"):
+        runner.execute(rows, rows, task="correspondence", set_name="all", chunk_spec=None,
+                       models=["deepseek/deepseek-v4.1-flash", "minimax/minimax-m3.1-flash"],
+                       provider="openrouter", reasoning="off", initials="JB", cap_usd=0.01,
+                       max_wall_seconds=10, out_dir=tmp_path, require_checkpoint=True,
+                       chat=lambda *a, **k: pytest.fail("no call may be sent"))
