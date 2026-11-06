@@ -518,7 +518,8 @@ def cmd_gate(args: argparse.Namespace) -> int:
     approvals.append({
         "chunk": str(entry["id"]), "arm": arm, "task": entry["task"], "set": entry["set"],
         "slice": entry.get("chunk"), "models": res["models"], "provider": res["provider"],
-        "reasoning": res["reasoning"], "temperature": 0, "prompt_sha256": res["prompt_sha256"],
+        "reasoning": res["reasoning"],
+        "temperature": {m: providers.temperature(m) for m in res["models"]}, "prompt_sha256": res["prompt_sha256"],
         "served_providers": res["served_providers"],
         "gate": {k: v for k, v in res.items() if k in ("kind", "micro_f1", "micro_precision", "cohen_kappa",
                                                        "precision", "adjudicate_share", "passed")},
@@ -584,6 +585,8 @@ def price_report(fetch: Callable[[str], Any] = _get_json) -> dict[str, Any]:
         route = spec.get("route") or {}
         eps = fetch(f"{PUBLIC_MODELS_URL}/{model}/endpoints")["data"]["endpoints"]
         need = set(REQUIRED_PARAMETERS) | ({"seed"} if route.get("seed") else set())
+        if route.get("temperature", True) is False:
+            need.discard("temperature")
         cap = route.get("max_price") or {}
         usable = []
         for ep in eps:

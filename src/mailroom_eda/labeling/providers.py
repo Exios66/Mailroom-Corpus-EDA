@@ -120,6 +120,8 @@ def build_payload(provider: str, model: str, messages: Sequence[Mapping[str, str
         "temperature": 0,
         "max_tokens": max_tokens,
     }
+    if provider == "openrouter" and route.get("temperature", True) is False:
+        del body["temperature"]  # the endpoint rejects it; require_parameters would route nowhere
     if provider != "openrouter" or route.get("seed", True):
         body["seed"] = 42
     if schema is not None:
@@ -141,6 +143,11 @@ def build_payload(provider: str, model: str, messages: Sequence[Mapping[str, str
     else:
         body["chat_template_kwargs"] = {"enable_thinking": reasoning != "off"}
     return body
+
+
+def temperature(model: str) -> int | None:
+    """The temperature sent for ``model``: 0, or ``None`` where its route omits it."""
+    return None if (model_route(model) or {}).get("temperature", True) is False else 0
 
 
 def effective_route(route: Mapping[str, Any] | None, reasoning: str) -> dict[str, Any]:

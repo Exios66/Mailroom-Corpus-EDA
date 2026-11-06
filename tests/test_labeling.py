@@ -709,6 +709,16 @@ def test_derived_subclasses_and_specialists(rows):
 
 # ---------------------------------------------------------------- OpenRouter routing (models.yaml)
 
+def test_route_without_temperature_omits_it():
+    """Claude Haiku 5.5 and GPT-6 Luna Pro endpoints reject temperature; with
+    require_parameters a temperature 0 request would find no endpoint, so the route drops it."""
+    msgs = [{"role": "user", "content": "x"}]
+    body = providers.build_payload("openrouter", "m", msgs, {"type": "object"},
+                                   route={"only": ["anthropic"], "temperature": False, "seed": False})
+    assert "temperature" not in body and "seed" not in body
+    assert providers.build_payload("openrouter", "m", msgs, None, route={"only": ["x"]})["temperature"] == 0
+
+
 def test_openrouter_routes_pin_providers_and_only_send_supported_seed():
     """Openrouter routes pin providers and only send supported seed."""
     msgs = [{"role": "user", "content": "x"}]

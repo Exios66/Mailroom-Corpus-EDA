@@ -263,7 +263,8 @@ def import_reusable(calls_path: Path, roots: Sequence[Path], rows: Sequence[Mapp
         for c in export.read_journal(src):
             key = (c.get("document_id"), c.get("model"), c.get("variant", ""), c.get("prompt_sha256", ""))
             if (key in wanted and not c.get("error") and c.get("reasoning") == reasoning
-                    and c.get("provider") == provider and c.get("temperature", 0) == 0):
+                    and c.get("provider") == provider
+                    and c.get("temperature", 0) == providers.temperature(str(c.get("model")))):
                 export.append_journal(calls_path, {**c, "reused_from": str(src)})
                 wanted.discard(key)
                 copied += 1
@@ -363,7 +364,8 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
     def job(r: Mapping[str, Any], v: str, model: str, req: tasks.Request, first: Mapping[str, Any] | None) -> None:
         """One planned call: a first answer (and its repair), or only a missing repair."""
         rec = {"task": task, "document_id": req.document_id, "filename": r["filename"], "variant": v,
-               "model": model, "provider": backend.provider, "reasoning": reasoning, "temperature": 0,
+               "model": model, "provider": backend.provider, "reasoning": reasoning,
+               "temperature": providers.temperature(model),
                "prompt_sha256": req.prompt_sha256, "labeled_utc": _now()}
         if first is not None:  # answered on an earlier run; only its CUAD repair may be missing
             repair(r, model, first, rec)
