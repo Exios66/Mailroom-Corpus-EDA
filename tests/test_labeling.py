@@ -152,7 +152,7 @@ def test_campaign_chunks_are_runnable():
         assert ch["task"] in tasks.TASK_CLASSES
         assert ch["set"] in runner.SETS
         assert str(ch["reasoning"]) in providers.REASONING + ("winner_of_1", "winner_of_3")
-        assert ch["cap_usd"] > 0 and "kind" in ch["gate"]
+        assert (ch["cap_usd"] > 0 or ch.get("skip")) and "kind" in ch["gate"]
         for m in ch["models"]:
             assert m in approved or m.startswith("winner_of_"), m
         if ch["task"] in tasks.TWO_MODEL_TASKS:
@@ -821,7 +821,7 @@ def test_campaign_needs_order_and_output_dirs():
     seen_dirs = set()
     for c in camp["chunks"]:
         assert c["task"] in tasks.BUILDERS or c["task"] == "intent", c
-        assert c["cap_usd"] > 0
+        assert c["cap_usd"] > 0 or c.get("skip"), c["id"]
         assert str(c["reasoning"]) in ("off", "low") or str(c["reasoning"]).startswith("winner_of_")
         for need in c.get("needs") or []:
             assert need in ids and ids.index(need) < ids.index(str(c["id"])), (c["id"], need)
@@ -834,7 +834,8 @@ def test_campaign_needs_order_and_output_dirs():
             d = operate.chunk_dir(Path("out"), entry, a)
             assert d not in seen_dirs, d
             seen_dirs.add(d)
-    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 30.0
+    # $30 plus the 904-email intent relabel the user added on 2026-11-06 (caps $1.95)
+    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 31.5
 
 
 def test_every_cap_covers_its_projection_with_headroom():
@@ -2364,7 +2365,7 @@ def test_sweep_plan_stops_at_an_unapproved_predecessor_or_requires():
     approved = [{"chunk": c} for c in ("1", "1h")]
     plan, why = operate.sweep_plan("v10", approved, "2c")
     assert [str(e["id"]) for e, _ in plan] == ["2a", "2b", "2c"] and why == "reached 2c"
-    plan, why = operate.sweep_plan("v10", approved + [{"chunk": c} for c in ("2a", "2b", "2c", "3", "4")], "9e")
+    plan, why = operate.sweep_plan("v10", approved + [{"chunk": c} for c in ("2a", "2b", "2c", "3", "4a", "4b", "4c")], "9e")
     assert plan == [] and "5a" in why and "not met" in why
     plan, why = operate.sweep_plan("v10", [{"chunk": "7a"}], "7e", start="7b")
     assert [str(e["id"]) for e, _ in plan] == ["7b", "7c", "7d", "7e"]
@@ -2444,6 +2445,21 @@ def test_adjudicate_lists_open_items_and_reads_verdicts_back(tmp_path, monkeypat
     export.write_csv(tmp_path / "adjudication" / "open.csv", operate.OPEN_COLUMNS, open_rows)
     items, copied = operate.adjudication_items("v10", tmp_path, tmp_path, rows=[])
     assert copied == 1 and [i["document_id"] for i in items] == ["DOC-2"]
+
+
+def test_adjudicate_one_chunk_keeps_other_chunks_open_rows(tmp_path, monkeypatch):
+    """`adjudicate --chunk X` rewrites only X's rows in open.csv; other chunks' verdicts survive."""
+    import argparse
+    _approved_field_chunk(tmp_path, monkeypatch, ["accept", "adjudicate"])
+    other = {c: "" for c in operate.OPEN_COLUMNS}
+    other.update(chunk="9b", document_id="DOC-9", field="entity_name", reviewer_verdict="b")
+    (tmp_path / "adjudication").mkdir(parents=True, exist_ok=True)
+    export.write_csv(tmp_path / "adjudication" / "open.csv", operate.OPEN_COLUMNS, [other])
+    args = argparse.Namespace(campaign="v10", out=tmp_path, stage=tmp_path, chunk="7b", no_checkpoint=True)
+    assert operate.cmd_adjudicate(args) == 0
+    rows = export.read_csv(tmp_path / "adjudication" / "open.csv")
+    assert ("9b", "DOC-9", "b") in [(r["chunk"], r["document_id"], r["reviewer_verdict"]) for r in rows]
+    assert ("7b", "DOC-1") in [(r["chunk"], r["document_id"]) for r in rows]
 
 
 def test_resolved_gate_passes_only_with_no_open_items(tmp_path, monkeypatch):
@@ -2650,3 +2666,116 @@ def test_inspect_reads_the_corrected_gold(tmp_path, monkeypatch):
     operate.cmd_inspect(type("A", (), {"dir": str(d), "stage": tmp_path, "n": 5})())
     md = (d / "inspect.md").read_text(encoding="utf-8")
     assert "gold: `other`" in md and "0 disagree" in md
+
+
+@pytest.mark.parametrize("existing,subtype,answers,decision,new", [
+    ("update", "email", ["notice"] * 4, "change", "notice"),
+    ("notice", "notice", ["notice"] * 4, "confirm", "notice"),
+    ("update", "press_release", ["update"] * 4, "adjudicate", ""),   # the subtype disagrees
+    ("request", "demand", ["request"] * 4, "confirm", "request"),     # a demand need not be a payment
+    ("payment_demand", "attorney_demand", ["request"] * 4, "change", "request"),
+    ("update", "email", ["update", "notice", "update", "update"], "keep", "update"),
+    ("other", "email", ["update", "notice", "update", "update"], "adjudicate", ""),
+    ("update", "meeting_request", ["update", "meeting_invite"] * 2, "adjudicate", ""),
+])
+def test_relabel_decision(existing, subtype, answers, decision, new):
+    """Only a unanimous answer that fits the subtype is written; a split keeps the existing
+    label when one answer is it; a subtype conflict is read by a person."""
+    got = operate.relabel_decision(existing, subtype, answers)
+    assert got[:2] == (decision, new)
+
+
+def test_relabel_set_is_every_machine_made_intent():
+    rows = [_row("correspondence", "email", "x", {"intent_status": s}, fn=f"{s}.") for s in
+            ("manual", "auto_labeled", "flagged_review")] + [_row("contract", None, "x", fn="c.")]
+    assert [r["filename"] for r in runner.select(rows, "intent", "relabel")] == ["auto_labeled.", "flagged_review."]
+
+
+def test_intent_relabel_gate_needs_both_models_and_every_adjudication_decided(tmp_path):
+    a = _row("correspondence", "email", "x", {"intent": "update", "intent_source": "llm_zero_shot"}, fn="a.",
+             split="train")
+    b = _row("correspondence", "press_release", "y", {"intent": "update", "intent_source": "heuristic"}, fn="b.",
+             split="train")
+    models = ["deepseek/m", "anthropic/h"]
+
+    def rec(row, model, x, y):
+        return {"document_id": tasks._ids(row)[0], "filename": row["filename"], "model": model,
+                "pass_a": {"intent": x, "evidence": "q"}, "pass_b": {"intent": y, "evidence": "q"}}
+    recs = [rec(a, m, "notice", "notice") for m in models] + [rec(b, models[0], "update", "update")]
+    path = tmp_path / "intent-labels.jsonl"
+    path.write_text("".join(json.dumps(r) + "\n" for r in recs), encoding="utf-8")
+    res = operate.gate_intent_relabel([a, b], tmp_path, models, signed_off=True)
+    assert res["unanswered_documents"] == 1 and not res["passed"]
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec(b, models[1], "update", "update")) + "\n")
+    res = operate.gate_intent_relabel([a, b], tmp_path, models, signed_off=True)
+    assert res["decisions"] == {"change": 1, "adjudicate": 1} and res["open_adjudications"] == 1
+    assert not res["passed"]
+    rows = export.read_csv(tmp_path / "decisions.csv")
+    for r in rows:
+        if r["decision"] == "adjudicate":
+            r["reviewer_decision"] = "press_communication"
+    export.write_csv(tmp_path / "decisions.csv", operate.RELABEL_COLUMNS, rows)
+    assert not operate.gate_intent_relabel([a, b], tmp_path, models, signed_off=False)["passed"]
+    res = operate.gate_intent_relabel([a, b], tmp_path, models, signed_off=True)
+    assert res["passed"]  # the reviewer's decision survived the re-gate
+
+
+def test_relabel_never_writes_a_test_split_change_without_a_person(tmp_path):
+    """The test split scores models later: a change the two models agree on is only proposed
+    there, and its adjudication needs a person's initials."""
+    t = _row("correspondence", "email", "x", {"intent": "update", "intent_source": "llm_zero_shot"}, fn="t.")
+    models = ["deepseek/m", "anthropic/h"]
+    recs = [{"document_id": tasks._ids(t)[0], "filename": "t.", "model": m,
+             "pass_a": {"intent": "notice", "evidence": "q"}, "pass_b": {"intent": "notice", "evidence": "q"}}
+            for m in models]
+    (tmp_path / "intent-labels.jsonl").write_text("".join(json.dumps(r) + "\n" for r in recs), encoding="utf-8")
+    res = operate.gate_intent_relabel([t], tmp_path, models, signed_off=True)
+    row = export.read_csv(tmp_path / "decisions.csv")[0]
+    assert res["decisions"] == {"adjudicate": 1} and row["new_intent"] == "" and "notice" in row["reason"]
+    row["reviewer_decision"] = "notice"
+    export.write_csv(tmp_path / "decisions.csv", operate.RELABEL_COLUMNS, [row])
+    res = operate.gate_intent_relabel([t], tmp_path, models, signed_off=True)
+    assert res["test_adjudications_without_initials"] == 1 and not res["passed"]
+    row["reviewed_by"] = "JJB"
+    export.write_csv(tmp_path / "decisions.csv", operate.RELABEL_COLUMNS, [row])
+    assert operate.gate_intent_relabel([t], tmp_path, models, signed_off=True)["passed"]
+
+
+def test_intent_relabel_runs_exactly_two_models():
+    rows = [_row("correspondence", "email", "Please send the report.", {"intent_status": "auto_labeled"})]
+    kw = dict(task="intent", chunk_spec=None, provider="openrouter", reasoning="off", initials=None, cap_usd=None,
+              max_wall_seconds=None, out_dir=Path("/nonexistent"), dry_run=True)
+    two = ["deepseek/deepseek-v4.1-flash-1017", "anthropic/claude-haiku-5.5"]
+    assert runner.execute(rows, rows, set_name="relabel", models=two, **kw) == 0
+    with pytest.raises(SystemExit, match="second-model"):
+        runner.execute(rows, rows, set_name="relabel", models=two[:1], **kw)
+    with pytest.raises(SystemExit, match="runs one model"):
+        runner.execute(rows, rows, set_name="flagged", models=two, **kw)
+
+
+def test_a_winner_approved_on_another_prompt_does_not_run(monkeypatch):
+    """A prompt edit after a bake-off approval needs a new calibration before the winner is used."""
+    row = _row("correspondence", "email", "Please send the report.", {"intent_status": "auto_labeled"})
+    want = tasks.build("intent", row, "a", set_name="relabel").prompt_sha256
+    entry = {"id": "4a", "task": "intent", "set": "relabel", "models": ["winner_of_3", "anthropic/claude-haiku-5.5"],
+             "reasoning": "winner_of_3"}
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [{"chunk": "3", "prompt_sha256": ["old"]}])
+    assert "re-run chunk 3" in operate.stale_winner("v10", entry, [row])
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [{"chunk": "3", "prompt_sha256": ["old", want]}])
+    assert operate.stale_winner("v10", entry, [row]) == ""
+    assert operate.stale_winner("v10", {**entry, "models": ["m"], "reasoning": "off"}, [row]) == ""
+
+
+def test_cuad_inspect_reads_string_gold_spans():
+    assert operate._span_text("the licensee shall not") == "the licensee shall not"
+    assert operate._span_text({"text": "a span"}) == "a span" and operate._span_text(None) == ""
+
+
+def test_no_step_or_chunk_needs_a_skipped_chunk():
+    """A skipped chunk is never approved, so anything that needs it could never start."""
+    camp = campaign("v10")
+    skipped = {str(c["id"]) for c in camp["chunks"] if c.get("skip")
+               and all(o.get("skip") for o in camp["chunks"] if str(o["id"]) == str(c["id"]))}
+    for c in [*camp["chunks"], *(camp.get("steps") or [])]:
+        assert not skipped & {str(n) for n in c.get("needs") or []}, (c["id"], skipped)

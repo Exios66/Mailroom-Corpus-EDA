@@ -262,9 +262,13 @@ def next_chunks(name: str, approvals: Sequence[Mapping[str, Any]]) -> list[str]:
     """Lines naming the next runnable chunk and any chunk held by an external ``requires``."""
     done = {str(a["chunk"]) for a in approvals}
     lines, held = [], []
-    for c in campaign(name)["chunks"]:
+    entries = campaign(name)["chunks"]
+    # A chunk every entry of which is skipped (e.g. superseded) is never offered as next.
+    skipped = {str(c["id"]) for c in entries
+               if all(e.get("skip") for e in entries if str(e["id"]) == str(c["id"]))}
+    for c in entries:
         cid = str(c["id"])
-        if cid in done or not all(str(n) in done for n in c.get("needs") or []):
+        if cid in done or cid in skipped or not all(str(n) in done for n in c.get("needs") or []):
             continue
         if c.get("requires") and not requires_met(c["requires"])[0]:
             if cid not in held:
@@ -317,6 +321,25 @@ def ping_problems(log: Sequence[Mapping[str, Any]], routes: Sequence[tuple[str, 
     return out
 
 
+def stale_winner(name: str, entry: Mapping[str, Any], picked: Sequence[Mapping[str, Any]]) -> str:
+    """Why a ``winner_of_<id>`` chunk may not run, or ``""``: the approval it uses must have
+    been scored on the prompt this chunk would send (a prompt edit needs a new calibration)."""
+    refs = {str(m) for m in [*entry["models"], entry["reasoning"]] if str(m).startswith("winner_of_")}
+    if not refs or not picked:
+        return ""
+    variant = "a" if entry["task"] == "intent" else ""
+    want = tasks.build(entry["task"], picked[0], variant, set_name=entry["set"]).prompt_sha256
+    approvals = load_approvals(name)
+    for ref in sorted(refs):
+        cid = ref.removeprefix("winner_of_")
+        hits = [a for a in approvals if str(a["chunk"]) == cid]
+        if hits and want not in (hits[-1].get("prompt_sha256") or []):
+            return (f"chunk {entry['id']} would send prompt {want[:12]}, but chunk {cid} was approved on "
+                    f"{[s[:12] for s in hits[-1].get('prompt_sha256') or []]}: re-run chunk {cid} on the "
+                    f"current prompt, gate it and re-approve with --replace")
+    return ""
+
+
 def cmd_chunk(args: argparse.Namespace) -> int:
     """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
@@ -349,6 +372,9 @@ def cmd_chunk(args: argparse.Namespace) -> int:
         models = provider_models(models, args.provider, args.model_map)
     rows = runner.load_stage(args.stage)
     picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
+    stale = stale_winner(args.campaign, entry, picked)
+    if stale:
+        raise SystemExit(stale)
     camp = campaign(args.campaign)
     rc = runner.execute(
         rows, picked, task=entry["task"], set_name=entry["set"], chunk_spec=entry.get("chunk"), models=models,
@@ -670,6 +696,90 @@ def corrected_gold(rows: Sequence[Mapping[str, Any]],
     return out, n
 
 
+#: The intent a correspondence subtype (``expected_subclass``) points to. The subtypes came from
+#: older automatic labelers, so a conflict is a reason to read the email, not proof either side is
+#: right: it goes to adjudication, never written automatically. ``demand`` and ``attorney_demand``
+#: are left out (user, 2026-11-06): a demand is often for an action, not a payment. Subtypes not
+#: listed (email, memo, letter, demand) admit any intent.
+SUBTYPE_INTENT = {"press_release": "press_communication", "meeting_request": "meeting_invite",
+                  "notice": "notice"}
+RELABEL_COLUMNS = ("document_id", "filename", "split", "subtype", "subtype_intent", "existing",
+                   "existing_source", "primary_a", "primary_b", "second_a", "second_b", "decision",
+                   "new_intent", "reason", "evidence", "reviewer_decision", "reviewed_by", "reviewer_note")
+
+
+def relabel_decision(existing: str, subtype: str | None, answers: Sequence[str]) -> tuple[str, str, str]:
+    """(decision, new intent, reason) for one email from its four answers (two models, two
+    passes). Only a unanimous answer that fits the subtype is written; a subtype conflict is
+    read by a person (who may find the subtype wrong); ``keep`` leaves the existing label when
+    the answers split but one of them is it."""
+    implied = SUBTYPE_INTENT.get(subtype or "")
+    if len(answers) == 4 and len(set(answers)) == 1:
+        label = answers[0]
+        if implied and label != implied:
+            return "adjudicate", "", f"all four say {label}; subtype {subtype} implies {implied}"
+        return ("confirm" if label == existing else "change"), label, "unanimous"
+    if implied and existing != implied:
+        return "adjudicate", "", f"answers split; existing {existing} contradicts subtype {subtype}"
+    if existing not in answers:
+        return "adjudicate", "", "answers split and none keeps the existing label"
+    return "keep", existing, "answers split; existing label among them"
+
+
+def gate_intent_relabel(picked: Sequence[Mapping[str, Any]], out_dir: Path, models: Sequence[str],
+                        signed_off: bool) -> dict[str, Any]:
+    """Decide every email of a relabel chunk into ``decisions.csv`` (reviewer columns kept
+    across re-gates). Passes when both models answered both passes on every email, every
+    adjudicated email has a reviewer decision (an intent or ``keep``), and it is signed off."""
+    from ..intent_backfill import CANONICAL_INTENTS  # noqa: PLC0415
+
+    recs = {(r["document_id"], r["model"]): r for r in export.read_journal(out_dir / "intent-labels.jsonl")}
+    path = out_dir / "decisions.csv"
+    kept = {r["document_id"]: r for r in export.read_csv(path)} if path.exists() else {}
+    rows, missing = [], []
+    for row in picked:
+        doc_id, fn = tasks._ids(row)
+        got = [recs.get((doc_id, m)) for m in models]
+        if len(models) != 2 or not all(got):
+            missing.append(doc_id)
+            continue
+        answers = [str(g[p]["intent"] or "") for g in got for p in ("pass_a", "pass_b")]
+        gt = row["gt_fields"]
+        existing = str(gt.get("intent") or "")
+        decision, new, reason = relabel_decision(existing, row.get("expected_subclass"), answers)
+        if row.get("split") == "test" and decision == "change":
+            # the test split scores models later: labels written by these two models would
+            # favor models that read email like them, so a person decides every test change
+            decision, new, reason = "adjudicate", "", f"test split: models propose {new}; a person decides"
+        prev = kept.get(doc_id, {})
+        rows.append({"document_id": doc_id, "filename": fn, "split": row.get("split", ""),
+                     "subtype": row.get("expected_subclass") or "",
+                     "subtype_intent": SUBTYPE_INTENT.get(row.get("expected_subclass") or "", ""),
+                     "existing": existing, "existing_source": str(gt.get("intent_source") or ""),
+                     "primary_a": answers[0], "primary_b": answers[1], "second_a": answers[2],
+                     "second_b": answers[3], "decision": decision, "new_intent": new, "reason": reason,
+                     "evidence": str(got[0]["pass_a"].get("evidence") or ""),
+                     "reviewer_decision": prev.get("reviewer_decision", ""),
+                     "reviewed_by": prev.get("reviewed_by", ""), "reviewer_note": prev.get("reviewer_note", "")})
+    export.write_csv(path, RELABEL_COLUMNS, rows)
+    allowed = set(CANONICAL_INTENTS) | {"keep"}
+    open_items = [r["document_id"] for r in rows
+                  if r["decision"] == "adjudicate" and r["reviewer_decision"] not in allowed]
+    bad = [r["document_id"] for r in rows if r["reviewer_decision"] and r["reviewer_decision"] not in allowed]
+    # a test-split adjudication is decided by a person (initials), never by a model
+    unsigned_test = [r["document_id"] for r in rows if r["split"] == "test" and r["decision"] == "adjudicate"
+                     and not spend.INITIALS_RE.match(r["reviewed_by"] or "")]
+    mix = Counter(r["decision"] for r in rows)
+    ok = not missing and not open_items and not bad and not unsigned_test and signed_off
+    return {"kind": "intent_relabel", "documents": len(rows), "expected_documents": len(picked),
+            "decisions": dict(mix), "unanswered_documents": len(missing), "open_adjudications": len(open_items),
+            "invalid_reviewer_decisions": bad, "test_adjudications_without_initials": len(unsigned_test),
+            "decisions_csv": str(path), "signed_off": signed_off,
+            "passed": ok, "how": "decide each adjudicate row in decisions.csv (an intent or keep; test-split "
+                                 "rows need a person's initials in reviewed_by), read the changes, "
+                                 "then re-run with --signed-off"}
+
+
 def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path, stage: Path,
                 signed_off: bool = False, sandbox: Path | None = None) -> dict[str, Any]:
     """Score one chunk arm's gate from its output directory (offline)."""
@@ -707,6 +817,8 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
         ok = res["documents"] == res["expected_documents"] and res["cohen_kappa"] >= gate["kappa"]
         res = {"kind": kind, **res, "gold_corrections": fixed, "floors": gate, "passed": ok}
         res["per_document"] = intent_per_document(picked, export.read_journal(out_dir / "intent-labels.jsonl"))
+    elif kind == "intent_relabel":
+        res = gate_intent_relabel(picked, out_dir, models, signed_off)
     elif kind == "field_accuracy":
         res = gate_field_accuracy(rows, out_dir, gate["accuracy"])
     elif kind == "human_verdicts":
@@ -724,15 +836,17 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
         raise SystemExit(f"unknown gate kind {kind!r}")
     every = [c for c in export.read_journal(out_dir / "calls.jsonl") if c.get("reasoning") == reasoning]
     calls = [c for c in every if not c.get("error")]
+    # what was scored: answers to today's prompt. Old-prompt answers stay in the journal (and
+    # in spent_usd) but must not vouch for this prompt in an approval, nor price the arm.
+    current = runner.current_prompt_calls(rows, entry["task"], calls, entry["set"])
     res.update(chunk=entry["id"], arm=arm, task=entry["task"], models=models, provider=provider, reasoning=reasoning,
-               prompt_sha256=sorted({c["prompt_sha256"] for c in calls}),
-               served_providers=sorted({c.get("served_provider") or "" for c in calls} - {""}),
+               prompt_sha256=sorted({c["prompt_sha256"] for c in current}),
+               served_providers=sorted({c.get("served_provider") or "" for c in current} - {""}),
                spent_usd=round(sum(c.get("cost_usd") or 0 for c in every), 4),
-               answer_cost_usd=round(sum(c.get("reused_cost_usd") or c.get("cost_usd") or 0 for c in calls), 4),
+               answer_cost_usd=round(sum(c.get("reused_cost_usd") or c.get("cost_usd") or 0 for c in current), 4),
                scored_utc=_now())
     if overlay is not None:  # informational: never part of passed
         res["interim"] = {**reviewed.get("interim", {}), "manifest_sha256": overlay.manifest_sha256}
-    current = runner.current_prompt_calls(rows, entry["task"], calls, entry["set"])
     outside = pin_violations(current, reasoning)
     if outside:
         res.update(passed=False, served_outside_pin=outside)
@@ -946,6 +1060,11 @@ def _quote_context(text: str, quote: str) -> str:
     return "> " + " ".join(ctx.split())
 
 
+def _span_text(span: Any) -> str:
+    """A CUAD span's text: gold spans may be bare strings, model spans are ``{"text": ...}``."""
+    return str(span.get("text") or "") if isinstance(span, Mapping) else str(span or "")
+
+
 def _inspect_items(rows: Mapping[str, Mapping[str, Any]], records: Sequence[Mapping[str, Any]],
                    task: str) -> list[tuple[bool, str, list[str]]]:
     """(disagrees, document_id, markdown lines) per labeled document."""
@@ -976,11 +1095,11 @@ def _inspect_items(rows: Mapping[str, Mapping[str, Any]], records: Sequence[Mapp
             lines = [f"- accepted: {r.get('accepted')}; gold categories {len(g)}, predicted {len(p)}"]
             for cat in sorted(p - g):
                 spans = pred[cat]
-                lines += [f"- **false positive** {cat}", "  " + _quote_context(row["doc_text"], str(spans[0].get("text") or ""))]
+                lines += [f"- **false positive** {cat}", "  " + _quote_context(row["doc_text"], _span_text(spans[0]))]
             for cat in sorted(g - p):
-                lines += [f"- **missed** {cat}", "  gold: " + _quote_context(row["doc_text"], str(gold[cat][0].get("text") or ""))]
+                lines += [f"- **missed** {cat}", "  gold: " + _quote_context(row["doc_text"], _span_text(gold[cat][0]))]
             for cat in sorted(g & p)[:3]:
-                lines += [f"- agreed {cat}", "  " + _quote_context(row["doc_text"], str(pred[cat][0].get("text") or ""))]
+                lines += [f"- agreed {cat}", "  " + _quote_context(row["doc_text"], _span_text(pred[cat][0]))]
             items.append((bool(p ^ g), str(r["document_id"]), lines))
     else:  # extraction tasks: fields.csv rows
         by_doc: dict[str, list[Mapping[str, Any]]] = {}
@@ -1174,6 +1293,10 @@ def cmd_adjudicate(args: argparse.Namespace) -> int:
                                        sandbox=getattr(args, "sandbox", None))
     path = Path(args.out) / ADJUDICATION_DIR / "open.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
+    if args.chunk and path.exists():
+        # One chunk was rebuilt: keep every other chunk's rows (and their typed verdicts).
+        keep = [r for r in export.read_csv(path) if str(r["chunk"]).split(".")[0] != str(args.chunk)]
+        items = keep + items
     export.write_csv(path, OPEN_COLUMNS, items)
     if copied:
         print(f"copied {copied} verdicts from open.csv into their chunks")
@@ -1515,6 +1638,8 @@ def modal_check(env: Mapping[str, str] | None = None,
     host = urllib.parse.urlparse(backend.base_url).hostname or ""
     if not host.endswith(".modal.run") and host not in ("localhost", "127.0.0.1"):
         return False, f"VLLM_BASE_URL host {host!r} is not a *.modal.run app URL"
+    if host.endswith(".modal.run") and urllib.parse.urlparse(backend.base_url).scheme != "https":
+        return False, "VLLM_BASE_URL must be https:// for a *.modal.run host (the API key is sent)"
     data = fetch(f"{backend.base_url}/models", headers={"Authorization": f"Bearer {backend.api_key}"})
     served = sorted(str(m.get("id")) for m in (data or {}).get("data") or [])
     want = modal_models()
@@ -1695,6 +1820,9 @@ def add_commands(sub: Any) -> None:
         p.add_argument("--no-restore", action="store_true",
                        help=f"do not first pull staged files missing locally from {checkpoint.STAGING_REPO}")
 
+    from . import jev  # noqa: PLC0415
+
+    jev.add_command(sub, common)
     p = sub.add_parser("chunk", help="run one campaign chunk as campaign.yaml defines it")
     common(p)
     p.add_argument("id")

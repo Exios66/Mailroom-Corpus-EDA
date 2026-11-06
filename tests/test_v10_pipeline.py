@@ -265,3 +265,78 @@ def test_step_0_gate_runs_the_chunk0_conformance_gates(tmp_path, stage):
     res = operate.gate_result("v10", eleven, None, tmp_path / "labels", stage)
     assert not res["passed"] and res["unapproved_needs"] == ["0", "10"]
     assert not res["gates"][10]["passed"]
+
+
+def test_scalar_cells_that_look_like_json_stay_strings():
+    """Only list fields decode JSON; a scalar value such as '[sic]' or '{x}' stays text."""
+    assert ingest.decode("[sic] Acme", "name") == "[sic] Acme"
+    assert ingest.decode('["a"]', "free_text") == '["a"]'
+    assert ingest.decode('["a"]', "entity_list:name") == ["a"]
+    with pytest.raises(SystemExit):
+        ingest.decode("[not json", "entity_list:name")
+
+
+def test_interrupted_build_keeps_the_last_stage(tmp_path, stage, monkeypatch):
+    """A failure mid-write leaves the previous complete stage in place."""
+    out = tmp_path / "out"
+    v10.build(stage, out)
+    before = (out / "manifest.json").read_bytes()
+    import pyarrow.parquet as pq
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(pq, "write_table", boom)
+    with pytest.raises(OSError):
+        v10.build(stage, out)
+    assert (out / "manifest.json").read_bytes() == before
+
+
+def test_gate_1_fails_on_a_duplicated_row(tmp_path, stage):
+    out = tmp_path / "out"
+    v10.build(stage, out)
+    _rewrite(out / "parquet/routing/train/train-00000-of-00001.parquet", lambda r: r + r[:1])
+    assert not _gates(out, stage, [1])[1]["passed"]
+
+
+def test_gate_3_refuses_negative_span_offsets(tmp_path, stage):
+    import pyarrow.parquet as pq
+    out = tmp_path / "out"
+    v10.build(stage, out)
+    spans = sorted((out / "parquet/cuad_clauses").rglob("*.parquet"))
+    if not spans:
+        pytest.skip("no cuad rows")
+    split = spans[0].parent.name
+    text = {r["document_id"]: r["doc_text"] for r in
+            pq.read_table(out / f"parquet/default/{split}/{split}-00000-of-00001.parquet").to_pylist()}
+
+    def neg(rows):
+        n = len(text[rows[0]["document_id"]])
+        return [{**rows[0], "start": rows[0]["start"] - n, "end": rows[0]["end"] - n}] + rows[1:]
+    _rewrite(spans[0], neg)
+    assert not _gates(out, stage, [3])[3]["passed"]
+
+
+def test_gate_6_catches_a_renamed_cuad_category(tmp_path, stage):
+    out = tmp_path / "out"
+    v10.build(stage, out)
+    hit = []
+
+    def rename(rows):
+        res = []
+        for r in rows:
+            g = json.loads(r["gt_fields"])
+            labels = json.loads(g.get("cuad_clause_labels") or "{}") if isinstance(g.get("cuad_clause_labels"), str) \
+                else g.get("cuad_clause_labels") or {}
+            if labels and not hit:
+                k = next(iter(labels))
+                labels = {**{kk: vv for kk, vv in labels.items() if kk != k}, k + " (renamed)": labels[k]}
+                g["cuad_clause_labels"] = json.dumps(labels)
+                r = {**r, "gt_fields": json.dumps(g)}
+                hit.append(r["document_id"])
+            res.append(r)
+        return res
+    for p in sorted((out / "parquet/ground_truth").rglob("*.parquet")):
+        _rewrite(p, rename)
+    if not hit:
+        pytest.skip("no CUAD-labelled row")
+    assert not _gates(out, stage, [6])[6]["passed"]
