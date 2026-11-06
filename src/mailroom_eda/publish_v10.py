@@ -107,6 +107,17 @@ def hub_tags(api: Any, repo: str) -> set[str]:
     return {t.name for t in refs.tags}
 
 
+def delete_patterns(files: list[str], configs: list[str]) -> list[str]:
+    """``<dir>/**`` for the directory each config's files live in (``parquet/<config>`` on a real stage)."""
+    out = set()
+    for f in files:
+        parts = f.split("/")[:-1]
+        for c in configs:
+            if c in parts:
+                out.add("/".join(parts[:parts.index(c) + 1]) + "/**")
+    return sorted(out)
+
+
 def bump_repo_tag(tag: str, path: Path | None = None) -> bool:
     """Rewrite ``REPO_TAG = "..."`` in ``config.py``; True when it changed."""
     path = path or Path(__file__).with_name("config.py")
@@ -164,7 +175,7 @@ def publish(args: argparse.Namespace, *, api: Any = None, run: Callable[..., Any
         return 1
     commit = api.upload_folder(repo_id=args.repo, repo_type="dataset", folder_path=str(args.stage),
                                allow_patterns=plan["files"],
-                               delete_patterns=[f"{c}/**" for c in plan["configs"]],
+                               delete_patterns=delete_patterns(plan["files"], plan["configs"]),
                                commit_message=f"v10 release {args.tag} ({args.initials})")
     revision = getattr(commit, "oid", None)
     if not revision:
@@ -173,7 +184,7 @@ def publish(args: argparse.Namespace, *, api: Any = None, run: Callable[..., Any
     api.create_tag(args.repo, tag=args.tag, revision=revision, repo_type="dataset", exist_ok=False,
                    tag_message=f"v10 release, published by {args.initials}")
     print(f"published {args.repo}@{args.tag} ({revision})")
-    bump_repo_tag(args.tag)
+    bump_repo_tag(args.tag, Path(args.eda) / "src" / "mailroom_eda" / "config.py")
     for line in follow_ups(args.tag, args.rows):
         print(f"next: {line}")
     return 0

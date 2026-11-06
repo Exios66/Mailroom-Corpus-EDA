@@ -87,7 +87,8 @@ def test_confirmed_publish_uploads_the_manifest_files_then_tags(stage, monkeypat
     cfg = tmp_path / "config.py"
     cfg.write_text('REPO_ID = "o/r"\nREPO_TAG = "v9.2"\n')
     real = publish_v10.bump_repo_tag
-    monkeypatch.setattr(publish_v10, "bump_repo_tag", lambda tag: real(tag, cfg))
+    seen = []
+    monkeypatch.setattr(publish_v10, "bump_repo_tag", lambda tag, path=None: seen.append(path) or real(tag, cfg))
     api = FakeApi()
     assert publish_v10.publish(_args(stage, confirm=True), api=api, checks=PASS) == 0
     assert api.calls == ["list_repo_refs", "upload_folder", "create_tag"]
@@ -95,6 +96,14 @@ def test_confirmed_publish_uploads_the_manifest_files_then_tags(stage, monkeypat
     assert api.upload["delete_patterns"] == ["default/**"]
     assert api.tag["revision"] == "abc123" and api.tag["exist_ok"] is False
     assert 'REPO_TAG = "v10"' in cfg.read_text()
+    assert seen == [Path(_args(stage, confirm=True).eda) / "src" / "mailroom_eda" / "config.py"]
+
+
+def test_delete_patterns_cover_the_real_parquet_layout():
+    files = ["README.md", "manifest.json", "parquet/default/train/train-00000-of-00001.parquet",
+             "parquet/default/dataset_info.json", "parquet/ground_truth/test/test-00000-of-00001.parquet"]
+    assert publish_v10.delete_patterns(files, ["default", "ground_truth"]) == \
+        ["parquet/default/**", "parquet/ground_truth/**"]
 
 
 def test_lockstep_guard_takes_this_repos_tag_as_the_one_being_cut(tmp_path):
