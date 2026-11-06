@@ -1609,3 +1609,23 @@ def test_costs_use_measured_reasoning_tokens():
     assert runner.reasoning_tokens("anthropic/claude-haiku-5.5", "cuad", "low") == 1200
     assert (runner.projected_output(ds, "intent", "low", est) - runner.projected_output(ds, "intent", "off", est)
             == round(900 * 192 * runner.RETRY_FACTOR))
+
+
+def test_cuad_problems_restate_the_category_question_on_a_failed_semantic_probe(monkeypatch):
+    """A failed semantic probe tells the repair call what the category asks, not just that it failed."""
+    from mailroom_eda import v9_4_revision as v94
+    monkeypatch.setattr(v94, "verify_cuad_labels",
+                        lambda doc, labels, vocab: ({}, ["Audit Rights: failed semantic probe"], []))
+    row = {"doc_text": "The Company may inspect the books once a year."}
+    resp = {"clauses": [{"category": "Audit Rights", "text": "The Company may inspect the books"}]}
+    (msg,) = runner.cuad_problems(row, resp, ["Audit Rights"])
+    desc = next(c["description"] for c in dojo_snapshot()["cuad_categories"] if c["name"] == "Audit Rights")
+    assert msg.startswith("Audit Rights: failed semantic probe") and desc in msg
+    assert runner._probe_hint("Parties: not verbatim: 'x'") == "Parties: not verbatim: 'x'"
+
+
+def test_cuad_prompt_excludes_winding_up_from_post_termination_services():
+    """Five of seven smoke arms labeled a joint venture's liquidation clause as
+    Post-Termination Services; the expert gold excludes it."""
+    from mailroom_eda.labeling.registry import prompt
+    assert "winding up" in prompt("cuad_system").render({}).lower()

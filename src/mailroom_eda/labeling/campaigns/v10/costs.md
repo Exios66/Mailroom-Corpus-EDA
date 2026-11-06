@@ -16,16 +16,16 @@ exact windowed prompts, typical output per call, x1.25 for retries and repairs;
 | `openai/gpt-6-luna` | 3.58 |
 | `qwen/qwen3.8-flash` | 4.41 |
 | `z-ai/glm-5.3-flash` | 4.51 |
-| `minimax/minimax-m3.1-flash` | 4.85 |
+| `minimax/minimax-m3.1-flash` | 4.86 |
 | `deepseek/deepseek-v4.1-flash` | 5.03 |
 | `deepseek/deepseek-v4.1-flash-1017` | 9.71 |
 | `z-ai/glm-5.3-flashx-legal` | 11.19 |
 | `google/gemini-3.5-flash-lite` | 14.14 |
-| `Qwen/Qwen3-32B-FP8` | 127.84 |
+| `Qwen/Qwen3-32B-FP8` | 127.87 |
 
 ## Recommended plan, chunk by chunk
 
-Projected total **$18.83**; the chunk caps add up to **$30.00**.
+Projected total **$18.84**; the chunk caps add up to **$30.00**.
 Two-model chunks are priced for both models.
 
 | chunk | task | set | slice | docs | calls | models | reasoning | projected USD | cap USD |

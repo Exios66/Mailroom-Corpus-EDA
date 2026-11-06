@@ -209,7 +209,23 @@ def cuad_problems(row: Mapping[str, Any], response: Any, vocab: Sequence[str]) -
         else:
             labels[cat].append({"start": loc[0], "text": doc[loc[0]:loc[1]]})
     _, dropped, more = v94.verify_cuad_labels(doc, dict(labels), vocab)
-    return problems + [str(x) for x in list(dropped) + list(more)]
+    return problems + [_probe_hint(str(x)) for x in list(dropped) + list(more)]
+
+
+SEMANTIC_PROBE = ": failed semantic probe"
+
+
+def _probe_hint(problem: str) -> str:
+    """Restate the category's CUAD question on a failed semantic probe, so the repair call
+    knows what the span must establish instead of only that it was rejected."""
+    if not problem.endswith(SEMANTIC_PROBE):
+        return problem
+    name = problem[: -len(SEMANTIC_PROBE)]
+    desc = next((c["description"] for c in tasks.dojo_snapshot()["cuad_categories"] if c["name"] == name), "")
+    if not desc:
+        return problem
+    return (f"{problem}: the span does not read as {name}. The category asks: {desc} Replace it with the "
+            f"operative sentence that answers this YES, or drop {name} if the document has none.")
 
 
 def chunk_name(task: str, set_name: str, spec: str | None, reasoning: str = "off") -> str:

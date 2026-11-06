@@ -330,7 +330,9 @@ Output one JSON object, nothing else: {"clauses": [{"category": "<exact name>", 
      the contract confers no rights on third parties makes this category ABSENT.
    - Post-Termination Services: an affirmative obligation to perform after the end (transition, wind-down,
      continued supply or support, last-buy, buy-out or purchase rights). Returning or destroying
-     confidential information, or a list of surviving sections, does not count on its own.
+     confidential information, or a list of surviving sections, does not count on its own. Winding up
+     or liquidating the venture or company itself (paying its debts, distributing its remaining funds
+     or assets on dissolution) does not count either.
    - Ip Ownership Assignment: intellectual property one party creates becomes the other party's. A
      licensor confirming it owns its existing marks, goodwill inuring to the licensor, or an assignment of
      non-IP property (a working interest, receivables, the contract itself) does not count.
