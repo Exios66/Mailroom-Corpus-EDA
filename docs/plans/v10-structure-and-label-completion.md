@@ -257,13 +257,15 @@ Layout uses clean tables, collapsible long lists, and no internal ticket ids in 
 **Provider routing** (the `route:` block per model in `models.yaml`; checked live with `labeling prices`):
 - Every request sends `provider.require_parameters: true`, so OpenRouter only routes to endpoints that accept every parameter we send (strict `json_schema`, `reasoning`, `max_tokens`, `temperature`).
 - Each model's providers are pinned with `only`, so the served model and price are known: GLM-legal on `z-ai`; DeepSeek on `deepinfra`, `atlas-cloud`, `coreweave` and `inference-net` at fp8 with a `max_price` ceiling (cheaper fp4 endpoints are excluded); MiniMax on `parasail`, `together`, `fireworks` and `sambanova`. Fallbacks are allowed only within the pinned list.
+- A `by_reasoning` overlay narrows the pin per reasoning level, because providers do not honour `low` alike (2026-11-06 per-provider pings, `labeling ping --per-provider`): DeepSeek `low` runs on `atlas-cloud`, `coreweave` and `inference-net` (DeepInfra spent 0 reasoning tokens on a real CUAD document); MiniMax `low` runs on `fireworks` and `sambanova` (Parasail and Together reported 0 reasoning tokens). A gate fails when any call was served outside its pin.
 - `seed: 42` is sent only where every pinned endpoint accepts it (DeepSeek). The z-ai GLM endpoint does not list `seed`, and `require_parameters` would reject the request, so GLM runs at temperature 0 without a seed.
 - `models.yaml` prices are the priciest pinned endpoint, so projections and caps are upper bounds. Every journal record keeps the served provider.
 
 **Reasoning:**
-- **Off** for span and entity extraction. It is a copying task, and reasoning tokens are billed as output.
+- **Off** for span and entity extraction where the model allows it. It is a copying task, and reasoning tokens are billed as output.
+- **Re-plan (2026-11-06):** GLM-legal and MiniMax now refuse reasoning off (HTTP 400 "Reasoning is mandatory for this endpoint"). Chunks 7 and 8 (DeepSeek + MiniMax) therefore run at `low` for both models, so both answer under one configuration; projected $15.66 (was $14.72), every chunk inside its cap. Chunk 1 arm 1 (GLM off) is skipped. Chunks 5, 6 and 9 still list GLM at off and must be re-planned to `low` before they run.
 - The CUAD bake-off tests GLM with `low`; it is adopted only if micro-F1 improves by at least 0.02.
-- **Low** is tried for intent only (chunk 3 runs off and low and keeps the better kappa). Urgency is labeled inside the correspondence extraction call with reasoning off, and `communication_type` is deterministic (the subclass).
+- **Low** is tried for intent (chunk 3 runs off and low and keeps the better kappa). Urgency is labeled inside the correspondence extraction call, and `communication_type` is deterministic (the subclass).
 - **Never `high`.**
 
 **Token budget** (one model, every task once, windowed prompts measured by `labeling costs`): about **18.4M prompt / 3.4M output tokens**, including a 1.25x allowance for retries and CUAD repair calls. Merger windows add the regex-located Termination Fee, Outside Date, Brokers and Notices sections, and the `merger_consideration` window adds the Conversion of Shares, Merger Consideration and Election sections.
@@ -572,9 +574,9 @@ The machine-readable sequence is `src/mailroom_eda/labeling/campaigns/v10/campai
 | 6c1 | merger consideration for the 56 `other` rows | as 6c0 | 56 | $0.40 | agreement; disagreements adjudicated |
 | 6a | merger pilot (3 per subclass) | GLM-legal + DeepSeek | 13 | $0.40 | needs 6c1; the user fills `reviewer_verdict`; agreed-field precision ≥ 0.90 |
 | 6b–c | merger remainder | as 6a | 138 (69/69) | $1.50 each | agreement and verbatim checks |
-| 7a | correspondence pilot (5 per subclass) | DeepSeek + MiniMax | 38 | $0.25 | human verdicts ≥ 0.90 |
+| 7a | correspondence pilot (5 per subclass) | DeepSeek + MiniMax, reasoning low | 38 | $0.25 | human verdicts ≥ 0.90 |
 | 7b–e | correspondence | as 7a | 962 | $0.50 each | agreement; enum checks |
-| 8a | claim_checklist pilot (5 per subclass) | DeepSeek + MiniMax | 30 | $0.25 | human verdicts ≥ 0.90 |
+| 8a | claim_checklist pilot (5 per subclass) | DeepSeek + MiniMax, reasoning low | 30 | $0.25 | human verdicts ≥ 0.90 |
 | 8b–e | claim_checklist | as 8a | 1,070 | $0.50, $0.50, $0.50, $0.75 | agreement; evidence checks |
 | 9a | corporate pilot (3 per subclass) | GLM-legal + DeepSeek | 29 | $0.50 | human verdicts ≥ 0.90 |
 | 9b–e | corporate | as 9a | 415 | $1.00, $1.00, $1.00, $1.25 | agreement; verbatim checks |

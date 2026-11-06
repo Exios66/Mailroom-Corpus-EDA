@@ -23,7 +23,7 @@ exact windowed prompts, typical output per call, x1.25 for retries and repairs;
 
 ## Recommended plan, chunk by chunk
 
-Projected total **$14.72**; the chunk caps add up to **$28.90**.
+Projected total **$15.66**; the chunk caps add up to **$28.90**.
 Two-model chunks are priced for both models.
 
 | chunk | task | set | slice | docs | calls | models | reasoning | projected USD | cap USD |
@@ -47,16 +47,16 @@ Two-model chunks are priced for both models.
 | 6a | merger_entities | pilot | all | 13 | 26 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.17 | 0.40 |
 | 6b | merger_entities | remainder | 1/2 | 69 | 138 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.85 | 1.50 |
 | 6c | merger_entities | remainder | 2/2 | 69 | 138 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.86 | 1.50 |
-| 7a | correspondence | pilot | all | 38 | 76 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | off | 0.04 | 0.25 |
-| 7b | correspondence | remainder | 1/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | off | 0.27 | 0.50 |
-| 7c | correspondence | remainder | 2/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | off | 0.26 | 0.50 |
-| 7d | correspondence | remainder | 3/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | off | 0.26 | 0.50 |
-| 7e | correspondence | remainder | 4/4 | 239 | 478 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | off | 0.26 | 0.50 |
-| 8a | claim_checklist | pilot | all | 30 | 60 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | off | 0.04 | 0.25 |
-| 8b | claim_checklist | remainder | 1/4 | 268 | 536 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | off | 0.28 | 0.50 |
-| 8c | claim_checklist | remainder | 2/4 | 268 | 536 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | off | 0.28 | 0.50 |
-| 8d | claim_checklist | remainder | 3/4 | 268 | 536 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | off | 0.28 | 0.50 |
-| 8e | claim_checklist | remainder | 4/4 | 266 | 532 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | off | 0.45 | 0.75 |
+| 7a | correspondence | pilot | all | 38 | 76 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.06 | 0.25 |
+| 7b | correspondence | remainder | 1/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.37 | 0.50 |
+| 7c | correspondence | remainder | 2/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.37 | 0.50 |
+| 7d | correspondence | remainder | 3/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.36 | 0.50 |
+| 7e | correspondence | remainder | 4/4 | 239 | 478 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.36 | 0.50 |
+| 8a | claim_checklist | pilot | all | 30 | 60 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.05 | 0.25 |
+| 8b | claim_checklist | remainder | 1/4 | 268 | 536 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.40 | 0.50 |
+| 8c | claim_checklist | remainder | 2/4 | 268 | 536 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.40 | 0.50 |
+| 8d | claim_checklist | remainder | 3/4 | 268 | 536 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.40 | 0.50 |
+| 8e | claim_checklist | remainder | 4/4 | 266 | 532 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.57 | 0.75 |
 | 9a | corporate | pilot | all | 29 | 58 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.16 | 0.50 |
 | 9b | corporate | remainder | 1/4 | 104 | 208 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.60 | 1.00 |
 | 9c | corporate | remainder | 2/4 | 104 | 208 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.52 | 1.00 |

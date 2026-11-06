@@ -60,17 +60,17 @@ chunks:
   - {id: "6c", needs: ["6c1", "6a"], task: merger_entities, set: remainder, chunk: "2/2", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 1.50, gate: {kind: agreement}}
   - {id: "7a", task: correspondence, set: pilot, models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash],
-     reasoning: "off", cap_usd: 0.25, gate: {kind: human_verdicts, precision: 0.90}}
-  - {id: "7b", needs: ["7a"], task: correspondence, set: remainder, chunk: "1/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "off", cap_usd: 0.50, gate: {kind: agreement}}
-  - {id: "7c", needs: ["7a"], task: correspondence, set: remainder, chunk: "2/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "off", cap_usd: 0.50, gate: {kind: agreement}}
-  - {id: "7d", needs: ["7a"], task: correspondence, set: remainder, chunk: "3/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "off", cap_usd: 0.50, gate: {kind: agreement}}
-  - {id: "7e", needs: ["7a"], task: correspondence, set: remainder, chunk: "4/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "off", cap_usd: 0.50, gate: {kind: agreement}}
+     reasoning: "low", cap_usd: 0.25, gate: {kind: human_verdicts, precision: 0.90}}
+  - {id: "7b", needs: ["7a"], task: correspondence, set: remainder, chunk: "1/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.50, gate: {kind: agreement}}
+  - {id: "7c", needs: ["7a"], task: correspondence, set: remainder, chunk: "2/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.50, gate: {kind: agreement}}
+  - {id: "7d", needs: ["7a"], task: correspondence, set: remainder, chunk: "3/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.50, gate: {kind: agreement}}
+  - {id: "7e", needs: ["7a"], task: correspondence, set: remainder, chunk: "4/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.50, gate: {kind: agreement}}
   - {id: "8a", task: claim_checklist, set: pilot, models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash],
-     reasoning: "off", cap_usd: 0.25, gate: {kind: human_verdicts, precision: 0.90}}
-  - {id: "8b", needs: ["8a"], task: claim_checklist, set: remainder, chunk: "1/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "off", cap_usd: 0.50, gate: {kind: agreement}}
-  - {id: "8c", needs: ["8a"], task: claim_checklist, set: remainder, chunk: "2/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "off", cap_usd: 0.50, gate: {kind: agreement}}
-  - {id: "8d", needs: ["8a"], task: claim_checklist, set: remainder, chunk: "3/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "off", cap_usd: 0.50, gate: {kind: agreement}}
-  - {id: "8e", needs: ["8a"], task: claim_checklist, set: remainder, chunk: "4/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "off", cap_usd: 0.75, gate: {kind: agreement}}
+     reasoning: "low", cap_usd: 0.25, gate: {kind: human_verdicts, precision: 0.90}}
+  - {id: "8b", needs: ["8a"], task: claim_checklist, set: remainder, chunk: "1/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.50, gate: {kind: agreement}}
+  - {id: "8c", needs: ["8a"], task: claim_checklist, set: remainder, chunk: "2/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.50, gate: {kind: agreement}}
+  - {id: "8d", needs: ["8a"], task: claim_checklist, set: remainder, chunk: "3/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.50, gate: {kind: agreement}}
+  - {id: "8e", needs: ["8a"], task: claim_checklist, set: remainder, chunk: "4/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.75, gate: {kind: agreement}}
   - {id: "9a", task: corporate, set: pilot, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 0.50, gate: {kind: human_verdicts, precision: 0.90}}
   - {id: "9b", needs: ["9a"], task: corporate, set: remainder, chunk: "1/4", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 1.00, gate: {kind: agreement}}

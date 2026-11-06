@@ -62,6 +62,12 @@ L="env PYTHONPATH=src python -m mailroom_eda.labeling"
    $L ping --initials XX
    ```
 
+   A paid chunk refuses to start unless every (model, reasoning) route it uses has a passing
+   ping from the last 24 hours. Add `--per-provider` to also ping each pinned provider alone
+   and log its reasoning tokens; a provider that reports 0 reasoning tokens at `low` belongs
+   outside that level's `by_reasoning` pin in `models.yaml`. GLM-legal and MiniMax refuse
+   reasoning off (HTTP 400), so their failed off pings are expected; chunks 7 and 8 run at `low`.
+
    Every line must say `PASS ... schema=strict`. A `json_object fallback` means that route
    stopped supporting strict schemas; stop and run `$L prices`.
 

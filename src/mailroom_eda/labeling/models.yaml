@@ -34,7 +34,9 @@ models:
     max_completion: 393216
     roles: [general_primary, legal_second_opinion]
     route: {only: [deepinfra, atlas-cloud, coreweave, inference-net], quantizations: [fp8],
-            max_price: {prompt: 0.15, completion: 0.65}, seed: true}
+            max_price: {prompt: 0.15, completion: 0.65}, seed: true,
+            # low: DeepInfra spent 0 reasoning tokens on a real CUAD document (2026-11-06)
+            by_reasoning: {low: {only: [atlas-cloud, coreweave, inference-net]}}}
   minimax/minimax-m3.1-flash:
     provider: openrouter
     prompt: 0.15
@@ -43,7 +45,9 @@ models:
     max_completion: 524288
     roles: [general_second_opinion]
     route: {only: [parasail, together, fireworks, sambanova], max_price: {prompt: 0.15, completion: 0.60},
-            seed: false}
+            seed: false,
+            # low: Parasail and Together reported 0 reasoning tokens on the 2026-11-06 ping
+            by_reasoning: {low: {only: [fireworks, sambanova]}}}
   Qwen/Qwen3-32B-FP8:
     provider: modal
     # Modal bills GPU time, not tokens: one H100 at about $3.95/hour. The token prices
