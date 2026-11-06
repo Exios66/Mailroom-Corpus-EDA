@@ -379,20 +379,27 @@ Correspondence intent, two passes: A shows the subject line, B does not.
 
 ```text
 You classify the PRIMARY intent of one business email (Enron corpus) with a closed vocabulary. Judge
-only what the newest message's author wants the recipient to know or do; quoted or forwarded text is
-context only.
+what the email's author wants the recipient to know or do.
+- Forwards: when the newest message adds nothing of its own beyond a pointer ("FYI", "see below",
+  "if you would like to participate", a one-line comment), classify the forwarded content. When the
+  newest message makes its own ask, notice or point, classify that.
 - payment_demand: asks the recipient to pay, settle or cure an amount owed or a default.
 - notice: formally informs of a fact, breach, termination, change or intention with contractual,
-  legal or procedural effect.
-- analysis: assesses options, risks, positions, terms or data; it reasons rather than reports.
-- request: asks for information, a document, approval or an action (not a meeting).
+  legal or procedural effect, including operational notices to many parties (an outage, a capacity
+  or nomination change, a "notice to all interested parties").
+- analysis: assesses options, risks, positions, terms, legislation or data; it reasons rather than
+  reports. A memo that analyses stays analysis even if it also mentions a call.
+- request: asks the recipient for information, a document, approval or an action (not a meeting),
+  even when the ask sits inside a status report ("please gather...", "you may need to fax...").
 - update: reports status, progress, events or figures without an ask or formal notice.
-- meeting_invite: proposes, schedules, moves, confirms or cancels a meeting or call.
-- press_communication: a press release or public, media-facing statement.
-- other: none of the above (personal, empty forward, auto-reply, newsletter, spam).
+- meeting_invite: the main point is to propose, schedule, move, confirm or cancel a meeting or call
+  (a revised call schedule counts); a passing mention of a call inside other content does not.
+- press_communication: a press release or public, media-facing statement, forwarded or not.
+- other: none of the above: personal notes, empty forwards, auto-replies, and marketing,
+  newsletters or spam from outside vendors.
 Tie-breaks: an explicit ask beats an update; a meeting ask is meeting_invite; a formal notice beats an
 update; use other only when no label fits, never for uncertainty.
-Output only {"intent": "<label>", "confidence": <0-1>, "evidence": "<verbatim quote, max 200 chars, from the newest message>"}
+Output only {"intent": "<label>", "confidence": <0-1>, "evidence": "<verbatim quote, max 200 chars, from the text you classified>"}
 ```
 
 ### `intent_user.md`
@@ -572,24 +579,24 @@ The machine-readable sequence is `src/mailroom_eda/labeling/campaigns/v10/campai
 | # | chunk | config | rows | cap | gate to proceed |
 |---|---|---|---|---|---|
 | 0 | build: cleanup, layout, specialist fix, deterministic fields, card | none | all | — | C3 gates 1–8, 12 and 13 pass. Deterministic fields: `cuad_family`, `merger_consideration`, `communication_type` |
-| 1 | CUAD model bake-off | DeepSeek v4.1 Flash low / off, DeepSeek v4.1 Flash 1017 off, GLM-5.3 FlashX Legal low, GPT-6 Luna Pro, Claude Haiku 5.5, MiniMax M3.1 Flash low | 40 × 7 arms | $0.35 / $0.30 / $0.55 / $0.63 / $0.25 / $0.25 / $0.35 | micro-F1 ≥ 0.75 and P ≥ 0.80, else STOP |
-| 1h | CUAD holdout (40 golden contracts not in calibration) | each chunk-1 model the calibration bake-off did not mark clearly worse | 40 × up to 7 arms | $0.33 / $0.59 / $0.26 / $0.48 / $0.18 / $0.18 / $0.29 | micro-F1 ≥ 0.75 and P ≥ 0.80; the pick pools calibration + holdout (80 contracts, paired bootstrap) |
-| 2a–c | CUAD on EX-10 | winner of #1 | 89 (30/30/29) | $0.55 / $0.55 / $0.45 | spans re-verify; the user reviews `spans.csv` |
-| 3 | intent model bake-off | DeepSeek v4.1 Flash off / low, DeepSeek v4.1 Flash 1017 off, GPT-6 Luna Pro, Claude Haiku 5.5, MiniMax M3.1 Flash low | 96 × 2 passes × 6 arms | $0.10 / $0.30 / $0.20 / $0.10 / $0.10 / $0.15 | κ ≥ 0.75 |
-| 4 | flagged intents | winner of #3 | 25 × 2 passes | $0.17 | two-pass agreement; the user reviews the CSV |
-| 5a | contract entity calibration | GLM-legal + DeepSeek | 40 | $0.75 | per-field accuracy ≥ 0.85 against gold derived from the expert CUAD spans (Parties, dates, Governing Law, Renewal Term) |
-| 5b | contract entity pilot (2 per CUAD family) | as 5a | 52 | $1.00 | human verdicts ≥ 0.90 |
-| 5c–e | contract entities | as 5a | 545 (182/182/181) | $2.40 / $2.60 / $2.50 | agreement, verbatim checks, adjudication CSV |
-| 6c0 | merger consideration calibration | GLM-legal + DeepSeek | 95 | $0.60 | each model ≥ 0.95 accuracy against the expert MAUD answer (`consideration_accuracy`, confusion table) |
-| 6c1 | merger consideration for the 56 `other` rows | as 6c0 | 56 | $0.40 | agreement; disagreements adjudicated |
-| 6a | merger pilot (3 per subclass) | GLM-legal + DeepSeek | 13 | $0.40 | needs 6c1; the user fills `reviewer_verdict`; agreed-field precision ≥ 0.90 |
+| 1 | CUAD model bake-off | arm 1: DeepSeek v4.1 Flash low; arm 2: GLM-5.3 FlashX Legal low; arm 3: DeepSeek v4.1 Flash off; arm 4: DeepSeek v4.1 Flash 1017 off; arm 5: GPT-6 Luna Pro off; arm 6: Claude Haiku 5.5 off; arm 7: MiniMax M3.1 Flash low | 40 × 7 arms | $0.30 / $0.55 / $0.25 / $0.45 / $0.20 / $0.20 / $0.30 | micro-F1 ≥ 0.75 and P ≥ 0.80, else STOP |
+| 1h | CUAD holdout (40 golden contracts not in calibration) | each chunk-1 model the calibration bake-off did not mark clearly worse (arms in chunk-1 order) | 40 × up to 7 arms | $0.35 / $0.55 / $0.25 / $0.50 / $0.20 / $0.20 / $0.30 | micro-F1 ≥ 0.75 and P ≥ 0.80; the pick pools calibration + holdout (80 contracts, paired bootstrap) |
+| 2a–c | CUAD on EX-10 | winner of #1 | 89 (30/30/29) | $0.45, $0.45, $0.35 | spans re-verify; the user reviews `spans.csv` |
+| 3 | intent model bake-off | arm 1: DeepSeek v4.1 Flash off; arm 2: DeepSeek v4.1 Flash low; arm 3: DeepSeek v4.1 Flash 1017 off; arm 4: GPT-6 Luna Pro off; arm 5: Claude Haiku 5.5 off; arm 6: MiniMax M3.1 Flash low | 96 × 2 passes × 6 arms | $0.10 / $0.30 / $0.15 / $0.10 / $0.10 / $0.15 | κ ≥ 0.75 |
+| 4 | flagged intents | winner of #3 | 25 × 2 passes | $0.15 | two-pass agreement; the user reviews the CSV |
+| 5a | contract entity calibration | GLM-legal + DeepSeek | 40 | $0.50 | per-field accuracy ≥ 0.85 against gold derived from the expert CUAD spans (Parties, dates, Governing Law, Renewal Term) |
+| 5b | contract entity pilot (2 per CUAD family) | as 5a | 52 | $0.70 | human verdicts ≥ 0.90 |
+| 5c–e | contract entities | as 5a | 545 (182/182/181) | $2.20, $2.45, $2.35 | agreement, verbatim checks, adjudication CSV |
+| 6c0 | merger consideration calibration | GLM-legal + DeepSeek | 95 | $0.35 | each model ≥ 0.95 accuracy against the expert MAUD answer (`consideration_accuracy`, confusion table) |
+| 6c1 | merger consideration for the 56 `other` rows | as 6c0 | 56 | $0.25 | agreement; disagreements adjudicated |
+| 6a | merger pilot (3 per subclass) | GLM-legal + DeepSeek | 13 | $0.25 | needs 6c1; the user fills `reviewer_verdict`; agreed-field precision ≥ 0.90 |
 | 6b–c | merger remainder | as 6a | 138 (69/69) | $1.30 each | agreement and verbatim checks |
-| 7a | correspondence pilot (5 per subclass) | DeepSeek + MiniMax, reasoning low | 38 | $0.25 | human verdicts ≥ 0.90 |
-| 7b–e | correspondence | as 7a | 962 | $0.50 each | agreement; enum checks |
-| 8a | claim_checklist pilot (5 per subclass) | DeepSeek + MiniMax, reasoning low | 30 | $0.25 | human verdicts ≥ 0.90 |
-| 8b–e | claim_checklist | as 8a | 1,070 | $0.50, $0.50, $0.50, $0.75 | agreement; evidence checks |
-| 9a | corporate pilot (3 per subclass) | GLM-legal + DeepSeek | 29 | $0.50 | human verdicts ≥ 0.90 |
-| 9b–e | corporate | as 9a | 415 | $0.90, $0.80, $0.85, $1.05 | agreement; verbatim checks |
+| 7a | correspondence pilot (5 per subclass) | DeepSeek + MiniMax, reasoning low | 38 | $0.15 | human verdicts ≥ 0.90 |
+| 7b–e | correspondence | as 7a | 962 | $0.90, $0.85, $0.85, $0.85 | agreement; enum checks |
+| 8a | claim_checklist pilot (5 per subclass) | DeepSeek + MiniMax, reasoning low | 30 | $0.15 | human verdicts ≥ 0.90 |
+| 8b–e | claim_checklist | as 8a | 1,070 | $0.95, $0.95, $0.95, $1.20 | agreement; evidence checks |
+| 9a | corporate pilot (3 per subclass) | GLM-legal + DeepSeek | 29 | $0.25 | human verdicts ≥ 0.90 |
+| 9b–e | corporate | as 9a | 415 | $0.85, $0.75, $0.80, $0.95 | agreement; verbatim checks |
 | 10 | adjudication | human, via `adjudication.csv` | residue | $0 | every item resolved |
 | 11 | re-stage, all gates, render the card | none | — | — | gates 1–13 pass |
 

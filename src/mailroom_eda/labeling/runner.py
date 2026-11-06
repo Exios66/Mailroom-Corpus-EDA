@@ -821,7 +821,7 @@ def campaign_costs(rows: Sequence[Mapping[str, Any]], name: str = "v10") -> dict
         reasoning = PLACEHOLDER_REASONING.get(str(ch["reasoning"]), str(ch["reasoning"]))
         est = estimate(picked, ch["task"], models, ch["set"])
         outputs = {m: projected_output(m, ch["task"], reasoning, est) for m in models}
-        cost = sum(spend.token_cost(m, est["prompt_tokens"], outputs[m]) for m in models)
+        cost = 0.0 if ch.get("skip") else sum(spend.token_cost(m, est["prompt_tokens"], outputs[m]) for m in models)
         out.append({**ch, "documents": est["documents"], "calls": est["calls"] * len(models),
                     "prompt_tokens": est["prompt_tokens"] * len(models),
                     "output_tokens": sum(outputs.values()),
@@ -932,10 +932,19 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(args, "operate", None):
         return args.operate(args)
     full_text = getattr(args, "full_text", False)
+    if full_text and args.task not in tasks.WINDOWED_MERGER_TASKS:
+        raise SystemExit(f"--full-text applies to {sorted(tasks.WINDOWED_MERGER_TASKS)} only")
+    before = set(tasks.FULL_TEXT_TASKS)
     if full_text:
-        if args.task not in tasks.WINDOWED_MERGER_TASKS:
-            raise SystemExit(f"--full-text applies to {sorted(tasks.WINDOWED_MERGER_TASKS)} only")
         tasks.FULL_TEXT_TASKS.add(args.task)
+    try:  # --full-text lasts one invocation: a later in-process run gets its window back
+        return _run(args, full_text)
+    finally:
+        tasks.FULL_TEXT_TASKS.clear()
+        tasks.FULL_TEXT_TASKS.update(before)
+
+
+def _run(args: argparse.Namespace, full_text: bool) -> int:
     rows = load_stage(args.stage)
     if args.cmd == "costs":
         from .registry import CAMPAIGNS_DIR  # noqa: PLC0415

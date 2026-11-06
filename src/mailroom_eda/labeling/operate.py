@@ -319,6 +319,8 @@ def ping_problems(log: Sequence[Mapping[str, Any]], routes: Sequence[tuple[str, 
 def cmd_chunk(args: argparse.Namespace) -> int:
     """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
+    if entry.get("skip"):
+        raise SystemExit(f"chunk {entry['id']} arm {arm} is skipped: {entry['skip']}")
     auto_restore(args)
     models, reasoning = resolve(args.campaign, entry)
     for need in entry.get("needs") or []:
@@ -625,6 +627,48 @@ def gate_agreement(out_dir: Path, signed_off: bool,
             "how": "read sample.csv, then re-run with --signed-off"}
 
 
+#: Expert gold the user overruled after reading the email (``<out>/gold-corrections.csv``). It
+#: lives beside the labels (gitignored, private HF backup) because it is ground truth; scoring
+#: applies it, and the ingest writes it to the GT config with its provenance, never to default.
+GOLD_CORRECTIONS = "gold-corrections.csv"
+GOLD_CORRECTION_COLUMNS = ("document_id", "filename", "field", "gold_was", "gold_now", "reason",
+                           "decided_by", "decided_utc")
+
+
+def gold_corrections(out: Path) -> dict[tuple[str, str], dict[str, str]]:
+    """``{(filename, field): correction}`` from ``<out>/gold-corrections.csv`` (empty if none)."""
+    path = out / GOLD_CORRECTIONS
+    if not path.exists():
+        return {}
+    found: dict[tuple[str, str], dict[str, str]] = {}
+    for c in export.read_csv(path):
+        if not (c.get("decided_by") and c.get("gold_now")):
+            raise SystemExit(f"{path}: every correction needs decided_by and gold_now ({c.get('filename')})")
+        found[(c["filename"], c["field"])] = c
+    return found
+
+
+def corrected_gold(rows: Sequence[Mapping[str, Any]],
+                   corrections: Mapping[tuple[str, str], Mapping[str, str]]) -> tuple[list[dict[str, Any]], int]:
+    """Rows with corrected ``gt_fields`` values, and how many changed. A correction whose
+    ``gold_was`` no longer matches the row is refused: the gold moved under it."""
+    out, n = [], 0
+    for row in rows:
+        fixes = {f: c for (fn, f), c in corrections.items() if fn == row["filename"]}
+        if not fixes:
+            out.append(dict(row))
+            continue
+        gt = dict(row["gt_fields"])
+        for f, c in fixes.items():
+            if str(gt.get(f) or "") != c["gold_was"]:
+                raise SystemExit(f"gold correction for {row['filename']} {f}: expected "
+                                 f"{c['gold_was']!r}, the row has {gt.get(f)!r}")
+            gt[f] = c["gold_now"]
+            n += 1
+        out.append({**row, "gt_fields": gt})
+    return out, n
+
+
 def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path, stage: Path,
                 signed_off: bool = False, sandbox: Path | None = None) -> dict[str, Any]:
     """Score one chunk arm's gate from its output directory (offline)."""
@@ -652,10 +696,14 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
         ok = (res["documents"] == res["expected_documents"] and res["micro_f1"] >= gate["micro_f1"]
               and res["micro_precision"] >= gate["precision"])
         res = {"kind": kind, **{k: v for k, v in res.items() if k != "per_category"}, "floors": gate, "passed": ok}
+        res["per_document"] = cuad_per_document(picked, export.read_journal(out_dir / "cuad-labels.jsonl"),
+                                                runner.cuad_vocab(rows))
     elif kind == "intent_kappa":
+        picked, fixed = corrected_gold(picked, gold_corrections(out))
         res = v94.score_intent_calibration(picked, export.read_journal(out_dir / "intent-labels.jsonl"))
         ok = res["documents"] == res["expected_documents"] and res["cohen_kappa"] >= gate["kappa"]
-        res = {"kind": kind, **res, "floors": gate, "passed": ok}
+        res = {"kind": kind, **res, "gold_corrections": fixed, "floors": gate, "passed": ok}
+        res["per_document"] = intent_per_document(picked, export.read_journal(out_dir / "intent-labels.jsonl"))
     elif kind == "field_accuracy":
         res = gate_field_accuracy(rows, out_dir, gate["accuracy"])
     elif kind == "human_verdicts":
@@ -676,7 +724,9 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
     res.update(chunk=entry["id"], arm=arm, task=entry["task"], models=models, provider=provider, reasoning=reasoning,
                prompt_sha256=sorted({c["prompt_sha256"] for c in calls}),
                served_providers=sorted({c.get("served_provider") or "" for c in calls} - {""}),
-               spent_usd=round(sum(c.get("cost_usd") or 0 for c in every), 4), scored_utc=_now())
+               spent_usd=round(sum(c.get("cost_usd") or 0 for c in every), 4),
+               answer_cost_usd=round(sum(c.get("reused_cost_usd") or c.get("cost_usd") or 0 for c in calls), 4),
+               scored_utc=_now())
     if overlay is not None:  # informational: never part of passed
         res["interim"] = {**reviewed.get("interim", {}), "manifest_sha256": overlay.manifest_sha256}
     current = runner.current_prompt_calls(rows, entry["task"], calls, entry["set"])
@@ -690,6 +740,308 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
     return res
 
 
+def cuad_per_document(gold_rows: Sequence[Mapping[str, Any]], journal: Sequence[Mapping[str, Any]],
+                      vocab: Sequence[str]) -> list[dict[str, Any]]:
+    """Per-document category tp/fp/fn, scored as ``v9_4_revision.score_cuad_calibration`` does."""
+    from .. import v9_4_revision as v94  # noqa: PLC0415
+
+    folded = v94.fold_journal(journal)
+    out = []
+    for row in gold_rows:
+        rec = folded.get(row["filename"])
+        if rec is None:
+            continue
+        gold = v94._json_obj(row["gt_fields"].get("cuad_clause_labels"))
+        raw = v94._json_obj(rec.get("cuad_clause_labels")) if rec.get("accepted") else {}
+        pred, _, _ = v94.verify_cuad_labels(row["doc_text"], raw, vocab)
+        c = Counter("tp" if gold.get(n) and pred.get(n) else "fp" if pred.get(n) else "fn" if gold.get(n) else "tn"
+                    for n in vocab)
+        out.append({"document_id": tasks._ids(row)[0], "tp": c["tp"], "fp": c["fp"], "fn": c["fn"]})
+    return out
+
+
+def intent_per_document(manual_rows: Sequence[Mapping[str, Any]],
+                        journal: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Per-document gold and pass-A intent, as ``score_intent_calibration`` pairs them."""
+    by_fn = {str(r["filename"]): r for r in journal}
+    return [{"document_id": tasks._ids(row)[0], "gold": str(row["gt_fields"].get("intent") or ""),
+             "pred": str((by_fn[row["filename"]].get("pass_a") or {}).get("intent") or "")}
+            for row in manual_rows if row["filename"] in by_fn]
+
+
+# ---------------------------------------------------------------- bake-off
+
+#: 40 contracts and 96 emails cannot resolve 0.02 gaps (user, 2026-11-06): arms are compared by
+#: paired bootstrap intervals over shared documents, never by a raw score gap.
+BOOTSTRAP_N, BOOTSTRAP_SEED, NON_INFERIORITY_MARGIN = 2000, 42, 0.05
+
+
+def _metric(docs: Sequence[Mapping[str, Any]], metric: str) -> float:
+    from .. import v9_4_revision as v94  # noqa: PLC0415
+
+    if metric == "micro_f1":
+        tp, fp, fn = (sum(d[k] for d in docs) for k in ("tp", "fp", "fn"))
+        return 2 * tp / (2 * tp + fp + fn) if tp else 0.0
+    if metric == "cohen_kappa":
+        return v94.cohen_kappa([d["gold"] for d in docs], [d["pred"] for d in docs])
+    raise ValueError(metric)
+
+
+def paired_bootstrap(a: Sequence[Mapping[str, Any]], b: Sequence[Mapping[str, Any]], metric: str,
+                     n: int = BOOTSTRAP_N, seed: int = BOOTSTRAP_SEED) -> tuple[float, float, float]:
+    """(point, lo95, hi95) of metric(b) - metric(a), resampling the shared documents."""
+    import random  # noqa: PLC0415
+
+    da, db = {d["document_id"]: d for d in a}, {d["document_id"]: d for d in b}
+    ids = sorted(set(da) & set(db))
+    if not ids:
+        return 0.0, 0.0, 0.0
+    point = _metric([db[i] for i in ids], metric) - _metric([da[i] for i in ids], metric)
+    rng = random.Random(seed)
+    diffs = []
+    for _ in range(n):
+        pick = [rng.choice(ids) for _ in ids]
+        diffs.append(_metric([db[i] for i in pick], metric) - _metric([da[i] for i in pick], metric))
+    diffs.sort()
+    return round(point, 4), round(diffs[int(0.025 * n)], 4), round(diffs[int(0.975 * n) - 1], 4)
+
+
+def _arm_model(arm: Mapping[str, Any]) -> str:
+    return str(arm["gate"]["models"][0])
+
+
+def _arm_cost(arm: Mapping[str, Any]) -> float:
+    """What the arm's answers cost (reused answers count at their original price)."""
+    g = arm["gate"]
+    return float(g.get("answer_cost_usd") or g.get("spent_usd") or 0.0)
+
+
+def _ineligible(arm: Mapping[str, Any]) -> str:
+    g = arm["gate"]
+    if g.get("skipped"):
+        return f"skipped: {g['skipped']}"
+    if g.get("documents") != g.get("expected_documents"):
+        return f"incomplete ({g.get('documents')}/{g.get('expected_documents')})"
+    if g.get("served_outside_pin"):
+        return f"served outside pin: {g['served_outside_pin']}"
+    if g.get("reasoning_not_honoured"):
+        return f"reasoning not honoured: {g['reasoning_not_honoured']}"
+    if not g.get("passed"):
+        return "floor not passed"
+    return ""
+
+
+def bakeoff_ranking(arms: Sequence[Mapping[str, Any]], metric: str,
+                    margin: float = NON_INFERIORITY_MARGIN) -> dict[str, Any]:
+    """Pick the primary DeepSeek arm and an equally capable second opinion of another vendor.
+
+    Cheapest first, upgraded only on evidence: the primary is the cheapest eligible DeepSeek
+    arm, replaced by a costlier one only when its lo95 against the current pick is > 0. The
+    second is the cheapest eligible arm of another vendor whose lo95 against the primary is
+    >= -margin. An arm whose hi95 against the primary is < -margin is clearly worse.
+    """
+    eligible = [a for a in arms if not _ineligible(a)]
+    primary = None
+    for a in sorted((a for a in eligible if _arm_model(a).startswith("deepseek/")), key=_arm_cost):
+        if primary is None or paired_bootstrap(primary["docs"], a["docs"], metric)[1] > 0:
+            primary = a
+    table, second = [], None
+    for a in sorted(arms, key=_arm_cost):
+        why = _ineligible(a)
+        point, lo, hi = paired_bootstrap(primary["docs"], a["docs"], metric) if primary else (0.0, 0.0, 0.0)
+        row = {"model": _arm_model(a), "reasoning": a["gate"].get("reasoning"), "arm": a["gate"].get("arm"),
+               "score": round(_metric(a["docs"], metric), 4), "vs_primary": point, "lo95": lo, "hi95": hi,
+               "cost_usd": round(_arm_cost(a), 4), "eligible": why or "yes",
+               "excluded": "clearly worse" if primary and a is not primary and hi < -margin else "",
+               "primary": a is primary, "second": False}
+        if (primary and not why and second is None and not _arm_model(a).startswith("deepseek/")
+                and lo >= -margin):
+            second, row["second"] = a, True
+        table.append(row)
+    return {"metric": metric, "margin": margin, "primary": primary, "second": second, "table": table}
+
+
+def bakeoff_arms(name: str, chunk_id: str, out: Path) -> tuple[list[dict[str, Any]], str]:
+    """Each arm of a bake-off chunk as ``{"gate", "docs"}``; chunk 1 pools the matching
+    chunk-1h holdout arm (same model and reasoning) when it was run."""
+    entries = [c for c in campaign(name)["chunks"] if str(c["id"]) == str(chunk_id)]
+    if not entries:
+        raise SystemExit(f"no chunk {chunk_id} in campaign {name}")
+    metric = {"cuad": "micro_f1", "intent": "cohen_kappa"}.get(entries[0]["task"])
+    if metric is None:
+        raise SystemExit(f"chunk {chunk_id} ({entries[0]['task']}) is not a bake-off")
+    holdout = {(tuple(c["models"]), str(c["reasoning"])): (c, i)
+               for i, c in enumerate((c for c in campaign(name)["chunks"] if str(c["id"]) == f"{chunk_id}h"), 1)}
+    arms = []
+    for i, entry in enumerate(entries, 1):
+        path = chunk_dir(out, entry, i) / "gate.json"
+        if entry.get("skip"):
+            arms.append({"gate": {"models": entry["models"], "reasoning": entry["reasoning"], "arm": i,
+                                  "skipped": entry["skip"], "passed": False}, "docs": []})
+            continue
+        if not path.exists():
+            arms.append({"gate": {"models": entry["models"], "reasoning": entry["reasoning"], "arm": i,
+                                  "documents": 0, "expected_documents": None, "passed": False}, "docs": []})
+            continue
+        gate = json.loads(path.read_text(encoding="utf-8"))
+        arm = {"gate": gate, "docs": list(gate.get("per_document") or [])}
+        h = holdout.get((tuple(entry["models"]), str(entry["reasoning"])))
+        hpath = chunk_dir(out, h[0], h[1]) / "gate.json" if h else None
+        if hpath and hpath.exists():
+            hg = json.loads(hpath.read_text(encoding="utf-8"))
+            arm = {"gate": {**gate, "documents": gate["documents"] + hg["documents"],
+                            "expected_documents": gate["expected_documents"] + hg["expected_documents"],
+                            "passed": gate["passed"] and hg["passed"],
+                            "served_outside_pin": (gate.get("served_outside_pin") or []) + (hg.get("served_outside_pin") or []),
+                            "reasoning_not_honoured": {**(gate.get("reasoning_not_honoured") or {}),
+                                                       **(hg.get("reasoning_not_honoured") or {})},
+                            "answer_cost_usd": _arm_cost({"gate": gate}) + _arm_cost({"gate": hg}),
+                            "pooled_holdout": True},
+                   "docs": arm["docs"] + list(hg.get("per_document") or [])}
+        arms.append(arm)
+    return arms, metric
+
+
+def cmd_bakeoff(args: argparse.Namespace) -> int:
+    """Rank a bake-off chunk's arms; write ``<out>/<chunk>.bakeoff.json``."""
+    arms, metric = bakeoff_arms(args.campaign, args.id, args.out)
+    rank = bakeoff_ranking(arms, metric, getattr(args, "margin", NON_INFERIORITY_MARGIN))
+    print(f"{'model':40} {'reasoning':9} {'score':>6} {'vs prim':>8} {'lo95':>7} {'hi95':>7} {'cost':>7}  status")
+    for r in rank["table"]:
+        tag = "PRIMARY" if r["primary"] else "SECOND" if r["second"] else r["excluded"] or (
+            "" if r["eligible"] == "yes" else r["eligible"])
+        print(f"{r['model']:40} {str(r['reasoning']):9} {r['score']:6.3f} {r['vs_primary']:+8.3f} "
+              f"{r['lo95']:+7.3f} {r['hi95']:+7.3f} {r['cost_usd']:7.3f}  {tag}")
+    pick = lambda a: a and {"model": _arm_model(a), "reasoning": a["gate"].get("reasoning"),  # noqa: E731
+                            "arm": a["gate"].get("arm")}
+    saved = {"chunk": str(args.id), "metric": metric, "margin": rank["margin"], "primary": pick(rank["primary"]),
+             "second": pick(rank["second"]), "table": rank["table"], "ranked_utc": _now()}
+    path = Path(args.out) / f"{args.id}.bakeoff.json"
+    path.write_text(json.dumps(saved, indent=1) + "\n", encoding="utf-8")
+    print(path)
+    if rank["primary"] is None or rank["second"] is None:
+        print("no " + ("primary" if rank["primary"] is None else "second opinion")
+              + " qualifies: STOP and re-plan", file=sys.stderr)
+        return 1
+    return 0
+
+
+# ---------------------------------------------------------------- inspect
+
+INSPECT_CONTEXT = 200
+
+
+def _quote_context(text: str, quote: str) -> str:
+    """The quote's verified location with INSPECT_CONTEXT characters each side, or NOT FOUND."""
+    if not quote:
+        return "(no quote)"
+    span = verify.locate(text, quote)
+    if span is None:
+        return f"NOT FOUND: `{quote[:160]}`"
+    a, b = span
+    ctx = text[max(0, a - INSPECT_CONTEXT):a] + "**" + text[a:b] + "**" + text[b:b + INSPECT_CONTEXT]
+    return "> " + " ".join(ctx.split())
+
+
+def _inspect_items(rows: Mapping[str, Mapping[str, Any]], records: Sequence[Mapping[str, Any]],
+                   task: str) -> list[tuple[bool, str, list[str]]]:
+    """(disagrees, document_id, markdown lines) per labeled document."""
+    from .. import v9_4_revision as v94  # noqa: PLC0415
+
+    items = []
+    if task == "intent":
+        for r in records:
+            row = rows.get(str(r.get("document_id")))
+            if row is None:
+                continue
+            gold = (row.get("gt_fields") or {}).get("intent") or ""
+            passes = [(k, r.get(k) or {}) for k in ("pass_a", "pass_b") if r.get(k)]
+            answers = {p.get("intent") for _, p in passes} | ({gold} if gold else set())
+            lines = [f"- gold: `{gold}`" if gold else "- gold: (none)"]
+            for k, p in passes:
+                lines += [f"- {k}: `{p.get('intent')}` (confidence {p.get('confidence')})",
+                          "  " + _quote_context(row["doc_text"], str(p.get("evidence") or ""))]
+            items.append((len(answers) > 1, str(r["document_id"]), lines))
+    elif task == "cuad":
+        for r in records:
+            row = rows.get(str(r.get("document_id")))
+            if row is None:
+                continue
+            gold = v94._json_obj((row.get("gt_fields") or {}).get("cuad_clause_labels")) or {}
+            pred = v94._json_obj(r.get("cuad_clause_labels")) or {}
+            g, p = {k for k, v in gold.items() if v}, {k for k, v in pred.items() if v}
+            lines = [f"- accepted: {r.get('accepted')}; gold categories {len(g)}, predicted {len(p)}"]
+            for cat in sorted(p - g):
+                spans = pred[cat]
+                lines += [f"- **false positive** {cat}", "  " + _quote_context(row["doc_text"], str(spans[0].get("text") or ""))]
+            for cat in sorted(g - p):
+                lines += [f"- **missed** {cat}", "  gold: " + _quote_context(row["doc_text"], str(gold[cat][0].get("text") or ""))]
+            for cat in sorted(g & p)[:3]:
+                lines += [f"- agreed {cat}", "  " + _quote_context(row["doc_text"], str(pred[cat][0].get("text") or ""))]
+            items.append((bool(p ^ g), str(r["document_id"]), lines))
+    else:  # extraction tasks: fields.csv rows
+        by_doc: dict[str, list[Mapping[str, Any]]] = {}
+        for f in records:
+            by_doc.setdefault(str(f["document_id"]), []).append(f)
+        for doc, fields in by_doc.items():
+            row = rows.get(doc)
+            if row is None:
+                continue
+            lines, split = [], False
+            for f in fields:
+                va = (f.get("model_a_status"), f.get("model_a_value"))
+                vb = (f.get("model_b_status"), f.get("model_b_value")) if f.get("model_b") else va
+                split |= va != vb
+                lines.append(f"- {f['field']}: {f.get('model_a')} `{va[1] or va[0]}`"
+                             + (f" vs {f.get('model_b')} `{vb[1] or vb[0]}`" if f.get("model_b") else "")
+                             + f" → {f.get('decision') or f.get('final_decision') or ''}")
+                for slot in ("a", "b"):
+                    if f.get(f"model_{slot}_evidence"):
+                        lines.append("  " + _quote_context(row["doc_text"], str(f[f"model_{slot}_evidence"])))
+            items.append((split, doc, lines))
+    return items
+
+
+def inspect_report(rows: Sequence[Mapping[str, Any]], records: Sequence[Mapping[str, Any]], task: str,
+                   n: int = 8, calls: Sequence[Mapping[str, Any]] = ()) -> str:
+    """Markdown for ``n`` documents (disagreements first, then a seeded sample) to read
+    against the documents before any ``gate --approve``."""
+    import random  # noqa: PLC0415
+
+    by_id = {tasks._ids(r)[0]: r for r in rows}
+    items = _inspect_items(by_id, records, task)
+    rng = random.Random(42)
+    rng.shuffle(items)
+    items.sort(key=lambda it: not it[0])  # stable: disagreements first, each group shuffled
+    served: dict[str, set[str]] = {}
+    for c in calls:
+        served.setdefault(str(c.get("document_id")), set()).add(str(c.get("served_provider") or "?"))
+    out = [f"# inspect: {task}, {min(n, len(items))} of {len(items)} documents "
+           f"({sum(it[0] for it in items)} disagree)", ""]
+    for split, doc, lines in items[:n]:
+        row = by_id[doc]
+        out += [f"## {doc} {'(DISAGREES)' if split else ''}".rstrip(),
+                f"`{row.get('filename')}` · split {row.get('split')} · served by "
+                f"{', '.join(sorted(served.get(doc, set()))) or '?'}", "", *lines, ""]
+    return "\n".join(out)
+
+
+def cmd_inspect(args: argparse.Namespace) -> int:
+    """Write ``<dir>/inspect.md`` for a chunk or run directory."""
+    d = Path(args.dir)
+    for task, name in (("intent", "intent-labels.jsonl"), ("cuad", "cuad-labels.jsonl")):
+        if (d / name).exists():
+            records = export.read_journal(d / name)
+            break
+    else:
+        if not (d / "fields.csv").exists():
+            raise SystemExit(f"{d} has no labels to inspect (run `labeling review` first)")
+        task, records = "fields", export.read_csv(d / "fields.csv")
+    calls = export.read_journal(d / "calls.jsonl") if (d / "calls.jsonl").exists() else []
+    md = inspect_report(runner.load_stage(args.stage), records, task, args.n, calls)
+    (d / "inspect.md").write_text(md, encoding="utf-8")
+    print(d / "inspect.md")
+    return 0
 # ---------------------------------------------------------------- adjudication (step 10)
 
 ADJUDICATION_DIR = "adjudication"
@@ -823,6 +1175,23 @@ def unreasoned_providers(calls: Sequence[Mapping[str, Any]], reasoning: str) -> 
     return {k: f"{z}/{n}" for k, (z, n) in sorted(seen.items()) if z > UNREASONED_MAX_SHARE * n and z >= UNREASONED_MIN_ZEROS}
 
 
+def bakeoff_guard(name: str, entry: Mapping[str, Any], res: Mapping[str, Any], out: Path,
+                  override: bool = False) -> None:
+    """Approving a bake-off arm picks the model later chunks use (``winner_of_<id>``): it must
+    be the arm ``labeling bakeoff`` chose. A holdout chunk (``1h``) follows its chunk's pick."""
+    cid = str(entry["id"])
+    base = cid[:-1] if cid.endswith("h") else cid
+    if sum(str(c["id"]) == cid for c in campaign(name)["chunks"]) < 2 or override:
+        return
+    path = out / f"{base}.bakeoff.json"
+    if not path.exists():
+        raise SystemExit(f"chunk {cid} is a bake-off: run `labeling bakeoff {base}` before approving an arm")
+    primary = json.loads(path.read_text(encoding="utf-8")).get("primary") or {}
+    if (primary.get("model"), str(primary.get("reasoning"))) != (res["models"][0], str(res["reasoning"])):
+        raise SystemExit(f"the bake-off picked {primary.get('model')} at {primary.get('reasoning')}; this arm is "
+                         f"{res['models'][0]} at {res['reasoning']} (pass --override-bakeoff to approve it anyway)")
+
+
 def cmd_gate(args: argparse.Namespace) -> int:
     """Score a chunk's gate; with --approve, record a pass in approved.yaml."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
@@ -839,6 +1208,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
         raise SystemExit("gate did not pass; nothing approved")
     if not args.initials or not spend.INITIALS_RE.match(args.initials):
         raise SystemExit("--approve needs --initials (a human's 2-6 capital letters)")
+    bakeoff_guard(args.campaign, entry, res, Path(args.out), getattr(args, "override_bakeoff", False))
     approvals = load_approvals(args.campaign)
     same = [a for a in approvals if str(a["chunk"]) == str(entry["id"])]
     if same and not args.replace:
@@ -1316,12 +1686,26 @@ def add_commands(sub: Any) -> None:
     p.add_argument("--approve", action="store_true")
     p.add_argument("--replace", action="store_true")
     p.add_argument("--signed-off", action="store_true", help="you read the chunk's CSVs / sample.csv")
+    p.add_argument("--override-bakeoff", action="store_true",
+                   help="approve a bake-off arm other than the one `labeling bakeoff` picked")
     p.add_argument("--sandbox", type=Path, default=runner.DEFAULT_SANDBOX,
                    help="local-mailroom-sandbox checkout for the interim cross-check (absent: skipped)")
     p.add_argument("--initials")
     p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
     p.add_argument("--no-checkpoint", action="store_true")
     p.set_defaults(operate=cmd_gate)
+
+    p = sub.add_parser("bakeoff", help="rank a bake-off chunk's arms by paired bootstrap (offline)")
+    common(p)
+    p.add_argument("id")
+    p.add_argument("--margin", type=float, default=NON_INFERIORITY_MARGIN)
+    p.set_defaults(operate=cmd_bakeoff)
+
+    p = sub.add_parser("inspect", help="write inspect.md: answers, gold and quote context to read before a gate")
+    common(p)
+    p.add_argument("dir", type=Path, help="a chunk or run output directory")
+    p.add_argument("--n", type=int, default=8)
+    p.set_defaults(operate=cmd_inspect)
 
     p = sub.add_parser("adjudicate", help="list every approved chunk's open adjudication items (offline)")
     common(p)
