@@ -62,6 +62,8 @@ class Label:
     provenance: str = ""
     chunk: str = ""
     override: bool = False  # replaces an existing gold value (relabel, gold correction)
+    #: a gold correction's target: (filename, legacy gold it replaces); the build refuses a mismatch
+    target: tuple[str, str] | None = None
 
 
 @dataclass
@@ -251,12 +253,22 @@ def _gold_corrections(out: Ingested, labels_root: Path) -> None:
     path = Path(labels_root) / GOLD_CORRECTIONS
     if not path.exists():
         return
+    types: dict[str, set[str]] = {}
+    for fields in _field_specs().values():
+        for f, spec in fields.items():
+            types.setdefault(f, set()).add(spec["type"])
     for c in export.read_csv(path):
-        if not (c.get("decided_by") and c.get("gold_now")):
-            raise SystemExit(f"{path}: every correction needs decided_by and gold_now ({c.get('filename')})")
-        out.put(c["document_id"], c["field"], Label(c["gold_now"], "populated", (),
+        if not (c.get("decided_by") and c.get("gold_now") and c.get("filename")) or c.get("gold_was") is None:
+            raise SystemExit(f"{path}: every correction needs filename, gold_was, gold_now and decided_by "
+                             f"({c.get('filename')})")
+        kinds = types.get(c["field"], set())
+        values = [decode(c["gold_now"], t) for t in sorted(kinds)]
+        if not values or any(v != values[0] for v in values):
+            raise SystemExit(f"{path}: {c['field']!r} has no single registered type ({sorted(kinds)})")
+        out.put(c["document_id"], c["field"], Label(values[0], "populated", (),
                                                     f"override:gold_correction:{c['decided_by']}",
-                                                    "gold-corrections", override=True))
+                                                    "gold-corrections", override=True,
+                                                    target=(c["filename"], c["gold_was"])))
     out.chunks.append("gold-corrections")
 
 

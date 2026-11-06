@@ -212,6 +212,9 @@ def gate_6(st: Stage) -> tuple[bool, str]:
     # Recorded overrides (relabel decisions, gold corrections) may change a gold value.
     overrides = {(r["document_id"], f): str(p) for rows in st.class_rows().values() for r in rows
                  for f, p in (r.get("provenance") or {}).items() if str(p or "").startswith("override:")}
+    # an overridden legacy value must be the class record's value, serialized as legacy_row does
+    legacy_of = {v10.LEGACY_KEY.get(f, f): f for (_, f) in overrides}
+    records = {r["document_id"]: (c, r) for c, rows in st.class_rows().items() for r in rows}
     bad, added = [], Counter()
     for r in st.rows("ground_truth"):
         o = old.get(r["document_id"])
@@ -229,6 +232,16 @@ def gate_6(st: Stage) -> tuple[bool, str]:
                     bad.append(f"{r['document_id']}: {k} is {r.get(k)!r}, the intent override says {want_top[k]!r}")
             elif k not in allowed_top and orec.get(k) != r.get(k):
                 bad.append(f"{r['document_id']}: {k} changed")
+        for k in set(ng) & set(legacy_of):
+            f = legacy_of[k]
+            if (r["document_id"], f) not in overrides or f in ("cuad_clauses", "maud_clauses"):
+                continue
+            cls, rec = records.get(r["document_id"], ("?", {}))
+            want = rec.get(f)
+            want = json.dumps(want, ensure_ascii=False, sort_keys=True) if isinstance(want, (list, dict)) \
+                else ("" if want is None else str(want))
+            if ng[k] != want:
+                bad.append(f"{r['document_id']}: gt_fields.{k} is {ng[k]!r}, gt_{cls} says {want!r}")
         for k, want in want_gt.items():
             if ng.get(k) != want:
                 bad.append(f"{r['document_id']}: gt_fields.{k} is {ng.get(k)!r}, the intent override says {want!r}")
