@@ -59,7 +59,11 @@ class Backend:
 
     @classmethod
     def from_env(cls, provider: str, env: Mapping[str, str] | None = None) -> "Backend":
-        """Build a backend from environment variables. Raises if a key is missing."""
+        """Build a backend from ``env``, defaulting to the process environment.
+
+        Raises ``ProviderError`` for an unknown provider, a missing API key, or a
+        missing Modal base URL. Modal URLs receive a ``/v1`` suffix if needed.
+        """
         env = os.environ if env is None else env
         if provider == "openrouter":
             key = env.get("OPENROUTER_API_KEY", "")
@@ -102,8 +106,9 @@ def build_payload(provider: str, model: str, messages: Sequence[Mapping[str, str
                   route: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """The request body for ``provider``. ``schema=None`` asks for plain JSON mode.
 
-    ``route`` is the model's ``models.yaml`` routing block; ``seed`` is sent only when it
-    says every pinned provider supports it.
+    ``route`` is the model's ``models.yaml`` routing block. For OpenRouter, ``seed``
+    defaults to enabled and is omitted when the route sets it to false.
+    Raises ``ValueError`` unless ``reasoning`` is ``off`` or ``low``.
     """
     if reasoning not in REASONING:
         raise ValueError(f"reasoning must be one of {REASONING}")
@@ -179,7 +184,13 @@ def _retry_after(headers: Mapping[str, str], attempt: int) -> float:
 
 
 def parse_completion(payload: Mapping[str, Any], *, used_schema: bool) -> Completion:
-    """Turn a chat-completions body into a ``Completion``. Raises on empty or non-JSON content."""
+    """Parse a chat response whose content must be a JSON object.
+
+    Raises ``ProviderError`` for missing choices, truncated output, invalid JSON, or a
+    non-object answer. Truncated and invalid answers carry reported billing usage on
+    the error when available. ``used_schema`` records the request mode; this function
+    does not validate the answer against a schema.
+    """
     choices = payload.get("choices") or []
     if not choices:
         raise ProviderError(f"no choices in response: {str(payload)[:300]}")
@@ -225,11 +236,15 @@ def chat(backend: Backend, model: str, messages: Sequence[Mapping[str, str]],
          route: Mapping[str, Any] | None = None) -> Completion:
     """Send one request with retries.
 
-    Retries on 408/409/425/429/5xx and network errors, honouring ``Retry-After``. If the
+    Retries on 408/409/425/429/500/502/503/504 and network errors, honoring
+    ``Retry-After`` up to 120 seconds. ``attempts`` includes the initial request and
+    any schema fallback; ``timeout`` is the timeout in seconds per request. If the
     provider rejects the JSON schema (a 400/422 whose error names the schema or response
     format) the request is repeated in plain JSON mode; the caller's validation then does
-    the schema's job. Any other 4xx raises at once. ``post`` and ``sleep`` are
-    injectable for tests.
+    the schema's job. Other HTTP failures, unreadable responses, and invalid completions
+    raise ``ProviderError`` without retrying; exhausting attempts also raises it.
+    ``ValueError`` from an invalid reasoning setting propagates. ``post`` and ``sleep``
+    are injectable for tests.
     """
     url = f"{backend.base_url}/chat/completions"
     use_schema = schema is not None

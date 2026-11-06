@@ -43,7 +43,11 @@ def append_journal(path: Path, record: Mapping[str, Any]) -> None:
 
 
 def read_journal(path: Path) -> list[dict[str, Any]]:
-    """All records; a torn final line from a crash is ignored."""
+    """Read journal records, returning an empty list when the file is missing.
+
+    Blank lines and lines with invalid JSON are skipped anywhere in the file,
+    including a torn final line from a crash. File I/O and decoding errors propagate.
+    """
     if not path.exists():
         return []
     out = []
@@ -93,7 +97,12 @@ def _uncell(value: str) -> str:
 
 
 def write_csv(path: Path, columns: Sequence[str], rows: Iterable[Mapping[str, Any]]) -> int:
-    """Write rows (missing keys become empty cells). Returns the row count."""
+    """Overwrite a CSV with a header and escaped rows; return the row count.
+
+    Missing keys become empty cells. Raises ``ValueError`` for keys outside ``columns``;
+    the file then contains the header and any rows already written. File I/O errors
+    propagate.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     n = 0
     with path.open("w", encoding="utf-8", newline="") as fh:

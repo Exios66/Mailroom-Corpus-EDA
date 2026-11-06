@@ -184,8 +184,9 @@ def _task_fields(row: Mapping[str, Any], task: str) -> dict[str, dict[str, Any]]
 
     ``llm`` fields of the task always; ``gold`` fields that name the task only where the
     row has no value yet (e.g. the 38 corporate rows without ``entity_name``); and
-    ``deterministic`` fields that name the task only where they cannot be derived (e.g.
-    ``merger_consideration`` without an expert MAUD answer).
+    ``deterministic`` fields that name the task where they cannot be derived. The
+    calibrated ``merger_consideration`` field is included even with an expert MAUD
+    answer, so those rows can be used for calibration.
     """
     # A corporate row with no subclass gets the ``other`` schema, never every subclass's.
     sub = (row.get("expected_subclass") or "other") if row["expected"] == "corporate_record" else None

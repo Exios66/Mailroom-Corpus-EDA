@@ -58,7 +58,9 @@ def fold(text: str) -> tuple[str, list[int]]:
 def locate(doc: str, quote: str, folded: tuple[str, list[int]] | None = None) -> tuple[int, int] | None:
     """Character span of ``quote`` in ``doc``: exact first, then whitespace/markdown folded.
 
-    Returns ``(start, end)`` offsets into the original ``doc``, or ``None``.
+    Returns ``(start, end)`` character offsets into the original ``doc``, with an
+    exclusive end, or ``None`` for an empty or unmatched quote. Folded matching also
+    ignores case. ``folded`` may supply a precomputed ``fold(doc)`` result.
     """
     if not quote:
         return None
@@ -142,7 +144,12 @@ def tokens(text: Any) -> list[str]:
 
 
 def parse_date(value: Any) -> date | None:
-    """Parse ISO ``YYYY-MM-DD`` or common written dates ("March 5, 2004", "5 March 2004")."""
+    """Parse ISO ``YYYY-MM-DD``, ``M/D/YYYY``, or dates with English month names.
+
+    Written dates include "March 5, 2004" and "5 March 2004"; abbreviated months and
+    ordinal days such as "5th March 2004" are also supported.
+    Returns ``None`` for unrecognized or invalid dates.
+    """
     s = str(value or "").strip()
     m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", s)
     if m:
@@ -170,7 +177,11 @@ def parse_date(value: Any) -> date | None:
 
 
 def parse_money(value: Any) -> float | None:
-    """Parse "$1,250,000", "1.5 million", "USD 400", "-$75", "($75)" or a number."""
+    """Parse "$1,250,000", "1.5 million", "USD 400", "-$75", "($75)" or a number.
+
+    Uses the first numeric amount in a string, applying a thousand/million/billion
+    suffix when present. Returns ``None`` for booleans or strings without a number.
+    """
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
@@ -218,9 +229,11 @@ def _jaccard(a: frozenset, b: frozenset) -> float:
 
 
 def agree(a: Any, b: Any, type_: str) -> bool:
-    """Do two values match for ``type_``? Lists need Jaccard >= 0.8 over normalised items;
-    free text needs token Jaccard >= 0.6; names match exactly after normalisation or when
-    one token set contains the other; other scalars must be equal."""
+    """Do two values match for ``type_``? Lists need Jaccard >= 0.8 over normalized items;
+    free text needs token Jaccard >= 0.6. Names match exactly after normalization, or
+    when one token set contains the other with Jaccard >= 0.5. Money differs by less
+    than 0.005; other scalars must be equal. Missing normalized values match only when
+    both are missing."""
     na, nb = normalize(a, type_), normalize(b, type_)
     if na is None or nb is None:
         return na is None and nb is None

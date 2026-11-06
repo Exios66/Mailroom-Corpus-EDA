@@ -60,8 +60,9 @@ def maud_consideration_answer(row: Mapping[str, Any]) -> str | None:
 def merger_consideration(row: Mapping[str, Any]) -> str | None:
     """The merger subclass when the expert MAUD answer confirms it; else ``None``.
 
-    A subclass of ``other`` with no MAUD answer is not evidence of anything, so it is
-    left for the ``merger_entities`` task instead of being labeled ``other``.
+    A missing or unrecognized MAUD answer returns ``None``, leaving the label for the
+    ``merger_consideration`` task. Raises ``ValueError`` when a recognized expert answer
+    disagrees with the row's subclass.
     """
     token = maud_consideration_answer(row)
     sub = str(row.get("expected_subclass") or "")
@@ -96,7 +97,11 @@ def specialist(row: Mapping[str, Any]) -> str:
 
 
 def deterministic_value(row: Mapping[str, Any], field: str) -> Any:
-    """The derived value of a ``source: deterministic`` field, or ``None`` if underivable."""
+    """Derive a supported deterministic field, returning ``None`` if evidence is missing.
+
+    Raises ``KeyError`` for an unsupported class/field pair, or ``ValueError`` when a
+    merger's subclass conflicts with its recognized expert MAUD answer.
+    """
     cls = row["expected"]
     if cls == "contract" and field == "cuad_family":
         return canonical_subclass(row)
