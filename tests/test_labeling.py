@@ -2630,3 +2630,23 @@ def test_check_lockstep_reads_tag_and_commit_pins(tmp_path):
     assert not rows(version_slot=sha, vendored="0.27.2")["Dojo release version"]
     assert not rows(version_slot="f" * 40)["Dojo commit"]            # pin ref and frozen sha differ
     assert not rows(version_slot=sha, eda_commit=sha[:12])["Dojo commit"]  # full shas only
+
+
+def test_inspect_reads_the_corrected_gold(tmp_path, monkeypatch):
+    """inspect.md shows the gold the gate scores against: corrections in the labels root apply."""
+    row = _row("correspondence", None, "Re-order your contact lenses online today.",
+               gt={"intent": "request"}, fn="c/618.")
+    d = tmp_path / "3.3_intent-calibration"
+    d.mkdir()
+    export.write_csv(tmp_path / operate.GOLD_CORRECTIONS, operate.GOLD_CORRECTION_COLUMNS,
+                     [{"document_id": tasks._ids(row)[0], "filename": "c/618.", "field": "intent",
+                       "gold_was": "request", "gold_now": "other", "reason": "marketing",
+                       "decided_by": "user", "decided_utc": "t"}])
+    rec = {"document_id": tasks._ids(row)[0], "filename": "c/618.", "model": "m",
+           "pass_a": {"intent": "other", "confidence": 0.9, "evidence": "Re-order"},
+           "pass_b": {"intent": "other", "confidence": 0.9, "evidence": "Re-order"}}
+    (d / "intent-labels.jsonl").write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    monkeypatch.setattr(runner, "load_stage", lambda stage: [row])
+    operate.cmd_inspect(type("A", (), {"dir": str(d), "stage": tmp_path, "n": 5})())
+    md = (d / "inspect.md").read_text(encoding="utf-8")
+    assert "gold: `other`" in md and "0 disagree" in md
