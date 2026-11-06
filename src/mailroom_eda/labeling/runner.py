@@ -901,10 +901,19 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(args, "operate", None):
         return args.operate(args)
     full_text = getattr(args, "full_text", False)
+    if full_text and args.task not in tasks.WINDOWED_MERGER_TASKS:
+        raise SystemExit(f"--full-text applies to {sorted(tasks.WINDOWED_MERGER_TASKS)} only")
+    before = set(tasks.FULL_TEXT_TASKS)
     if full_text:
-        if args.task not in tasks.WINDOWED_MERGER_TASKS:
-            raise SystemExit(f"--full-text applies to {sorted(tasks.WINDOWED_MERGER_TASKS)} only")
         tasks.FULL_TEXT_TASKS.add(args.task)
+    try:  # --full-text lasts one invocation: a later in-process run gets its window back
+        return _run(args, full_text)
+    finally:
+        tasks.FULL_TEXT_TASKS.clear()
+        tasks.FULL_TEXT_TASKS.update(before)
+
+
+def _run(args: argparse.Namespace, full_text: bool) -> int:
     rows = load_stage(args.stage)
     if args.cmd == "costs":
         from .registry import CAMPAIGNS_DIR  # noqa: PLC0415

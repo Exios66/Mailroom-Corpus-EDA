@@ -36,15 +36,19 @@ def consideration(rows: list[dict]) -> dict:
 
 
 def entities_diff() -> dict:
-    """Fields whose located and full-text answers differ; written to ab-diff.csv."""
+    """Fields whose located and full-text answers differ, over the fields both arms answered;
+    written to ab-diff.csv. Documents missing from either arm are listed apart."""
     def answers(d: Path) -> dict[tuple[str, str], dict]:
         return {(f["document_id"], f["field"]): f for f in export.read_csv(d / "fields.csv")}
     located = answers(ROOT / "merger_entities-pilot")
     full_dir = ROOT / "merger_entities-pilot-fulltext"
     full = answers(full_dir)
+    # a document one arm never answered has no rows to compare: report it, never count it a diff
+    missing = {"located": sorted({k[0] for k in set(full) - set(located)}),
+               "full": sorted({k[0] for k in set(located) - set(full)})}
     diff = []
-    for key in sorted(set(located) | set(full)):
-        a, b = located.get(key, {}), full.get(key, {})
+    for key in sorted(set(located) & set(full)):
+        a, b = located[key], full[key]
         va = (a.get("model_a_status"), a.get("model_a_value"))
         vb = (b.get("model_a_status"), b.get("model_a_value"))
         if va != vb:
@@ -57,7 +61,8 @@ def entities_diff() -> dict:
     cols = list(diff[0]) if diff else ["document_id", "field"]
     export.write_csv(full_dir / "ab-diff.csv", cols, diff)
     only_full = {d["document_id"] for d in diff if d["full_status"] == "present" and d["located_status"] != "present"}
-    return {"fields_compared": len(set(located) | set(full)), "fields_differ": len(diff),
+    return {"fields_compared": len(set(located) & set(full)), "fields_differ": len(diff),
+            "documents_missing_from": missing,
             "agreements_with_a_full_only_value": len(only_full), "diff": str(full_dir / "ab-diff.csv")}
 
 

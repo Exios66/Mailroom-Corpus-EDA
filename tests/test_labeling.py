@@ -2140,3 +2140,84 @@ def test_skipped_arm_neither_runs_nor_costs_nor_ranks(tmp_path):
         operate.cmd_chunk(args)
     arms, _ = operate.bakeoff_arms("v10", "3", tmp_path)
     assert operate._ineligible(arms[arm - 1]).startswith("skipped")
+
+
+def test_full_text_lasts_one_invocation(monkeypatch):
+    """`--full-text` must not leak into a later in-process run, even one that raised."""
+    seen = []
+
+    def fake_run(args, full_text):
+        seen.append(set(tasks.FULL_TEXT_TASKS))
+        if args.dry_run:
+            raise RuntimeError("boom")
+        return 0
+
+    monkeypatch.setattr(runner, "_run", fake_run)
+    argv = ["run", "--task", "merger_entities", "--set", "pilot", "--provider", "openrouter",
+            "--model", "deepseek/deepseek-v4.1-flash", "--full-text"]
+    assert runner.main(argv) == 0
+    with pytest.raises(RuntimeError):
+        runner.main(argv + ["--dry-run"])
+    assert seen == [{"merger_entities"}, {"merger_entities"}] and tasks.FULL_TEXT_TASKS == set()
+
+
+@pytest.mark.parametrize("cap", [9_000, 12_345, 20_000])
+def test_located_window_never_exceeds_its_cap(monkeypatch, cap):
+    """Separators and the signature-page marker count against the cap too."""
+    from mailroom_eda.labeling import sections
+    monkeypatch.setattr(sections, "locate", lambda text, needs: [(f"n{i}", "x" * 2_999) for i in range(12)])
+    text = "y" * 200_000
+    window, _ = tasks._located_window(text, (), 2_000, cap, 3_000)
+    assert len(window) <= cap and window.endswith(text[-3_000:])
+    window, _ = tasks._located_window(text, (), 2_000, cap, 0)
+    assert len(window) <= cap
+
+
+def test_locate_scans_the_headings_once(monkeypatch):
+    from mailroom_eda.labeling import sections
+    calls = []
+    real = sections._all_headings
+    monkeypatch.setattr(sections, "_all_headings", lambda text: calls.append(1) or real(text))
+    sections.locate(AGREEMENT + FILL * 50, sections.MERGER_NEEDS)
+    assert len(calls) == 1
+
+
+def test_merger_ab_diff_reports_missing_documents_apart(tmp_path, monkeypatch):
+    """A document one arm never answered is listed as missing, never counted a difference."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "merger_window_ab", Path(__file__).resolve().parents[1] / "scripts/labeling/merger_window_ab.py")
+    ab = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ab)
+    monkeypatch.setattr(ab, "ROOT", tmp_path)
+    cols = ["document_id", "field", "model_a_status", "model_a_value", "model_a_evidence"]
+    loc = [{"document_id": "D1", "field": "f", "model_a_status": "present", "model_a_value": "a",
+            "model_a_evidence": "a"}]
+    full = loc + [{"document_id": "D2", "field": "f", "model_a_status": "present", "model_a_value": "b",
+                   "model_a_evidence": "b"}]
+    for d, rows in (("merger_entities-pilot", loc), ("merger_entities-pilot-fulltext", full)):
+        (tmp_path / d).mkdir()
+        export.write_csv(tmp_path / d / "fields.csv", cols, rows)
+    res = ab.entities_diff()
+    assert res["fields_differ"] == 0 and res["agreements_with_a_full_only_value"] == 0
+    assert res["documents_missing_from"] == {"located": ["D2"], "full": []}
+
+
+def test_gold_corrections_apply_and_refuse_a_moved_gold(tmp_path):
+    """Accepted corrections replace the gold the gate scores against; one whose gold_was no
+    longer matches the row, or that names no decider, is refused."""
+    row = {"filename": "a/1.", "gt_fields": {"intent": "update"}}
+    fix = {"document_id": "D", "filename": "a/1.", "field": "intent", "gold_was": "update",
+           "gold_now": "notice", "reason": "r", "decided_by": "user", "decided_utc": "t"}
+    export.write_csv(tmp_path / operate.GOLD_CORRECTIONS, operate.GOLD_CORRECTION_COLUMNS, [fix])
+    fixed, n = operate.corrected_gold([row, {"filename": "b/2.", "gt_fields": {"intent": "other"}}],
+                                      operate.gold_corrections(tmp_path))
+    assert n == 1 and fixed[0]["gt_fields"]["intent"] == "notice" and row["gt_fields"]["intent"] == "update"
+    with pytest.raises(SystemExit, match="expected 'update'"):
+        operate.corrected_gold([{"filename": "a/1.", "gt_fields": {"intent": "request"}}],
+                               operate.gold_corrections(tmp_path))
+    export.write_csv(tmp_path / operate.GOLD_CORRECTIONS, operate.GOLD_CORRECTION_COLUMNS,
+                     [fix | {"decided_by": ""}])
+    with pytest.raises(SystemExit, match="decided_by"):
+        operate.gold_corrections(tmp_path)
+    assert operate.gold_corrections(tmp_path / "none") == {}

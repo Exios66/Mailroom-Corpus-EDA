@@ -437,6 +437,48 @@ def gate_agreement(out_dir: Path, signed_off: bool,
             "how": "read sample.csv, then re-run with --signed-off"}
 
 
+#: Expert gold the user overruled after reading the email (``<out>/gold-corrections.csv``). It
+#: lives beside the labels (gitignored, private HF backup) because it is ground truth; scoring
+#: applies it, and the ingest writes it to the GT config with its provenance, never to default.
+GOLD_CORRECTIONS = "gold-corrections.csv"
+GOLD_CORRECTION_COLUMNS = ("document_id", "filename", "field", "gold_was", "gold_now", "reason",
+                           "decided_by", "decided_utc")
+
+
+def gold_corrections(out: Path) -> dict[tuple[str, str], dict[str, str]]:
+    """``{(filename, field): correction}`` from ``<out>/gold-corrections.csv`` (empty if none)."""
+    path = out / GOLD_CORRECTIONS
+    if not path.exists():
+        return {}
+    found: dict[tuple[str, str], dict[str, str]] = {}
+    for c in export.read_csv(path):
+        if not (c.get("decided_by") and c.get("gold_now")):
+            raise SystemExit(f"{path}: every correction needs decided_by and gold_now ({c.get('filename')})")
+        found[(c["filename"], c["field"])] = c
+    return found
+
+
+def corrected_gold(rows: Sequence[Mapping[str, Any]],
+                   corrections: Mapping[tuple[str, str], Mapping[str, str]]) -> tuple[list[dict[str, Any]], int]:
+    """Rows with corrected ``gt_fields`` values, and how many changed. A correction whose
+    ``gold_was`` no longer matches the row is refused: the gold moved under it."""
+    out, n = [], 0
+    for row in rows:
+        fixes = {f: c for (fn, f), c in corrections.items() if fn == row["filename"]}
+        if not fixes:
+            out.append(dict(row))
+            continue
+        gt = dict(row["gt_fields"])
+        for f, c in fixes.items():
+            if str(gt.get(f) or "") != c["gold_was"]:
+                raise SystemExit(f"gold correction for {row['filename']} {f}: expected "
+                                 f"{c['gold_was']!r}, the row has {gt.get(f)!r}")
+            gt[f] = c["gold_now"]
+            n += 1
+        out.append({**row, "gt_fields": gt})
+    return out, n
+
+
 def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path, stage: Path,
                 signed_off: bool = False) -> dict[str, Any]:
     """Score one chunk arm's gate from its output directory (offline)."""
@@ -464,9 +506,10 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
         res["per_document"] = cuad_per_document(picked, export.read_journal(out_dir / "cuad-labels.jsonl"),
                                                 runner.cuad_vocab(rows))
     elif kind == "intent_kappa":
+        picked, fixed = corrected_gold(picked, gold_corrections(out))
         res = v94.score_intent_calibration(picked, export.read_journal(out_dir / "intent-labels.jsonl"))
         ok = res["documents"] == res["expected_documents"] and res["cohen_kappa"] >= gate["kappa"]
-        res = {"kind": kind, **res, "floors": gate, "passed": ok}
+        res = {"kind": kind, **res, "gold_corrections": fixed, "floors": gate, "passed": ok}
         res["per_document"] = intent_per_document(picked, export.read_journal(out_dir / "intent-labels.jsonl"))
     elif kind == "field_accuracy":
         res = gate_field_accuracy(rows, out_dir, gate["accuracy"])
