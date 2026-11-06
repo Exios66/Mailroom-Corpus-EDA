@@ -166,12 +166,19 @@ def _slug(name: str) -> str:
     return "".join(ch for ch in str(name).lower() if ch.isalnum())
 
 
+#: Display names OpenRouter reports for a served provider whose slug differs (2026-11-06:
+#: a Claude Haiku answer through ``google-vertex`` reported ``Google``).
+SERVED_ALIASES = {"google": "googlevertex", "googlevertex": "googlevertex", "amazonbedrock": "amazonbedrock",
+                  "bedrock": "amazonbedrock", "azureopenai": "azure"}
+
+
 def served_outside_route(route: Mapping[str, Any] | None, reasoning: str, served: Any) -> list[str]:
     """Served provider names (display names such as ``CoreWeave``) outside the route's ``only`` pin."""
     only = {_slug(p) for p in effective_route(route, reasoning).get("only") or []}
     if not only:
         return []
-    return sorted(str(p) for p in served if p and _slug(p) not in only)
+    return sorted(str(p) for p in served
+                  if p and _slug(p) not in only and SERVED_ALIASES.get(_slug(p)) not in only)
 
 
 def model_route(model: str) -> dict[str, Any]:

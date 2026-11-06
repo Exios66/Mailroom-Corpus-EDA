@@ -357,3 +357,11 @@ def test_legacy_row_adds_new_labels_and_keeps_the_rest():
     assert c["gt_fields"]["cuad_family"] == "license"
     e = v10.legacy_row(v10.derive_row(make_row("e1.txt", "correspondence", "email")))
     assert e["gt_fields"]["communication_type"] == "email"
+
+
+def test_json_obj_passes_empty_and_plain_strings_through():
+    """An empty legacy cell must not abort the build; leading whitespace still decodes."""
+    assert v10._json_obj("") == ""
+    assert v10._json_obj("plain") == "plain"
+    assert v10._json_obj('  {"a": 1}') == {"a": 1}
+    assert v10._json_obj("[1]") == [1]

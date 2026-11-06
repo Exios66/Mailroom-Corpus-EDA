@@ -265,30 +265,51 @@ def import_reusable(calls_path: Path, roots: Sequence[Path], rows: Sequence[Mapp
     chunk's own journal stays self-contained. Returns the number of records copied.
     """
     done = _done(calls_path, reasoning)
-    wanted: set[tuple[str, str, str, str]] = set()
+    wanted: dict[tuple[str, str, str, str], str | None] = {}  # key -> rendered input sha
     for r in rows:
         for v in _variants(task):
             req = tasks.build(task, r, v, set_name=set_name)
-            wanted |= {(req.document_id, m, v, req.prompt_sha256) for m in models}
+            ins = tasks.input_sha256(req.messages)
+            wanted |= {(req.document_id, m, v, req.prompt_sha256): ins for m in models}
         if task == "cuad":
             sha = tasks.build_cuad(r, repair_problems=["-"], prior_answer="").prompt_sha256
-            wanted |= {(str(r["document_id"]), m, "repair", sha) for m in models}
-    wanted -= done
+            wanted |= {(str(r["document_id"]), m, "repair", sha): None for m in models}
+    for key in done:
+        wanted.pop(key, None)
     if not wanted:
         return 0
     here = calls_path.resolve()
     sources = sorted({p.resolve() for root in roots for p in Path(root).rglob("calls.jsonl")} - {here})
     copied = 0
     for src in sources:
+        firsts: set[tuple[str, str]] = set()  # (document, model) first answers copied from src
         for c in export.read_journal(src):
             key = (c.get("document_id"), c.get("model"), c.get("variant", ""), c.get("prompt_sha256", ""))
-            if (key in wanted and not c.get("error") and c.get("reasoning") == reasoning
-                    and c.get("provider") == provider
-                    and c.get("temperature", 0) == providers.temperature(str(c.get("model")))):
-                export.append_journal(calls_path, {**c, "reused_from": str(src)})
-                wanted.discard(key)
-                copied += 1
+            if key not in wanted or not _reusable(c, reasoning, provider):
+                continue
+            if key[2] == "repair":
+                # a repair follows from its first answer and the document; reuse it only with
+                # the first answer it repaired
+                if (key[0], key[1]) not in firsts:
+                    continue
+            elif c.get("input_sha256") != wanted[key]:
+                continue  # answered on other text (or recorded before inputs were hashed)
+            else:
+                firsts.add((key[0], key[1]))
+            paid = c.get("reused_cost_usd", c.get("cost_usd"))
+            export.append_journal(calls_path, {**c, "reused_from": str(src), "cost_usd": 0, "reused_cost_usd": paid})
+            del wanted[key]
+            copied += 1
     return copied
+
+
+def _reusable(c: Mapping[str, Any], reasoning: str, provider: str) -> bool:
+    """Same configuration, no error, and served inside the model's current route pin."""
+    model = str(c.get("model"))
+    return (not c.get("error") and c.get("reasoning") == reasoning and c.get("provider") == provider
+            and c.get("temperature", 0) == providers.temperature(model)
+            and not providers.served_outside_route(providers.model_route(model), reasoning,
+                                                   {c.get("served_provider")}))
 
 
 def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[str],
@@ -331,6 +352,7 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
 
     def one(model: str, req: tasks.Request, rec: dict) -> providers.Completion | None:
         """Send one call inside the budget; journal it (with any billed error) and return it."""
+        rec = {**rec, "input_sha256": tasks.input_sha256(req.messages)}
         if stop.is_set():
             raise _Stop()
         ptoks = sum(spend.estimate_tokens(m["content"]) for m in req.messages)

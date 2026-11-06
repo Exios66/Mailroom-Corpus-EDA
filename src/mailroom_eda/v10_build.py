@@ -115,7 +115,7 @@ def remap_cuad_labels(labels: Mapping[str, Sequence[Mapping[str, Any]]], old: st
 
 def _json_obj(value: Any) -> Any:
     """Decode a JSON container string; pass anything else through."""
-    if isinstance(value, str) and value[:1] in "[{":
+    if isinstance(value, str) and value.lstrip()[:1] in ("[", "{"):
         return json.loads(value)
     return value
 

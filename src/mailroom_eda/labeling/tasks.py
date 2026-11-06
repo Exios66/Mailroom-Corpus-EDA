@@ -20,6 +20,7 @@ agreements show the opening plus the located sections each field needs.
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
@@ -206,6 +207,12 @@ def _task_fields(row: Mapping[str, Any], task: str) -> dict[str, dict[str, Any]]
                                                 or deterministic_value(row, k) is None))):
             out[k] = v
     return out
+
+
+def input_sha256(messages: Sequence[Mapping[str, str]]) -> str:
+    """Hash of the exact rendered messages a call sends. ``prompt_sha256`` covers the
+    templates and config only, so a changed document text needs this to stay unreused."""
+    return hashlib.sha256(json.dumps(list(messages), sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 def build_cuad(row: Mapping[str, Any], *, repair_problems: Sequence[str] = (),

@@ -68,7 +68,8 @@ L="env PYTHONPATH=src python -m mailroom_eda.labeling"
    instead of the tiny prompt (only the real-document probe shows whether a provider reasons:
    DeepSeek spent about 30 tokens on the tiny prompt and 336 to over 2,300 on a real email); a provider that reports 0 reasoning tokens at `low` belongs
    outside that level's `by_reasoning` pin in `models.yaml`. GLM-legal and MiniMax refuse
-   reasoning off (HTTP 400), so their failed off pings are expected; chunks 7 and 8 run at `low`.
+   reasoning off (HTTP 400); no chunk runs them at off. Add `--chunk <id>` (repeatable) to ping
+   only the routes those chunks use, so a deferred route that is not ready yet does not block them.
 
    Every line must say `PASS ... schema=strict`. A `json_object fallback` means that route
    stopped supporting strict schemas; stop and run `$L prices`.
@@ -102,7 +103,7 @@ have several arms (a bake-off); add `--arm N` to each command for those.
 
    | file | what to do with it |
    |---|---|
-   | `documents.csv` | one row per document: status, counts, models, tokens, cost |
+   | `documents.csv` | one row per document: status, counts, models, tokens (spend is in `calls.jsonl` and `run.json`, never in a published file) |
    | `fields.csv` | one row per (document, field): both models' values and evidence, the decision and why. On pilots, mark at least 30 accepted rows `correct` or `wrong` in `reviewer_verdict` |
    | `adjudication.csv` | only the rows a person must decide; fill `reviewer_verdict` (`a` or `b` to take that model's value, `value` with your own `reviewer_value`, `absent` when the document does not state it, `reject` to leave it unlabeled). `$L review` applies each verdict to `final_decision` and `final_value` in `fields.csv`; ingest reads only those two columns |
    | `sample.csv` | agreement chunks: 20 accepted rows to read before signing off |
@@ -148,7 +149,7 @@ calibration. A prompt change changes its sha, so earlier calibrations no longer 
 
 | kind | passes when |
 |---|---|
-| `cuad_f1` | micro-F1 ≥ 0.75 and precision ≥ 0.80 against the expert CUAD spans (`v9_4_revision.score_cuad_calibration`). For the GLM `low` arm, adopt it only if its micro-F1 beats the `off` arm by 0.02 or more |
+| `cuad_f1` | micro-F1 ≥ 0.75 and precision ≥ 0.80 against the expert CUAD spans (`v9_4_revision.score_cuad_calibration`). Bake-off arms are compared by paired bootstrap intervals (`docs/plans/2026-11-06-labeling-settings-optimization.md`), not by raw F1 gaps |
 | `intent_kappa` | Cohen's κ ≥ 0.75 against the manual intent labels (`v9_4_revision.score_intent_calibration`) |
 | `field_accuracy` | per-field accuracy ≥ 0.85 against values derived from the expert CUAD spans |
 | `consideration_accuracy` | each model answers every one of the 95 mergers with an expert MAUD Type of Consideration answer, and each reaches ≥ 0.95 accuracy against it; `gate.json` has a confusion table per model |
@@ -185,7 +186,7 @@ The v10 build refuses labels whose configuration has no passing calibration or p
   is a conservative equivalent of the GPU-hour cost (at least 1M prompt and 0.25M output
   tokens per GPU-hour), so the cap still bounds spend; `costs.md` therefore shows a
   ceiling for it, not an estimate.
-- Spend: the chunk caps add up to $28.90 and the projection is about $14.70 (`costs.md`).
+- Spend: the chunk caps add up to $29.76 and the projection is about $20.36 (`costs.md`).
 
 ## Sign-off log
 

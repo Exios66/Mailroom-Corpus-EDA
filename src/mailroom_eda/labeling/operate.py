@@ -204,15 +204,18 @@ def ping_problems(log: Sequence[Mapping[str, Any]], routes: Sequence[tuple[str, 
     now = now or datetime.now(timezone.utc)
     out = []
     for model, reasoning in routes:
+        # per-provider and real-document probes answer other questions (which provider
+        # reasons); only the plain route ping decides whether the route works
         mine = sorted((r for r in log if r.get("model") == model and str(r.get("reasoning")) == reasoning
-                       and not r.get("pinned")),
+                       and not r.get("pinned") and not r.get("probe")),
                       key=lambda r: str(r.get("utc") or ""))
         name = f"{model} reasoning={reasoning}"
         if not mine:
             out.append(f"{name}: never pinged")
             continue
         last = mine[-1]
-        if last.get("error") or last.get("response") != {"ok": True, "word": "mailroom"}:
+        if last.get("error") or last.get("response") != {"ok": True, "word": "mailroom"} \
+                or last.get("used_schema") is not True:  # a json_object fallback is not the strict schema
             out.append(f"{name}: latest ping failed: {str(last.get('error') or last.get('response'))[:160]}")
             continue
         age = (now - datetime.fromisoformat(str(last["utc"]).replace("Z", "+00:00"))).total_seconds() / 3600
@@ -476,6 +479,8 @@ def pin_violations(calls: Sequence[Mapping[str, Any]], reasoning: str) -> list[s
 
 
 UNREASONED_MAX_SHARE = 0.5
+#: and at least this many zero-token answers: one or two easy documents are not a pattern
+UNREASONED_MIN_ZEROS = 3
 
 
 def unreasoned_providers(calls: Sequence[Mapping[str, Any]], reasoning: str) -> dict[str, str]:
@@ -493,7 +498,7 @@ def unreasoned_providers(calls: Sequence[Mapping[str, Any]], reasoning: str) -> 
         tally = seen.setdefault(key, [0, 0])
         tally[0] += not c.get("reasoning_tokens")
         tally[1] += 1
-    return {k: f"{z}/{n}" for k, (z, n) in sorted(seen.items()) if z > UNREASONED_MAX_SHARE * n}
+    return {k: f"{z}/{n}" for k, (z, n) in sorted(seen.items()) if z > UNREASONED_MAX_SHARE * n and z >= UNREASONED_MIN_ZEROS}
 
 
 def cmd_gate(args: argparse.Namespace) -> int:
@@ -745,9 +750,10 @@ def cmd_ping(args: argparse.Namespace, chat=providers.chat, key_status=providers
     backend = providers.Backend.from_env("openrouter")
     spend.check_key_headroom(key_status(backend), args.cap_usd)
     budget = spend.Budget(args.cap_usd, 300)
+    picked = set(getattr(args, "chunks", None) or [])
     used = {(m, str(c["reasoning"])) for c in campaign(args.campaign)["chunks"] for m in c["models"]
+            if not picked or str(c["id"]) in picked
             if not str(m).startswith("winner_of_") and not str(c["reasoning"]).startswith("winner_of_")}
-    used |= {("z-ai/glm-5.3-flashx-legal", "off"), ("deepseek/deepseek-v4.1-flash", "low")}
     msgs = [{"role": "system", "content": "Reply with JSON only."},
             {"role": "user", "content": 'Return {"ok": true, "word": "mailroom"}.'}]
     schema: Mapping[str, Any] = PING_SCHEMA
@@ -952,5 +958,7 @@ def add_commands(sub: Any) -> None:
                    help="also ping each pinned provider alone and log its reasoning tokens")
     p.add_argument("--real-doc", action="store_true",
                    help="ping with one real intent-calibration document instead of the tiny prompt")
+    p.add_argument("--chunk", action="append", dest="chunks", default=None,
+                   help="ping only the routes these chunks use (repeatable; default: every chunk)")
     p.set_defaults(operate=cmd_ping)
 

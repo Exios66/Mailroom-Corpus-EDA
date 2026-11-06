@@ -6,6 +6,8 @@ import re
 import subprocess
 import sys
 import urllib.error
+from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -511,7 +513,7 @@ def _fake_chat(answers):
     def chat(backend, model, messages, schema, *, reasoning, max_tokens):
         """Fake chat call."""
         content = json.dumps(answers[model])
-        return providers.Completion(content, answers[model], model, "P", 100, 50, 0, 0.0001, "stop", True)
+        return providers.Completion(content, answers[model], model, "CoreWeave", 100, 50, 0, 0.0001, "stop", True)
     return chat
 
 
@@ -1643,3 +1645,104 @@ def test_cuad_holdout_is_disjoint_from_calibration_and_stable():
     assert [r["filename"] for r in hold] == [r["filename"] for r in runner.select(rows, "cuad", "holdout")]
     assert all(r["source_corpus"] == v94.GOLDEN_CUAD_SOURCE
                and (r["gt_fields"].get("context_window_band") or "") != ">32k" for r in hold)
+
+
+# --- PR 43 review fixes -------------------------------------------------------------------
+
+def _ping(model, reasoning, utc, **extra):
+    return {"model": model, "reasoning": reasoning, "utc": utc, "used_schema": True,
+            "response": {"ok": True, "word": "mailroom"}, **extra}
+
+
+def test_ping_problems_ignore_real_doc_probes_and_require_strict_schema():
+    """A later --real-doc probe answers a different question and never decides route health;
+    a json_object fallback is not a passing ping."""
+    now = datetime(2026, 11, 6, 12, tzinfo=timezone.utc)
+    route = [("m", "low")]
+    log = [_ping("m", "low", "2026-11-06T10:00:00Z"),
+           {**_ping("m", "low", "2026-11-06T11:00:00Z"), "probe": "real_doc:e1", "response": {"intent": "update"}}]
+    assert operate.ping_problems(log, route, now=now) == []
+    fallback = [_ping("m", "low", "2026-11-06T10:00:00Z", used_schema=False)]
+    assert "latest ping failed" in operate.ping_problems(fallback, route, now=now)[0]
+
+
+def test_ping_targets_only_the_chosen_chunks(tmp_path, monkeypatch):
+    """--chunk limits the ping to the routes those chunks use; no route is forced in."""
+    import argparse
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.setattr(operate, "campaign", lambda name: {"chunks": [
+        {"id": "3", "models": ["deepseek/deepseek-v4.1-flash"], "reasoning": "low"},
+        {"id": "5a", "models": ["z-ai/glm-5.3-flashx-legal"], "reasoning": "off"}]})
+    sent = []
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens, route=None):
+        sent.append((model, reasoning))
+        return providers.Completion('{"ok": true, "word": "mailroom"}', {"ok": True, "word": "mailroom"},
+                                    model, "CoreWeave", 20, 5, 9, 0.00001, "stop", True)
+
+    args = argparse.Namespace(campaign="v10", initials="JB", cap_usd=0.05, out=tmp_path, chunks=["3"])
+    assert operate.cmd_ping(args, chat=chat, key_status=lambda b: {"limit_remaining": 10}) == 0
+    assert sent == [("deepseek/deepseek-v4.1-flash", "low")]
+
+
+def test_served_outside_route_accepts_provider_display_aliases():
+    """OpenRouter reports google-vertex as "Google" and amazon-bedrock as "Amazon Bedrock"."""
+    route = {"only": ["anthropic", "google-vertex"]}
+    assert providers.served_outside_route(route, "off", {"Google", "Anthropic"}) == []
+    assert providers.served_outside_route(route, "off", {"Azure"}) == ["Azure"]
+
+
+def _intent_journal(tmp_path, rows, reasoning="low"):
+    ans = {"intent": "update", "confidence": 0.9, "evidence": "x"}
+    common = dict(task="intent", models=["deepseek/deepseek-v4.1-flash"],
+                  backend=providers.Backend("openrouter", "u", "k"), budget=spend.Budget(1.0, 3600))
+    runner.run_chunk([rows[2]], reasoning=reasoning, out_dir=tmp_path / "smoke" / "a",
+                     chat=_fake_chat({"deepseek/deepseek-v4.1-flash": ans}), **common)
+    return common, ans
+
+
+def _rewrite(path, **changes):
+    recs = [{**c, **changes} for c in export.read_journal(path)]
+    path.unlink()
+    for c in recs:
+        export.append_journal(path, c)
+
+
+def test_reuse_skips_answers_served_outside_the_current_route(tmp_path, rows):
+    """A low-reasoning answer DeepInfra served before the low pin dropped it is bought again."""
+    common, ans = _intent_journal(tmp_path, rows)
+    _rewrite(tmp_path / "smoke" / "a" / "calls.jsonl", served_provider="DeepInfra")
+    res = runner.run_chunk([rows[2]], reasoning="low", out_dir=tmp_path / "3", reuse_from=[tmp_path],
+                           chat=_fake_chat({"deepseek/deepseek-v4.1-flash": ans}), **common)
+    assert res.get("reused", 0) == 0 and res["calls"] == 2
+
+
+def test_reuse_requires_the_same_rendered_input(tmp_path, rows):
+    """The prompt sha hashes templates, not the document: an answer to other text is not reused."""
+    common, ans = _intent_journal(tmp_path, rows, reasoning="off")
+    edited = {**rows[2], "doc_text": rows[2]["doc_text"] + "\nP.S. one more line."}
+    res = runner.run_chunk([edited], reasoning="off", out_dir=tmp_path / "3", reuse_from=[tmp_path],
+                           chat=_fake_chat({"deepseek/deepseek-v4.1-flash": ans}), **common)
+    assert res.get("reused", 0) == 0 and res["calls"] == 2
+
+
+def test_reused_answers_do_not_count_as_this_chunks_spend(tmp_path, rows):
+    """A reused answer keeps what it cost in reused_cost_usd; this chunk spent nothing on it."""
+    common, _ = _intent_journal(tmp_path, rows, reasoning="off")
+
+    def no_call(*a, **k):
+        raise AssertionError("a reusable answer was bought again")
+
+    runner.run_chunk([rows[2]], reasoning="off", out_dir=tmp_path / "3", reuse_from=[tmp_path], chat=no_call, **common)
+    recs = export.read_journal(tmp_path / "3" / "calls.jsonl")
+    assert recs and all(r["cost_usd"] == 0 and r["reused_cost_usd"] > 0 for r in recs)
+    runner.run_chunk([rows[2]], reasoning="off", out_dir=tmp_path / "4", reuse_from=[tmp_path / "3"],
+                     chat=no_call, **common)
+    again = export.read_journal(tmp_path / "4" / "calls.jsonl")
+    assert again and all(r["cost_usd"] == 0 and r["reused_cost_usd"] == recs[0]["reused_cost_usd"] for r in again)
+
+
+def test_unreasoned_providers_need_several_zero_token_answers():
+    """One zero-token answer from a fallback provider is not evidence it ignores the level."""
+    one = [{"model": "m", "served_provider": "AtlasCloud", "reasoning_tokens": 0}]
+    assert operate.unreasoned_providers(one, "low") == {}
