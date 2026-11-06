@@ -71,10 +71,11 @@ def _all_headings(text: str) -> list[Heading]:
     return sorted(found.values())
 
 
-def headings(text: str) -> list[Heading]:
+def headings(text: str, every: Sequence[Heading] | None = None) -> list[Heading]:
     """The operative headings: per section number, the earliest occurrence followed by more
-    than ``MIN_SECTION_CHARS`` of text before the next heading."""
-    every = _all_headings(text)
+    than ``MIN_SECTION_CHARS`` of text before the next heading. ``every`` is
+    ``_all_headings(text)`` when the caller already has it."""
+    every = _all_headings(text) if every is None else every
     ends = [h.start for h in every[1:]] + [len(text)]
     kept: dict[str, Heading] = {}
     for h, end in zip(every, ends):
@@ -83,9 +84,11 @@ def headings(text: str) -> list[Heading]:
     return sorted(kept.values())
 
 
-def section_text(text: str, heading: Heading, cap: int = SECTION_CAP) -> str:
+def section_text(text: str, heading: Heading, cap: int = SECTION_CAP,
+                 every: Sequence[Heading] | None = None) -> str:
     """From the heading to the next heading (of any level), at most ``cap`` characters."""
-    nxt = next((h.start for h in _all_headings(text) if h.start > heading.start), len(text))
+    every = _all_headings(text) if every is None else every
+    nxt = next((h.start for h in every if h.start > heading.start), len(text))
     return text[heading.start:min(nxt, heading.start + cap)]
 
 
@@ -134,7 +137,8 @@ def _find(text: str, heads: Sequence[Heading], need: Need) -> Heading | None:
 
 def locate(text: str, needs: Sequence[Need]) -> list[tuple[str, str]]:
     """(label, excerpt) for each need found: its section whole (capped) and its definitions."""
-    heads = headings(text)
+    every = _all_headings(text)  # one scan: the text does not change between needs
+    heads = headings(text, every)
     out = []
     for need in needs:
         m = _inline(text, need)
@@ -143,7 +147,7 @@ def locate(text: str, needs: Sequence[Need]) -> list[tuple[str, str]]:
             out.append((need.label, "\n".join(parts)))
             continue
         h = _find(text, heads, need)
-        parts = [section_text(text, h)] if h else []
+        parts = [section_text(text, h, every=every)] if h else []
         if m and not (h and h.start <= m.start() and m.end() <= h.start + len(parts[0])):
             # the defining clause itself, when the section excerpt does not reach it
             parts.append("[clause] " + text[max(0, m.start() - INLINE_BEFORE):m.end() + INLINE_AFTER])

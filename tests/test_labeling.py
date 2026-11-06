@@ -837,6 +837,18 @@ def test_campaign_needs_order_and_output_dirs():
     assert sum(c["cap_usd"] for c in camp["chunks"]) <= 30.0
 
 
+def test_every_cap_covers_its_projection_with_headroom():
+    """A cap below 1.4x its projection stops the chunk before its last calls (the cap check
+    reserves the worst case per call)."""
+    stage = runner.DEFAULT_STAGE / "ground_truth_hardened.jsonl"
+    if not stage.exists():
+        pytest.skip("v9.4 stage not built (data/ is gitignored)")
+    costs = runner.campaign_costs(runner.load_stage(runner.DEFAULT_STAGE), "v10")
+    low = [(c["id"], c["projected_usd"], c["cap_usd"]) for c in costs["chunks"]
+           if c["cap_usd"] < 1.4 * c["projected_usd"] - 1e-9]
+    assert not low, low
+
+
 def test_winner_placeholders_resolve_from_approvals(tmp_path, monkeypatch):
     """Winner placeholders resolve from approvals."""
     path = tmp_path / "approved.yaml"
@@ -1792,20 +1804,17 @@ def _labels_tree(root):
     return d
 
 
-def test_checkpoint_strips_spend_but_keeps_label_names(tmp_path):
-    """Spend never leaves the local logs; a CUAD category named Price Restrictions stays."""
+def test_checkpoint_backs_up_files_byte_for_byte_with_spend(tmp_path):
+    """The private backup is part of the logs: a restore must bring back the spending records
+    (2026-11-06: a stripped backup lost them), and the card declares no blind config."""
     from mailroom_eda.labeling import checkpoint
-    _labels_tree(tmp_path / "labels")
+    d = _labels_tree(tmp_path / "labels")
     staged = checkpoint.stage(tmp_path / "labels", None, tmp_path / "out")
-    calls = json.loads(staged["labels/1.3_cuad-calibration/calls.jsonl"].read_text())
-    assert "cost_usd" not in calls and "reused_cost_usd" not in calls and calls["input_sha256"] == "ab"
-    labels = json.loads(staged["labels/1.3_cuad-calibration/cuad-labels.jsonl"].read_text())
-    assert "Price Restrictions" in labels["labels"]
-    runs = json.loads(staged["labels/1.3_cuad-calibration/runs.jsonl"].read_text())
-    assert runs == {"projection": {}, "result": {"calls": 3}}
-    assert staged["labels/1.3_cuad-calibration/documents.csv"].read_text().splitlines()[0] == '"document_id","status"'
+    for name in ("calls.jsonl", "cuad-labels.jsonl", "documents.csv", "runs.jsonl"):
+        assert staged[f"labels/1.3_cuad-calibration/{name}"].read_bytes() == (d / name).read_bytes()
+    assert '"cost_usd": 0.01' in staged["labels/1.3_cuad-calibration/calls.jsonl"].read_text()
     card = staged["README.md"].read_text()
-    assert "config_name: labels" in card and "default" in card  # declares only the GT-side config
+    assert "config_name: labels" in card and "config_name: default" not in card
 
 
 def test_checkpoint_uploads_privately_and_verifies(tmp_path):
@@ -1986,6 +1995,232 @@ def test_one_model_may_run_a_calibration_set_but_not_a_labeling_set():
                        dry_run=True)
 
 
+# ---------------------------------------------------------------- bake-off ranking (Task 5)
+
+def _cuad_docs(n, tp, fp, fn, start=0):
+    """n per-document CUAD records with the same counts."""
+    return [{"document_id": f"DOC-{i:04d}", "tp": tp, "fp": fp, "fn": fn} for i in range(start, start + n)]
+
+
+def _arm(model, docs, cost, reasoning="off", **gate):
+    return {"gate": {"models": [model], "reasoning": reasoning, "passed": True, "documents": len(docs),
+                     "expected_documents": len(docs), "answer_cost_usd": cost, "spent_usd": cost, **gate},
+            "docs": docs}
+
+
+def test_paired_bootstrap_is_deterministic_and_brackets_the_point():
+    a = _cuad_docs(20, 8, 2, 2) + _cuad_docs(20, 6, 3, 3, start=20)
+    b = _cuad_docs(20, 9, 1, 1) + _cuad_docs(20, 6, 3, 3, start=20)
+    one = operate.paired_bootstrap(a, b, "micro_f1")
+    assert one == operate.paired_bootstrap(a, b, "micro_f1")
+    assert one[1] <= one[0] <= one[2] and one[0] > 0
+
+
+def test_bakeoff_keeps_cheaper_deepseek_unless_costlier_is_significantly_better():
+    import random
+    rng = random.Random(1)
+    base = [{"document_id": f"DOC-{i:04d}", "tp": rng.randint(5, 10), "fp": rng.randint(0, 3), "fn": rng.randint(0, 3)}
+            for i in range(40)]
+    # a small mixed gain (some documents better, some worse): not significant
+    noisy = [dict(d, fp=max(0, d["fp"] + (-1 if i % 2 else 1) * (i % 3 == 0)), tp=d["tp"] + (i % 7 == 0))
+             for i, d in enumerate(base)]
+    cheap = _arm("deepseek/deepseek-v4.1-flash", base, 0.16)
+    pricey = _arm("deepseek/deepseek-v4.1-flash-1017", noisy, 0.31)
+    rank = operate.bakeoff_ranking([cheap, pricey, _arm("openai/gpt-6-luna-pro", base, 0.12)], "micro_f1")
+    assert rank["primary"]["gate"]["models"] == ["deepseek/deepseek-v4.1-flash"]
+    # a gain on every document is significant: the costlier snapshot wins
+    better = _arm("deepseek/deepseek-v4.1-flash-1017", [dict(d, fp=0, fn=0) for d in base], 0.31)
+    rank = operate.bakeoff_ranking([cheap, better, _arm("openai/gpt-6-luna-pro", base, 0.12)], "micro_f1")
+    assert rank["primary"]["gate"]["models"] == ["deepseek/deepseek-v4.1-flash-1017"]
+
+
+def test_bakeoff_second_opinion_must_be_non_inferior_and_another_vendor():
+    base = _cuad_docs(40, 8, 1, 1)
+    worse = _cuad_docs(40, 6, 3, 3)  # about 0.2 F1 worse on every document
+    arms = [_arm("deepseek/deepseek-v4.1-flash", base, 0.16),
+            _arm("deepseek/deepseek-v4.1-flash-1017", base, 0.31),
+            _arm("anthropic/claude-haiku-5.5", worse, 0.05),
+            _arm("openai/gpt-6-luna-pro", base, 0.12),
+            _arm("minimax/minimax-m3.1-flash", base, 0.19, reasoning="low")]
+    rank = operate.bakeoff_ranking(arms, "micro_f1")
+    assert rank["second"]["gate"]["models"] == ["openai/gpt-6-luna-pro"]  # cheapest non-inferior
+    row = next(r for r in rank["table"] if r["model"] == "anthropic/claude-haiku-5.5")
+    assert row["excluded"] == "clearly worse"
+    assert all(r["model"] != "deepseek/deepseek-v4.1-flash-1017" or not r["second"] for r in rank["table"])
+
+
+def test_bakeoff_ignores_incomplete_and_unpinned_arms():
+    base = _cuad_docs(40, 7, 2, 2)
+    short = _arm("deepseek/deepseek-v4.1-flash-1017", _cuad_docs(30, 10, 0, 0), 0.01)
+    short["gate"]["expected_documents"] = 40
+    off_pin = _arm("openai/gpt-6-luna-pro", _cuad_docs(40, 10, 0, 0), 0.01, served_outside_pin=["Azure"])
+    rank = operate.bakeoff_ranking([_arm("deepseek/deepseek-v4.1-flash", base, 0.16), short, off_pin,
+                                    _arm("anthropic/claude-haiku-5.5", base, 0.12)], "micro_f1")
+    assert rank["primary"]["gate"]["models"] == ["deepseek/deepseek-v4.1-flash"]
+    reasons = {r["model"]: r["eligible"] for r in rank["table"]}
+    assert reasons["deepseek/deepseek-v4.1-flash-1017"].startswith("incomplete")
+    assert reasons["openai/gpt-6-luna-pro"].startswith("served outside pin")
+    assert rank["second"]["gate"]["models"] == ["anthropic/claude-haiku-5.5"]
+
+
+def test_bakeoff_has_no_second_when_none_is_non_inferior(tmp_path, monkeypatch, capsys):
+    import argparse
+    base = _cuad_docs(40, 8, 1, 1)
+    arms = [_arm("deepseek/deepseek-v4.1-flash", base, 0.16), _arm("openai/gpt-6-luna-pro", _cuad_docs(40, 5, 4, 4), 0.12)]
+    rank = operate.bakeoff_ranking(arms, "micro_f1")
+    assert rank["second"] is None
+    monkeypatch.setattr(operate, "bakeoff_arms", lambda name, chunk_id, out: (arms, "micro_f1"))
+    args = argparse.Namespace(campaign="v10", id="1", out=tmp_path, margin=0.05)
+    assert operate.cmd_bakeoff(args) == 1
+    saved = json.loads((tmp_path / "1.bakeoff.json").read_text())
+    assert saved["second"] is None and saved["primary"]["model"] == "deepseek/deepseek-v4.1-flash"
+
+
+def test_intent_bootstrap_uses_kappa():
+    gold = ["notice", "request", "update", "other"] * 24
+    a = [{"document_id": f"D{i}", "gold": g, "pred": g if i % 5 else "other"} for i, g in enumerate(gold)]
+    b = [{"document_id": f"D{i}", "gold": g, "pred": g} for i, g in enumerate(gold)]
+    point, lo, hi = operate.paired_bootstrap(a, b, "cohen_kappa")
+    assert lo > 0 and point > 0
+
+
+def test_approving_a_bakeoff_arm_follows_the_bakeoff_pick(tmp_path):
+    """The approved arm becomes winner_of_<id>: it must be the arm the bake-off picked."""
+    entry = {"id": "1", "task": "cuad"}
+    res = {"models": ["openai/gpt-6-luna-pro"], "reasoning": "off"}
+    with pytest.raises(SystemExit, match="labeling bakeoff 1"):
+        operate.bakeoff_guard("v10", entry, res, tmp_path)
+    (tmp_path / "1.bakeoff.json").write_text(json.dumps(
+        {"primary": {"model": "deepseek/deepseek-v4.1-flash", "reasoning": "off", "arm": 3}}))
+    with pytest.raises(SystemExit, match="bake-off picked deepseek"):
+        operate.bakeoff_guard("v10", entry, res, tmp_path)
+    operate.bakeoff_guard("v10", {"id": "1h"}, {"models": ["deepseek/deepseek-v4.1-flash"], "reasoning": "off"},
+                          tmp_path)  # the holdout follows chunk 1's pick
+    operate.bakeoff_guard("v10", entry, res, tmp_path, override=True)
+    operate.bakeoff_guard("v10", {"id": "4"}, res, tmp_path)  # one arm: not a bake-off
+
+
+# ---------------------------------------------------------------- inspect report (Task 6)
+
+def test_inspect_report_shows_gold_answers_and_quote_context():
+    """Disagreements come first; both answers, the gold, the quote in context, and an
+    unlocatable quote marked NOT FOUND."""
+    agree = _row("correspondence", None, "Please pay invoice 7 by Friday or we will sue.",
+                 gt={"intent": "payment_demand"}, fn="a.txt")
+    split = _row("correspondence", None, "The board meeting moved to Tuesday at noon.",
+                 gt={"intent": "update"}, fn="b.txt")
+    recs = [
+        {"document_id": tasks._ids(agree)[0], "filename": "a.txt", "model": "m",
+         "pass_a": {"intent": "payment_demand", "confidence": 0.9, "evidence": "pay invoice 7"},
+         "pass_b": {"intent": "payment_demand", "confidence": 0.9, "evidence": "pay invoice 7"}},
+        {"document_id": tasks._ids(split)[0], "filename": "b.txt", "model": "m",
+         "pass_a": {"intent": "meeting_invite", "confidence": 0.6, "evidence": "board meeting moved"},
+         "pass_b": {"intent": "update", "confidence": 0.7, "evidence": "this sentence is not in the email"}}]
+    calls = [{"document_id": tasks._ids(split)[0], "served_provider": "CoreWeave", "variant": "a"}]
+    md = operate.inspect_report([agree, split], recs, "intent", n=2, calls=calls)
+    first, second = md.index(tasks._ids(split)[0]), md.index(tasks._ids(agree)[0])
+    assert first < second  # the disagreement is read first
+    assert "meeting_invite" in md and "gold: `update`" in md and "CoreWeave" in md
+    assert "The **board meeting moved** to Tuesday at noon" in md
+    assert "NOT FOUND" in md
+
+
+def test_skipped_arm_neither_runs_nor_costs_nor_ranks(tmp_path):
+    """A bake-off arm marked skip: keeps its arm number (output directories stay stable),
+    refuses to run, projects $0 and ranks as ineligible."""
+    import argparse
+    camp = campaign("v10")
+    skipped = [(c, i) for i, c in enumerate((c for c in camp["chunks"] if str(c["id"]) == "3"), 1) if c.get("skip")]
+    assert [c["models"][0] for c, _ in skipped] == ["deepseek/deepseek-v4.1-flash", "openai/gpt-6-luna-pro"]
+    entry, arm = skipped[0]
+    args = argparse.Namespace(campaign="v10", id="3", arm=arm, dry_run=True, ack_requires=False,
+                              provider="openrouter", model_map=[], stage=tmp_path, initials="JB",
+                              cap_usd=None, out=tmp_path, workers=1)
+    with pytest.raises(SystemExit, match="skipped"):
+        operate.cmd_chunk(args)
+    arms, _ = operate.bakeoff_arms("v10", "3", tmp_path)
+    assert operate._ineligible(arms[arm - 1]).startswith("skipped")
+
+
+def test_full_text_lasts_one_invocation(monkeypatch):
+    """`--full-text` must not leak into a later in-process run, even one that raised."""
+    seen = []
+
+    def fake_run(args, full_text):
+        seen.append(set(tasks.FULL_TEXT_TASKS))
+        if args.dry_run:
+            raise RuntimeError("boom")
+        return 0
+
+    monkeypatch.setattr(runner, "_run", fake_run)
+    argv = ["run", "--task", "merger_entities", "--set", "pilot", "--provider", "openrouter",
+            "--model", "deepseek/deepseek-v4.1-flash", "--full-text"]
+    assert runner.main(argv) == 0
+    with pytest.raises(RuntimeError):
+        runner.main(argv + ["--dry-run"])
+    assert seen == [{"merger_entities"}, {"merger_entities"}] and tasks.FULL_TEXT_TASKS == set()
+
+
+@pytest.mark.parametrize("cap", [9_000, 12_345, 20_000])
+def test_located_window_never_exceeds_its_cap(monkeypatch, cap):
+    """Separators and the signature-page marker count against the cap too."""
+    from mailroom_eda.labeling import sections
+    monkeypatch.setattr(sections, "locate", lambda text, needs: [(f"n{i}", "x" * 2_999) for i in range(12)])
+    text = "y" * 200_000
+    window, _ = tasks._located_window(text, (), 2_000, cap, 3_000)
+    assert len(window) <= cap and window.endswith(text[-3_000:])
+    window, _ = tasks._located_window(text, (), 2_000, cap, 0)
+    assert len(window) <= cap
+
+
+def test_locate_scans_the_headings_once(monkeypatch):
+    from mailroom_eda.labeling import sections
+    calls = []
+    real = sections._all_headings
+    monkeypatch.setattr(sections, "_all_headings", lambda text: calls.append(1) or real(text))
+    sections.locate(AGREEMENT + FILL * 50, sections.MERGER_NEEDS)
+    assert len(calls) == 1
+
+
+def test_merger_ab_diff_reports_missing_documents_apart(tmp_path, monkeypatch):
+    """A document one arm never answered is listed as missing, never counted a difference."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "merger_window_ab", Path(__file__).resolve().parents[1] / "scripts/labeling/merger_window_ab.py")
+    ab = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ab)
+    monkeypatch.setattr(ab, "ROOT", tmp_path)
+    cols = ["document_id", "field", "model_a_status", "model_a_value", "model_a_evidence"]
+    loc = [{"document_id": "D1", "field": "f", "model_a_status": "present", "model_a_value": "a",
+            "model_a_evidence": "a"}]
+    full = loc + [{"document_id": "D2", "field": "f", "model_a_status": "present", "model_a_value": "b",
+                   "model_a_evidence": "b"}]
+    for d, rows in (("merger_entities-pilot", loc), ("merger_entities-pilot-fulltext", full)):
+        (tmp_path / d).mkdir()
+        export.write_csv(tmp_path / d / "fields.csv", cols, rows)
+    res = ab.entities_diff()
+    assert res["fields_differ"] == 0 and res["agreements_with_a_full_only_value"] == 0
+    assert res["documents_missing_from"] == {"located": ["D2"], "full": []}
+
+
+def test_gold_corrections_apply_and_refuse_a_moved_gold(tmp_path):
+    """Accepted corrections replace the gold the gate scores against; one whose gold_was no
+    longer matches the row, or that names no decider, is refused."""
+    row = {"filename": "a/1.", "gt_fields": {"intent": "update"}}
+    fix = {"document_id": "D", "filename": "a/1.", "field": "intent", "gold_was": "update",
+           "gold_now": "notice", "reason": "r", "decided_by": "user", "decided_utc": "t"}
+    export.write_csv(tmp_path / operate.GOLD_CORRECTIONS, operate.GOLD_CORRECTION_COLUMNS, [fix])
+    fixed, n = operate.corrected_gold([row, {"filename": "b/2.", "gt_fields": {"intent": "other"}}],
+                                      operate.gold_corrections(tmp_path))
+    assert n == 1 and fixed[0]["gt_fields"]["intent"] == "notice" and row["gt_fields"]["intent"] == "update"
+    with pytest.raises(SystemExit, match="expected 'update'"):
+        operate.corrected_gold([{"filename": "a/1.", "gt_fields": {"intent": "request"}}],
+                               operate.gold_corrections(tmp_path))
+    export.write_csv(tmp_path / operate.GOLD_CORRECTIONS, operate.GOLD_CORRECTION_COLUMNS,
+                     [fix | {"decided_by": ""}])
+    with pytest.raises(SystemExit, match="decided_by"):
+        operate.gold_corrections(tmp_path)
+    assert operate.gold_corrections(tmp_path / "none") == {}
 # ---------------------------------------------------------------- preflight: HF write, restore, requires, Modal
 
 class _WhoamiHub(_FakeHub):
@@ -2344,3 +2579,13 @@ def test_interim_overlay_is_pinned_in_the_campaign():
     """campaign.yaml pins the overlay manifest the cross-check was written against."""
     pin = campaign("v10")["interim_overlay"]
     assert len(pin["manifest_sha256"]) == 64 and pin["sandbox_commit"]
+
+
+def test_sweep_plan_leaves_out_skipped_arms_but_keeps_their_numbers():
+    """Chunk 3's ``skip:`` arms are not planned (no spend, no refusal mid-sweep); the
+    others keep the arm numbers their output folders use."""
+    plan, _ = operate.sweep_plan("v10", [], "3", start="3")
+    camp = [c for c in campaign("v10")["chunks"] if str(c["id"]) == "3"]
+    expected = [i for i, c in enumerate(camp, 1) if not c.get("skip")]
+    assert [arm for _, arm in plan] == expected and len(expected) < len(camp)
+    assert not any(c.get("skip") for c, _ in plan)
