@@ -479,6 +479,90 @@ def corrected_gold(rows: Sequence[Mapping[str, Any]],
     return out, n
 
 
+#: The intent a correspondence subtype (``expected_subclass``) points to. The subtypes came from
+#: older automatic labelers, so a conflict is a reason to read the email, not proof either side is
+#: right: it goes to adjudication, never written automatically. ``demand`` and ``attorney_demand``
+#: are left out (user, 2026-11-06): a demand is often for an action, not a payment. Subtypes not
+#: listed (email, memo, letter, demand) admit any intent.
+SUBTYPE_INTENT = {"press_release": "press_communication", "meeting_request": "meeting_invite",
+                  "notice": "notice"}
+RELABEL_COLUMNS = ("document_id", "filename", "split", "subtype", "subtype_intent", "existing",
+                   "existing_source", "primary_a", "primary_b", "second_a", "second_b", "decision",
+                   "new_intent", "reason", "evidence", "reviewer_decision", "reviewed_by", "reviewer_note")
+
+
+def relabel_decision(existing: str, subtype: str | None, answers: Sequence[str]) -> tuple[str, str, str]:
+    """(decision, new intent, reason) for one email from its four answers (two models, two
+    passes). Only a unanimous answer that fits the subtype is written; a subtype conflict is
+    read by a person (who may find the subtype wrong); ``keep`` leaves the existing label when
+    the answers split but one of them is it."""
+    implied = SUBTYPE_INTENT.get(subtype or "")
+    if len(answers) == 4 and len(set(answers)) == 1:
+        label = answers[0]
+        if implied and label != implied:
+            return "adjudicate", "", f"all four say {label}; subtype {subtype} implies {implied}"
+        return ("confirm" if label == existing else "change"), label, "unanimous"
+    if implied and existing != implied:
+        return "adjudicate", "", f"answers split; existing {existing} contradicts subtype {subtype}"
+    if existing not in answers:
+        return "adjudicate", "", "answers split and none keeps the existing label"
+    return "keep", existing, "answers split; existing label among them"
+
+
+def gate_intent_relabel(picked: Sequence[Mapping[str, Any]], out_dir: Path, models: Sequence[str],
+                        signed_off: bool) -> dict[str, Any]:
+    """Decide every email of a relabel chunk into ``decisions.csv`` (reviewer columns kept
+    across re-gates). Passes when both models answered both passes on every email, every
+    adjudicated email has a reviewer decision (an intent or ``keep``), and it is signed off."""
+    from ..intent_backfill import CANONICAL_INTENTS  # noqa: PLC0415
+
+    recs = {(r["document_id"], r["model"]): r for r in export.read_journal(out_dir / "intent-labels.jsonl")}
+    path = out_dir / "decisions.csv"
+    kept = {r["document_id"]: r for r in export.read_csv(path)} if path.exists() else {}
+    rows, missing = [], []
+    for row in picked:
+        doc_id, fn = tasks._ids(row)
+        got = [recs.get((doc_id, m)) for m in models]
+        if len(models) != 2 or not all(got):
+            missing.append(doc_id)
+            continue
+        answers = [str(g[p]["intent"] or "") for g in got for p in ("pass_a", "pass_b")]
+        gt = row["gt_fields"]
+        existing = str(gt.get("intent") or "")
+        decision, new, reason = relabel_decision(existing, row.get("expected_subclass"), answers)
+        if row.get("split") == "test" and decision == "change":
+            # the test split scores models later: labels written by these two models would
+            # favor models that read email like them, so a person decides every test change
+            decision, new, reason = "adjudicate", "", f"test split: models propose {new}; a person decides"
+        prev = kept.get(doc_id, {})
+        rows.append({"document_id": doc_id, "filename": fn, "split": row.get("split", ""),
+                     "subtype": row.get("expected_subclass") or "",
+                     "subtype_intent": SUBTYPE_INTENT.get(row.get("expected_subclass") or "", ""),
+                     "existing": existing, "existing_source": str(gt.get("intent_source") or ""),
+                     "primary_a": answers[0], "primary_b": answers[1], "second_a": answers[2],
+                     "second_b": answers[3], "decision": decision, "new_intent": new, "reason": reason,
+                     "evidence": str(got[0]["pass_a"].get("evidence") or ""),
+                     "reviewer_decision": prev.get("reviewer_decision", ""),
+                     "reviewed_by": prev.get("reviewed_by", ""), "reviewer_note": prev.get("reviewer_note", "")})
+    export.write_csv(path, RELABEL_COLUMNS, rows)
+    allowed = set(CANONICAL_INTENTS) | {"keep"}
+    open_items = [r["document_id"] for r in rows
+                  if r["decision"] == "adjudicate" and r["reviewer_decision"] not in allowed]
+    bad = [r["document_id"] for r in rows if r["reviewer_decision"] and r["reviewer_decision"] not in allowed]
+    # a test-split adjudication is decided by a person (initials), never by a model
+    unsigned_test = [r["document_id"] for r in rows if r["split"] == "test" and r["decision"] == "adjudicate"
+                     and not spend.INITIALS_RE.match(r["reviewed_by"] or "")]
+    mix = Counter(r["decision"] for r in rows)
+    ok = not missing and not open_items and not bad and not unsigned_test and signed_off
+    return {"kind": "intent_relabel", "documents": len(rows), "expected_documents": len(picked),
+            "decisions": dict(mix), "unanswered_documents": len(missing), "open_adjudications": len(open_items),
+            "invalid_reviewer_decisions": bad, "test_adjudications_without_initials": len(unsigned_test),
+            "decisions_csv": str(path), "signed_off": signed_off,
+            "passed": ok, "how": "decide each adjudicate row in decisions.csv (an intent or keep; test-split "
+                                 "rows need a person's initials in reviewed_by), read the changes, "
+                                 "then re-run with --signed-off"}
+
+
 def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path, stage: Path,
                 signed_off: bool = False) -> dict[str, Any]:
     """Score one chunk arm's gate from its output directory (offline)."""
@@ -511,6 +595,8 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
         ok = res["documents"] == res["expected_documents"] and res["cohen_kappa"] >= gate["kappa"]
         res = {"kind": kind, **res, "gold_corrections": fixed, "floors": gate, "passed": ok}
         res["per_document"] = intent_per_document(picked, export.read_journal(out_dir / "intent-labels.jsonl"))
+    elif kind == "intent_relabel":
+        res = gate_intent_relabel(picked, out_dir, models, signed_off)
     elif kind == "field_accuracy":
         res = gate_field_accuracy(rows, out_dir, gate["accuracy"])
     elif kind == "human_verdicts":

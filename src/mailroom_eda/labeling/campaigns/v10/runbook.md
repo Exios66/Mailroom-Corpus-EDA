@@ -175,7 +175,7 @@ so every paid step feeds a decision. Each chunk starts only when usable credit c
 | step | chunks | projected USD | running total |
 |---|---|---:|---:|
 | 1 | `3`: intent bake-off, 6 arms (`--chunk 3` ping first) | 0.47 | 0.47 |
-| 2 | `4`: 25 flagged intents with the chunk-3 winner | 0.11 | 0.58 |
+| 2 | `4a`–`4c`: re-read the 904 machine-made intents (below); supersedes `4` | 1.28 | 1.75 |
 | 3 | `1`: CUAD bake-off, 7 arms | 1.48 | 2.07 |
 | 4 | `1h`: CUAD holdout, only the arms `bakeoff 1` did not exclude | ≤ 1.53 | ≤ 3.59 |
 | 5 | merger window A/B (below) | 0.36 | ≤ 3.95 |
@@ -187,6 +187,38 @@ so every paid step feeds a decision. Each chunk starts only when usable credit c
 - Chunks 5, 6, 9 and the remainders of 7 and 8 (about $15.5) wait for a top-up and for the
   post-bake-off re-plan (plan Task 7).
 - Report credit after every step.
+
+## Intent relabel (chunks 4a–4c; done 2026-11-06 for chunk 3)
+
+Chunk 3 ran twice. On the 2026-11-06 re-run (new prompt, 7 gold corrections the user accepted
+in `v10_labels/gold-corrections.csv`) every arm passed κ 0.75. The primary is DeepSeek v4.1
+Flash 1017 at off, κ 0.823. No other-vendor arm cleared the 0.05 non-inferiority bound on 96
+emails, so the user picked Haiku 5.5 (κ 0.763) as the second opinion. Each of the 904 emails
+gets four answers (two models, two passes); the gate writes `decisions.csv`:
+
+| decision | when | written |
+|---|---|---|
+| `confirm` / `change` | all four agree and the label fits the subtype | the agreed label |
+| `keep` | the answers split, one of them is the existing label | nothing changes |
+| `adjudicate` | a subtype conflict, or a split with no answer keeping the existing label | the reviewer's decision |
+
+Subtypes (`expected_subclass`) came from older automatic labelers, so a conflict is read, not
+trusted either way. Only `press_release`, `meeting_request` and `notice` point to an intent;
+`demand` and `attorney_demand` do not (a demand is often for an action, not a payment).
+
+```bash
+$L chunk 4a --initials XX        # then 4b, 4c
+$L gate 4a                       # writes decisions.csv; fill reviewer_decision (an intent or keep)
+$L gate 4a --signed-off --approve --initials XX
+```
+
+**Test split (85 of the 904):** labels there score models later, and labels written by
+DeepSeek and Haiku would favor models that read email like them. So a test-split change is
+never written automatically: it becomes `adjudicate`, and the gate requires a person's
+initials in `reviewed_by` (Claude may not decide these: it is a third model). `confirm` and
+`keep` leave the existing label as it is.
+
+Changes reach the `ground_truth` config only, with their provenance, at ingest.
 
 ## Merger window A/B (before chunk 6; about $0.36)
 
@@ -227,15 +259,16 @@ $L bakeoff 3
 - the second opinion is the cheapest other-vendor arm within 0.05 of the primary (lo95 ≥ −0.05);
 - an arm with hi95 < −0.05 is clearly worse and skips the holdout.
 
-`gate --approve` on a bake-off chunk accepts only the arm `bakeoff` picked, because chunks 2 and 4
-use that arm (`winner_of_*`).
+`gate --approve` on a bake-off chunk accepts only the arm `bakeoff` picked, because chunks 2 and
+4a–4c use that arm (`winner_of_*`).
 
 ## Gates
 
 | kind | passes when |
 |---|---|
 | `cuad_f1` | micro-F1 ≥ 0.75 and precision ≥ 0.80 against the expert CUAD spans (`v9_4_revision.score_cuad_calibration`). Bake-off arms are compared by paired bootstrap intervals (`docs/plans/2026-11-06-labeling-settings-optimization.md`), not by raw F1 gaps |
-| `intent_kappa` | Cohen's κ ≥ 0.75 against the manual intent labels (`v9_4_revision.score_intent_calibration`) |
+| `intent_kappa` | Cohen's κ ≥ 0.75 against the manual intent labels (`v9_4_revision.score_intent_calibration`), after `gold-corrections.csv` |
+| `intent_relabel` | both models answered both passes on every email, every `adjudicate` row in `decisions.csv` has a reviewer decision, signed off |
 | `field_accuracy` | per-field accuracy ≥ 0.85 against values derived from the expert CUAD spans |
 | `consideration_accuracy` | each model answers every one of the 95 mergers with an expert MAUD Type of Consideration answer, and each reaches ≥ 0.95 accuracy against it; `gate.json` has a confusion table per model |
 | `human_verdicts` | at least 30 accepted `fields.csv` rows reviewed, and at least 90% of them marked correct |

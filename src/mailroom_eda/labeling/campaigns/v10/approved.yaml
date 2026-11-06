@@ -1,0 +1,27 @@
+# Written by `labeling gate --approve`. Commit this file; the chunk's label output
+# stays out of git (private HF staging repo only).
+approved:
+- chunk: '3'
+  arm: 3
+  task: intent
+  set: calibration
+  slice: null
+  models:
+  - deepseek/deepseek-v4.1-flash-1017
+  provider: openrouter
+  reasoning: 'off'
+  temperature:
+    deepseek/deepseek-v4.1-flash-1017: 0
+  prompt_sha256:
+  - 5297a08341c43b4028a662684f15cfa2598278b13061799c381a9cd2ff03a031
+  - c4e429ecd574ce77c762ceee7c51da3dfebb29acfb875f800613950e40d49c4a
+  served_providers:
+  - CoreWeave
+  - DeepInfra
+  - InferenceNet
+  gate:
+    kind: intent_kappa
+    cohen_kappa: 0.8233
+    passed: true
+  approved_by: JJB
+  approved_utc: '2026-11-06T17:18:11Z'

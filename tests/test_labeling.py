@@ -152,7 +152,7 @@ def test_campaign_chunks_are_runnable():
         assert ch["task"] in tasks.TASK_CLASSES
         assert ch["set"] in runner.SETS
         assert str(ch["reasoning"]) in providers.REASONING + ("winner_of_1", "winner_of_3")
-        assert ch["cap_usd"] > 0 and "kind" in ch["gate"]
+        assert (ch["cap_usd"] > 0 or ch.get("skip")) and "kind" in ch["gate"]
         for m in ch["models"]:
             assert m in approved or m.startswith("winner_of_"), m
         if ch["task"] in tasks.TWO_MODEL_TASKS:
@@ -821,7 +821,7 @@ def test_campaign_needs_order_and_output_dirs():
     seen_dirs = set()
     for c in camp["chunks"]:
         assert c["task"] in tasks.BUILDERS or c["task"] == "intent", c
-        assert c["cap_usd"] > 0
+        assert c["cap_usd"] > 0 or c.get("skip"), c["id"]
         assert str(c["reasoning"]) in ("off", "low") or str(c["reasoning"]).startswith("winner_of_")
         for need in c.get("needs") or []:
             assert need in ids and ids.index(need) < ids.index(str(c["id"])), (c["id"], need)
@@ -834,7 +834,8 @@ def test_campaign_needs_order_and_output_dirs():
             d = operate.chunk_dir(Path("out"), entry, a)
             assert d not in seen_dirs, d
             seen_dirs.add(d)
-    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 30.0
+    # $30 plus the 904-email intent relabel the user added on 2026-11-06 (caps $1.95)
+    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 31.5
 
 
 def test_every_cap_covers_its_projection_with_headroom():
@@ -2241,3 +2242,77 @@ def test_inspect_reads_the_corrected_gold(tmp_path, monkeypatch):
     operate.cmd_inspect(type("A", (), {"dir": str(d), "stage": tmp_path, "n": 5})())
     md = (d / "inspect.md").read_text(encoding="utf-8")
     assert "gold: `other`" in md and "0 disagree" in md
+
+
+@pytest.mark.parametrize("existing,subtype,answers,decision,new", [
+    ("update", "email", ["notice"] * 4, "change", "notice"),
+    ("notice", "notice", ["notice"] * 4, "confirm", "notice"),
+    ("update", "press_release", ["update"] * 4, "adjudicate", ""),   # the subtype disagrees
+    ("request", "demand", ["request"] * 4, "confirm", "request"),     # a demand need not be a payment
+    ("payment_demand", "attorney_demand", ["request"] * 4, "change", "request"),
+    ("update", "email", ["update", "notice", "update", "update"], "keep", "update"),
+    ("other", "email", ["update", "notice", "update", "update"], "adjudicate", ""),
+    ("update", "meeting_request", ["update", "meeting_invite"] * 2, "adjudicate", ""),
+])
+def test_relabel_decision(existing, subtype, answers, decision, new):
+    """Only a unanimous answer that fits the subtype is written; a split keeps the existing
+    label when one answer is it; a subtype conflict is read by a person."""
+    got = operate.relabel_decision(existing, subtype, answers)
+    assert got[:2] == (decision, new)
+
+
+def test_relabel_set_is_every_machine_made_intent():
+    rows = [_row("correspondence", "email", "x", {"intent_status": s}, fn=f"{s}.") for s in
+            ("manual", "auto_labeled", "flagged_review")] + [_row("contract", None, "x", fn="c.")]
+    assert [r["filename"] for r in runner.select(rows, "intent", "relabel")] == ["auto_labeled.", "flagged_review."]
+
+
+def test_intent_relabel_gate_needs_both_models_and_every_adjudication_decided(tmp_path):
+    a = _row("correspondence", "email", "x", {"intent": "update", "intent_source": "llm_zero_shot"}, fn="a.",
+             split="train")
+    b = _row("correspondence", "press_release", "y", {"intent": "update", "intent_source": "heuristic"}, fn="b.",
+             split="train")
+    models = ["deepseek/m", "anthropic/h"]
+
+    def rec(row, model, x, y):
+        return {"document_id": tasks._ids(row)[0], "filename": row["filename"], "model": model,
+                "pass_a": {"intent": x, "evidence": "q"}, "pass_b": {"intent": y, "evidence": "q"}}
+    recs = [rec(a, m, "notice", "notice") for m in models] + [rec(b, models[0], "update", "update")]
+    path = tmp_path / "intent-labels.jsonl"
+    path.write_text("".join(json.dumps(r) + "\n" for r in recs), encoding="utf-8")
+    res = operate.gate_intent_relabel([a, b], tmp_path, models, signed_off=True)
+    assert res["unanswered_documents"] == 1 and not res["passed"]
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec(b, models[1], "update", "update")) + "\n")
+    res = operate.gate_intent_relabel([a, b], tmp_path, models, signed_off=True)
+    assert res["decisions"] == {"change": 1, "adjudicate": 1} and res["open_adjudications"] == 1
+    assert not res["passed"]
+    rows = export.read_csv(tmp_path / "decisions.csv")
+    for r in rows:
+        if r["decision"] == "adjudicate":
+            r["reviewer_decision"] = "press_communication"
+    export.write_csv(tmp_path / "decisions.csv", operate.RELABEL_COLUMNS, rows)
+    assert not operate.gate_intent_relabel([a, b], tmp_path, models, signed_off=False)["passed"]
+    res = operate.gate_intent_relabel([a, b], tmp_path, models, signed_off=True)
+    assert res["passed"]  # the reviewer's decision survived the re-gate
+
+
+def test_relabel_never_writes_a_test_split_change_without_a_person(tmp_path):
+    """The test split scores models later: a change the two models agree on is only proposed
+    there, and its adjudication needs a person's initials."""
+    t = _row("correspondence", "email", "x", {"intent": "update", "intent_source": "llm_zero_shot"}, fn="t.")
+    models = ["deepseek/m", "anthropic/h"]
+    recs = [{"document_id": tasks._ids(t)[0], "filename": "t.", "model": m,
+             "pass_a": {"intent": "notice", "evidence": "q"}, "pass_b": {"intent": "notice", "evidence": "q"}}
+            for m in models]
+    (tmp_path / "intent-labels.jsonl").write_text("".join(json.dumps(r) + "\n" for r in recs), encoding="utf-8")
+    res = operate.gate_intent_relabel([t], tmp_path, models, signed_off=True)
+    row = export.read_csv(tmp_path / "decisions.csv")[0]
+    assert res["decisions"] == {"adjudicate": 1} and row["new_intent"] == "" and "notice" in row["reason"]
+    row["reviewer_decision"] = "notice"
+    export.write_csv(tmp_path / "decisions.csv", operate.RELABEL_COLUMNS, [row])
+    res = operate.gate_intent_relabel([t], tmp_path, models, signed_off=True)
+    assert res["test_adjudications_without_initials"] == 1 and not res["passed"]
+    row["reviewed_by"] = "JJB"
+    export.write_csv(tmp_path / "decisions.csv", operate.RELABEL_COLUMNS, [row])
+    assert operate.gate_intent_relabel([t], tmp_path, models, signed_off=True)["passed"]
