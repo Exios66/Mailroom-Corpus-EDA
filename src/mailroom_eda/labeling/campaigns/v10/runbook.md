@@ -370,6 +370,45 @@ The v10 build refuses labels whose configuration has no passing calibration or p
   ceiling for it, not an estimate.
 - Spend: the chunk caps add up to $29.76 and the projection is about $20.42 (`costs.md`).
 
+## Handoff (2026-11-06, for the next agent)
+
+Read this section, then `Remaining checklist` below. Private state lives in the gitignored
+`docs/reports/audits/v10_labels/` (restore it with `$L checkpoint --restore` from the private HF
+`Lucius-Morningstar/mailroom-dataset-v10-staging` before any paid step; never re-buy answers).
+Keys: `OPENROUTER_API_KEY` and `HF_TOKEN` from the operator, per command; never written to the repo.
+Commits use the user's git identity with no Claude trailers.
+
+State
+- Branch `feat/v10-structure-labeling` (PR 43) at the Jev v4 commit; tests: 173 passed, 1 skipped
+  (`tests/test_jev.py`, `tests/test_labeling.py`). Credit: $8.92 total, $5.92 usable.
+- Intent relabel 4a–4c: answers done; 23 test-split decisions made at JJB's direction; waiting on
+  JJB's sign-off (`gate 4a|4b|4c --signed-off --approve --initials JJB`). Do not sign for the user.
+  7 long train emails are still provisional (their `reviewer_note` says so): their middles are unread.
+- Jev: prompt v4 live (κ 0.849 on the 96 gold, optimistic: tuned on the same rows). Audit of 819 train
+  rows done: `jev_intent-audit/flags-9f283f818cdb.csv` (163) plus 66 rows where Jev's top choice
+  disagrees above the flag cutoff = 229 review rows. Spent $0.081 of the $0.30 Jev budget.
+- Jev review: rows 0–69 have Claude proposals in `jev_intent-review/proposals.csv` (28 would change a
+  label); rows 70–228 are unread (`queue.csv`). NOTHING is applied. The proposals rest on rules the
+  user has NOT approved (`jev_intent-review/proposed-rules.md`, which also lists the v4 prompt
+  additions). The user objected to the agent inventing rules: get each rule approved before using it,
+  and do not write proposals into any `decisions.csv` until then.
+- Gold disputes: `jev_intent-calibrate/gold-disputes-v4.csv` — 5 proposed corrections of the 96 manual
+  gold, undecided. Accepted ones go to `gold-corrections.csv` (decided_by), then `jev calibrate`
+  re-scores for free.
+- Hand labeling: the user may hand-label from `v10_labels/hand_label/intent_review.csv` (247 emails)
+  and `fields_to_label.csv` (23,002 field rows: 7 tasks, 3,292 documents). Document texts:
+  `data/hand_label/docs/`. Before any paid chunk, read back what the user filled and exclude those
+  rows/fields; ingest them through the PR 45 override path with `labeled_by` provenance.
+- PR 44: the merge of this branch into `claude/v10-sweep-ops` was in a session-scratch worktree that
+  will not survive; its uncommitted diff is saved at `v10_labels/handoff/pr44-merge-wip.patch`
+  (+ `.status`; base `72be2a0`, merging `fb3c469`). Redo the merge from origin, compare with the patch,
+  fix `test_resolved_gate_passes_only_with_no_open_items`, push.
+- PR 45 (four ingest gaps) and PR 46 (blocked externally): unchanged, see checklist.
+
+Next, in order: (1) user approves/rejects the proposed rules and the 5 gold disputes; (2) finish the
+Jev review (rows 70–228) and the 7 middles under the approved rules only; (3) user sign-off on
+4a–4c; (4) PR 44, PR 45; (5) step 3 CUAD bake-off onward, skipping hand-labeled rows.
+
 ## Remaining checklist (updated 2026-11-06)
 
 Labels
@@ -379,7 +418,9 @@ Labels
 - [ ] Claude reads the unread middles of the 7 long train emails; clears their provisional notes.
 - [x] Jev: prompt refined v1→v4 (κ 0.735→0.849), audit of 819 train rows done (163 flags).
 - [ ] JJB decides the 5 proposed gold corrections in `gold-disputes-v4.csv`.
-- [ ] Claude reads all 163 Jev flags in full and records a decision on each.
+- [ ] JJB approves or rejects each rule in `jev_intent-review/proposed-rules.md`.
+- [ ] Review all 229 Jev rows (163 flags + 66 disagreements) under approved rules; 70 proposed so far, none applied.
+- [ ] Read back the user's hand labels (`v10_labels/hand_label/`) and exclude them from paid chunks.
 - [ ] Step 3: chunk 1 CUAD bake-off (7 arms), `bakeoff 1`, approve the winner.
 - [ ] Step 4: chunk 1h holdout for the surviving arms; `bakeoff 1` again.
 - [ ] Step 5: merger window A/B.
