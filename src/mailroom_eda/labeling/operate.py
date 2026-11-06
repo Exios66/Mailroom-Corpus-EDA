@@ -33,7 +33,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
-from . import checkpoint, derive, export, providers, runner, spend, tasks, verify
+from . import checkpoint, derive, export, interim, providers, runner, spend, tasks, verify
 from .registry import CAMPAIGNS_DIR, campaign, dojo_snapshot, fields_registry, models_registry
 
 ROOT = runner.ROOT
@@ -128,6 +128,16 @@ def auto_restore(args: argparse.Namespace, *, api: Any = None) -> list[Path]:
     if wrote:
         print(f"restored {len(wrote)} missing files from {checkpoint.STAGING_REPO}", file=sys.stderr)
     return wrote
+
+
+def load_interim(args: argparse.Namespace, rows: Sequence[Mapping[str, Any]]) -> "interim.Overlay | None":
+    """The sandbox overlay for ``rows`` when ``args.sandbox`` holds one (else ``None``, one line)."""
+    sandbox = getattr(args, "sandbox", None)
+    pinned = (campaign(getattr(args, "campaign", "v10")).get("interim_overlay") or {}).get("manifest_sha256")
+    overlay = interim.load(sandbox, rows, manifest_sha256=pinned)
+    if overlay is None and sandbox is not None:
+        print(f"interim cross-check skipped: no {interim.INTERIM_DIR} under {sandbox}", file=sys.stderr)
+    return overlay
 
 
 def cmd_checkpoint(args: argparse.Namespace) -> int:
@@ -616,12 +626,12 @@ def gate_agreement(out_dir: Path, signed_off: bool,
 
 
 def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path, stage: Path,
-                signed_off: bool = False) -> dict[str, Any]:
+                signed_off: bool = False, sandbox: Path | None = None) -> dict[str, Any]:
     """Score one chunk arm's gate from its output directory (offline)."""
     from .. import v9_4_revision as v94  # noqa: PLC0415
 
     if entry["gate"]["kind"] == "resolved":
-        return gate_resolved(name, entry, out, stage)
+        return gate_resolved(name, entry, out, stage, sandbox=sandbox)
     out_dir = chunk_dir(out, entry, arm)
     if not (out_dir / "calls.jsonl").exists():
         raise SystemExit(f"{out_dir} has no calls.jsonl; run `labeling chunk {entry['id']}` first")
@@ -632,7 +642,8 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
     started = [r for r in export.read_journal(out_dir / "runs.jsonl") if r.get("started_utc") and r.get("models")]
     if started:  # score the models the chunk actually ran (e.g. the mapped Modal model)
         models, provider = list(started[-1]["models"]), str(started[-1].get("provider") or provider)
-    runner.review(rows, entry["task"], out_dir, reasoning=reasoning)
+    overlay = load_interim(argparse.Namespace(sandbox=sandbox, campaign=name), rows)
+    reviewed = runner.review(rows, entry["task"], out_dir, reasoning=reasoning, interim=overlay)
     gate = dict(entry["gate"])
     kind = gate.pop("kind")
     if kind == "cuad_f1":
@@ -666,6 +677,8 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
                prompt_sha256=sorted({c["prompt_sha256"] for c in calls}),
                served_providers=sorted({c.get("served_provider") or "" for c in calls} - {""}),
                spent_usd=round(sum(c.get("cost_usd") or 0 for c in every), 4), scored_utc=_now())
+    if overlay is not None:  # informational: never part of passed
+        res["interim"] = {**reviewed.get("interim", {}), "manifest_sha256": overlay.manifest_sha256}
     current = runner.current_prompt_calls(rows, entry["task"], calls, entry["set"])
     outside = pin_violations(current, reasoning)
     if outside:
@@ -705,7 +718,8 @@ def _merge_open_verdicts(chunk_out: Path, label: str, open_rows: Mapping[tuple[s
 
 
 def adjudication_items(name: str, out: Path, stage: Path, *, only: str | None = None,
-                       rows: Sequence[Mapping[str, Any]] | None = None) -> tuple[list[dict[str, Any]], int]:
+                       rows: Sequence[Mapping[str, Any]] | None = None,
+                       sandbox: Path | None = None) -> tuple[list[dict[str, Any]], int]:
     """Every field of an approved chunk still at ``final_decision == adjudicate``.
 
     Verdicts already typed into ``adjudication/open.csv`` are first copied into each
@@ -719,6 +733,7 @@ def adjudication_items(name: str, out: Path, stage: Path, *, only: str | None = 
              for r in (export.read_csv(open_path) if open_path.exists() else [])}
     items: list[dict[str, Any]] = []
     copied = 0
+    overlay = load_interim(argparse.Namespace(sandbox=sandbox, campaign=name), rows) if sandbox else None
     for a in load_approvals(name):
         cid = str(a["chunk"])
         if only and cid != str(only):
@@ -732,17 +747,18 @@ def adjudication_items(name: str, out: Path, stage: Path, *, only: str | None = 
             raise SystemExit(f"approved chunk {label}: {d} has no calls.jsonl; restore it first "
                              "(`labeling checkpoint --restore`)")
         copied += _merge_open_verdicts(d, label, typed)
-        runner.review(rows, entry["task"], d, reasoning=a.get("reasoning"))
+        runner.review(rows, entry["task"], d, reasoning=a.get("reasoning"), interim=overlay)
         items += [{"chunk": label, **f} for f in export.read_csv(d / "fields.csv")
                   if f.get("final_decision") == "adjudicate"]
     return items, copied
 
 
-def gate_resolved(name: str, entry: Mapping[str, Any], out: Path, stage: Path) -> dict[str, Any]:
+def gate_resolved(name: str, entry: Mapping[str, Any], out: Path, stage: Path,
+                  sandbox: Path | None = None) -> dict[str, Any]:
     """Step gate: every ``needs`` chunk is approved and none has an open adjudication item."""
     done = {str(a["chunk"]) for a in load_approvals(name)}
     unapproved = [str(n) for n in entry.get("needs") or [] if str(n) not in done]
-    items, _ = adjudication_items(name, out, stage)
+    items, _ = adjudication_items(name, out, stage, sandbox=sandbox)
     per_chunk = dict(Counter(i["chunk"] for i in items))
     res = {"kind": "resolved", "open_items": len(items), "per_chunk": per_chunk,
            "per_field": dict(Counter(f"{i['chunk']}/{i['field']}" for i in items)),
@@ -760,7 +776,8 @@ def gate_resolved(name: str, entry: Mapping[str, Any], out: Path, stage: Path) -
 def cmd_adjudicate(args: argparse.Namespace) -> int:
     """Rebuild every approved field chunk and list its open items in ``adjudication/open.csv``."""
     auto_restore(args)
-    items, copied = adjudication_items(args.campaign, args.out, args.stage, only=args.chunk)
+    items, copied = adjudication_items(args.campaign, args.out, args.stage, only=args.chunk,
+                                       sandbox=getattr(args, "sandbox", None))
     path = Path(args.out) / ADJUDICATION_DIR / "open.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     export.write_csv(path, OPEN_COLUMNS, items)
@@ -810,7 +827,8 @@ def cmd_gate(args: argparse.Namespace) -> int:
     """Score a chunk's gate; with --approve, record a pass in approved.yaml."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
     auto_restore(args)
-    res = gate_result(args.campaign, entry, arm, args.out, args.stage, signed_off=args.signed_off)
+    res = gate_result(args.campaign, entry, arm, args.out, args.stage, signed_off=args.signed_off,
+                      sandbox=getattr(args, "sandbox", None))
     if res["kind"] != "resolved" and res["provider"] != args.provider:
         raise SystemExit(f"--provider {args.provider}, but chunk {entry['id']} ran on {res['provider']} "
                          f"(runs.jsonl); the gate scores the models the chunk ran")
@@ -1298,6 +1316,8 @@ def add_commands(sub: Any) -> None:
     p.add_argument("--approve", action="store_true")
     p.add_argument("--replace", action="store_true")
     p.add_argument("--signed-off", action="store_true", help="you read the chunk's CSVs / sample.csv")
+    p.add_argument("--sandbox", type=Path, default=runner.DEFAULT_SANDBOX,
+                   help="local-mailroom-sandbox checkout for the interim cross-check (absent: skipped)")
     p.add_argument("--initials")
     p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
     p.add_argument("--no-checkpoint", action="store_true")
@@ -1306,6 +1326,7 @@ def add_commands(sub: Any) -> None:
     p = sub.add_parser("adjudicate", help="list every approved chunk's open adjudication items (offline)")
     common(p)
     p.add_argument("--chunk", help="only this approved chunk id")
+    p.add_argument("--sandbox", type=Path, default=runner.DEFAULT_SANDBOX)
     p.add_argument("--no-checkpoint", action="store_true")
     p.set_defaults(operate=cmd_adjudicate)
 

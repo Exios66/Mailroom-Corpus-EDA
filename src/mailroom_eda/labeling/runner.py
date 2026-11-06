@@ -32,11 +32,14 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from . import derive, export, providers, spend, tasks, verify
+from . import interim as interim_mod
 from .registry import campaign, models_registry, vocabulary
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_STAGE = ROOT / "data" / "v9_4" / "stage"
 DEFAULT_OUT = ROOT / "docs" / "reports" / "audits" / "v10_labels"
+#: the sibling sandbox checkout the interim cross-check reads (``labeling/interim.py``)
+DEFAULT_SANDBOX = ROOT.parent / "local-mailroom-sandbox"
 SETS = ("calibration", "holdout", "pilot", "remainder", "pending", "flagged", "all")
 PILOT_PER_STRATUM = {"contract_entities": 2, "merger_entities": 3, "merger_consideration": 3, "correspondence": 5,
                      "claim_checklist": 5, "corporate": 3}
@@ -542,8 +545,10 @@ def intent_records(calls: Sequence[Mapping[str, Any]]) -> list[dict]:
 
 
 def field_decisions(rows: Sequence[Mapping[str, Any]], calls: Sequence[Mapping[str, Any]], task: str,
-                    models: Sequence[str]) -> tuple[list[dict], list[dict]]:
-    """Per-field decisions (``fields.csv`` rows) and per-document summaries."""
+                    models: Sequence[str], interim: Any = None) -> tuple[list[dict], list[dict]]:
+    """Per-field decisions (``fields.csv`` rows) and per-document summaries.
+
+    ``interim`` (an ``interim.Overlay``) adds the flag-only ``interim_*`` columns."""
     latest = _latest(calls)
     field_rows, doc_rows = [], []
     for r in rows:
@@ -577,6 +582,8 @@ def field_decisions(rows: Sequence[Mapping[str, Any]], calls: Sequence[Mapping[s
                                 f"model_{slot}_status": res.status, f"model_{slot}_evidence": res.evidence})
             row["verbatim_ok"] = all(x.verbatim_ok for x in results if x is not None)
             row["accepted_value"] = value if decision == "accept" else None
+            if interim is not None:
+                interim_mod.annotate(row, interim, spec, idx)
             field_rows.append(row)
         first = next(c for c in got if c)
         doc_rows.append({
@@ -597,7 +604,7 @@ def field_decisions(rows: Sequence[Mapping[str, Any]], calls: Sequence[Mapping[s
 
 
 REVIEWER_COLUMNS = ("reviewer_verdict", "reviewer_value", "reviewer_note")
-REVIEWER_VERDICTS = ("correct", "wrong", "a", "b", "value", "absent", "reject")
+REVIEWER_VERDICTS = ("correct", "wrong", "a", "b", "value", "absent", "reject", "interim")
 
 
 def _reviewer_columns(path: Path) -> dict[tuple[str, str], dict[str, str]]:
@@ -665,8 +672,11 @@ def _run_set(out_dir: Path) -> str:
 
 
 def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
-           reasoning: str | None = None) -> dict[str, Any]:
-    """Rebuild the derived journals and CSVs for one chunk directory (calls at ``reasoning``)."""
+           reasoning: str | None = None, interim: Any = None) -> dict[str, Any]:
+    """Rebuild the derived journals and CSVs for one chunk directory (calls at ``reasoning``).
+
+    With ``interim`` (an ``interim.Overlay``), field rows gain the flag-only ``interim_*``
+    columns and an intent chunk writes ``interim-intent.csv``."""
     calls = [c for c in export.read_journal(out_dir / "calls.jsonl")
              if reasoning is None or c.get("reasoning") == reasoning]
     calls = current_prompt_calls(rows, task, calls, _run_set(out_dir))
@@ -706,8 +716,13 @@ def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
                  "labeled_utc": rec["labeled_utc"], "document_tokens": doc_tokens.get(rec["document_id"]),
                  **usage.get(rec["document_id"], {})} for rec in recs]
         export.write_csv(out_dir / "documents.csv", export.DOCUMENT_COLUMNS, docs)
+        if interim is not None:
+            side = interim_mod.intent_rows(interim, recs)
+            export.write_csv(out_dir / "interim-intent.csv", interim_mod.INTENT_COLUMNS, side)
+            return {"records": len(recs), "interim": {"rows": len(side), "by_status": dict(
+                Counter(r["interim_status"] for r in side)), "agree": dict(Counter(r["interim_agree"] for r in side))}}
         return {"records": len(recs)}
-    fields, docs = field_decisions(rows, calls, task, models)
+    fields, docs = field_decisions(rows, calls, task, models, interim=interim)
     keep = {**_reviewer_columns(out_dir / "fields.csv"), **_reviewer_columns(out_dir / "adjudication.csv")}
     open_items: Counter = Counter()
     for f in fields:
@@ -721,18 +736,23 @@ def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
     export.write_csv(out_dir / "adjudication.csv", export.FIELD_COLUMNS,
                      [f for f in fields if f["decision"] == "adjudicate"])
     export.write_csv(out_dir / "documents.csv", export.DOCUMENT_COLUMNS, docs)
-    return {"documents": len(docs), "fields": len(fields),
-            "decisions": dict(Counter(f["decision"] for f in fields)),
-            "final_decisions": dict(Counter(f["final_decision"] for f in fields))}
+    out = {"documents": len(docs), "fields": len(fields),
+           "decisions": dict(Counter(f["decision"] for f in fields)),
+           "final_decisions": dict(Counter(f["final_decision"] for f in fields))}
+    if interim is not None:
+        out["interim"] = interim_mod.counts(fields)
+    return out
 
 
 def apply_verdict(f: dict[str, Any]) -> None:
     """Set ``final_decision`` and ``final_value`` from the model decision and any reviewer verdict.
 
     ``a``/``b`` take that model's value, ``value`` takes ``reviewer_value``, ``absent`` records
-    a documented absence, ``reject`` and ``wrong`` leave the field unlabeled, and ``correct``
-    confirms an accepted value. With no verdict the model decision stands. Ingest reads only
-    the ``final_*`` columns.
+    a documented absence, ``reject`` and ``wrong`` leave the field unlabeled, ``correct``
+    confirms an accepted value, and ``interim`` takes the sandbox overlay's value when it is
+    grounded in the document (``interim_verified``), recording ``final_source``
+    ``interim:<gate_run>``. With no verdict the model decision stands. Ingest reads only the
+    ``final_*`` columns.
     """
     accepted = f.pop("accepted_value", None)
     verdict = f.get("reviewer_verdict") or ""
@@ -749,6 +769,14 @@ def apply_verdict(f: dict[str, Any]) -> None:
         if not f.get("reviewer_value"):
             raise SystemExit(f"{where}: reviewer_verdict 'value' needs reviewer_value")
         decision, value = "accept", f["reviewer_value"]
+    elif verdict == "interim":
+        if not f.get("interim_status"):
+            raise SystemExit(f"{where}: reviewer_verdict 'interim', but no overlay label is loaded for this "
+                             "field (review with --sandbox pointing at local-mailroom-sandbox)")
+        if f.get("interim_verified") not in (True, "true"):
+            raise SystemExit(f"{where}: the overlay value is not grounded in this document; use value or reject")
+        decision, value = "accept", f.get("interim_value")
+        f["final_source"] = f"interim:{f.get('interim_gate_run') or 'unknown'}"
     elif verdict == "absent":
         decision, value = "absent", None
     elif verdict in ("reject", "wrong"):
@@ -883,6 +911,9 @@ def _parser() -> argparse.ArgumentParser:
             p.add_argument("--workers", type=int, default=4)
         if name == "review":
             p.add_argument("--reasoning", default="off", choices=providers.REASONING)
+            p.add_argument("--no-restore", action="store_true")
+            p.add_argument("--sandbox", type=Path, default=DEFAULT_SANDBOX,
+                           help="local-mailroom-sandbox checkout for the interim cross-check (absent: skipped)")
         if name in ("run", "review"):
             p.add_argument("--no-checkpoint", action="store_true",
                            help="do not upload output to the private HF staging repo")
@@ -928,8 +959,12 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(estimate(picked, args.task, args.models.split(","), args.set_name), indent=1))
         return 0
     if args.cmd == "review":
+        from . import operate  # noqa: PLC0415
+
+        operate.auto_restore(args)
         out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, args.reasoning, full_text=full_text)
-        print(json.dumps(review(rows, args.task, out_dir, reasoning=args.reasoning), indent=1))
+        overlay = operate.load_interim(args, rows)
+        print(json.dumps(review(rows, args.task, out_dir, reasoning=args.reasoning, interim=overlay), indent=1))
         return _checkpoint(args, f"review {out_dir.name}", 0)
     models = [args.model] + ([args.second_model] if args.second_model else [])
     out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, args.reasoning, full_text=full_text)

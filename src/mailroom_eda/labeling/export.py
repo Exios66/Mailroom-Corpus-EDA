@@ -25,8 +25,9 @@ DOCUMENT_COLUMNS = (
 FIELD_COLUMNS = (
     "document_id", "doc_class", "subclass", "field", "type", "model_a", "model_a_value",
     "model_a_status", "model_a_evidence", "model_b", "model_b_value", "model_b_status",
-    "model_b_evidence", "agree", "verbatim_ok", "decision", "reason", "reviewer_verdict",
-    "reviewer_value", "reviewer_note", "final_decision", "final_value",
+    "model_b_evidence", "agree", "verbatim_ok", "decision", "reason", "interim_value", "interim_status",
+    "interim_verified", "interim_agree", "interim_gate_run", "reviewer_verdict", "reviewer_value",
+    "reviewer_note", "final_decision", "final_value", "final_source",
 )
 SPAN_COLUMNS = (
     "document_id", "category", "start", "end", "text", "verbatim_ok", "probe_ok",

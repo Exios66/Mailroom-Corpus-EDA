@@ -2182,7 +2182,7 @@ def _approved_field_chunk(tmp_path, monkeypatch, decisions):
     approvals = [{"chunk": "7b", "arm": None, "reasoning": "low", "approved_by": "JB"}]
     monkeypatch.setattr(operate, "load_approvals", lambda name: approvals)
 
-    def review(rows_, task, out_dir, reasoning=None):
+    def review(rows_, task, out_dir, reasoning=None, interim=None):
         """Stand-in for runner.review: apply adjudication.csv verdicts to fields.csv."""
         adj = {(r["document_id"], r["field"]): r for r in export.read_csv(out_dir / "adjudication.csv")}
         fields = export.read_csv(out_dir / "fields.csv")
@@ -2232,3 +2232,115 @@ def test_steps_stay_out_of_costs_ping_and_sweep():
     assert "10" not in {str(c["id"]) for c in camp["chunks"]}
     plan, why = operate.sweep_plan("v10", [{"chunk": "7a"}], "7e", start="7b")
     assert all(str(e["id"]) != "10" for e, _ in plan)
+
+
+# ---------------------------------------------------------------- interim overlay cross-check (flag only)
+
+def _overlay(root, records):
+    """A sandbox checkout with an interim overlay of ``records`` (correspondence.jsonl only)."""
+    import hashlib
+    d = root / "data/labels/interim"
+    d.mkdir(parents=True)
+    body = "".join(json.dumps(r, sort_keys=True) + "\n" for r in records)
+    (d / "correspondence.jsonl").write_text(body)
+    manifest = {"schema": "mailroom-interim-labels/v1",
+                "files": {"correspondence.jsonl": hashlib.sha256(body.encode()).hexdigest()}}
+    (d / "MANIFEST.json").write_text(json.dumps(manifest))
+    return hashlib.sha256((d / "MANIFEST.json").read_bytes()).hexdigest()
+
+
+def _interim_rec(doc_id, sha, labels):
+    return {"doc_class": "correspondence", "doc_id": doc_id, "doc_sha256": sha[:16], "labels": labels,
+            "source": {"gate_run": "extraction-gate-luna-v1.3.0"}}
+
+
+def test_interim_load_checks_integrity_and_matches_by_hash(tmp_path):
+    """Manifest and file hashes are enforced; records match on content or source content sha; derived drops."""
+    from mailroom_eda.labeling import interim
+    rows = [_row("correspondence", "attorney_demand", EMAIL_TEXT, document_id="e1", content_sha256="ab" * 32),
+            _row("correspondence", "attorney_demand", EMAIL_TEXT, document_id="e2", source_content_sha256="cd" * 32),
+            _row("correspondence", "attorney_demand", EMAIL_TEXT, document_id="e3", content_sha256="ef" * 32)]
+    sha = _overlay(tmp_path, [
+        _interim_rec("e1", "ab" * 32, {"sender": {"status": "gap_fill", "value": "alice@enron.com"},
+                                       "communication_type": {"status": "derived", "value": "email"},
+                                       "not_a_field": {"status": "gap_fill", "value": "x"}}),
+        _interim_rec("e2", "cd" * 32, {"intent": {"status": "disputed", "value": "request",
+                                                  "hub_value": "payment_demand", "hub_source": "heuristic"}}),
+        _interim_rec("e3", "00" * 32, {"sender": {"status": "gap_fill", "value": "x"}}),
+        _interim_rec("zz", "00" * 32, {"sender": {"status": "gap_fill", "value": "x"}})])
+    ov = interim.load(tmp_path, rows, manifest_sha256=sha)
+    assert set(ov.labels) == {("e1", "sender"), ("e2", "intent")}
+    assert ov.skipped == {"derived": 1, "unregistered_field": 1, "hash_mismatch": 1, "no_document": 1}
+    assert interim.load(tmp_path / "nowhere", rows) is None and interim.load(None, rows) is None
+    with pytest.raises(SystemExit, match="campaign.yaml interim_overlay"):
+        interim.load(tmp_path, rows, manifest_sha256="0" * 64)
+    (tmp_path / "data/labels/interim/correspondence.jsonl").write_text("{}\n")
+    with pytest.raises(SystemExit, match="differs from MANIFEST.json"):
+        interim.load(tmp_path, rows)
+
+
+def _reviewed_with_overlay(tmp_path, rows, sender_value):
+    """Run a correspondence chunk where both models disagree on urgency, review it with an overlay."""
+    from mailroom_eda.labeling import interim
+    row = {**rows[2], "content_sha256": "ab" * 32}
+    req = tasks.build("correspondence", row)
+    ans = {"fields": {f: {"value": None, "status": "not_found", "evidence": ""} for f in req.fields}}
+    ans["fields"]["sender"] = {"value": "alice@enron.com", "status": "present", "evidence": "From: alice@enron.com"}
+    other = json.loads(json.dumps(ans))
+    other["fields"]["sender"] = {"value": "Alice", "status": "present", "evidence": "Alice"}
+    models = ["deepseek/deepseek-v4.1-flash", "minimax/minimax-m3.1-flash"]
+    out = tmp_path / "chunk"
+    runner.run_chunk([row], task="correspondence", models=models,
+                     backend=providers.Backend("openrouter", "u", "k"), reasoning="off",
+                     budget=spend.Budget(1.0, 3600), out_dir=out, chat=_fake_chat(dict(zip(models, (ans, other)))))
+    _overlay(tmp_path / "sandbox", [_interim_rec(row["document_id"], "ab" * 32,
+                                                 {"sender": {"status": "gap_fill", "value": sender_value}})])
+    ov = interim.load(tmp_path / "sandbox", [row])
+    summary = runner.review([row], "correspondence", out, interim=ov)
+    return row, out, ov, summary
+
+
+def test_interim_columns_flag_without_changing_decisions(tmp_path, rows):
+    """The overlay is shown beside the models; decision and adjudication are unchanged."""
+    row, out, ov, summary = _reviewed_with_overlay(tmp_path, rows, "alice@enron.com")
+    fields = {f["field"]: f for f in export.read_csv(out / "fields.csv")}
+    s = fields["sender"]
+    assert s["interim_status"] == "gap_fill" and s["interim_verified"] == "true" and s["interim_agree"] == "a"
+    assert s["decision"] == "adjudicate" and s["final_decision"] == "adjudicate" and not s["final_source"]
+    assert summary["interim"]["rows"] == 1 and summary["interim"]["verified"] == 1
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    for name in ("calls.jsonl",):
+        (plain / name).write_bytes((out / name).read_bytes())
+    runner.review([row], "correspondence", plain)
+    assert [f["decision"] for f in export.read_csv(plain / "fields.csv")] == \
+        [f["decision"] for f in export.read_csv(out / "fields.csv")]
+
+
+def test_interim_verdict_needs_a_verified_overlay_value(tmp_path, rows):
+    """reviewer_verdict interim takes the overlay value only when it is grounded, and records its source."""
+    row, out, ov, _ = _reviewed_with_overlay(tmp_path, rows, "alice@enron.com")
+    adj = export.read_csv(out / "adjudication.csv")
+    adj[[a["field"] for a in adj].index("sender")]["reviewer_verdict"] = "interim"
+    export.write_csv(out / "adjudication.csv", export.FIELD_COLUMNS, adj)
+    runner.review([row], "correspondence", out, interim=ov)
+    s = {f["field"]: f for f in export.read_csv(out / "fields.csv")}["sender"]
+    assert s["final_decision"] == "accept" and s["final_value"] == "alice@enron.com"
+    assert s["final_source"] == "interim:extraction-gate-luna-v1.3.0"
+    with pytest.raises(SystemExit, match="--sandbox"):
+        runner.review([row], "correspondence", out)  # the verdict needs the overlay loaded
+
+    row2, out2, ov2, _ = _reviewed_with_overlay(tmp_path / "ungrounded", rows, "Mallory Not In Text")
+    s2 = {f["field"]: f for f in export.read_csv(out2 / "fields.csv")}["sender"]
+    assert s2["interim_verified"] == "false" and s2["interim_agree"] == "none"
+    adj = export.read_csv(out2 / "adjudication.csv")
+    adj[[a["field"] for a in adj].index("sender")]["reviewer_verdict"] = "interim"
+    export.write_csv(out2 / "adjudication.csv", export.FIELD_COLUMNS, adj)
+    with pytest.raises(SystemExit, match="not grounded"):
+        runner.review([row2], "correspondence", out2, interim=ov2)
+
+
+def test_interim_overlay_is_pinned_in_the_campaign():
+    """campaign.yaml pins the overlay manifest the cross-check was written against."""
+    pin = campaign("v10")["interim_overlay"]
+    assert len(pin["manifest_sha256"]) == 64 and pin["sandbox_commit"]
