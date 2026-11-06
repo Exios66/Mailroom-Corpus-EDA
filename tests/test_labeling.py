@@ -2118,3 +2118,50 @@ def test_modal_check_lists_the_served_model():
     assert not ok and "MODAL_VLLM_API_TOKEN" in msg
     assert not operate.modal_check(env, fetch=lambda url, headers: {"data": [{"id": "other"}]})[0]
     assert not operate.modal_check({**env, "VLLM_BASE_URL": "https://example.com"}, fetch=fetch)[0]
+
+
+# ---------------------------------------------------------------- sweep
+
+def test_sweep_plan_stops_at_an_unapproved_predecessor_or_requires():
+    """The plan follows campaign order, skips approved chunks and never runs past a missing approval."""
+    plan, why = operate.sweep_plan("v10", [], "9e")
+    assert {str(e["id"]) for e, _ in plan} == {"1"} and len(plan) == 7 and "1h" in why and "needs chunk 1" in why
+    approved = [{"chunk": c} for c in ("1", "1h")]
+    plan, why = operate.sweep_plan("v10", approved, "2c")
+    assert [str(e["id"]) for e, _ in plan] == ["2a", "2b", "2c"] and why == "reached 2c"
+    plan, why = operate.sweep_plan("v10", approved + [{"chunk": c} for c in ("2a", "2b", "2c", "3", "4")], "9e")
+    assert plan == [] and "5a" in why and "not met" in why
+    plan, why = operate.sweep_plan("v10", [{"chunk": "7a"}], "7e", start="7b")
+    assert [str(e["id"]) for e, _ in plan] == ["7b", "7c", "7d", "7e"]
+    with pytest.raises(SystemExit, match="no such chunk"):
+        operate.sweep_plan("v10", [], "99")
+
+
+def _sweep_args(tmp_path, **kw):
+    import argparse
+    base = dict(campaign="v10", stage=tmp_path, out=tmp_path, through="7e", start="7b", initials="JB",
+                provider="openrouter", workers=1, model_map=[], dry_run=False, no_checkpoint=False)
+    return argparse.Namespace(**{**base, **kw})
+
+
+def test_sweep_runs_each_arm_once_confirmed_and_never_approves(tmp_path, monkeypatch):
+    """One yes runs the planned arms through cmd_chunk; a non-zero exit stops the sweep."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [{"chunk": "7a"}])
+    monkeypatch.setattr(runner, "load_stage", lambda stage: [])
+    ran = []
+    assert operate.cmd_sweep(_sweep_args(tmp_path, dry_run=True), confirm=lambda q: pytest.fail("no prompt"),
+                             run_chunk=lambda ns: pytest.fail("dry run")) == 0
+    assert operate.cmd_sweep(_sweep_args(tmp_path), confirm=lambda q: "no",
+                             run_chunk=lambda ns: pytest.fail("not confirmed")) == 1
+    assert operate.cmd_sweep(_sweep_args(tmp_path), confirm=lambda q: "yes",
+                             run_chunk=lambda ns: ran.append(ns.id) or 0) == 0
+    assert ran == ["7b", "7c", "7d", "7e"]
+    ran.clear()
+    assert operate.cmd_sweep(_sweep_args(tmp_path), confirm=lambda q: "yes",
+                             run_chunk=lambda ns: ran.append(ns.id) or (2 if ns.id == "7c" else 0)) == 2
+    assert ran == ["7b", "7c"]
+    with pytest.raises(SystemExit, match="initials"):
+        operate.cmd_sweep(_sweep_args(tmp_path, initials=None), confirm=lambda q: "yes", run_chunk=lambda ns: 0)
+    path = operate.approvals_path("v10")
+    assert not path.exists() or "7b" not in path.read_text()  # nothing approved

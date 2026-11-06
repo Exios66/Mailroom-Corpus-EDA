@@ -341,6 +341,119 @@ def cmd_chunk(args: argparse.Namespace) -> int:
     return rc if args.dry_run else auto_checkpoint(args, f"chunk {entry['id']}{f'.{arm}' if arm else ''} run", rc)
 
 
+# ---------------------------------------------------------------- sweep
+
+def sweep_plan(name: str, approvals: Sequence[Mapping[str, Any]], through: str,
+               start: str | None = None) -> tuple[list[tuple[dict[str, Any], int | None]], str]:
+    """The chunk arms a sweep runs, in ``campaign.yaml`` order, and why it stops there.
+
+    From ``start`` (default: the first chunk) through ``through``: approved chunks are
+    skipped; the first chunk whose ``needs`` are not all approved, or whose ``requires``
+    is not met, ends the plan. Every gate needs a human (a bake-off pick, verdicts, or a
+    ``--signed-off`` read), so the plan runs a pilot or bake-off and then ends at the
+    first chunk that depends on it. Nothing is ever approved here.
+    """
+    entries = campaign(name)["chunks"]
+    ids = [str(c["id"]) for c in entries]
+    if through not in ids:
+        raise SystemExit(f"--through {through}: no such chunk in campaign {name}")
+    if start is not None and start not in ids:
+        raise SystemExit(f"--from {start}: no such chunk in campaign {name}")
+    first = ids.index(start) if start else 0
+    last = len(ids) - 1 - ids[::-1].index(through)
+    if first > last:
+        raise SystemExit(f"--from {start} comes after --through {through} in campaign.yaml")
+    done = {str(a["chunk"]) for a in approvals}
+    counts = Counter(ids)
+    plan: list[tuple[dict[str, Any], int | None]] = []
+    seen: Counter = Counter()
+    for i, c in enumerate(entries):
+        cid = ids[i]
+        seen[cid] += 1
+        if i < first or i > last or cid in done:
+            continue
+        missing = [str(n) for n in c.get("needs") or [] if str(n) not in done]
+        if missing:
+            return plan, f"stopped at {cid}: needs chunk {', '.join(missing)} approved first"
+        met, why = requires_met(c.get("requires"))
+        if not met:
+            return plan, f"stopped at {cid}: {why}"
+        plan.append((c, seen[cid] if counts[cid] > 1 else None))
+    return plan, f"reached {through}"
+
+
+def _sweep_projection(args: argparse.Namespace, plan: Sequence[tuple[Mapping[str, Any], int | None]],
+                      rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """One projection line per planned arm (no network)."""
+    out = []
+    for entry, arm in plan:
+        models, reasoning = resolve(args.campaign, entry)
+        if args.provider != "openrouter":
+            models = provider_models(models, args.provider, args.model_map)
+        picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
+        proj = runner.estimate(picked, entry["task"], models, entry["set"])
+        out.append({"chunk": f"{entry['id']}{f'.{arm}' if arm else ''}", "task": entry["task"],
+                    "set": entry["set"], "documents": proj["documents"], "calls": proj["calls"],
+                    "projected_usd": round(sum(proj["cost_usd"].values()), 4),
+                    "cap_usd": float(entry["cap_usd"]), "reasoning": reasoning, "models": models})
+    return out
+
+
+def cmd_sweep(args: argparse.Namespace, *, confirm: Callable[[str], str] = input,
+              run_chunk: Callable[[argparse.Namespace], int] | None = None) -> int:
+    """Run every runnable chunk through ``--through`` after one combined dry run and one ``yes``.
+
+    Each arm goes through ``cmd_chunk`` (its own cap, wall limit, ping and checkpoint
+    checks). The sweep stops at the first chunk that needs an unapproved one (so after a
+    pilot or bake-off, whose gate a human decides), an unmet ``requires``, or the first
+    non-zero exit (2 cap/wall, 3 failed calls, 4
+    checkpoint). It never approves: ``labeling gate --approve`` stays a human step.
+    """
+    run_chunk = run_chunk or cmd_chunk
+    auto_restore(args)
+    approvals = load_approvals(args.campaign)
+    plan, why = sweep_plan(args.campaign, approvals, args.through, args.start)
+    if not plan:
+        print(f"nothing to run: {why}")
+        return 0
+    lines = _sweep_projection(args, plan, runner.load_stage(args.stage))
+    width = max(len(ln["chunk"]) for ln in lines)
+    for ln in lines:
+        print(f"{ln['chunk']:<{width}}  {ln['task']:<20} {ln['set']:<12} docs={ln['documents']:<5} "
+              f"calls={ln['calls']:<5} projected=${ln['projected_usd']:.2f} cap=${ln['cap_usd']:.2f} "
+              f"reasoning={ln['reasoning']}")
+    proj = sum(ln["projected_usd"] for ln in lines)
+    caps = sum(ln["cap_usd"] for ln in lines)
+    print(f"{len(lines)} arms: projected ${proj:.2f}, caps ${caps:.2f}; {why}")
+    if args.provider == "openrouter" and os.environ.get("OPENROUTER_API_KEY"):
+        rem = providers.key_status(providers.Backend.from_env("openrouter")).get("limit_remaining")
+        reserve = models_registry().get("key_reserve_usd", 3.0)
+        usable = None if rem is None else float(rem) - reserve
+        print("funding: no credit limit" if usable is None else f"funding: ${usable:.2f} usable after reserve")
+        if usable is not None and usable < caps and not args.dry_run:
+            raise SystemExit(f"the sweep's caps (${caps:.2f}) exceed the key's usable credit (${usable:.2f})")
+    elif args.provider == "openrouter":
+        print("funding: not checked (OPENROUTER_API_KEY is not set)")
+    if args.dry_run:
+        return 0
+    if not args.initials or not spend.INITIALS_RE.match(args.initials):
+        raise SystemExit("a sweep needs --initials (a human's 2-6 capital letters)")
+    if confirm(f"run these {len(lines)} arms (caps ${caps:.2f})? type yes: ").strip() != "yes":
+        print("not confirmed; nothing ran")
+        return 1
+    for entry, arm in plan:
+        label = f"{entry['id']}{f'.{arm}' if arm else ''}"
+        print(f"=== sweep: chunk {label}", file=sys.stderr)
+        ns = argparse.Namespace(**{**vars(args), "id": str(entry["id"]), "arm": arm, "dry_run": False,
+                                   "ack_requires": False, "cap_usd": None, "no_restore": True})
+        rc = run_chunk(ns)
+        if rc:
+            print(f"sweep stopped: chunk {label} exited {rc}")
+            return rc
+    print(f"sweep done: {why}. Score and approve each chunk with `labeling gate <id> --approve`.")
+    return 0
+
+
 # ---------------------------------------------------------------- gates
 
 def _gold_tokens(spans: Sequence[Any]) -> set[str]:
@@ -1050,6 +1163,18 @@ def add_commands(sub: Any) -> None:
     p.add_argument("--no-checkpoint", action="store_true",
                    help="do not upload the answers to the private HF staging repo (not recommended)")
     p.set_defaults(operate=cmd_chunk)
+
+    p = sub.add_parser("sweep", help="run every runnable chunk through --through after one dry run and one yes")
+    common(p)
+    p.add_argument("--through", required=True, help="the last chunk id to run (campaign.yaml order)")
+    p.add_argument("--from", dest="start", help="start at this chunk id instead of the first")
+    p.add_argument("--initials")
+    p.add_argument("--provider", default="openrouter", choices=providers.PROVIDERS)
+    p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--model-map", action="append", default=[], metavar="CAMPAIGN_MODEL=PROVIDER_MODEL")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--no-checkpoint", action="store_true")
+    p.set_defaults(operate=cmd_sweep)
 
     p = sub.add_parser("gate", help="score a chunk's gate; --approve records a pass")
     common(p)
