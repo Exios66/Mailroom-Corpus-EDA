@@ -454,9 +454,13 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
                prompt_sha256=sorted({c["prompt_sha256"] for c in calls}),
                served_providers=sorted({c.get("served_provider") or "" for c in calls} - {""}),
                spent_usd=round(sum(c.get("cost_usd") or 0 for c in every), 4), scored_utc=_now())
-    outside = pin_violations(runner.current_prompt_calls(rows, entry["task"], calls, entry["set"]), reasoning)
+    current = runner.current_prompt_calls(rows, entry["task"], calls, entry["set"])
+    outside = pin_violations(current, reasoning)
     if outside:
         res.update(passed=False, served_outside_pin=outside)
+    unreasoned = unreasoned_providers(current, reasoning)
+    if unreasoned:
+        res.update(passed=False, reasoning_not_honoured=unreasoned)
     (out_dir / "gate.json").write_text(json.dumps(res, indent=1) + "\n", encoding="utf-8")
     return res
 
@@ -469,6 +473,27 @@ def pin_violations(calls: Sequence[Mapping[str, Any]], reasoning: str) -> list[s
                                                 {c.get("served_provider")}):
             out.add(f"{c['model']} via {p}")
     return sorted(out)
+
+
+UNREASONED_MAX_SHARE = 0.5
+
+
+def unreasoned_providers(calls: Sequence[Mapping[str, Any]], reasoning: str) -> dict[str, str]:
+    """``{"<model> via <provider>": "<zero>/<n>"}`` where most answers at a reasoning level
+    other than off spent 0 reasoning tokens: that provider is not honouring the level.
+
+    A tiny ping cannot show this; a model may skip reasoning on one easy prompt, so only a
+    majority of zero-token answers on real documents flags the provider.
+    """
+    if reasoning == "off":
+        return {}
+    seen: dict[str, list[int]] = {}
+    for c in calls:
+        key = f"{c['model']} via {c.get('served_provider') or '?'}"
+        tally = seen.setdefault(key, [0, 0])
+        tally[0] += not c.get("reasoning_tokens")
+        tally[1] += 1
+    return {k: f"{z}/{n}" for k, (z, n) in sorted(seen.items()) if z > UNREASONED_MAX_SHARE * n}
 
 
 def cmd_gate(args: argparse.Namespace) -> int:
@@ -722,6 +747,23 @@ def cmd_ping(args: argparse.Namespace, chat=providers.chat, key_status=providers
     used |= {("z-ai/glm-5.3-flashx-legal", "off"), ("deepseek/deepseek-v4.1-flash", "low")}
     msgs = [{"role": "system", "content": "Reply with JSON only."},
             {"role": "user", "content": 'Return {"ok": true, "word": "mailroom"}.'}]
+    schema: Mapping[str, Any] = PING_SCHEMA
+    probe = ""
+
+    def answered(parsed: Any) -> bool:
+        return parsed == {"ok": True, "word": "mailroom"}
+
+    if getattr(args, "real_doc", False):
+        # one real correspondence document under the intent prompt: a tiny prompt cannot show
+        # whether a provider actually reasons at a level on real text
+        rows = runner.select(runner.load_stage(args.stage), "intent", "calibration")
+        row = min(rows, key=lambda r: str(r.get("document_id")))
+        req = tasks.build_intent(row, "a")
+        msgs, schema, probe = req.messages, req.schema, f"real_doc:{req.document_id}"
+        enum = set(schema["properties"]["intent"]["enum"])
+
+        def answered(parsed: Any) -> bool:  # noqa: F811
+            return isinstance(parsed, dict) and parsed.get("intent") in enum
     failures = 0
     log = args.out / "ping.jsonl"
     per_provider = bool(getattr(args, "per_provider", False))
@@ -732,13 +774,14 @@ def cmd_ping(args: argparse.Namespace, chat=providers.chat, key_status=providers
         # the route as a whole, then (with --per-provider) each pinned provider alone
         targets: list[str | None] = [None] + (list(base.get("only") or []) if per_provider else [])
         for pinned in targets:
-            reserved = budget.reserve(model, 50, 300 + runner.REASONING_ALLOWANCE)
+            reserved = budget.reserve(model, spend.estimate_tokens(json.dumps(msgs)) if probe else 50,
+                                      300 + runner.REASONING_ALLOWANCE)
             rec = {"model": model, "reasoning": reasoning, "initials": args.initials, "utc": _now(),
-                   **({"pinned": pinned} if pinned else {})}
+                   **({"pinned": pinned} if pinned else {}), **({"probe": probe} if probe else {})}
             kw = {"route": {**base, "only": [pinned]}} if pinned else {}
             name = f"{model} reasoning={reasoning}" + (f" pinned={pinned}" if pinned else "")
             try:
-                comp = chat(backend, model, msgs, PING_SCHEMA, reasoning=reasoning,
+                comp = chat(backend, model, msgs, schema, reasoning=reasoning,
                             max_tokens=300 + (runner.REASONING_ALLOWANCE if reasoning != "off" else 0), **kw)
             except providers.ProviderError as err:
                 budget.release(reserved)
@@ -747,7 +790,7 @@ def cmd_ping(args: argparse.Namespace, chat=providers.chat, key_status=providers
                 print(f"FAIL  {name}: {err}")
                 continue
             cost = budget.settle(model, comp.prompt_tokens, comp.completion_tokens, comp.cost_usd, reserved)
-            good = comp.parsed == {"ok": True, "word": "mailroom"} and comp.used_schema
+            good = answered(comp.parsed) and comp.used_schema
             failures += (not good) and pinned is None
             export.append_journal(log, {**rec, "served_provider": comp.served_provider,
                                         "served_model": comp.served_model, "used_schema": comp.used_schema,
@@ -904,5 +947,7 @@ def add_commands(sub: Any) -> None:
     p.add_argument("--cap-usd", type=float, default=0.05)
     p.add_argument("--per-provider", action="store_true",
                    help="also ping each pinned provider alone and log its reasoning tokens")
+    p.add_argument("--real-doc", action="store_true",
+                   help="ping with one real intent-calibration document instead of the tiny prompt")
     p.set_defaults(operate=cmd_ping)
 

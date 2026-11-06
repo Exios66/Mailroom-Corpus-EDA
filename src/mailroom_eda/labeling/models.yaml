@@ -35,8 +35,9 @@ models:
     roles: [general_primary, legal_second_opinion]
     route: {only: [deepinfra, atlas-cloud, coreweave, inference-net], quantizations: [fp8],
             max_price: {prompt: 0.15, completion: 0.65}, seed: true,
-            # low: DeepInfra spent 0 reasoning tokens on a real CUAD document (2026-11-06)
-            by_reasoning: {low: {only: [atlas-cloud, coreweave, inference-net]}}}
+            # low (2026-11-06 real-document probes): DeepInfra spent 0 reasoning tokens on a CUAD
+            # document; AtlasCloud ran past 2,300 tokens on one email and was truncated
+            by_reasoning: {low: {only: [coreweave, inference-net]}}}
   minimax/minimax-m3.1-flash:
     provider: openrouter
     prompt: 0.15

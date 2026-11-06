@@ -1509,6 +1509,16 @@ def test_pin_violations_list_answers_served_outside_their_route(monkeypatch):
     assert operate.pin_violations(calls, "low") == ["m via DeepInfra"]
 
 
+def test_unreasoned_providers_flag_a_provider_that_ignores_low():
+    """On real documents, a provider whose low-reasoning answers mostly spent 0 reasoning tokens
+    is not honouring the level; one easy document with 0 tokens is not enough to flag it."""
+    calls = ([{"model": "m", "served_provider": "CoreWeave", "reasoning_tokens": 240}] * 9
+             + [{"model": "m", "served_provider": "CoreWeave", "reasoning_tokens": 0}]
+             + [{"model": "m", "served_provider": "DeepInfra", "reasoning_tokens": 0}] * 3)
+    assert operate.unreasoned_providers(calls, "off") == {}
+    assert operate.unreasoned_providers(calls, "low") == {"m via DeepInfra": "3/3"}
+
+
 def test_ping_per_provider_pins_each_provider_and_records_reasoning_tokens(tmp_path, monkeypatch):
     """--per-provider sends one request pinned to each provider of a route and logs its reasoning tokens."""
     import argparse
@@ -1527,9 +1537,35 @@ def test_ping_per_provider_pins_each_provider_and_records_reasoning_tokens(tmp_p
     args = argparse.Namespace(campaign="v10", initials="JB", cap_usd=0.05, out=tmp_path, per_provider=True)
     assert operate.cmd_ping(args, chat=chat, key_status=lambda b: {"limit_remaining": 10}) == 0
     pinned = [s for s in sent if s[0] == "deepseek/deepseek-v4.1-flash" and s[1] == "low" and len(s[2]) == 1]
-    assert {s[2][0] for s in pinned} == {"atlas-cloud", "coreweave", "inference-net"}  # low pin excludes deepinfra
+    assert {s[2][0] for s in pinned} == {"coreweave", "inference-net"}  # low pin excludes deepinfra, atlas-cloud
     log = export.read_journal(tmp_path / "ping.jsonl")
     cw = [r for r in log if r.get("pinned") == "coreweave" and r["reasoning"] == "low"]
     assert cw and cw[0]["reasoning_tokens"] == 200
     # per-provider records never decide whether the route as a whole is verified
     assert operate.ping_problems([r for r in log if r.get("pinned")], [("deepseek/deepseek-v4.1-flash", "low")])
+
+
+def test_ping_real_doc_sends_a_real_intent_document(tmp_path, monkeypatch, rows):
+    """--real-doc pings with a real correspondence document and the intent schema, so the
+    logged reasoning tokens show whether a provider reasons on real text."""
+    import argparse
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.setattr(operate, "campaign", lambda name: {"chunks": [
+        {"id": "3", "models": ["deepseek/deepseek-v4.1-flash"], "reasoning": "low"}]})
+    monkeypatch.setattr(runner, "load_stage", lambda stage: rows)
+    monkeypatch.setattr(runner, "select", lambda rs, task, set_name: [r for r in rs if r["expected"] == "correspondence"])
+    seen = []
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens, route=None):
+        """Fake chat answering the intent schema."""
+        seen.append((messages, schema))
+        ans = {"intent": "payment_demand", "confidence": 0.9, "evidence": "x"}
+        return providers.Completion(json.dumps(ans), ans, model, "CoreWeave", 900, 40, 120, 0.0001, "stop", True)
+
+    args = argparse.Namespace(campaign="v10", initials="JB", cap_usd=0.05, out=tmp_path, per_provider=False,
+                              real_doc=True, stage=tmp_path)
+    assert operate.cmd_ping(args, chat=chat, key_status=lambda b: {"limit_remaining": 10}) == 0
+    assert seen and all("intent" in s["properties"] for _, s in seen)
+    assert all(rows[2]["doc_text"][:40] in m[-1]["content"] for m, _ in seen)
+    log = export.read_journal(tmp_path / "ping.jsonl")
+    assert all(r["probe"] == "real_doc:e1" and r["reasoning_tokens"] == 120 for r in log if "error" not in r)
