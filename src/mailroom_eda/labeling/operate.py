@@ -190,6 +190,36 @@ def next_chunks(name: str, approvals: Sequence[Mapping[str, Any]]) -> list[str]:
     return lines
 
 
+PING_MAX_AGE_HOURS = 24
+
+
+def ping_problems(log: Sequence[Mapping[str, Any]], routes: Sequence[tuple[str, str]], *,
+                  now: datetime | None = None, max_age_hours: float = PING_MAX_AGE_HOURS) -> list[str]:
+    """Why each (model, reasoning) route may not be used yet: no ping, a failed latest ping, or a stale one.
+
+    ``doctor`` checks catalog metadata only; the ping is the one check that sends the
+    exact parameters a chunk sends, so a route that changed (for example reasoning that
+    can no longer be turned off) is caught before a chunk spends on it.
+    """
+    now = now or datetime.now(timezone.utc)
+    out = []
+    for model, reasoning in routes:
+        mine = sorted((r for r in log if r.get("model") == model and str(r.get("reasoning")) == reasoning),
+                      key=lambda r: str(r.get("utc") or ""))
+        name = f"{model} reasoning={reasoning}"
+        if not mine:
+            out.append(f"{name}: never pinged")
+            continue
+        last = mine[-1]
+        if last.get("error") or last.get("response") != {"ok": True, "word": "mailroom"}:
+            out.append(f"{name}: latest ping failed: {str(last.get('error') or last.get('response'))[:160]}")
+            continue
+        age = (now - datetime.fromisoformat(str(last["utc"]).replace("Z", "+00:00"))).total_seconds() / 3600
+        if age > max_age_hours:
+            out.append(f"{name}: latest passing ping is older than {max_age_hours:g}h ({age:.0f}h)")
+    return out
+
+
 def cmd_chunk(args: argparse.Namespace) -> int:
     """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
@@ -200,6 +230,13 @@ def cmd_chunk(args: argparse.Namespace) -> int:
     if entry.get("requires") and not args.dry_run and not args.ack_requires:
         raise SystemExit(f"chunk {entry['id']} requires {entry['requires']}; once that has landed, "
                          f"re-run with --ack-requires")
+    if args.provider == "openrouter" and not args.dry_run:
+        log = args.out / "ping.jsonl"
+        probs = ping_problems(export.read_journal(log) if log.exists() else [],
+                              [(m, reasoning) for m in models])
+        if probs:
+            raise SystemExit("route not verified; run `labeling ping --initials XX` first:\n  "
+                             + "\n  ".join(probs))
     if args.provider != "openrouter":
         models = provider_models(models, args.provider, args.model_map)
     rows = runner.load_stage(args.stage)

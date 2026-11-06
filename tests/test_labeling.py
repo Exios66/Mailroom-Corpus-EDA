@@ -1426,3 +1426,32 @@ def test_funding_status_compares_usable_credit_with_the_remaining_caps():
     assert not ok and "next chunk 1 needs $1.15" in msg
     ok, msg = operate.funding_status(None, 3.0, chunks, approved=set())
     assert ok and "no credit limit" in msg
+
+
+def test_ping_problems_need_a_recent_passing_ping_per_route():
+    """Each (model, reasoning) a chunk uses needs a passing ping within the window; the latest wins."""
+    from datetime import datetime, timezone
+    now = datetime(2026, 11, 6, 12, 0, tzinfo=timezone.utc)
+    ok = {"response": {"ok": True, "word": "mailroom"}, "used_schema": True}
+    log = [
+        {"model": "a", "reasoning": "off", "utc": "2026-11-06T06:00:00Z", **ok},
+        {"model": "b", "reasoning": "off", "utc": "2026-11-06T06:00:00Z", **ok},
+        {"model": "b", "reasoning": "off", "utc": "2026-11-06T07:00:00Z", "error": "HTTP 400: Reasoning is mandatory"},
+        {"model": "c", "reasoning": "low", "utc": "2026-11-04T06:00:00Z", **ok},
+    ]
+    probs = operate.ping_problems(log, [("a", "off"), ("b", "off"), ("c", "low"), ("d", "off")], now=now)
+    assert len(probs) == 3
+    assert any("b reasoning=off" in p and "Reasoning is mandatory" in p for p in probs)
+    assert any("c reasoning=low" in p and "older than 24h" in p for p in probs)
+    assert any("d reasoning=off" in p and "never pinged" in p for p in probs)
+
+
+def test_chunk_refuses_a_paid_run_on_an_unpinged_route(tmp_path, monkeypatch):
+    """A paid chunk run stops before any call when a route has no recent passing ping."""
+    import argparse
+    monkeypatch.setattr(operate, "load_approvals", lambda name: [])
+    args = argparse.Namespace(campaign="v10", id="3", arm=1, dry_run=False, ack_requires=False,
+                              provider="openrouter", model_map=[], stage=tmp_path, initials="JB",
+                              cap_usd=None, out=tmp_path, workers=1)
+    with pytest.raises(SystemExit, match="labeling ping"):
+        operate.cmd_chunk(args)
