@@ -281,7 +281,8 @@ def next_chunks(name: str, approvals: Sequence[Mapping[str, Any]]) -> list[str]:
     for st in campaign(name).get("steps") or []:
         sid = str(st["id"])
         if not lines and sid not in done and all(str(n) in done for n in st.get("needs") or []):
-            hint = " (`labeling adjudicate` lists what is open)" if st["task"] == "adjudication" else ""
+            hint = {"adjudication": " (`labeling adjudicate` lists what is open)",
+                    "build": " (build first: `python -m mailroom_eda.v10_build`)"}.get(st["task"], "")
             lines.append(f"next step: {sid} ({st['task']}); `labeling gate {sid}` scores it{hint}")
     return lines
 
@@ -786,6 +787,8 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
 
     if entry["gate"]["kind"] == "resolved":
         return gate_resolved(name, entry, out, stage, sandbox=sandbox)
+    if entry["gate"]["kind"] == "conformance":
+        return gate_conformance(name, entry, out, stage)
     out_dir = chunk_dir(out, entry, arm)
     if not (out_dir / "calls.jsonl").exists():
         raise SystemExit(f"{out_dir} has no calls.jsonl; run `labeling chunk {entry['id']}` first")
@@ -1241,9 +1244,45 @@ def gate_resolved(name: str, entry: Mapping[str, Any], out: Path, stage: Path,
            "chunk": entry["id"], "arm": None, "task": entry["task"], "models": [], "provider": "none",
            "reasoning": "none", "prompt_sha256": [], "served_providers": [], "spent_usd": 0.0,
            "scored_utc": _now()}
-    d = Path(out) / ADJUDICATION_DIR
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "gate.json").write_text(json.dumps(res, indent=1) + "\n", encoding="utf-8")
+    path = step_gate_path(out, entry)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(res, indent=1) + "\n", encoding="utf-8")
+    return res
+
+
+#: gate kinds of campaign steps (no model calls, so no provider check)
+STEP_GATES = ("resolved", "conformance")
+
+
+def step_gate_path(out: Path, entry: Mapping[str, Any]) -> Path:
+    """Where a step's gate.json lives under the labels root."""
+    sub = ADJUDICATION_DIR if entry["task"] == "adjudication" else f"build-{entry['id']}"
+    return Path(out) / sub / "gate.json"
+
+
+def gate_conformance(name: str, entry: Mapping[str, Any], out: Path, stage: Path) -> dict[str, Any]:
+    """Step gate for chunks 0 and 11: the listed v10 conformance gates over the built stage."""
+    from .. import v10_conformance  # noqa: PLC0415
+
+    built = ROOT / str(entry.get("stage") or "data/v10/stage")
+    if not (built / "manifest.json").exists():
+        raise SystemExit(f"{built} has no manifest.json; run `python -m mailroom_eda.v10_build --out {built}"
+                         f"{' --labels' if str(entry['id']) != '0' else ''}` first")
+    done = {str(a["chunk"]) for a in load_approvals(name)}
+    unapproved = [str(n) for n in entry.get("needs") or [] if str(n) not in done]
+    rep = v10_conformance.run(built, stage, list(entry["gate"].get("gates") or v10_conformance.GATE_NAMES),
+                              labels_root=Path(out), campaign=name)
+    manifest = json.loads((built / "manifest.json").read_text(encoding="utf-8"))
+    res = {"kind": "conformance", "gates": rep["gates"], "unapproved_needs": unapproved,
+           "passed": rep["passed"] and not unapproved, "stage": str(built),
+           "manifest_sha256": hashlib.sha256((built / "manifest.json").read_bytes()).hexdigest(),
+           "labels": (manifest.get("inputs") or {}).get("labels"),
+           "chunk": entry["id"], "arm": None, "task": entry["task"], "models": [], "provider": "none",
+           "reasoning": "none", "prompt_sha256": [], "served_providers": [], "spent_usd": 0.0,
+           "scored_utc": _now()}
+    path = step_gate_path(out, entry)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(res, indent=1) + "\n", encoding="utf-8")
     return res
 
 
@@ -1324,7 +1363,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
     auto_restore(args)
     res = gate_result(args.campaign, entry, arm, args.out, args.stage, signed_off=args.signed_off,
                       sandbox=getattr(args, "sandbox", None))
-    if res["kind"] != "resolved" and res["provider"] != args.provider:
+    if res["kind"] not in STEP_GATES and res["provider"] != args.provider:
         raise SystemExit(f"--provider {args.provider}, but chunk {entry['id']} ran on {res['provider']} "
                          f"(runs.jsonl); the gate scores the models the chunk ran")
     print(json.dumps(res, indent=1))
@@ -1386,10 +1425,13 @@ def cmd_status(args: argparse.Namespace) -> int:
               f"{ok:>9} {spent:>8.4f} {entry['cap_usd']:>6.2f}  {state}")
     for st in camp.get("steps") or []:
         sid = str(st["id"])
-        gate_path = Path(args.out) / ADJUDICATION_DIR / "gate.json" if st["task"] == "adjudication" else None
-        gate = json.loads(gate_path.read_text()) if gate_path and gate_path.exists() else None
+        gate_path = step_gate_path(args.out, st)
+        gate = json.loads(gate_path.read_text()) if gate_path.exists() else None
+        failed = ([g for g, v in (gate or {}).get("gates", {}).items() if not v["passed"]]
+                  if st["task"] == "build" else (gate or {}).get("open_items", "?"))
         state = ("gate passed" if gate and gate["passed"] else
-                 f"gate failed ({gate.get('open_items', '?')} open)" if gate else "not scored")
+                 f"gate failed ({'gates ' + ','.join(map(str, failed)) if st['task'] == 'build' else f'{failed} open'})"
+                 if gate else "not scored")
         if sid in approved:
             state += f"; approved by {approved[sid]['approved_by']}"
         print(f"{sid:<6} {st['task']:<18} {st.get('set', ''):<12} {'':<5} {'':>9} {'':>8} {'':>6}  {state}")
