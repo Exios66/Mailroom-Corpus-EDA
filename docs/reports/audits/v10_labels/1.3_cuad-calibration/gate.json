@@ -1,0 +1,33 @@
+{
+ "kind": "cuad_f1",
+ "documents": 40,
+ "expected_documents": 40,
+ "models": [
+  "deepseek/deepseek-v4.1-flash"
+ ],
+ "micro_f1": 0.7684,
+ "micro_precision": 0.7009,
+ "micro_recall": 0.8502,
+ "span_overlap_rate": 0.8462,
+ "floors": {
+  "micro_f1": 0.75,
+  "precision": 0.8
+ },
+ "passed": false,
+ "chunk": "1",
+ "arm": 3,
+ "task": "cuad",
+ "provider": "openrouter",
+ "reasoning": "off",
+ "prompt_sha256": [
+  "855ed991df6aa2ba9b991f737fda1808f0c2100081f9bd6c1efa31cccc3b1098",
+  "e7c70716dbfc6b9b3a3ea184aabc3aabfb284e5d91ce38fa551d8c68fb13c4e7"
+ ],
+ "served_providers": [
+  "CoreWeave",
+  "DeepInfra",
+  "InferenceNet"
+ ],
+ "spent_usd": 0.0892,
+ "scored_utc": "2026-11-06T06:58:41Z"
+}
