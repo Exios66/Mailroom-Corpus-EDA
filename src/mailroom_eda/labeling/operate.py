@@ -557,7 +557,8 @@ def cmd_gate(args: argparse.Namespace) -> int:
                                                        "precision", "adjudicate_share", "passed")},
         "approved_by": args.initials, "approved_utc": _now()})
     path = approvals_path(args.campaign)
-    path.write_text("# Written by `labeling gate --approve`; commit it with the chunk's output.\n"
+    path.write_text("# Written by `labeling gate --approve`. Commit this file; the chunk's label output\n"
+                    "# stays out of git (private HF staging repo only).\n"
                     + yaml.safe_dump({"approved": approvals}, sort_keys=False), encoding="utf-8")
     print(f"approved chunk {entry['id']}{f' arm {arm}' if arm else ''} -> {path}")
     return auto_checkpoint(args, f"chunk {entry['id']} approved by {args.initials}")

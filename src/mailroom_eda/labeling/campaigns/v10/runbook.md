@@ -99,7 +99,9 @@ have several arms (a bake-off); add `--arm N` to each command for those.
    cap in `campaign.yaml` if the projection was wrong), 3 some calls failed (re-run; they
    are retried).
 
-3. **Review.** Output is in `docs/reports/audits/v10_labels/<id>[.<arm>]_<task>-<set>[-<i>of<n>]/`:
+3. **Review.** Output is in `docs/reports/audits/v10_labels/<id>[.<arm>]_<task>-<set>[-<i>of<n>]/`
+   (gitignored: label output never goes to the public GitHub repo, only to the private HF
+   staging copy, see Checkpoints):
 
    | file | what to do with it |
    |---|---|
@@ -150,7 +152,8 @@ calibration. A prompt change changes its sha, so earlier calibrations no longer 
 Paid answers are credit already spent, so none should exist only on one disk. After every
 `chunk` / `run`, `review` and `gate --approve`, the labels root and `approved.yaml` are uploaded
 to the **private** `Lucius-Morningstar/mailroom-dataset-v10-staging` and every file is
-sha-verified (`labeling/checkpoint.py`). A paid run refuses to start without an HF token
+sha-verified (`labeling/checkpoint.py`). That staging repo is the only copy off this disk:
+the labels root is gitignored, because this GitHub repo is public. A paid run refuses to start without an HF token
 (`HF_TOKEN`, or `huggingface-cli login`); a failed upload exits 4 and leaves the output on disk.
 
 - Spend never leaves the local logs: snake_case `cost`/`usd`/`spend`/`price` keys and CSV
