@@ -340,3 +340,213 @@ def test_gate_6_catches_a_renamed_cuad_category(tmp_path, stage):
     if not hit:
         pytest.skip("no CUAD-labelled row")
     assert not _gates(out, stage, [6])[6]["passed"]
+
+
+# ---------------------------------------------------------------- relabel overrides
+
+H = "anthropic/claude-haiku-5.5"
+
+
+def _relabel_approval(chunk="4a"):
+    return {"chunk": chunk, "arm": None, "task": "intent", "set": "relabel", "models": [A, H],
+            "provider": "openrouter", "reasoning": "off", "temperature": {A: None, H: None},
+            "prompt_sha256": ["p1"], "approved_by": "JJB"}
+
+
+def _calibration(models, arm):
+    return {"chunk": "3", "arm": arm, "task": "intent", "set": "calibration", "models": models,
+            "provider": "openrouter", "reasoning": "off", "temperature": {m: None for m in models},
+            "prompt_sha256": ["p1"], "approved_by": "JJB"}
+
+
+def _relabel_root(tmp_path, decisions, corrections=None):
+    root = tmp_path / "labels"
+    entry, arm = operate.chunk_entry("v10", "4a", None)
+    d = operate.chunk_dir(root, entry, arm)
+    d.mkdir(parents=True)
+    (d / "calls.jsonl").write_text("{}\n")
+    cols = ["document_id", "filename", "split", "existing", "decision", "new_intent", "evidence",
+            "reviewer_decision", "reviewed_by"]
+    export.write_csv(d / "decisions.csv", cols, [{c: r.get(c, "") for c in cols} for r in decisions])
+    if corrections is not None:
+        cols = ["document_id", "filename", "field", "gold_was", "gold_now", "decided_by"]
+        export.write_csv(root / operate.GOLD_CORRECTIONS, cols, corrections)
+    return root
+
+
+DECISIONS = [
+    {"document_id": "D1", "split": "train", "existing": "notice", "decision": "change", "new_intent": "request",
+     "evidence": "please send"},
+    {"document_id": "D2", "split": "train", "existing": "notice", "decision": "confirm", "new_intent": "notice"},
+    {"document_id": "D3", "split": "train", "existing": "notice", "decision": "adjudicate",
+     "reviewer_decision": "update", "reviewed_by": "JJB"},
+    {"document_id": "D4", "split": "train", "existing": "notice", "decision": "adjudicate",
+     "reviewer_decision": "keep", "reviewed_by": "JJB"},
+    {"document_id": "D5", "split": "test", "existing": "notice", "decision": "change", "new_intent": "request"},
+    {"document_id": "D6", "split": "test", "existing": "notice", "decision": "adjudicate",
+     "reviewer_decision": "analysis", "reviewed_by": "JJB"},
+    {"document_id": "D7", "split": "test", "existing": "notice", "decision": "adjudicate",
+     "reviewer_decision": "analysis", "reviewed_by": ""},
+]
+
+
+def test_relabel_writes_changes_as_overrides_and_holds_test_proposals(tmp_path, monkeypatch):
+    monkeypatch.setattr(operate, "load_second_opinions", lambda name: [_calibration([H], 5)])
+    root = _relabel_root(tmp_path, DECISIONS, [{"document_id": "D8", "filename": "f", "field": "intent",
+                                                "gold_was": "notice", "gold_now": "other", "decided_by": "JJB"}])
+    got = ingest.ingest("v10", root, [_calibration([A], 3), _relabel_approval()])
+    labs = {d: f["intent"] for d, f in got.labels.items()}
+    assert {d: lab.value for d, lab in labs.items()} == {"D1": "request", "D3": "update", "D6": "analysis",
+                                                         "D8": "other"}
+    assert all(lab.override for lab in labs.values())
+    assert labs["D1"].provenance == (f"override:relabel:4a+llm:{A}@openrouter/reasoning=off/prompt=p1/t=None"
+                                     f"+llm:{H}@openrouter/reasoning=off/prompt=p1/t=None")
+    assert labs["D1"].evidence == ("please send",)
+    assert labs["D3"].provenance == labs["D6"].provenance == "override:reviewer:JJB+relabel:4a"
+    assert labs["D8"].provenance == "override:gold_correction:JJB"
+    assert got.skipped == {"relabel_unchanged": 2, "relabel_test_proposal": 1, "relabel_test_without_initials": 1}
+    assert got.chunks == ["4a", "gold-corrections"]
+
+
+def test_relabel_needs_the_second_opinion_calibrated(tmp_path, monkeypatch):
+    monkeypatch.setattr(operate, "load_second_opinions", lambda name: [])
+    root = _relabel_root(tmp_path, DECISIONS)
+    with pytest.raises(SystemExit, match=f"(?s)uncalibrated.*{H}"):
+        ingest.ingest("v10", root, [_calibration([A], 3), _relabel_approval()])
+
+
+def test_gate_second_opinion_keeps_the_winner(tmp_path, monkeypatch):
+    path = tmp_path / "approved.yaml"
+    monkeypatch.setattr(operate, "approvals_path", lambda name: path)
+    winner = _calibration([A], 3)
+    operate._write_approvals("v10", [winner], [_calibration([H], 5)])
+    assert operate.load_approvals("v10") == [winner]
+    assert operate.load_second_opinions("v10") == [_calibration([H], 5)]
+    operate._write_approvals("v10", [winner, _relabel_approval()], operate.load_second_opinions("v10"))
+    assert operate.load_second_opinions("v10") == [_calibration([H], 5)]  # a later approval keeps it
+
+
+def test_labelled_build_overrides_gold_intent_and_gate_6_allows_it(tmp_path, monkeypatch):
+    import yaml
+
+    rows = _rows()
+    for r in rows:
+        if r["filename"] == "e1.txt":
+            r["gt_fields"]["intent"] = "notice"
+            pres = json.loads(r["gt_fields"]["gt_presence"])
+            pres["intent"] = "populated"
+            r["gt_fields"]["gt_presence"] = json.dumps(pres, sort_keys=True)
+            target = r
+    src = tmp_path / "v9_4"
+    monkeypatch.setattr(sys.modules[__name__], "_rows", lambda: rows)
+    _stage(src)
+    split = "test" if target["split"] == "test" else "train"
+    root = _relabel_root(tmp_path, [{"document_id": target["document_id"], "split": split, "existing": "notice",
+                                     "decision": "adjudicate", "reviewer_decision": "request",
+                                     "reviewed_by": "JJB"}])
+    approvals = [_calibration([A], 3), _relabel_approval()]
+    monkeypatch.setattr(operate, "load_approvals", lambda name: approvals)
+    monkeypatch.setattr(operate, "load_second_opinions", lambda name: [_calibration([H], 5)])
+    out = tmp_path / "out"
+    v10.build(src, out, labels_root=root)
+    st = conf.Stage(out, src)
+    mail = {r["document_id"]: r for r in st.rows("gt_correspondence")}[target["document_id"]]
+    assert mail["intent"] == "request" and mail["provenance"]["intent"] == "override:reviewer:JJB+relabel:4a"
+    legacy = {r["document_id"]: r for r in st.rows("ground_truth")}[target["document_id"]]
+    assert json.loads(legacy["gt_fields"])["intent"] == "request"
+    blind = [r for c in ("default",) for r in st.rows(c)]
+    assert all("request" not in json.dumps({k: v for k, v in r.items() if k != "doc_text"}) for r in blind)
+    gt = json.loads(legacy["gt_fields"])
+    assert (gt["intent_source"], gt["intent_status"], gt["intent_confidence"]) == ("manual", "manual", "1.0")
+    assert (legacy["annotation_method"], legacy["annotation_reviewer"], legacy["annotation_model"],
+            legacy["annotation_confidence"]) == ("human_annotated", "human", "", "1.0")
+    g = _gates(out, src, [6, 9])
+    assert g[6]["passed"], g[6]["detail"]
+    assert g[9]["passed"], g[9]["detail"]
+    # gate 6 checks the legacy provenance matches the override, not just that it changed
+    _rewrite_ground_truth(out, target["document_id"], lambda r: r.update(annotation_method="llm_zero_shot"))
+    g = _gates(out, src, [6])
+    assert not g[6]["passed"] and "annotation_method" in g[6]["detail"]
+    # ... and that the legacy value is the class record's value, not just any value
+    _rewrite_ground_truth(out, target["document_id"], lambda r: r.update(annotation_method="human_annotated"))
+    _rewrite_ground_truth(out, target["document_id"], lambda r: r.update(gt_fields=json.dumps(
+        {**json.loads(r["gt_fields"]), "intent": "analysis"})))
+    g = _gates(out, src, [6])
+    assert not g[6]["passed"] and "gt_correspondence" in g[6]["detail"], g[6]["detail"]
+
+
+def _correction_build(tmp_path, monkeypatch, **change):
+    rows = _rows()
+    target = next(r for r in rows if r["filename"] == "e1.txt")
+    target["gt_fields"]["intent"] = "notice"
+    pres = json.loads(target["gt_fields"]["gt_presence"])
+    pres["intent"] = "populated"
+    target["gt_fields"]["gt_presence"] = json.dumps(pres, sort_keys=True)
+    src = tmp_path / "v9_4"
+    monkeypatch.setattr(sys.modules[__name__], "_rows", lambda: rows)
+    _stage(src)
+    fix = {"document_id": target["document_id"], "filename": "e1.txt", "field": "intent", "gold_was": "notice",
+           "gold_now": "request", "decided_by": "JJB", **change}
+    root = _relabel_root(tmp_path, [], [fix])
+    approvals = [_calibration([A], 3), _relabel_approval()]
+    monkeypatch.setattr(operate, "load_approvals", lambda name: approvals)
+    monkeypatch.setattr(operate, "load_second_opinions", lambda name: [_calibration([H], 5)])
+    out = tmp_path / "out"
+    v10.build(src, out, labels_root=root)
+    return out, src, target
+
+
+def test_gold_correction_applies_when_its_target_matches(tmp_path, monkeypatch):
+    out, src, target = _correction_build(tmp_path, monkeypatch)
+    st = conf.Stage(out, src)
+    mail = {r["document_id"]: r for r in st.rows("gt_correspondence")}[target["document_id"]]
+    assert mail["intent"] == "request" and mail["provenance"]["intent"] == "override:gold_correction:JJB"
+    assert _gates(out, src, [6])[6]["passed"]
+
+
+@pytest.mark.parametrize("change, why", [({"gold_was": "update"}, "gold_was"),
+                                         ({"filename": "e2.txt"}, "filename")])
+def test_gold_correction_refuses_a_stale_or_mistargeted_row(tmp_path, monkeypatch, change, why):
+    with pytest.raises(SystemExit, match=why):
+        _correction_build(tmp_path, monkeypatch, **change)
+
+
+def test_gold_correction_values_are_typed_like_the_field(tmp_path, monkeypatch):
+    monkeypatch.setattr(operate, "load_second_opinions", lambda name: [_calibration([H], 5)])
+    root = _relabel_root(tmp_path, [], [
+        {"document_id": "C1", "filename": "c", "field": "contract_value", "gold_was": "",
+         "gold_now": "$1,250,000", "decided_by": "JJB"},
+        {"document_id": "M1", "filename": "m", "field": "additional_recipients", "gold_was": "",
+         "gold_now": '["Ann Lee"]', "decided_by": "JJB"}])
+    got = ingest.ingest("v10", root, [_calibration([A], 3), _relabel_approval()])
+    assert got.labels["C1"]["contract_value"].value == 1250000.0
+    assert got.labels["M1"]["additional_recipients"].value == ["Ann Lee"]
+
+
+def _rewrite_ground_truth(out, document_id, change):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    for f in (out / "parquet" / "ground_truth").rglob("*.parquet"):
+        t = pq.read_table(f)
+        rows = t.to_pylist()
+        if any(r["document_id"] == document_id for r in rows):
+            for r in rows:
+                if r["document_id"] == document_id:
+                    change(r)
+            pq.write_table(pa.Table.from_pylist(rows, schema=t.schema), f)
+
+
+def test_override_annotation_names_the_relabel_models():
+    prov = (f"override:relabel:4a+llm:{A}@openrouter/reasoning=off/prompt=5297a08341c4/t=None"
+            f"+llm:{H}@openrouter/reasoning=off/prompt=5297a08341c4/t=None")
+    top, gt = v10.override_annotation(prov)
+    assert top == {"annotation_method": "llm_zero_shot", "annotation_model": f"{A}+{H}",
+                   "annotation_prompt_version": "5297a08341c4", "annotation_confidence": "",
+                   "annotation_reviewer": ""}
+    assert gt == {"intent_source": "llm_zero_shot", "intent_status": "auto_labeled", "intent_confidence": ""}
+    human = ({"annotation_method": "human_annotated", "annotation_model": "", "annotation_prompt_version": "",
+              "annotation_confidence": "1.0", "annotation_reviewer": "human"},
+             {"intent_source": "manual", "intent_status": "manual", "intent_confidence": "1.0"})
+    assert v10.override_annotation("override:reviewer:JJB+relabel:4a") == human
+    assert v10.override_annotation("override:gold_correction:JJB") == human

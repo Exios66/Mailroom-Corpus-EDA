@@ -183,6 +183,28 @@ def load_approvals(name: str) -> list[dict[str, Any]]:
     return list(data.get("approved") or [])
 
 
+def load_second_opinions(name: str) -> list[dict[str, Any]]:
+    """Calibration arms approved as a second opinion (they calibrate a model; they never pick
+    the ``winner_of_<id>`` model later chunks use)."""
+    path = approvals_path(name)
+    if not path.exists():
+        return []
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return list(data.get("second_opinions") or [])
+
+
+def _write_approvals(name: str, approvals: Sequence[Mapping[str, Any]],
+                     second: Sequence[Mapping[str, Any]]) -> Path:
+    path = approvals_path(name)
+    body: dict[str, Any] = {"approved": list(approvals)}
+    if second:
+        body["second_opinions"] = list(second)
+    path.write_text("# Written by `labeling gate --approve`. Commit this file; the chunk's label output\n"
+                    "# stays out of git (private HF staging repo only).\n"
+                    + yaml.safe_dump(body, sort_keys=False), encoding="utf-8")
+    return path
+
+
 def resolve(name: str, entry: Mapping[str, Any]) -> tuple[list[str], str]:
     """Models and reasoning for a chunk, replacing ``winner_of_<id>`` with the approved arm."""
     approvals = load_approvals(name)
@@ -1373,13 +1395,22 @@ def cmd_gate(args: argparse.Namespace) -> int:
         raise SystemExit("gate did not pass; nothing approved")
     if not args.initials or not spend.INITIALS_RE.match(args.initials):
         raise SystemExit("--approve needs --initials (a human's 2-6 capital letters)")
-    bakeoff_guard(args.campaign, entry, res, Path(args.out), getattr(args, "override_bakeoff", False))
+    second = getattr(args, "second_opinion", False)
+    if not second:
+        bakeoff_guard(args.campaign, entry, res, Path(args.out), getattr(args, "override_bakeoff", False))
     approvals = load_approvals(args.campaign)
-    same = [a for a in approvals if str(a["chunk"]) == str(entry["id"])]
+    opinions = load_second_opinions(args.campaign)
+    if second:
+        if entry.get("set") not in ("calibration", "holdout"):
+            raise SystemExit("--second-opinion records a calibration or holdout arm only")
+        if any((str(a["chunk"]), a.get("arm")) == (str(entry["id"]), arm) for a in [*approvals, *opinions]):
+            raise SystemExit(f"chunk {entry['id']} arm {arm} is already approved")
+    same = [a for a in approvals if str(a["chunk"]) == str(entry["id"])] if not second else []
     if same and not args.replace:
         raise SystemExit(f"chunk {entry['id']} already has an approved arm; pass --replace to change it")
-    approvals = [a for a in approvals if str(a["chunk"]) != str(entry["id"])] if args.replace else approvals
-    approvals.append({
+    approvals = [a for a in approvals if str(a["chunk"]) != str(entry["id"])] if args.replace and not second \
+        else approvals
+    (opinions if second else approvals).append({
         "chunk": str(entry["id"]), "arm": arm, "task": entry["task"], "set": entry["set"],
         "slice": entry.get("chunk"), "models": res["models"], "provider": res["provider"],
         "reasoning": res["reasoning"],
@@ -1388,11 +1419,9 @@ def cmd_gate(args: argparse.Namespace) -> int:
         "gate": {k: v for k, v in res.items() if k in ("kind", "micro_f1", "micro_precision", "cohen_kappa",
                                                        "precision", "adjudicate_share", "passed")},
         "approved_by": args.initials, "approved_utc": _now()})
-    path = approvals_path(args.campaign)
-    path.write_text("# Written by `labeling gate --approve`. Commit this file; the chunk's label output\n"
-                    "# stays out of git (private HF staging repo only).\n"
-                    + yaml.safe_dump({"approved": approvals}, sort_keys=False), encoding="utf-8")
-    print(f"approved chunk {entry['id']}{f' arm {arm}' if arm else ''} -> {path}")
+    path = _write_approvals(args.campaign, approvals, opinions)
+    print(f"approved chunk {entry['id']}{f' arm {arm}' if arm else ''}"
+          f"{' as a second opinion' if second else ''} -> {path}")
     return auto_checkpoint(args, f"chunk {entry['id']} approved by {args.initials}")
 
 
@@ -1861,6 +1890,9 @@ def add_commands(sub: Any) -> None:
     p.add_argument("--signed-off", action="store_true", help="you read the chunk's CSVs / sample.csv")
     p.add_argument("--override-bakeoff", action="store_true",
                    help="approve a bake-off arm other than the one `labeling bakeoff` picked")
+    p.add_argument("--second-opinion", action="store_true",
+                   help="record a calibration arm as a calibrated second-opinion model; it does not "
+                        "change the chunk's winner")
     p.add_argument("--sandbox", type=Path, default=runner.DEFAULT_SANDBOX,
                    help="local-mailroom-sandbox checkout for the interim cross-check (absent: skipped)")
     p.add_argument("--initials")

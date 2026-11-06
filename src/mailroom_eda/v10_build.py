@@ -366,7 +366,7 @@ def class_record(row: Mapping[str, Any]) -> dict[str, Any]:
     for name, spec in fields.items():
         rec[name], presence[name], provenance[name] = field_cell(row, name, spec, applicable)
         lab = labels.get(name)
-        if lab is not None and presence[name] == "pending_annotation":
+        if lab is not None and (presence[name] == "pending_annotation" or getattr(lab, "override", False)):
             rec[name], presence[name], provenance[name] = _label_value(row, name, lab), lab.presence, lab.provenance
             evidence[name] = _evidence_spans(row["doc_text"], lab.evidence)
     rec["presence"] = presence
@@ -466,6 +466,34 @@ def maud_long_records(row: Mapping[str, Any]) -> list[dict[str, Any]]:
             for a in _maud_answers(_gt(row).get("maud_clause_labels"))]
 
 
+#: Legacy provenance columns an intent override rewrites (top level, then ``gt_fields``).
+OVERRIDE_TOP_KEYS = ("annotation_method", "annotation_model", "annotation_prompt_version",
+                     "annotation_confidence", "annotation_reviewer")
+OVERRIDE_GT_KEYS = ("intent_source", "intent_status", "intent_confidence")
+
+
+def override_annotation(provenance: str) -> tuple[dict[str, str], dict[str, str]]:
+    """The legacy provenance of an intent override, in the columns' existing vocabularies.
+
+    A human decision (``override:reviewer:`` or ``override:gold_correction:``) reads like
+    the corpus's other manual labels. A model-agreed relabel names its models and prompt;
+    its confidence is blank (``''`` is absence): no model reported one.
+    """
+    parts = str(provenance).split("+")
+    if parts[0].startswith(("override:reviewer:", "override:gold_correction:")):
+        return ({"annotation_method": "human_annotated", "annotation_model": "", "annotation_prompt_version": "",
+                 "annotation_confidence": "1.0", "annotation_reviewer": "human"},
+                {"intent_source": "manual", "intent_status": "manual", "intent_confidence": "1.0"})
+    cfgs = [p[len("llm:"):] for p in parts if p.startswith("llm:")]
+    if not parts[0].startswith("override:relabel:") or not cfgs:
+        raise ValueError(f"not an intent override provenance: {provenance!r}")
+    prompts = sorted({c.split("/prompt=")[1].split("/")[0] for c in cfgs if "/prompt=" in c})
+    return ({"annotation_method": "llm_zero_shot", "annotation_model": "+".join(c.split("@")[0] for c in cfgs),
+             "annotation_prompt_version": ",".join(prompts), "annotation_confidence": "",
+             "annotation_reviewer": ""},
+            {"intent_source": "llm_zero_shot", "intent_status": "auto_labeled", "intent_confidence": ""})
+
+
 def legacy_row(row: Mapping[str, Any]) -> dict[str, Any]:
     """The deprecated ``ground_truth`` row: the v9.4 shape plus the new deterministic labels.
 
@@ -495,6 +523,10 @@ def legacy_row(row: Mapping[str, Any]) -> dict[str, Any]:
             gt[key] = json.dumps(value, ensure_ascii=False, sort_keys=True) if isinstance(value, (list, dict)) \
                 else ("" if value is None else str(value))
         pres[key] = lab.presence
+        if name == "intent" and getattr(lab, "override", False):
+            top, gtp = override_annotation(lab.provenance)  # the old labeler no longer answers
+            out.update(top)
+            gt.update(gtp)
     gt["gt_presence"] = json.dumps(pres, sort_keys=True)
     return out
 
@@ -514,6 +546,20 @@ PARQUET_OPTIONS = {"compression": "zstd", "compression_level": 9, "use_dictionar
                    "write_statistics": True, "data_page_version": "2.0", "row_group_size": 1 << 16}
 
 
+def check_target(row: Mapping[str, Any], field: str, label: Any) -> None:
+    """Refuse a gold correction aimed at another file or at gold that has since moved."""
+    target = getattr(label, "target", None)
+    if target is None:
+        return
+    filename, was = target
+    if filename != row["filename"]:
+        raise SystemExit(f"gold correction for {row['document_id']} {field}: filename {filename!r}, "
+                         f"the row is {row['filename']!r}")
+    now = _gt(row).get(LEGACY_KEY.get(field, field))
+    if str(now or "") != was:
+        raise SystemExit(f"gold correction for {row['filename']} {field}: gold_was {was!r}, the row has {now!r}")
+
+
 def prepare_rows(rows: Sequence[Mapping[str, Any]], labels: Mapping[str, Mapping[str, Any]] | None = None
                  ) -> list[dict[str, Any]]:
     """Derived rows in stage order, each with its ingested labels and merger subclass applied."""
@@ -524,6 +570,8 @@ def prepare_rows(rows: Sequence[Mapping[str, Any]], labels: Mapping[str, Mapping
         d = derive_row(r)
         d["source_doc_text"] = str(r.get("doc_text") or "")
         mine = dict((labels or {}).get(str(r["document_id"]), {}))
+        for name, lab in mine.items():
+            check_target(d, name, lab)
         d["labels"] = mine
         ms = ingest.merger_subclass(d, mine)
         if ms is not None:

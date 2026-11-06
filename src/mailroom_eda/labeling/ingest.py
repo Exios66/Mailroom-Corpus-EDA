@@ -7,7 +7,16 @@ first) and returns ``{document_id: {field: Label}}``:
 - field tasks: ``fields.csv`` rows whose ``final_decision`` is ``accept`` (a value with
   the chosen model's evidence quote) or ``absent`` (a documented absence);
 - ``cuad``: accepted ``cuad-labels.jsonl`` records, as ``cuad_clauses`` spans;
-- ``intent``: ``intent-labels.jsonl`` records whose two passes agree.
+- ``intent``: ``intent-labels.jsonl`` records whose two passes agree;
+- ``intent`` relabel chunks (4a-4c): ``decisions.csv``. A train row takes the reviewer's
+  decision, else the unanimous ``confirm``/``change`` answer; a test row takes only a decision
+  a person initialled in ``reviewed_by`` (a model's test-split proposal is never written).
+  ``keep`` leaves the existing label.
+- ``gold-corrections.csv`` in the labels root: gold labels the user corrected (``decided_by``).
+
+**Overrides.** Relabel decisions and gold corrections replace an existing (gold) value, so
+they are ``override`` labels: their provenance starts ``override:`` and the conformance
+gates accept exactly those changes.
 
 **Configuration-bound calibration.** A value is used only when its configuration
 (model, provider, reasoning, prompt sha256, temperature) matches an approved calibration,
@@ -52,6 +61,9 @@ class Label:
     evidence: tuple[str, ...] = ()
     provenance: str = ""
     chunk: str = ""
+    override: bool = False  # replaces an existing gold value (relabel, gold correction)
+    #: a gold correction's target: (filename, legacy gold it replaces); the build refuses a mismatch
+    target: tuple[str, str] | None = None
 
 
 @dataclass
@@ -103,10 +115,15 @@ def _calibrated(model: str, approval: Mapping[str, Any], approvals: Sequence[Map
     return False
 
 
-def check_calibrated(approvals: Sequence[Mapping[str, Any]]) -> None:
-    """Raise unless every model of every approved chunk has a calibrated configuration."""
+def check_calibrated(approvals: Sequence[Mapping[str, Any]],
+                     second_opinions: Sequence[Mapping[str, Any]] = ()) -> None:
+    """Raise unless every model of every approved chunk has a calibrated configuration.
+
+    ``second_opinions`` are calibration arms approved with ``gate --second-opinion``: they
+    calibrate their model without becoming the chunk's winner."""
+    pool = [*approvals, *second_opinions]
     bad = [f"chunk {a['chunk']}: {configuration(m, a)}" for a in approvals
-           for m in a.get("models") or [] if not _calibrated(m, a, approvals)]
+           for m in a.get("models") or [] if not _calibrated(m, a, pool)]
     if bad:
         raise SystemExit("labels from an uncalibrated configuration (no approved calibration, holdout or "
                          "pilot of the same task ran it):\n  " + "\n  ".join(bad))
@@ -195,11 +212,65 @@ def _intent_labels(out: Ingested, d: Path, approval: Mapping[str, Any], label: s
         out.put(rec["document_id"], "intent", Label(a["intent"], "populated", ev, prov, label))
 
 
+def _relabel_labels(out: Ingested, d: Path, approval: Mapping[str, Any], label: str) -> None:
+    """Changed intents from a relabel chunk's ``decisions.csv`` (see the module docstring)."""
+    from .spend import INITIALS_RE  # noqa: PLC0415
+
+    models = "".join(f"+llm:{configuration(m, approval)}" for m in approval.get("models") or [])
+    for r in export.read_csv(d / "decisions.csv"):
+        existing, rev = str(r.get("existing") or ""), str(r.get("reviewer_decision") or "").strip()
+        who = str(r.get("reviewed_by") or "").strip()
+        if rev:
+            final = existing if rev == "keep" else rev
+            if r["split"] == "test" and not INITIALS_RE.match(who):
+                out.skip("relabel_test_without_initials")
+                continue
+            prov = f"override:reviewer:{who or 'unknown'}+relabel:{label}"
+        elif r["split"] == "test":
+            out.skip("relabel_test_proposal")
+            continue
+        elif r.get("decision") in ("confirm", "change") and r.get("new_intent"):
+            final, prov = str(r["new_intent"]), f"override:relabel:{label}{models}"
+        else:
+            final, prov = existing, ""
+        if final == existing:
+            out.skip("relabel_unchanged")
+            continue
+        ev = (str(r["evidence"]),) if r.get("evidence") else ()
+        out.put(r["document_id"], "intent", Label(final, "populated", ev, prov, label, override=True))
+
+
+def _gold_corrections(out: Ingested, labels_root: Path) -> None:
+    """User-accepted corrections of gold labels (``gold-corrections.csv``), as overrides."""
+    from .operate import GOLD_CORRECTIONS  # noqa: PLC0415
+
+    path = Path(labels_root) / GOLD_CORRECTIONS
+    if not path.exists():
+        return
+    types: dict[str, set[str]] = {}
+    for fields in _field_specs().values():
+        for f, spec in fields.items():
+            types.setdefault(f, set()).add(spec["type"])
+    for c in export.read_csv(path):
+        if not (c.get("decided_by") and c.get("gold_now") and c.get("filename")) or c.get("gold_was") is None:
+            raise SystemExit(f"{path}: every correction needs filename, gold_was, gold_now and decided_by "
+                             f"({c.get('filename')})")
+        kinds = types.get(c["field"], set())
+        values = [decode(c["gold_now"], t) for t in sorted(kinds)]
+        if not values or any(v != values[0] for v in values):
+            raise SystemExit(f"{path}: {c['field']!r} has no single registered type ({sorted(kinds)})")
+        out.put(c["document_id"], c["field"], Label(values[0], "populated", (),
+                                                    f"override:gold_correction:{c['decided_by']}",
+                                                    "gold-corrections", override=True,
+                                                    target=(c["filename"], c["gold_was"])))
+    out.chunks.append("gold-corrections")
+
+
 def ingest(name: str, labels_root: Path, approvals: Sequence[Mapping[str, Any]]) -> Ingested:
     """Labels from every approved chunk of campaign ``name`` (offline; raises on uncalibrated configs)."""
     from . import operate  # noqa: PLC0415
 
-    check_calibrated(approvals)
+    check_calibrated(approvals, operate.load_second_opinions(name))
     out = Ingested()
     step_ids = {str(s["id"]) for s in campaign(name).get("steps") or []}
     for a in approvals:
@@ -215,11 +286,14 @@ def ingest(name: str, labels_root: Path, approvals: Sequence[Mapping[str, Any]])
             raise SystemExit(f"approved chunk {label}: {d} is missing; restore it (`labeling checkpoint --restore`)")
         if entry["task"] == "cuad":
             _cuad_labels(out, d, a, label)
+        elif entry["task"] == "intent" and entry.get("set") == "relabel":
+            _relabel_labels(out, d, a, label)
         elif entry["task"] == "intent":
             _intent_labels(out, d, a, label)
         else:
             _field_labels(out, d, a, label)
         out.chunks.append(label)
+    _gold_corrections(out, labels_root)
     return out
 
 
