@@ -965,8 +965,10 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
             raise SystemExit(f"{m} is not an approved {provider} model in models.yaml")
     if len(set(models)) != len(models):
         raise SystemExit("the two models must differ")
-    if task in tasks.TWO_MODEL_TASKS and len(models) != 2 and set_name != "pilot":
-        raise SystemExit(f"{task} needs --second-model outside pilots (two-model agreement)")
+    # pilots and calibration sets are measured (by reading, or against expert gold), never
+    # ingested as labels, so one model is enough there; everywhere else two must agree
+    if task in tasks.TWO_MODEL_TASKS and len(models) != 2 and set_name not in ("pilot", "calibration"):
+        raise SystemExit(f"{task} needs --second-model outside pilots and calibration (two-model agreement)")
     if task not in tasks.TWO_MODEL_TASKS and len(models) != 1:
         raise SystemExit(f"{task} runs one model")
     proj = estimate(picked, task, models, set_name)

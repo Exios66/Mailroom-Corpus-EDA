@@ -165,6 +165,31 @@ the labels root is gitignored, because this GitHub repo is public. A paid run re
   checkout is missing (never overwriting local files), so a later run reuses those answers
   instead of buying them again.
 
+## Merger window A/B (before chunk 6; about $0.36)
+
+Does the section-aware merger window (`labeling/sections.py`) miss facts that the whole
+agreement would give? Cheaper three-arm form, chosen 2026-11-06. The full-text Type of
+Consideration arm ($1.56) is skipped. DeepSeek v4.1 Flash, reasoning off; projected
+$0.07 + $0.05 + $0.24.
+
+```bash
+$L ping --initials XX --chunk 3          # covers deepseek-v4.1-flash at off (about $0.01)
+$L run --task merger_consideration --set calibration --provider openrouter \
+  --model deepseek/deepseek-v4.1-flash --initials XX --api-cost-cap-usd 0.15 --max-wall-seconds 1800
+$L run --task merger_entities --set pilot --provider openrouter \
+  --model deepseek/deepseek-v4.1-flash --initials XX --api-cost-cap-usd 0.10 --max-wall-seconds 1800
+$L run --task merger_entities --set pilot --full-text --provider openrouter \
+  --model deepseek/deepseek-v4.1-flash --initials XX --api-cost-cap-usd 0.40 --max-wall-seconds 2400
+PYTHONPATH=src .venv/bin/python scripts/labeling/merger_window_ab.py
+```
+
+- The located Type of Consideration accuracy against the 95 expert MAUD answers should reach
+  0.95 (chunk 6c0's floor). Below that, read the confusion table and the missed agreements.
+- `merger_entities-pilot-fulltext/ab-diff.csv` lists every field whose answer differs. Read
+  each one against the agreement and fill `only_in_full` (`yes` when the fact is stated only
+  where the window does not reach). Adopt full text for merger_entities only if `yes` holds
+  in at least 2 of the 13 agreements. Otherwise keep the located window.
+
 ## Gates
 
 | kind | passes when |

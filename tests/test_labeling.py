@@ -1968,3 +1968,19 @@ def test_full_text_flag_sends_the_whole_agreement_and_changes_the_sha(tmp_path, 
         runner.main(["run", "--task", "intent", "--set", "calibration", "--stage", str(tmp_path),
                      "--provider", "openrouter", "--model", "deepseek/deepseek-v4.1-flash", "--dry-run",
                      "--full-text"])
+
+
+def test_one_model_may_run_a_calibration_set_but_not_a_labeling_set():
+    """A calibration run is scored against expert gold, so the one-model A/B arms may run it;
+    a set whose answers become labels still needs two agreeing models."""
+    rows = [_row("merger_agreement", None, AGREEMENT)]
+    ok = runner.execute(rows, rows, task="merger_consideration", set_name="calibration", chunk_spec=None,
+                        models=["deepseek/deepseek-v4.1-flash"], provider="openrouter", reasoning="off",
+                        initials=None, cap_usd=None, max_wall_seconds=None, out_dir=Path("/nonexistent"),
+                        dry_run=True)
+    assert ok == 0
+    with pytest.raises(SystemExit, match="second-model"):
+        runner.execute(rows, rows, task="merger_consideration", set_name="pending", chunk_spec=None,
+                       models=["deepseek/deepseek-v4.1-flash"], provider="openrouter", reasoning="off",
+                       initials=None, cap_usd=None, max_wall_seconds=None, out_dir=Path("/nonexistent"),
+                       dry_run=True)
