@@ -42,7 +42,7 @@ classes:
     fields:
       document_name: {type: name, source: llm, task: contract_entities, absence: evidence_only}
       parties: {type: "entity_list:name", source: llm, task: contract_entities, absence: evidence_only}
-      party_roles: {type: "entity_list:free_text", source: llm, task: contract_entities, absence: evidence_only, dojo: v2, vocabulary: contract_party_role}
+      party_roles: {type: "entity_list:free_text", source: llm, task: contract_entities, absence: evidence_only, dojo: v2, vocabulary: contract_party_role, vocabulary_part: tail}
       signatories: {type: "entity_list:name", source: llm, task: contract_entities, absence: absent_ok, dojo: v2}
       agreement_date: {type: date, source: llm, task: contract_entities, absence: absent_ok, dojo: v2}
       effective_date: {type: date, source: llm, task: contract_entities, absence: absent_ok}
@@ -114,7 +114,7 @@ classes:
       intent: {type: label, source: gold, absence: never_absent}
       subject_matter: {type: free_text, source: gold, absence: never_absent}
       keywords: {type: "entity_list:name", source: gold, absence: never_absent}
-      claim_checklist: {type: "entity_list:free_text", source: llm, task: claim_checklist, absence: absent_ok, vocabulary: claim_checklist_category}
+      claim_checklist: {type: "entity_list:free_text", source: llm, task: claim_checklist, absence: absent_ok, vocabulary: claim_checklist_category, vocabulary_part: head}
   corporate_record:
     specialist: corporate_records_specialist
     # Core fields; subclass entity keys come from dojo_snapshot corporate_subclass_schemas,

@@ -111,7 +111,9 @@ have several arms (a bake-off); add `--arm N` to each command for those.
    ```
 
 4. **Gate.** Scores the chunk's gate offline and prints the result. For `agreement` chunks,
-   read `sample.csv` first and add `--signed-off`.
+   read `sample.csv` first and add `--signed-off`. The gate scores and approves the models
+   and provider the chunk actually ran (from `runs.jsonl`), so after a Modal run pass the same
+   `--provider modal`; a different `--provider` is refused.
 
    ```bash
    $L gate <id> [--arm N] [--signed-off]

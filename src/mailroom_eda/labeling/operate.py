@@ -242,7 +242,10 @@ def gate_field_accuracy(rows: Sequence[Mapping[str, Any]], out_dir: Path, floor:
             c["not_accepted"] += 1
             continue
         raw = f["final_value"]
-        value = json.loads(raw) if raw[:1] == "[" else raw
+        try:  # lists are written as JSON; a plain string may also start with "["
+            value = json.loads(raw) if raw[:1] == "[" else raw
+        except ValueError:
+            value = raw
         c["correct" if matches_cuad_gold(value, f["type"], spans) else "wrong"] += 1
     fields = {}
     for name, c in per.items():
@@ -350,6 +353,10 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
     rows = runner.load_stage(stage)
     picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
     models, reasoning = resolve(name, entry)
+    provider = "openrouter"
+    started = [r for r in export.read_journal(out_dir / "runs.jsonl") if r.get("started_utc") and r.get("models")]
+    if started:  # score the models the chunk actually ran (e.g. the mapped Modal model)
+        models, provider = list(started[-1]["models"]), str(started[-1].get("provider") or provider)
     runner.review(rows, entry["task"], out_dir, reasoning=reasoning)
     gate = dict(entry["gate"])
     kind = gate.pop("kind")
@@ -380,7 +387,7 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
         raise SystemExit(f"unknown gate kind {kind!r}")
     every = [c for c in export.read_journal(out_dir / "calls.jsonl") if c.get("reasoning") == reasoning]
     calls = [c for c in every if not c.get("error")]
-    res.update(chunk=entry["id"], arm=arm, task=entry["task"], models=models, reasoning=reasoning,
+    res.update(chunk=entry["id"], arm=arm, task=entry["task"], models=models, provider=provider, reasoning=reasoning,
                prompt_sha256=sorted({c["prompt_sha256"] for c in calls}),
                served_providers=sorted({c.get("served_provider") or "" for c in calls} - {""}),
                spent_usd=round(sum(c.get("cost_usd") or 0 for c in every), 4), scored_utc=_now())
@@ -392,6 +399,9 @@ def cmd_gate(args: argparse.Namespace) -> int:
     """Score a chunk's gate; with --approve, record a pass in approved.yaml."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
     res = gate_result(args.campaign, entry, arm, args.out, args.stage, signed_off=args.signed_off)
+    if res["provider"] != args.provider:
+        raise SystemExit(f"--provider {args.provider}, but chunk {entry['id']} ran on {res['provider']} "
+                         f"(runs.jsonl); the gate scores the models the chunk ran")
     print(json.dumps(res, indent=1))
     if not args.approve:
         return 0 if res["passed"] else 1
@@ -406,7 +416,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
     approvals = [a for a in approvals if str(a["chunk"]) != str(entry["id"])] if args.replace else approvals
     approvals.append({
         "chunk": str(entry["id"]), "arm": arm, "task": entry["task"], "set": entry["set"],
-        "slice": entry.get("chunk"), "models": res["models"], "provider": args.provider,
+        "slice": entry.get("chunk"), "models": res["models"], "provider": res["provider"],
         "reasoning": res["reasoning"], "temperature": 0, "prompt_sha256": res["prompt_sha256"],
         "served_providers": res["served_providers"],
         "gate": {k: v for k, v in res.items() if k in ("kind", "micro_f1", "micro_precision", "cohen_kappa",

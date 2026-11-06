@@ -34,11 +34,22 @@ WINDOW = 12  # lines: class keys this close together form one registry
 
 
 def registry_classes(path: Path = FIELDS_YAML) -> dict[str, str]:
-    """Class keys and specialists declared in ``fields.yaml`` (read without PyYAML: the
-    two-space-indented keys under ``classes:`` and their ``specialist:`` lines)."""
+    """Class keys and specialists declared in ``fields.yaml``.
+
+    Parsed with PyYAML (a dependency of this repository). Without PyYAML, for a bare
+    interpreter, it falls back to reading the two-space-indented keys under ``classes:``
+    and their ``specialist:`` lines.
+    """
     out: dict[str, str] = {}
     if not path.is_file():
         return out
+    try:
+        import yaml  # noqa: PLC0415
+    except ImportError:
+        yaml = None
+    if yaml is not None:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return {str(k): str((v or {}).get("specialist") or "") for k, v in (data.get("classes") or {}).items()}
     in_classes, current = False, None
     for line in path.read_text(encoding="utf-8").splitlines():
         if re.match(r"^classes:\s*$", line):
@@ -70,7 +81,11 @@ def class_table(extra: list[str] = ()) -> dict[str, str]:
 
 def patterns(classes: dict[str, str]) -> dict[str, re.Pattern]:
     """Whole-word class keys; "contract" alone is too common, so only quoted or keyed uses count."""
-    return {c: re.compile(rf"""["'`]{c}["'`]|\b{c}\s*:|\bexpected\s*==\s*["']{c}""") for c in classes}
+    out = {}
+    for c in classes:
+        k = re.escape(c)
+        out[c] = re.compile(rf"""["'`]{k}["'`]|\b{k}\s*:|\bexpected\s*==\s*["']{k}""")
+    return out
 
 
 CLASSES = dict(CORE)

@@ -251,8 +251,24 @@ def agree(a: Any, b: Any, type_: str) -> bool:
     return na == nb
 
 
-def grounded(value: Any, type_: str, doc: DocIndex, *, vocab: Sequence[str] | None = None) -> bool:
-    """Is ``value`` supported by the document (or by its vocabulary, for labels)?"""
+def _vocab_ok(item: Any, vocab: Sequence[str], part: str) -> bool:
+    """Is the ``head`` (text before the first colon) or ``tail`` (after the last colon) of a
+    ``"<x>: <y>"`` list item in ``vocab``? An item with no colon fails."""
+    s = str(item or "")
+    if ":" not in s:
+        return False
+    key = s.split(":", 1)[0] if part == "head" else s.rsplit(":", 1)[1]
+    return normalize(key, "label") in {normalize(v, "label") for v in vocab}
+
+
+def grounded(value: Any, type_: str, doc: DocIndex, *, vocab: Sequence[str] | None = None,
+             vocab_part: str | None = None) -> bool:
+    """Is ``value`` supported by the document (or by its vocabulary, for labels)?
+
+    For a list field with ``vocab`` and ``vocab_part`` (``head`` or ``tail``), each item's
+    closed part must also be in the vocabulary, e.g. the category of a claim checklist
+    item ``"Deductible: $500 applies"`` or the role of a party ``"Acme Corp.: licensor"``.
+    """
     if value is None or value == "" or value == []:
         return False
     if type_ == "label":
@@ -260,6 +276,8 @@ def grounded(value: Any, type_: str, doc: DocIndex, *, vocab: Sequence[str] | No
     if type_.startswith("entity_list"):
         items = value if isinstance(value, list) else [value]
         inner = type_.split(":", 1)[1] if ":" in type_ else "name"
+        if vocab and vocab_part and not all(_vocab_ok(i, vocab, vocab_part) for i in items):
+            return False
         return all(grounded(i, inner, doc) for i in items)
     if type_ == "date":
         d = parse_date(value)
@@ -302,7 +320,7 @@ class FieldResult:
 
 
 def check_field(raw: Mapping[str, Any] | None, type_: str, doc: DocIndex, *,
-                vocab: Sequence[str] | None = None) -> FieldResult:
+                vocab: Sequence[str] | None = None, vocab_part: str | None = None) -> FieldResult:
     """Validate one model's ``{"value", "status", "evidence"}`` object against ``doc``."""
     raw = raw if isinstance(raw, Mapping) else {}
     status = raw.get("status") if raw.get("status") in STATUSES else "not_found"
@@ -312,7 +330,7 @@ def check_field(raw: Mapping[str, Any] | None, type_: str, doc: DocIndex, *,
         verbatim = True
     else:
         verbatim = bool(evidence) and locate(doc.text, evidence, doc.folded) is not None
-    ground = status != "present" or grounded(value, type_, doc, vocab=vocab)
+    ground = status != "present" or grounded(value, type_, doc, vocab=vocab, vocab_part=vocab_part)
     if status == "present" and ground and verbatim and type_ in _EVIDENCE_BOUND:
         # The value must be supported by its own evidence quote, not just somewhere
         # in the document.

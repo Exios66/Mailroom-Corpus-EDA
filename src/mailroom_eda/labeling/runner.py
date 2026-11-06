@@ -464,7 +464,8 @@ def field_decisions(rows: Sequence[Mapping[str, Any]], calls: Sequence[Mapping[s
             results = []
             for c in got:
                 raw = ((c or {}).get("response") or {}).get("fields", {}).get(name) if c else None
-                results.append(verify.check_field(raw, t, idx, vocab=vocab) if c else None)
+                results.append(verify.check_field(raw, t, idx, vocab=vocab,
+                                                  vocab_part=spec.get("vocabulary_part")) if c else None)
             a = results[0]
             b = results[1] if len(results) > 1 else None
             if a is None:

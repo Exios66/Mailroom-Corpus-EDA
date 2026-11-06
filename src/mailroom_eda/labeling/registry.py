@@ -180,6 +180,13 @@ def validate_registry(reg: Mapping[str, Any], *, prompts_dir: Path = PROMPTS_DIR
                 out.append(f"{where}: absence must be one of {sorted(ABSENCE_POLICIES)}")
             if f.get("vocabulary") and f["vocabulary"] not in vocabs:
                 out.append(f"{where}: unknown vocabulary {f['vocabulary']!r}")
+            if f.get("vocabulary_part") is not None:
+                if f["vocabulary_part"] not in ("head", "tail"):
+                    out.append(f"{where}: vocabulary_part must be head or tail")
+                elif not f.get("vocabulary"):
+                    out.append(f"{where}: vocabulary_part needs a vocabulary")
+                elif not str(f.get("type", "")).startswith("entity_list"):
+                    out.append(f"{where}: vocabulary_part applies only to entity_list fields")
             if (f.get("retype") or f.get("type")) == "label" and not f.get("vocabulary") and f.get("source") == "llm":
                 out.append(f"{where}: an llm label field needs a closed vocabulary")
             if f.get("source") == "llm":

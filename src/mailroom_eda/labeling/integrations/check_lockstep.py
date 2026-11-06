@@ -28,10 +28,11 @@ from pathlib import Path
 
 
 def _read(path: Path) -> str:
-    """File text, or '' when it is missing."""
+    """File text, or '' when it is missing (the missing path is named on stderr)."""
     try:
         return path.read_text(encoding="utf-8")
-    except OSError:
+    except OSError as err:
+        print(f"missing: {path} ({err.strerror or err})", file=sys.stderr)
         return ""
 
 
@@ -99,6 +100,7 @@ def table(eda: Path, mailroom: Path, sandbox: Path, dojo: Path | None = None,
         sizes["expected (--rows)"] = str(rows)
 
     def same(values: dict[str, str | None]) -> bool:
+        """Every value was read and they are all equal."""
         return None not in values.values() and len(set(values.values())) == 1
 
     return [("Dojo release version", versions, same(versions)),

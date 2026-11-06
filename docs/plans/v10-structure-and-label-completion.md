@@ -250,26 +250,26 @@ Layout uses clean tables, collapsible long lists, and no internal ticket ids in 
 - **Low** is tried for intent only (chunk 3 runs off and low and keeps the better kappa). Urgency is labeled inside the correspondence extraction call with reasoning off, and `communication_type` is deterministic (the subclass).
 - **Never `high`.**
 
-**Token budget** (one model, every task once, windowed prompts measured by `labeling costs`): about **17.7M prompt / 3.4M output tokens**, including a 1.25x allowance for retries and CUAD repair calls. Merger windows add the regex-located Termination Fee, Outside Date, Brokers and Notices sections.
+**Token budget** (one model, every task once, windowed prompts measured by `labeling costs`): about **18.4M prompt / 3.4M output tokens**, including a 1.25x allowance for retries and CUAD repair calls. Merger windows add the regex-located Termination Fee, Outside Date, Brokers and Notices sections, and the `merger_consideration` window adds the Conversion of Shares, Merger Consideration and Election sections.
 
 **Single-model campaign cost** (from `src/mailroom_eda/labeling/campaigns/v10/costs.md`, prices checked 2026-11-06):
 
 | model | cost |
 |---|---|
-| gpt-6-luna | $3.46 |
-| qwen3.8-flash | $4.24 |
-| glm-5.3-flash | $4.34 |
-| minimax-m3.1-flash | $4.68 |
-| deepseek-v4.1-flash | $4.85 |
-| deepseek-v4.1-flash-1017 | $9.36 |
-| glm-5.3-flashx-legal | $10.77 |
-| gemini-3.5-flash-lite | $13.75 |
-| Modal Qwen3-32B | about $8–12 of H100 time |
+| gpt-6-luna | $3.55 |
+| qwen3.8-flash | $4.37 |
+| glm-5.3-flash | $4.47 |
+| minimax-m3.1-flash | $4.81 |
+| deepseek-v4.1-flash | $4.98 |
+| deepseek-v4.1-flash-1017 | $9.62 |
+| glm-5.3-flashx-legal | $11.08 |
+| gemini-3.5-flash-lite | $14.05 |
+| Modal Qwen3-32B | about $8–12 of H100 time (`costs.md` shows $126.67: the conservative token-equivalent price in `models.yaml` that keeps the cap safe, not an estimate) |
 
 **Recommended mix:**
 - GLM-legal + DeepSeek for contracts, mergers and corporate records.
 - DeepSeek + MiniMax for correspondence and insurance.
-- **About $14.24 projected (two models on every extraction chunk, all three CUAD bake-off arms, both intent arms); the per-chunk caps add up to $27.90.** The chunk-by-chunk table is in `costs.md`.
+- **About $14.68 projected (two models on every extraction chunk, all three CUAD bake-off arms, both intent arms); the per-chunk caps add up to $28.90.** The chunk-by-chunk table is in `costs.md`.
 - Prices are re-checked before every chunk, and `costs.md` is regenerated (`labeling costs`; `--check` fails when it is stale).
 
 ## Part E: prompts
@@ -581,7 +581,7 @@ Each PR waits for review. No PR is merged and no paid call is launched without t
     - card `--check`.
   - Also:
     - ruff;
-    - `labeling estimate`, which reproduces `costs.md`;
+    - `labeling costs --check`, which confirms `costs.md` matches the campaign, `models.yaml` and the stage;
     - a mocked `--dry-run` per task;
     - the v10 build twice, byte-compared;
     - conformance normally and under `-O`;
