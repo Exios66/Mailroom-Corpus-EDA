@@ -196,6 +196,8 @@ labeling/{providers,spend,runner,verify,export}.py
 
 ### C2. Layout
 
+Written by `python -m mailroom_eda.v10_build --stage data/v9_4/stage --out data/v10/stage [--labels]` (`v10_build.build`), byte-identical for the same inputs.
+
 | config | rows | contents |
 |---|---|---|
 | `default` (blind) | 3,292 | as above |
@@ -208,6 +210,8 @@ labeling/{providers,spend,runner,verify,export}.py
 `dataset_info.json` carries splits and `num_examples`. Shards keep the `-00000-of-00001` naming. The sandbox hard-codes those names; a patch replaces that with a glob.
 
 ### C3. Gates (`scripts/audit/verify_v10_conformance.py`)
+
+Implemented in `src/mailroom_eda/v10_conformance.py` (gate numbers as below; chunk 0 runs 1–8, 12 and 13 through campaign step `0`, chunk 11 runs all 13 through step `11`).
 
 1. The row set equals v9.4.
 2. The cleanup diff stays inside its allowlist, and every hash matches its `doc_text` in every config.
@@ -224,6 +228,8 @@ labeling/{providers,spend,runner,verify,export}.py
 13. Every config loads offline with `datasets` from local parquet.
 
 ### C4. Dataset card (`src/mailroom_eda/card_v10.py`, rendered from data and `fields.yaml`)
+
+The build writes the card to `<stage>/README.md` and records its hash in `manifest.json`; `python -m mailroom_eda.card_v10 --check` is gate 12.
 
 **YAML:**
 - `pretty_name`

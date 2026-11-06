@@ -2219,7 +2219,7 @@ def test_resolved_gate_passes_only_with_no_open_items(tmp_path, monkeypatch):
     res = operate.gate_result("v10", entry, None, tmp_path, tmp_path)
     assert not res["passed"] and res["open_items"] == 1 and res["per_chunk"] == {"7b": 1}
     assert "9e" in res["unapproved_needs"] and (tmp_path / "adjudication" / "gate.json").exists()
-    every = [{"chunk": c, "arm": None, "reasoning": "low", "approved_by": "JB"} for c in entry["needs"]]
+    every = [{"chunk": c, "arm": None, "reasoning": "low", "approved_by": "JB"} for c in [*entry["needs"], "0"]]
     monkeypatch.setattr(operate, "load_approvals", lambda name: every)
     monkeypatch.setattr(operate, "adjudication_items", lambda *a, **k: ([], 0))
     assert operate.gate_result("v10", entry, None, tmp_path, tmp_path)["passed"]

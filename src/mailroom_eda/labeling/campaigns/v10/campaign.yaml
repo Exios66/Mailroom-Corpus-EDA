@@ -119,9 +119,16 @@ chunks:
 # `labeling sweep` ignore them. `labeling gate <id> --approve` records them like a chunk.
 #   resolved        no approved chunk has a field still at final_decision adjudicate
 #                   (`labeling adjudicate` lists them in adjudication/open.csv)
+#   conformance     v10_conformance gates over the built stage (`gates:`; 12 is the card)
 steps:
+  # chunk 0: `python -m mailroom_eda.v10_build --out data/v10/stage` (no labels), then gate 0
+  - {id: "0", task: build, set: all, stage: data/v10/stage,
+     gate: {kind: conformance, gates: [1, 2, 3, 4, 5, 6, 7, 8, 12, 13]}}
   - {id: "10", task: adjudication, set: all, needs: ["1", "1h", "2a", "2b", "2c", "3", "4", "5a", "5b", "5c", "5d", "5e", "6c0", "6c1", "6a", "6b", "6c", "7a", "7b", "7c", "7d", "7e", "8a", "8b", "8c", "8d", "8e", "9a", "9b", "9c", "9d", "9e"],
      gate: {kind: resolved}}
+  # chunk 11: `python -m mailroom_eda.v10_build --out data/v10/stage --labels`, then gate 11
+  - {id: "11", task: build, set: all, stage: data/v10/stage, needs: ["0", "10"],
+     gate: {kind: conformance, gates: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]}}
 # The sandbox interim overlay the flag-only cross-check reads (labeling/interim.py): the
 # sha256 of local-mailroom-sandbox data/labels/interim/MANIFEST.json at sandbox_commit.
 # A rebuilt overlay is refused until this pin moves.

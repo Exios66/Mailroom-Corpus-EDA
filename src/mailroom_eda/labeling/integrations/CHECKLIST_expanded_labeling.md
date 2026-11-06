@@ -39,12 +39,12 @@ reaches the same label quality and the row count and splits stay unchanged.
 
 ## 3. Mailroom-Corpus-EDA: dataset
 
-- [ ] The v10 build reads the approved labels; `provenance` records `llm:<configuration>` for model labels and the expert source otherwise
+- [ ] The v10 build reads the approved labels; `provenance` records `llm:<configuration>` for model labels and the expert source otherwise (`labeling/ingest.py`, applied by `v10_build.build --labels`; an uncalibrated configuration is refused)
 - [ ] `gt_presence.py` / `gt_quality.py`: the field's applicability and allowed empties
 - [ ] Subclass relabels: the new `subclass` follows the label, `source_subclass` and the legacy `expected_subclass` keep the raw value
 - [ ] Row removals only: the removal list, the new size, and the re-rendered split counts (the md5 rule is unchanged, so remaining rows keep their split)
-- [ ] A conformance check for the change (for example: every merger has a non-null `merger_consideration` with evidence or an expert source)
-- [ ] The card: field table, coverage, composition and per-subclass tables are re-rendered from the data (`--check` passes)
+- [ ] A conformance check for the change (for example: every merger has a non-null `merger_consideration` with evidence or an expert source): a gate in `v10_conformance.py`, with a tamper test in `tests/test_v10_pipeline.py`
+- [ ] The card: field table, coverage, composition and per-subclass tables are re-rendered from the data (`python -m mailroom_eda.card_v10 --check` passes)
 - [ ] CHANGELOG entry with the counts before and after
 
 ## 4. llm-mailroom
