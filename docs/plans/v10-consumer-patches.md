@@ -125,6 +125,8 @@ The repo is added with `add_repo` (push access) when this phase starts.
 
 ### G4. Publish (only on the user's go)
 
+Status and guards: `v10-release-train.md`. The guarded script is `scripts/publish/publish_v10.py` (a dry run unless `--tag v10 --initials XX --confirm`).
+
 1. Run the v10 gates.
 2. Publish to the Hub as a new tag `v10`, keeping the older tags.
 3. Update the EDA `config.py` pins.

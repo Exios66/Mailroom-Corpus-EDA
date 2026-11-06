@@ -15,6 +15,10 @@ Reads each pin from the checkout's own source (no imports, no network):
 * **Corpus size**: llm-mailroom's full-corpus ``n_docs`` and the sandbox's
   ``FAMILY_CORPUS_SIZE`` (compared with ``--rows`` when given).
 
+A ``_VENDOR_PINS`` entry may pin the Dojo by a full commit sha instead of a tag (an
+untagged release candidate). Its version is then the vendored ``__version__``, and the sha
+joins the commit row, which compares full shas: a short ``dojo_pin.commit`` drifts.
+
 Exit 0 when every row agrees, 1 when any row drifts or a pin cannot be read. The
 lockstep rule (``README.md``): nothing is published until this exits 0 against the
 release being cut. Standard library only.
@@ -25,6 +29,10 @@ import argparse
 import re
 import sys
 from pathlib import Path
+
+
+#: a full commit sha (a ``_VENDOR_PINS`` version slot may hold one instead of a tag)
+SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
 def _read(path: Path) -> str:
@@ -70,13 +78,18 @@ def sandbox_pins(root: Path) -> dict[str, str | None]:
     cli = _read(root / "src/mailroom_sandbox/cli.py")
     dojo = re.search(r'\("llm-dojo-scoring",\s*"([^"]+)",\s*"[^"]+",\s*"([0-9a-f]{40})"\)', cli)
     spec = _read(root / "src/mailroom_sandbox/job/spec.py")
+    vendored = _find(r'^__version__\s*=\s*"([^"]+)"',
+                     _read(root / "vendor/llm-dojo-scoring/src/llm_dojo_scoring/__init__.py"))
+    ref = dojo[1] if dojo else None
+    sha_pin = ref is not None and SHA_RE.fullmatch(ref) is not None
     return {
-        "dojo_version": dojo[1].lstrip("v") if dojo else None,
+        # a commit pin (an untagged Dojo commit) names no version: the vendored one stands in
+        "dojo_version": vendored if sha_pin else (ref.lstrip("v") if ref else None),
+        "dojo_ref": ref if sha_pin else None,
         "dojo_commit": dojo[2] if dojo else None,
         "release_commit": _find(r"llm-dojo-scoring\.git@([0-9a-f]{40})",
                                 _read(root / "requirements/dojo-release.txt")),
-        "vendored_version": _find(r'^__version__\s*=\s*"([^"]+)"',
-                                  _read(root / "vendor/llm-dojo-scoring/src/llm_dojo_scoring/__init__.py")),
+        "vendored_version": vendored,
         "dataset_tag": _find(r'^FAMILY_HF_TAG\s*=\s*"([^"]+)"', spec),
         "corpus_size": _find(r"^FAMILY_CORPUS_SIZE\s*=\s*(\d+)", spec),
     }
@@ -89,10 +102,17 @@ def table(eda: Path, mailroom: Path, sandbox: Path, dojo: Path | None = None,
     versions = {"EDA fields.yaml dojo_pin": e["dojo_version"], "sandbox _VENDOR_PINS": s["dojo_version"],
                 "sandbox vendored __version__": s["vendored_version"],
                 "llm-mailroom pyproject": (m["dojo_ref"] or "").lstrip("v") or None}
+    mailroom_sha = m["dojo_ref"] is not None and SHA_RE.fullmatch(m["dojo_ref"]) is not None
+    if mailroom_sha:  # a commit pin: it is compared with the commits, not the versions
+        del versions["llm-mailroom pyproject"]
     if dojo is not None:
         versions["llm-dojo-scoring pyproject"] = _find(r'^version\s*=\s*"([^"]+)"', _read(dojo / "pyproject.toml"))
     commits = {"EDA fields.yaml dojo_pin": e["dojo_commit"], "sandbox _VENDOR_PINS": s["dojo_commit"],
                "sandbox requirements/dojo-release.txt": s["release_commit"]}
+    if s["dojo_ref"] is not None:
+        commits["sandbox _VENDOR_PINS ref (commit pin)"] = s["dojo_ref"]
+    if mailroom_sha:
+        commits["llm-mailroom pyproject (commit pin)"] = m["dojo_ref"]
     tags = {"EDA config.REPO_TAG": e["dataset_tag"], "llm-mailroom FULL_CORPUS_REVISION": m["dataset_tag"],
             "sandbox FAMILY_HF_TAG": s["dataset_tag"]}
     sizes = {"llm-mailroom n_docs": m["n_docs"], "sandbox FAMILY_CORPUS_SIZE": s["corpus_size"]}
