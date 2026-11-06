@@ -1344,3 +1344,53 @@ def test_check_lockstep_names_missing_files(tmp_path):
     res = subprocess.run([sys.executable, str(script), "--eda", str(tmp_path / "eda"), "--mailroom",
                           str(tmp_path / "mr"), "--sandbox", str(tmp_path / "sb")], capture_output=True, text=True)
     assert res.returncode == 1 and "missing:" in res.stderr and "job/spec.py" in res.stderr
+
+
+def test_reasoning_calls_get_a_reasoning_allowance_on_top_of_the_answer_budget(tmp_path, rows):
+    """Reasoning tokens count against max_tokens, so a reasoning call must not be cut off."""
+    assert runner.max_tokens("intent", "off") == runner.MAX_TOKENS["intent"]
+    assert runner.max_tokens("intent", "low") == runner.MAX_TOKENS["intent"] + runner.REASONING_ALLOWANCE
+    seen = []
+
+    def chat(backend, model, messages, schema, *, reasoning, max_tokens):
+        """Fake chat call that records the budget it was given."""
+        seen.append(max_tokens)
+        ans = {"intent": "update", "confidence": 0.9, "evidence": "x"}
+        return providers.Completion(json.dumps(ans), ans, model, "P", 100, 50, 0, 0.0001, "stop", True)
+
+    runner.run_chunk([rows[2]], task="intent", models=["deepseek/deepseek-v4.1-flash"],
+                     backend=providers.Backend("openrouter", "u", "k"), reasoning="low",
+                     budget=spend.Budget(1.0, 3600), out_dir=tmp_path, chat=chat)
+    assert seen and set(seen) == {runner.MAX_TOKENS["intent"] + runner.REASONING_ALLOWANCE}
+
+
+def test_identical_answers_from_other_journals_are_reused_not_bought_again(tmp_path, rows):
+    """An answer already paid for under the labels root, with the same configuration, is copied."""
+    ans = {"intent": "update", "confidence": 0.9, "evidence": "x"}
+    common = dict(task="intent", models=["deepseek/deepseek-v4.1-flash"],
+                  backend=providers.Backend("openrouter", "u", "k"), budget=spend.Budget(1.0, 3600))
+    runner.run_chunk([rows[2]], reasoning="off", out_dir=tmp_path / "smoke" / "a",
+                     chat=_fake_chat({"deepseek/deepseek-v4.1-flash": ans}), **common)
+
+    def no_call(*a, **k):
+        """Any paid call here is a failure."""
+        raise AssertionError("a reusable answer was bought again")
+
+    res = runner.run_chunk([rows[2]], reasoning="off", out_dir=tmp_path / "3_intent", chat=no_call,
+                           reuse_from=[tmp_path], **common)
+    assert res.get("calls", 0) == 0 and res["reused"] == 2  # passes a and b
+    recs = export.read_journal(tmp_path / "3_intent" / "calls.jsonl")
+    assert len(recs) == 2 and all(r["reused_from"].endswith("smoke/a/calls.jsonl") for r in recs)
+    runner.review([rows[2]], "intent", tmp_path / "3_intent")
+    assert export.read_journal(tmp_path / "3_intent" / "intent-labels.jsonl")[0]["pass_a"]["intent"] == "update"
+
+
+def test_answers_from_a_different_configuration_are_not_reused(tmp_path, rows):
+    """A different reasoning level is a different configuration, so it is sent again."""
+    ans = {"intent": "update", "confidence": 0.9, "evidence": "x"}
+    common = dict(task="intent", models=["deepseek/deepseek-v4.1-flash"],
+                  backend=providers.Backend("openrouter", "u", "k"), budget=spend.Budget(1.0, 3600),
+                  chat=_fake_chat({"deepseek/deepseek-v4.1-flash": ans}))
+    runner.run_chunk([rows[2]], reasoning="off", out_dir=tmp_path / "a", **common)
+    res = runner.run_chunk([rows[2]], reasoning="low", out_dir=tmp_path / "b", reuse_from=[tmp_path], **common)
+    assert res["calls"] == 2 and res.get("reused", 0) == 0

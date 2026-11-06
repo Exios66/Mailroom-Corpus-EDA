@@ -49,11 +49,16 @@ TYPICAL_OUTPUT = {"cuad": 2500, "intent": 120, "contract_entities": 1200, "merge
                   "merger_consideration": 200,
                   "correspondence": 450, "claim_checklist": 500, "corporate": 800}
 RETRY_FACTOR = 1.25
+#: Extra output tokens for a call with reasoning on: reasoning tokens count against
+#: ``max_tokens``, and without this a short answer budget (intent: 400) is cut off.
+REASONING_ALLOWANCE = 2048
 
 
-def max_tokens(task: str) -> int:
-    """Output-token budget for a task (``fields.yaml`` tasks set ``max_tokens``)."""
-    return MAX_TOKENS.get(task) or int(tasks.generic_tasks()[task].get("max_tokens", 3000))
+def max_tokens(task: str, reasoning: str = "off") -> int:
+    """Output-token budget for a task (``fields.yaml`` tasks set ``max_tokens``), plus
+    :data:`REASONING_ALLOWANCE` when reasoning is on."""
+    base = MAX_TOKENS.get(task) or int(tasks.generic_tasks()[task].get("max_tokens", 3000))
+    return base + (REASONING_ALLOWANCE if reasoning != "off" else 0)
 
 
 def typical_output(task: str) -> int:
@@ -229,11 +234,51 @@ class _Stop(Exception):
     """The budget refused the next call."""
 
 
+def import_reusable(calls_path: Path, roots: Sequence[Path], rows: Sequence[Mapping[str, Any]], *,
+                    task: str, models: Sequence[str], reasoning: str, provider: str,
+                    set_name: str = "") -> int:
+    """Copy answers this chunk would otherwise buy again from other journals under ``roots``.
+
+    An answer is reused only when its configuration is identical: document, model,
+    variant, prompt sha (the exact prompt bundle), reasoning, provider and temperature 0,
+    and it has no error. Each copy keeps ``reused_from`` (the source journal), so the
+    chunk's own journal stays self-contained. Returns the number of records copied.
+    """
+    done = _done(calls_path, reasoning)
+    wanted: set[tuple[str, str, str, str]] = set()
+    for r in rows:
+        for v in _variants(task):
+            req = tasks.build(task, r, v, set_name=set_name)
+            wanted |= {(req.document_id, m, v, req.prompt_sha256) for m in models}
+        if task == "cuad":
+            sha = tasks.build_cuad(r, repair_problems=["-"], prior_answer="").prompt_sha256
+            wanted |= {(str(r["document_id"]), m, "repair", sha) for m in models}
+    wanted -= done
+    if not wanted:
+        return 0
+    here = calls_path.resolve()
+    sources = sorted({p.resolve() for root in roots for p in Path(root).rglob("calls.jsonl")} - {here})
+    copied = 0
+    for src in sources:
+        for c in export.read_journal(src):
+            key = (c.get("document_id"), c.get("model"), c.get("variant", ""), c.get("prompt_sha256", ""))
+            if (key in wanted and not c.get("error") and c.get("reasoning") == reasoning
+                    and c.get("provider") == provider and c.get("temperature", 0) == 0):
+                export.append_journal(calls_path, {**c, "reused_from": str(src)})
+                wanted.discard(key)
+                copied += 1
+    return copied
+
+
 def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[str],
               backend: providers.Backend, reasoning: str, budget: spend.Budget, out_dir: Path,
               vocab: Sequence[str] = (), chat=providers.chat, workers: int = 1,
-              progress: Any = None, set_name: str = "") -> dict[str, Any]:
+              progress: Any = None, set_name: str = "",
+              reuse_from: Sequence[Path] = ()) -> dict[str, Any]:
     """Send every (row, model, variant) not yet answered; append to ``calls.jsonl``.
+
+    First, identical answers already paid for in other journals under ``reuse_from``
+    are copied in (:func:`import_reusable`), so a document is never bought twice.
 
     CUAD answers with rejected spans get one repair call (variant ``repair``) that replays
     the first answer. ``workers`` calls run at once; the budget books every in-flight
@@ -247,8 +292,13 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
         raise ValueError("cuad runs need the CUAD vocabulary")
     out_dir.mkdir(parents=True, exist_ok=True)
     calls_path = out_dir / "calls.jsonl"
-    done = _done(calls_path, reasoning)
     stats: Counter = Counter()
+    if reuse_from:
+        reused = import_reusable(calls_path, reuse_from, rows, task=task, models=models,
+                                 reasoning=reasoning, provider=backend.provider, set_name=set_name)
+        if reused:
+            stats["reused"] = reused
+    done = _done(calls_path, reasoning)
     lock = threading.Lock()
     stop = threading.Event()
     stop_reason: list[str] = []
@@ -264,14 +314,14 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
             raise _Stop()
         ptoks = sum(spend.estimate_tokens(m["content"]) for m in req.messages)
         try:
-            reserved = budget.reserve(model, ptoks, max_tokens(task))
+            reserved = budget.reserve(model, ptoks, max_tokens(task, reasoning))
         except spend.SpendError as err:
             stop.set()
             stop_reason.append(str(err))
             raise _Stop() from err
         try:
             comp = chat(backend, model, req.messages, req.schema, reasoning=reasoning,
-                        max_tokens=max_tokens(task))
+                        max_tokens=max_tokens(task, reasoning))
         except providers.ProviderError as err:
             billed = getattr(err, "usage", None)
             if billed:  # a truncated or unparseable answer is still billed: book it
@@ -790,9 +840,13 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
             set_name: str, chunk_spec: str | None, models: Sequence[str], provider: str, reasoning: str,
             initials: str | None, cap_usd: float | None, max_wall_seconds: float | None, out_dir: Path,
             dry_run: bool = False, workers: int = 4, chunk_id: str | None = None,
-            chat=providers.chat, key_status=providers.key_status) -> int:
+            chat=providers.chat, key_status=providers.key_status,
+            reuse_from: Sequence[Path] | None = None) -> int:
     """Validate, project, gate the spend, run and review one chunk. Returns an exit code
-    (0 done, 2 stopped at the cap or wall, 3 finished with failed calls to re-run)."""
+    (0 done, 2 stopped at the cap or wall, 3 finished with failed calls to re-run).
+
+    Identical answers under ``reuse_from`` (default: the labels root, ``out_dir``'s
+    parent, which holds every chunk and smoke run) are reused instead of bought again."""
     approved = models_registry()["models"]
     for m in models:
         if m not in approved or approved[m]["provider"] != provider:
@@ -823,7 +877,8 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
     result = run_chunk(picked, task=task, models=models, backend=backend, reasoning=reasoning,
                        budget=budget, out_dir=out_dir, vocab=cuad_vocab(rows) if task == "cuad" else (),
                        chat=chat, workers=workers, progress=lambda m: print(m, file=sys.stderr),
-                       set_name=set_name)
+                       set_name=set_name,
+                       reuse_from=[out_dir.parent] if reuse_from is None else reuse_from)
     result["review"] = review(rows, task, out_dir, reasoning=reasoning)
     export.append_journal(out_dir / "runs.jsonl", {"chunk": chunk_id, "finished_utc": _now(), "result": result})
     print(json.dumps(result, indent=1))
