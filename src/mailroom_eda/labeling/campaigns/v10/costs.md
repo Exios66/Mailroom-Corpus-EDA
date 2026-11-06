@@ -11,6 +11,8 @@ exact windowed prompts, typical output per call, x1.25 for retries and repairs;
 
 | model | USD |
 |---|---:|
+| `openai/gpt-6-luna-pro` | 3.56 |
+| `anthropic/claude-haiku-5.5` | 3.56 |
 | `openai/gpt-6-luna` | 3.56 |
 | `qwen/qwen3.8-flash` | 4.38 |
 | `z-ai/glm-5.3-flash` | 4.48 |
@@ -23,20 +25,28 @@ exact windowed prompts, typical output per call, x1.25 for retries and repairs;
 
 ## Recommended plan, chunk by chunk
 
-Projected total **$15.66**; the chunk caps add up to **$28.90**.
+Projected total **$16.67**; the chunk caps add up to **$30.00**.
 Two-model chunks are priced for both models.
 
 | chunk | task | set | slice | docs | calls | models | reasoning | projected USD | cap USD |
 |---|---|---|---|---:|---:|---|---|---:|---:|
-| 1 | cuad | calibration | all | 40 | 40 | `glm-5.3-flashx-legal` | off | 0.34 | 0.75 |
-| 1 | cuad | calibration | all | 40 | 40 | `glm-5.3-flashx-legal` | low | 0.43 | 0.85 |
-| 1 | cuad | calibration | all | 40 | 40 | `deepseek-v4.1-flash` | off | 0.16 | 0.40 |
-| 2a | cuad | pending | 1/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.27 | 0.60 |
-| 2b | cuad | pending | 2/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.24 | 0.60 |
-| 2c | cuad | pending | 3/3 | 29 | 29 | `winner_of_1` | winner_of_1 | 0.21 | 0.60 |
-| 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash` | off | 0.05 | 0.15 |
-| 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash` | low | 0.06 | 0.20 |
-| 4 | intent | flagged | all | 25 | 50 | `deepseek-v4.1-flash` | winner_of_3 | 0.01 | 0.10 |
+| 1 | cuad | calibration | all | 40 | 40 | `deepseek-v4.1-flash` | low | 0.20 | 0.35 |
+| 1 | cuad | calibration | all | 40 | 40 | `glm-5.3-flashx-legal` | low | 0.43 | 0.75 |
+| 1 | cuad | calibration | all | 40 | 40 | `deepseek-v4.1-flash` | off | 0.16 | 0.30 |
+| 1 | cuad | calibration | all | 40 | 40 | `deepseek-v4.1-flash-1017` | off | 0.30 | 0.55 |
+| 1 | cuad | calibration | all | 40 | 40 | `gpt-6-luna-pro` | off | 0.11 | 0.25 |
+| 1 | cuad | calibration | all | 40 | 40 | `claude-haiku-5.5` | off | 0.11 | 0.25 |
+| 1 | cuad | calibration | all | 40 | 40 | `minimax-m3.1-flash` | low | 0.19 | 0.35 |
+| 2a | cuad | pending | 1/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.34 | 0.55 |
+| 2b | cuad | pending | 2/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.31 | 0.50 |
+| 2c | cuad | pending | 3/3 | 29 | 29 | `winner_of_1` | winner_of_1 | 0.27 | 0.50 |
+| 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash` | off | 0.05 | 0.10 |
+| 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash` | low | 0.06 | 0.25 |
+| 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash-1017` | off | 0.09 | 0.20 |
+| 3 | intent | calibration | all | 96 | 192 | `gpt-6-luna-pro` | off | 0.03 | 0.10 |
+| 3 | intent | calibration | all | 96 | 192 | `claude-haiku-5.5` | off | 0.03 | 0.10 |
+| 3 | intent | calibration | all | 96 | 192 | `minimax-m3.1-flash` | low | 0.06 | 0.15 |
+| 4 | intent | flagged | all | 25 | 50 | `winner_of_3` | winner_of_3 | 0.02 | 0.10 |
 | 5a | contract_entities | calibration | all | 40 | 80 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.32 | 0.75 |
 | 5b | contract_entities | pilot | all | 52 | 104 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.48 | 1.00 |
 | 5c | contract_entities | remainder | 1/3 | 182 | 364 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 1.56 | 3.00 |
@@ -63,4 +73,4 @@ Two-model chunks are priced for both models.
 | 9d | corporate | remainder | 3/4 | 104 | 208 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.55 | 1.00 |
 | 9e | corporate | remainder | 4/4 | 103 | 206 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.67 | 1.25 |
 
-`winner_of_1` is priced as `glm-5.3-flashx-legal` with reasoning off; `winner_of_3` as low reasoning.
+`winner_of_1` is priced as `glm-5.3-flashx-legal` at low; `winner_of_3` as `deepseek-v4.1-flash-1017` at low (the costliest arms).

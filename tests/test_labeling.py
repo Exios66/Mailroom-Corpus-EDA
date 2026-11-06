@@ -1547,7 +1547,7 @@ def test_ping_per_provider_pins_each_provider_and_records_reasoning_tokens(tmp_p
     args = argparse.Namespace(campaign="v10", initials="JB", cap_usd=0.05, out=tmp_path, per_provider=True)
     assert operate.cmd_ping(args, chat=chat, key_status=lambda b: {"limit_remaining": 10}) == 0
     pinned = [s for s in sent if s[0] == "deepseek/deepseek-v4.1-flash" and s[1] == "low" and len(s[2]) == 1]
-    assert {s[2][0] for s in pinned} == {"coreweave", "inference-net"}  # low pin excludes deepinfra, atlas-cloud
+    assert {s[2][0] for s in pinned} == {"atlas-cloud", "coreweave", "inference-net"}  # low pin excludes deepinfra
     log = export.read_journal(tmp_path / "ping.jsonl")
     cw = [r for r in log if r.get("pinned") == "coreweave" and r["reasoning"] == "low"]
     assert cw and cw[0]["reasoning_tokens"] == 200

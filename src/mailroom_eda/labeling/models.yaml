@@ -36,8 +36,9 @@ models:
     route: {only: [deepinfra, atlas-cloud, coreweave, inference-net], quantizations: [fp8],
             max_price: {prompt: 0.15, completion: 0.65}, seed: true,
             # low (2026-11-06 real-document probes): DeepInfra spent 0 reasoning tokens on a CUAD
-            # document; AtlasCloud ran past 2,300 tokens on one email and was truncated
-            by_reasoning: {low: {only: [coreweave, inference-net]}}}
+            # document. Run-away reasoning (over 2,300 tokens on one email) hit AtlasCloud and
+            # CoreWeave alike, so it is a model trait handled by REASONING_ALLOWANCE, not a pin
+            by_reasoning: {low: {only: [atlas-cloud, coreweave, inference-net]}}}
   minimax/minimax-m3.1-flash:
     provider: openrouter
     prompt: 0.15
@@ -49,6 +50,36 @@ models:
             seed: false,
             # low: Parasail and Together reported 0 reasoning tokens on the 2026-11-06 ping
             by_reasoning: {low: {only: [fireworks, sambanova]}}}
+  # Second-opinion bake-off candidates (2026-11-06): each must score on golden calibration
+  # sets at least as well as the DeepSeek primary before it may label anything.
+  deepseek/deepseek-v4.1-flash-1017:
+    provider: openrouter
+    prompt: 0.30
+    completion: 1.20
+    context: 1048576
+    max_completion: 393216
+    roles: [primary_candidate]
+    route: {only: [deepinfra, inference-net, coreweave], quantizations: [fp8],
+            max_price: {prompt: 0.30, completion: 1.20}, seed: true}
+  openai/gpt-6-luna-pro:
+    provider: openrouter
+    prompt: 0.10
+    completion: 0.50
+    context: 1050000
+    max_completion: 128000
+    roles: [second_opinion_candidate]
+    # the endpoints do not take temperature; seed is supported on both
+    route: {only: [openai], max_price: {prompt: 0.10, completion: 0.50}, seed: true, temperature: false}
+  anthropic/claude-haiku-5.5:
+    provider: openrouter
+    prompt: 0.10
+    completion: 0.50
+    context: 1000000
+    max_completion: 128000
+    roles: [second_opinion_candidate]
+    # the endpoints take neither temperature nor seed
+    route: {only: [anthropic, google-vertex], max_price: {prompt: 0.10, completion: 0.50},
+            seed: false, temperature: false}
   Qwen/Qwen3-32B-FP8:
     provider: modal
     # Modal bills GPU time, not tokens: one H100 at about $3.95/hour. The token prices
@@ -62,7 +93,6 @@ models:
     roles: [fallback]
 # Priced for comparison in costs.md only; not approved for ingest (model-level list price).
 comparison:
-  deepseek/deepseek-v4.1-flash-1017: {prompt: 0.30, completion: 1.20}
   z-ai/glm-5.3-flash: {prompt: 0.15, completion: 0.50}
   qwen/qwen3.8-flash: {prompt: 0.15, completion: 0.47}
   openai/gpt-6-luna: {prompt: 0.10, completion: 0.50}

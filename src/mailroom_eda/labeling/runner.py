@@ -51,7 +51,9 @@ TYPICAL_OUTPUT = {"cuad": 2500, "intent": 120, "contract_entities": 1200, "merge
 RETRY_FACTOR = 1.25
 #: Extra output tokens for a call with reasoning on: reasoning tokens count against
 #: ``max_tokens``, and without this a short answer budget (intent: 400) is cut off.
-REASONING_ALLOWANCE = 2048
+# DeepSeek v4.1 Flash at low spent 336 to over 2,300 reasoning tokens on the same real email
+# (2026-11-06 probes); a truncated answer is billed and discarded, unused room costs nothing
+REASONING_ALLOWANCE = 6144
 
 
 def max_tokens(task: str, reasoning: str = "off") -> int:
@@ -717,8 +719,9 @@ def apply_verdict(f: dict[str, Any]) -> None:
 # ---------------------------------------------------------------- costs.md
 
 #: Stand-ins used to price chunks whose model is decided by an earlier gate.
-PLACEHOLDER_MODELS = {"winner_of_1": "z-ai/glm-5.3-flashx-legal"}
-PLACEHOLDER_REASONING = {"winner_of_1": "off", "winner_of_3": "low"}
+# priced as the costliest bake-off arm, so a projection never runs low
+PLACEHOLDER_MODELS = {"winner_of_1": "z-ai/glm-5.3-flashx-legal", "winner_of_3": "deepseek/deepseek-v4.1-flash-1017"}
+PLACEHOLDER_REASONING = {"winner_of_1": "low", "winner_of_3": "low"}
 REASONING_OUTPUT_FACTOR = {"off": 1.0, "low": 1.6}
 
 
@@ -788,8 +791,8 @@ def render_costs(c: Mapping[str, Any]) -> str:
         lines.append(f"| {ch['id']} | {ch['task']} | {ch['set']} | {ch.get('chunk') or 'all'} | "
                      f"{ch['documents']} | {ch['calls']} | {models} | {ch['reasoning']} | "
                      f"{ch['projected_usd']:.2f} | {ch['cap_usd']:.2f} |")
-    lines += ["", "`winner_of_1` is priced as `glm-5.3-flashx-legal` with reasoning off; "
-              "`winner_of_3` as low reasoning.", ""]
+    lines += ["", "`winner_of_1` is priced as `glm-5.3-flashx-legal` at low; "
+              "`winner_of_3` as `deepseek-v4.1-flash-1017` at low (the costliest arms).", ""]
     return "\n".join(lines)
 
 
