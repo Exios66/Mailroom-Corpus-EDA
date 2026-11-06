@@ -368,7 +368,7 @@ def sweep_plan(name: str, approvals: Sequence[Mapping[str, Any]], through: str,
     """The chunk arms a sweep runs, in ``campaign.yaml`` order, and why it stops there.
 
     From ``start`` (default: the first chunk) through ``through``: approved chunks are
-    skipped; the first chunk whose ``needs`` are not all approved, or whose ``requires``
+    skipped, as are arms marked ``skip:``; the first chunk whose ``needs`` are not all approved, or whose ``requires``
     is not met, ends the plan. Every gate needs a human (a bake-off pick, verdicts, or a
     ``--signed-off`` read), so the plan runs a pilot or bake-off and then ends at the
     first chunk that depends on it. Nothing is ever approved here.
@@ -390,8 +390,8 @@ def sweep_plan(name: str, approvals: Sequence[Mapping[str, Any]], through: str,
     for i, c in enumerate(entries):
         cid = ids[i]
         seen[cid] += 1
-        if i < first or i > last or cid in done:
-            continue
+        if i < first or i > last or cid in done or c.get("skip"):
+            continue  # a ``skip:`` arm keeps its number but never runs (``cmd_chunk`` refuses it)
         missing = [str(n) for n in c.get("needs") or [] if str(n) not in done]
         if missing:
             return plan, f"stopped at {cid}: needs chunk {', '.join(missing)} approved first"

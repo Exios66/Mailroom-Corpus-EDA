@@ -2579,3 +2579,13 @@ def test_interim_overlay_is_pinned_in_the_campaign():
     """campaign.yaml pins the overlay manifest the cross-check was written against."""
     pin = campaign("v10")["interim_overlay"]
     assert len(pin["manifest_sha256"]) == 64 and pin["sandbox_commit"]
+
+
+def test_sweep_plan_leaves_out_skipped_arms_but_keeps_their_numbers():
+    """Chunk 3's ``skip:`` arms are not planned (no spend, no refusal mid-sweep); the
+    others keep the arm numbers their output folders use."""
+    plan, _ = operate.sweep_plan("v10", [], "3", start="3")
+    camp = [c for c in campaign("v10")["chunks"] if str(c["id"]) == "3"]
+    expected = [i for i, c in enumerate(camp, 1) if not c.get("skip")]
+    assert [arm for _, arm in plan] == expected and len(expected) < len(camp)
+    assert not any(c.get("skip") for c, _ in plan)
