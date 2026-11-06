@@ -64,17 +64,31 @@ chunks:
   # Chunk 3 is the intent model bake-off on the 96 human-labeled emails (same candidates).
   - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 0.10,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 1: DeepSeek v4.1 Flash, off"}
-  - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash], reasoning: "low", skip: "2026-11-06 run: no κ gain over off (0.680 vs 0.686) at 4x the cost, and one email ran its reasoning past the allowance", cap_usd: 0.10,
+  - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash], reasoning: "low", skip: "2026-11-06 run: no κ gain over off (0.680 vs 0.686) at 4x the cost, and one email ran its reasoning past the allowance", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 2: DeepSeek v4.1 Flash, low"}
   - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash-1017], reasoning: "off", cap_usd: 0.15,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 3: DeepSeek v4.1 Flash 1017, off"}
-  - {id: "3",  task: intent, set: calibration, models: [openai/gpt-6-luna-pro], reasoning: "off", skip: "2026-11-06 run: κ 0.543, clearly the weakest intent arm", cap_usd: 0.10,
+  - {id: "3",  task: intent, set: calibration, models: [openai/gpt-6-luna-pro], reasoning: "off", skip: "2026-11-06 run: κ 0.543, clearly the weakest intent arm", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 4: GPT-6 Luna Pro"}
   - {id: "3",  task: intent, set: calibration, models: [anthropic/claude-haiku-5.5], reasoning: "off", cap_usd: 0.10,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 5: Claude Haiku 5.5"}
   - {id: "3",  task: intent, set: calibration, models: [minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.15,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 6: MiniMax M3.1 Flash, low"}
-  - {id: "4", needs: ["3"],  task: intent, set: flagged, models: [winner_of_3], reasoning: winner_of_3, cap_usd: 0.20, gate: {kind: review}}
+  - {id: "4", needs: ["3"],  task: intent, set: flagged, models: [winner_of_3], reasoning: winner_of_3, cap_usd: 0.00, gate: {kind: review},
+     skip: "2026-11-06: superseded by 4a-4c, which re-read these 25 flagged emails with two models"}
+  # Chunks 4a-4c re-read every machine-made intent (904 emails: llm_zero_shot, aeslc_join,
+  # heuristic, flagged included) with the chunk 3 primary and Haiku 5.5, the user's pick for the
+  # second opinion (2026-11-06: no other-vendor arm cleared the 0.05 non-inferiority bound on 96
+  # emails; Haiku κ 0.763, the stronger of the two that passed the floor). Only a unanimous
+  # answer that fits the email's subtype is written, to the ground_truth config only; a subtype
+  # conflict is read by a person (the subtypes came from older automatic labelers).
+  # A test-split change is only proposed: a person decides it (the test split scores models).
+  - {id: "4a", needs: ["3"], task: intent, set: relabel, chunk: "1/3", models: [winner_of_3, anthropic/claude-haiku-5.5],
+     reasoning: winner_of_3, cap_usd: 0.65, gate: {kind: intent_relabel}}
+  - {id: "4b", needs: ["3"], task: intent, set: relabel, chunk: "2/3", models: [winner_of_3, anthropic/claude-haiku-5.5],
+     reasoning: winner_of_3, cap_usd: 0.65, gate: {kind: intent_relabel}}
+  - {id: "4c", needs: ["3"], task: intent, set: relabel, chunk: "3/3", models: [winner_of_3, anthropic/claude-haiku-5.5],
+     reasoning: winner_of_3, cap_usd: 0.65, gate: {kind: intent_relabel}}
   - {id: "5a", task: contract_entities, set: calibration, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 0.50, gate: {kind: field_accuracy, accuracy: 0.85}, requires: "llm-dojo-scoring 0.28.0 (G1)"}
   - {id: "5b", needs: ["5a"], task: contract_entities, set: pilot, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
@@ -120,7 +134,7 @@ chunks:
 #   resolved        no approved chunk has a field still at final_decision adjudicate
 #                   (`labeling adjudicate` lists them in adjudication/open.csv)
 steps:
-  - {id: "10", task: adjudication, set: all, needs: ["1", "1h", "2a", "2b", "2c", "3", "4", "5a", "5b", "5c", "5d", "5e", "6c0", "6c1", "6a", "6b", "6c", "7a", "7b", "7c", "7d", "7e", "8a", "8b", "8c", "8d", "8e", "9a", "9b", "9c", "9d", "9e"],
+  - {id: "10", task: adjudication, set: all, needs: ["1", "1h", "2a", "2b", "2c", "3", "4a", "4b", "4c", "5a", "5b", "5c", "5d", "5e", "6c0", "6c1", "6a", "6b", "6c", "7a", "7b", "7c", "7d", "7e", "8a", "8b", "8c", "8d", "8e", "9a", "9b", "9c", "9d", "9e"],
      gate: {kind: resolved}}
 # The sandbox interim overlay the flag-only cross-check reads (labeling/interim.py): the
 # sha256 of local-mailroom-sandbox data/labels/interim/MANIFEST.json at sandbox_commit.
