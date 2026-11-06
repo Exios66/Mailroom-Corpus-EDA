@@ -1,11 +1,9 @@
 # Field registry for the v10 label-completion campaign.
 #
 # One entry per (document class, field). Types are llm-dojo-scoring scoring types.
-# Fields marked `dojo: v2` are the adapted contract / merger entity schemas proposed in
-# docs/plans/v10-consumer-patches.md (G1). They are labeled and published, but the
-# Dojo scores them only after G1 lands. Every other field must match
-# dojo_snapshot/dojo_schemas.json `default_field_types` exactly (tests/test_labeling.py),
-# except where `retype` records the type change G1 makes.
+# Every field matches dojo_snapshot/dojo_schemas.json `default_field_types` exactly
+# (tests/test_labeling.py): the contract v2 / merger v2 entity schemas and the `label`
+# retypes of docs/plans/v10-consumer-patches.md (G1) shipped in llm-dojo-scoring 0.28.0.
 #
 # Every label is grounded in doc_text: scored models see only the text, so a value the
 # text does not state is absent, even when row metadata knows it.
@@ -19,7 +17,7 @@
 #   evidence_only  absence only from a quoted absence statement; otherwise unlabeled
 #   never_absent   the field always has a value (e.g. urgency defaults to routine)
 
-dojo_pin: {version: "0.27.2", commit: "1cd4aba76d82eea20c6e8dfcc0d760881bf84924"}
+dojo_pin: {version: "0.28.0", commit: "cab976807854129d1cfea4897dbff5b6e337a62b"}
 
 vocabularies:
   contract_party_role: [licensor, licensee, supplier, customer, distributor, reseller, franchisor,
@@ -42,43 +40,43 @@ classes:
     fields:
       document_name: {type: name, source: llm, task: contract_entities, absence: evidence_only}
       parties: {type: "entity_list:name", source: llm, task: contract_entities, absence: evidence_only}
-      party_roles: {type: "entity_list:free_text", source: llm, task: contract_entities, absence: evidence_only, dojo: v2, vocabulary: contract_party_role, vocabulary_part: tail}
-      signatories: {type: "entity_list:name", source: llm, task: contract_entities, absence: absent_ok, dojo: v2}
-      agreement_date: {type: date, source: llm, task: contract_entities, absence: absent_ok, dojo: v2}
+      party_roles: {type: "entity_list:free_text", source: llm, task: contract_entities, absence: evidence_only, vocabulary: contract_party_role, vocabulary_part: tail}
+      signatories: {type: "entity_list:name", source: llm, task: contract_entities, absence: absent_ok}
+      agreement_date: {type: date, source: llm, task: contract_entities, absence: absent_ok}
       effective_date: {type: date, source: llm, task: contract_entities, absence: absent_ok}
-      expiration_date: {type: date, source: llm, task: contract_entities, absence: absent_ok, dojo: v2}
+      expiration_date: {type: date, source: llm, task: contract_entities, absence: absent_ok}
       term_length: {type: free_text, source: llm, task: contract_entities, absence: absent_ok}
       renewal_terms: {type: free_text, source: llm, task: contract_entities, absence: absent_ok}
-      termination_notice_period: {type: free_text, source: llm, task: contract_entities, absence: absent_ok, dojo: v2}
+      termination_notice_period: {type: free_text, source: llm, task: contract_entities, absence: absent_ok}
       governing_law: {type: name, source: llm, task: contract_entities, absence: absent_ok, note: "the governing-law sentence, verbatim"}
-      dispute_forum: {type: name, source: llm, task: contract_entities, absence: absent_ok, dojo: v2}
+      dispute_forum: {type: name, source: llm, task: contract_entities, absence: absent_ok}
       contract_value: {type: money, source: llm, task: contract_entities, absence: absent_ok}
-      payment_terms: {type: free_text, source: llm, task: contract_entities, absence: absent_ok, dojo: v2}
-      territory: {type: free_text, source: llm, task: contract_entities, absence: absent_ok, dojo: v2}
-      cuad_family: {type: name, retype: label, source: deterministic, absence: never_absent, note: "dojo CUAD family key from expected_subclass"}
+      payment_terms: {type: free_text, source: llm, task: contract_entities, absence: absent_ok}
+      territory: {type: free_text, source: llm, task: contract_entities, absence: absent_ok}
+      cuad_family: {type: label, source: deterministic, absence: never_absent, note: "dojo CUAD family key from expected_subclass"}
       cuad_clauses: {type: "entity_list:free_text", source: gold, task: cuad, absence: never_absent, note: "expert CUAD spans; EX-10 rows by the cuad task"}
   merger_agreement:
     specialist: merger_agreement_specialist
     fields:
       document_name: {type: name, source: llm, task: merger_entities, absence: evidence_only}
       parties: {type: "entity_list:name", source: llm, task: merger_entities, absence: evidence_only}
-      acquirer: {type: name, source: llm, task: merger_entities, absence: evidence_only, dojo: v2}
-      target: {type: name, source: llm, task: merger_entities, absence: evidence_only, dojo: v2}
-      merger_sub: {type: "entity_list:name", source: llm, task: merger_entities, absence: absent_ok, dojo: v2}
-      signatories: {type: "entity_list:name", source: llm, task: merger_entities, absence: absent_ok, dojo: v2}
+      acquirer: {type: name, source: llm, task: merger_entities, absence: evidence_only}
+      target: {type: name, source: llm, task: merger_entities, absence: evidence_only}
+      merger_sub: {type: "entity_list:name", source: llm, task: merger_entities, absence: absent_ok}
+      signatories: {type: "entity_list:name", source: llm, task: merger_entities, absence: absent_ok}
       effective_date: {type: date, source: llm, task: merger_entities, absence: absent_ok, note: "null when only an Effective Time is defined"}
       effective_time: {type: free_text, source: llm, task: merger_entities, absence: absent_ok}
       governing_law: {type: name, source: llm, task: merger_entities, absence: absent_ok, note: "the governing-law sentence, verbatim"}
-      per_share_cash_amount: {type: money, source: llm, task: merger_entities, absence: absent_ok, dojo: v2}
-      exchange_ratio: {type: free_text, source: llm, task: merger_entities, absence: absent_ok, dojo: v2}
-      target_termination_fee: {type: money, source: llm, task: merger_entities, absence: absent_ok, dojo: v2}
-      parent_termination_fee: {type: money, source: llm, task: merger_entities, absence: absent_ok, dojo: v2}
-      outside_date: {type: date, source: llm, task: merger_entities, absence: absent_ok, dojo: v2}
-      financial_advisors: {type: "entity_list:name", source: llm, task: merger_entities, absence: absent_ok, dojo: v2}
-      legal_counsel: {type: "entity_list:name", source: llm, task: merger_entities, absence: absent_ok, dojo: v2}
-      merger_consideration: {type: name, retype: label, source: deterministic, task: merger_consideration, absence: never_absent, vocabulary: merger_consideration, note: "the merger subclass where the expert MAUD Type of Consideration answer confirms it (95 rows); the merger_consideration task labels the 56 rows without that answer, after calibrating on the 95"}
+      per_share_cash_amount: {type: money, source: llm, task: merger_entities, absence: absent_ok}
+      exchange_ratio: {type: free_text, source: llm, task: merger_entities, absence: absent_ok}
+      target_termination_fee: {type: money, source: llm, task: merger_entities, absence: absent_ok}
+      parent_termination_fee: {type: money, source: llm, task: merger_entities, absence: absent_ok}
+      outside_date: {type: date, source: llm, task: merger_entities, absence: absent_ok}
+      financial_advisors: {type: "entity_list:name", source: llm, task: merger_entities, absence: absent_ok}
+      legal_counsel: {type: "entity_list:name", source: llm, task: merger_entities, absence: absent_ok}
+      merger_consideration: {type: label, source: deterministic, task: merger_consideration, absence: never_absent, vocabulary: merger_consideration, note: "the merger subclass where the expert MAUD Type of Consideration answer confirms it (95 rows); the merger_consideration task labels the 56 rows without that answer, after calibrating on the 95"}
       maud_clauses: {type: "entity_list:free_text", source: gold, absence: never_absent}
-      intent: {type: name, retype: label, source: llm, task: merger_entities, absence: never_absent, vocabulary: merger_intent}
+      intent: {type: label, source: llm, task: merger_entities, absence: never_absent, vocabulary: merger_intent}
       subject_matter: {type: free_text, source: llm, task: merger_entities, absence: never_absent}
       keywords: {type: "entity_list:name", source: llm, task: merger_entities, absence: never_absent}
   correspondence:
@@ -87,11 +85,11 @@ classes:
       sender: {type: name, source: llm, task: correspondence, absence: absent_ok, note: "From: header or sign-off as printed; metadata.sender_addr is a cross-check, not a label"}
       recipient: {type: name, source: llm, task: correspondence, absence: absent_ok, note: "first To: addressee or salutation name as printed"}
       additional_recipients: {type: entity_list, source: llm, task: correspondence, absence: absent_ok, note: "other To: and Cc: addressees as printed"}
-      communication_type: {type: name, retype: label, source: deterministic, absence: never_absent, vocabulary: communication_type, note: "the correspondence subclass"}
+      communication_type: {type: label, source: deterministic, absence: never_absent, vocabulary: communication_type, note: "the correspondence subclass"}
       communication_date: {type: date, source: llm, task: correspondence, absence: absent_ok, note: "a date printed in the message (Date: header or Sent: line); metadata.date is a cross-check"}
       demand_amount: {type: money, source: llm, task: correspondence, absence: absent_ok}
       action_items: {type: entity_list, source: llm, task: correspondence, absence: absent_ok}
-      urgency: {type: name, retype: label, source: llm, task: correspondence, absence: never_absent, vocabulary: urgency}
+      urgency: {type: label, source: llm, task: correspondence, absence: never_absent, vocabulary: urgency}
       intent: {type: label, source: gold, task: intent, absence: never_absent, vocabulary: correspondence_intent}
       subject_matter: {type: free_text, source: gold, absence: never_absent}
       keywords: {type: "entity_list:name", source: gold, absence: never_absent}
@@ -102,13 +100,13 @@ classes:
       policy_number: {type: id, source: gold, absence: never_absent}
       insurer: {type: name, source: gold, absence: never_absent}
       insured_party: {type: name, source: gold, absence: never_absent}
-      claim_type: {type: name, retype: label, source: gold, absence: never_absent}
+      claim_type: {type: label, source: gold, absence: never_absent}
       date_of_loss: {type: date, source: gold, absence: absent_ok}
       date_filed: {type: date, source: gold, absence: absent_ok}
       claimed_amount: {type: money, source: gold, absence: never_absent}
       adjuster: {type: name, source: gold, absence: absent_ok}
       damages_description: {type: free_text, source: gold, absence: never_absent}
-      coverage_determination: {type: name, retype: label, source: gold, absence: never_absent}
+      coverage_determination: {type: label, source: gold, absence: never_absent}
       denial_reasons: {type: "entity_list:free_text", source: gold, absence: absent_ok}
       supporting_documents: {type: entity_list, source: gold, absence: absent_ok}
       intent: {type: label, source: gold, absence: never_absent}
