@@ -28,6 +28,22 @@ The user also wants these entity-schema changes:
 - Correspondence, insurance and corporate keep their current Dojo schemas.
 - **Contracts and mergers get their own adapted entity schemas**, separate from the CUAD clause checklist and the MAUD questions.
 
+### Alignment with the live Hub (checked 2026-11-06)
+
+- The Hub `main` is still the v9.2 data (`670e8bc6`, tags `v9.1` and `v9.2`, plus the
+  `corporate-labels-v9.2.1` branch). v9.3 and v9.4 exist only as local stages, rebuilt from
+  that tag by `labeling stage`. v10 builds from the v9.4 stage, not from anything newer
+  on the Hub.
+- A label-status export of the "core" subset (`mailroom_core.csv`, 2,379 rows, dated
+  2026-11-03) agrees with v9.2 on every shared row: split, subtype, `annotation_method`,
+  `intent`, text length and context band. It is the v9.4 row set minus the 800 template
+  insurance rows (600 CMS DE-SynPUF and 200 GNOTHEIA), the 89 EX-10 contracts, and the 25
+  flagged intents. It predates the near-duplicate test drop, so it still has
+  `0000950137-06-011083_n08078exv3w03.htm` (445 corporate records, where v9.4 has 444).
+- Scope (user decision, 2026-11-06): v10 labels **all 1,100** insurance rows, not only
+  the 300 in the core subset. `communication_date` stays **text-only**: the export's
+  `sent_date` comes from `metadata.date`, and that remains a cross-check, not gold.
+
 ### Decisions (asked and answered)
 
 1. The labeling playbook is an **in-repo package** in the EDA repo.
