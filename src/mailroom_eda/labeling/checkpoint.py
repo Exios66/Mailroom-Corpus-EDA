@@ -10,18 +10,16 @@ them again.
 What it never does:
 
 - publish: it refuses a staging repo that is public, and never touches ``REPO_ID``;
-- ship spend: keys and CSV columns naming cost, USD, spend or price are dropped;
+- publish spend: costs stay in the journals, because this repo is a private backup of the
+  logs (2026-11-06: a stripped backup lost the spending records when it was restored); the
+  published dataset never carries them;
 - build a blind config: the card declares one ``labels`` config (GT side only), so the
   Hub never auto-builds a ``default`` config from label files.
 """
 from __future__ import annotations
 
-import csv
 import hashlib
-import io
-import json
 import os
-import re
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable
@@ -32,13 +30,6 @@ STAGING_REPO = "Lucius-Morningstar/mailroom-dataset-v10-staging"
 LABELS_DIR = "labels"
 APPROVALS_FILE = "campaign/approved.yaml"
 SUFFIXES = {".jsonl", ".json", ".csv", ".md", ".yaml"}
-#: spend stays in the local logs (user directive): never staged. Matches snake_case spend
-#: keys (``cost_usd``, ``api_cost_cap_usd``, ``spent_usd``), not label names such as the
-#: CUAD category ``Price Restrictions``.
-SPEND_KEY = re.compile(r"(^|_)(cost|usd|spend|spent|price|headroom)(_|$)")
-#: lines of a markdown or yaml note that state spend
-SPEND_LINE = re.compile(r"\$\d|\bUSD\b|(^|_)(cost|spent|headroom)(_|$|\b)", re.I)
-
 CARD = """---
 license: cc-by-4.0
 configs:
@@ -52,37 +43,9 @@ configs:
 
 Work-in-progress v10 label checkpoints for `Lucius-Morningstar/mailroom-dataset`, written by
 `mailroom_eda.labeling.checkpoint` after each run, review and gate approval. **Not a release.**
-Ground-truth side only: nothing here belongs in the blind `default` config. Spend fields are
-stripped; costs live only in the local run logs.
+Ground-truth side only: nothing here belongs in the blind `default` config. Journals are kept
+byte-for-byte, spend included: this is a private backup of the run logs, never published.
 """
-
-
-def scrub(obj: Any) -> Any:
-    """Drop spend keys at any depth."""
-    if isinstance(obj, dict):
-        return {k: scrub(v) for k, v in obj.items() if not SPEND_KEY.search(str(k))}
-    if isinstance(obj, list):
-        return [scrub(v) for v in obj]
-    return obj
-
-
-def scrub_text(name: str, text: str) -> str:
-    """A spend-free copy of one output file's text."""
-    suffix = Path(name).suffix
-    if suffix == ".jsonl":
-        return "".join(json.dumps(scrub(json.loads(line)), sort_keys=True, ensure_ascii=False) + "\n"
-                       for line in text.splitlines() if line.strip())
-    if suffix == ".json":
-        return json.dumps(scrub(json.loads(text)), indent=1, sort_keys=True, ensure_ascii=False) + "\n"
-    if suffix == ".csv":
-        rows = list(csv.DictReader(io.StringIO(text)))
-        cols = [c for c in (csv.DictReader(io.StringIO(text)).fieldnames or []) if not SPEND_KEY.search(c)]
-        buf = io.StringIO()
-        w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore", quoting=csv.QUOTE_ALL, lineterminator="\n")
-        w.writeheader()
-        w.writerows(rows)
-        return buf.getvalue()
-    return "\n".join(line for line in text.splitlines() if not SPEND_LINE.search(line)) + "\n"
 
 
 def _sources(labels_root: Path, approvals: Path | None) -> Iterable[tuple[str, Path]]:
@@ -95,12 +58,12 @@ def _sources(labels_root: Path, approvals: Path | None) -> Iterable[tuple[str, P
 
 
 def stage(labels_root: Path, approvals: Path | None, dest: Path) -> dict[str, Path]:
-    """Write the scrubbed checkpoint tree under ``dest``; returns ``{path_in_repo: file}``."""
+    """Copy the checkpoint tree under ``dest`` byte-for-byte; returns ``{path_in_repo: file}``."""
     out: dict[str, Path] = {}
     for rel, src in _sources(labels_root, approvals):
         target = dest / rel
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(scrub_text(rel, src.read_text(encoding="utf-8")), encoding="utf-8")
+        target.write_bytes(src.read_bytes())
         out[rel] = target
     (dest / "README.md").write_text(CARD, encoding="utf-8")
     out["README.md"] = dest / "README.md"
@@ -136,7 +99,7 @@ def ensure_private(api: Any, repo_id: str) -> None:
 
 def checkpoint(labels_root: Path, approvals: Path | None, message: str, *, api: Any = None,
                repo_id: str = STAGING_REPO) -> dict[str, Any]:
-    """Upload the scrubbed labels root to the private staging repo and verify every file."""
+    """Upload the labels root to the private staging repo and verify every file."""
     if repo_id == hf_interface.REPO_ID:
         raise SystemExit("checkpoints never go to the published dataset repo")
     api = api or hf_interface.get_hf_api()
@@ -151,9 +114,7 @@ def checkpoint(labels_root: Path, approvals: Path | None, message: str, *, api: 
 
 
 def restore(labels_root: Path, *, api: Any = None, repo_id: str = STAGING_REPO) -> list[Path]:
-    """Download staged label files missing locally (never overwrites); returns what it wrote.
-
-    Restored journals carry no spend, so reusing them records ``reused_cost_usd: null``."""
+    """Download staged label files missing locally (never overwrites); returns what it wrote."""
     api = api or hf_interface.get_hf_api()
     prefix = f"{LABELS_DIR}/"
     wrote = []

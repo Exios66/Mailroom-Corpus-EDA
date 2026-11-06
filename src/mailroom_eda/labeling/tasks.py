@@ -82,20 +82,22 @@ def _located_window(text: str, needs, head: int, cap: int, tail: int) -> tuple[s
     ``tail`` characters, at most ``cap`` characters in all."""
     if len(text) <= cap:
         return text, "the full document"
-    budget = cap - head - tail
+    sep, signature = "\n\n", "[... signature pages ...]\n" + text[-tail:] if tail else ""
+    # every part after the first costs its separator too, the signature pages included
+    budget = cap - head - (len(sep) + len(signature) if signature else 0)
     parts, found = [text[:head]], []
     for label, excerpt in sections.locate(text, needs):
-        piece = f"[... section located for {label} ...]\n{excerpt}"
-        if budget <= 0:
+        room = budget - len(sep)
+        if room <= 0:
             break
-        parts.append(piece[:budget])
-        budget -= len(parts[-1]) + 2
+        parts.append(f"[... section located for {label} ...]\n{excerpt}"[:room])
+        budget -= len(sep) + len(parts[-1])
         found.append(label)
-    if tail:
-        parts.append("[... signature pages ...]\n" + text[-tail:])
+    if signature:
+        parts.append(signature)
     desc = (f"the first {head:,} characters, the located sections ({', '.join(found) or 'none'})"
             + (" and the signature pages" if tail else ""))
-    return "\n\n".join(parts), desc
+    return sep.join(parts), desc
 
 
 def merger_window(text: str) -> tuple[str, str]:
