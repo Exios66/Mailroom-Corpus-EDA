@@ -2607,6 +2607,47 @@ def test_sweep_plan_leaves_out_skipped_arms_but_keeps_their_numbers():
     assert not any(c.get("skip") for c, _ in plan)
 
 
+def _lockstep_fixture(tmp_path, *, version_slot, vendored="0.28.0", mailroom_ref="v0.28.0", eda_commit=None):
+    """Four fake checkouts that agree except where a test says otherwise."""
+    eda, mr, sb = tmp_path / "eda", tmp_path / "mr", tmp_path / "sb"
+    sha = "1cd4aba76d82eea20c6e8dfcc0d760881bf84924"
+    _write(eda / "src/mailroom_eda/labeling/fields.yaml",
+           f'dojo_pin: {{version: "0.28.0", commit: "{eda_commit or sha}"}}\n')
+    _write(eda / "src/mailroom_eda/config.py", 'REPO_TAG = "v10"\n')
+    _write(mr / "pyproject.toml", f'"llm-dojo-scoring @ git+https://github.com/x/llm-dojo-scoring.git@{mailroom_ref}",\n')
+    _write(mr / "src/pipeline/hf_corpora.py", 'FULL_CORPUS_REVISION = "v10"\n"docclass-merged": {\n "n_docs": 3292,\n')
+    _write(sb / "src/mailroom_sandbox/cli.py",
+           f'    ("llm-dojo-scoring", "{version_slot}",\n     "https://github.com/x/llm-dojo-scoring.git", "{sha}"),\n')
+    _write(sb / "requirements/dojo-release.txt", f"llm-dojo-scoring @ git+https://github.com/x/llm-dojo-scoring.git@{sha}\n")
+    _write(sb / "vendor/llm-dojo-scoring/src/llm_dojo_scoring/__init__.py", f'__version__ = "{vendored}"\n')
+    _write(sb / "src/mailroom_sandbox/job/spec.py", 'FAMILY_HF_TAG = "v10"\nFAMILY_CORPUS_SIZE = 3292\n')
+    return eda, mr, sb, sha
+
+
+def test_check_lockstep_reads_tag_and_commit_pins(tmp_path):
+    """A ``_VENDOR_PINS`` commit pin takes its version from the vendored ``__version__``."""
+    sys.path.insert(0, str(ROOT / "src/mailroom_eda/labeling/integrations"))
+    try:
+        import check_lockstep as cl
+    finally:
+        sys.path.pop(0)
+
+    def rows(**kw):
+        """``{check: agrees}`` for one fixture."""
+        d = tmp_path / str(len(list(tmp_path.iterdir())))
+        d.mkdir()
+        eda, mr, sb, _ = _lockstep_fixture(d, **kw)
+        return {c: ok for c, _, ok in cl.table(eda, mr, sb, rows=3292)}
+
+    sha = "1cd4aba76d82eea20c6e8dfcc0d760881bf84924"
+    assert all(rows(version_slot="v0.28.0").values())
+    assert all(rows(version_slot=sha).values())                      # commit pin, vendored 0.28.0
+    assert all(rows(version_slot=sha, mailroom_ref=sha).values())    # llm-mailroom pins the commit too
+    assert not rows(version_slot=sha, vendored="0.27.2")["Dojo release version"]
+    assert not rows(version_slot="f" * 40)["Dojo commit"]            # pin ref and frozen sha differ
+    assert not rows(version_slot=sha, eda_commit=sha[:12])["Dojo commit"]  # full shas only
+
+
 def test_inspect_reads_the_corrected_gold(tmp_path, monkeypatch):
     """inspect.md shows the gold the gate scores against: corrections in the labels root apply."""
     row = _row("correspondence", None, "Re-order your contact lenses online today.",
