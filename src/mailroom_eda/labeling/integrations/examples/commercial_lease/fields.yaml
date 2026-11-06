@@ -1,0 +1,76 @@
+# Proposed class: commercial_lease. A worked example for integrations/GUIDE_new_doc_type.md.
+# Not merged into labeling/fields.yaml: merge it only after llm-dojo-scoring has the class.
+# Check it with:  python -m mailroom_eda.labeling check-class <this folder>
+
+vocabularies:
+  lease_type: [gross, modified_gross, net, double_net, triple_net, percentage, ground, other]
+  lease_intent: [new_lease, amendment, renewal_extension, assignment_sublease, termination,
+                 estoppel_or_snda, other]
+
+classes:
+  commercial_lease:
+    specialist: commercial_leases_specialist
+    dojo: proposed
+    subclasses: [office, retail, industrial_warehouse, ground_lease, sublease, lease_amendment, other]
+    fields:
+      document_name: {type: name, source: llm, task: lease_entities, absence: absent_ok,
+                      description: "the lease's title as printed (e.g. \"Office Lease\")",
+                      where: "the first page"}
+      landlord: {type: name, source: llm, task: lease_entities, absence: never_absent,
+                 description: "the landlord or lessor (the sublandlord in a sublease), full legal name as printed",
+                 where: "the preamble or the Basic Lease Information table"}
+      tenant: {type: name, source: llm, task: lease_entities, absence: never_absent,
+               description: "the tenant or lessee (the subtenant in a sublease), full legal name as printed",
+               where: "the preamble or the Basic Lease Information table"}
+      guarantors: {type: "entity_list:name", source: llm, task: lease_entities, absence: absent_ok,
+                   description: "each person or company guaranteeing the tenant's obligations",
+                   where: "a Guaranty section or exhibit"}
+      signatories: {type: "entity_list:name", source: llm, task: lease_entities, absence: absent_ok,
+                    description: "the people who sign, as printed in the signature blocks",
+                    where: "the signature page"}
+      premises_address: {type: free_text, source: llm, task: lease_entities, absence: absent_ok,
+                         description: "the street address of the premises, with suite or floor, as printed",
+                         where: "the Premises section or Basic Lease Information"}
+      rentable_area: {type: free_text, source: llm, task: lease_entities, absence: absent_ok,
+                      description: "the stated size with its unit (e.g. \"12,500 rentable square feet\")",
+                      where: "the Premises section"}
+      lease_type: {type: label, source: llm, task: lease_entities, absence: evidence_only,
+                   vocabulary: lease_type,
+                   description: "how operating costs are shared: net or triple_net only when the tenant pays taxes, insurance and maintenance; gross when the landlord does; ground for a lease of land",
+                   where: "the Rent, Operating Expenses and Taxes sections"}
+      commencement_date: {type: date, source: llm, task: lease_entities, absence: absent_ok,
+                          description: "the Commencement Date when stated as a date; not_found if it is only defined by an event",
+                          where: "the Term section or Basic Lease Information"}
+      expiration_date: {type: date, source: llm, task: lease_entities, absence: absent_ok,
+                        description: "the stated last day of the initial term",
+                        where: "the Term section"}
+      term_length: {type: free_text, source: llm, task: lease_entities, absence: absent_ok,
+                    description: "the length of the initial term as printed (e.g. \"sixty-two (62) months\")",
+                    where: "the Term section"}
+      base_rent: {type: money, source: llm, task: lease_entities, absence: absent_ok,
+                  description: "the first stated Base Rent amount with its period as printed (e.g. \"$25,000.00 per month\"); never computed",
+                  where: "the Rent section or the rent schedule"}
+      rent_escalation: {type: free_text, source: llm, task: lease_entities, absence: absent_ok,
+                        description: "how Base Rent increases (fixed steps, a percentage, CPI)",
+                        where: "the rent schedule"}
+      security_deposit: {type: money, source: llm, task: lease_entities, absence: absent_ok,
+                         description: "the security deposit or letter-of-credit amount as printed",
+                         where: "the Security Deposit section"}
+      renewal_options: {type: free_text, source: llm, task: lease_entities, absence: absent_ok,
+                        description: "the tenant's options to extend or renew: number, length and notice",
+                        where: "an Option to Extend or Renewal section"}
+      permitted_use: {type: free_text, source: llm, task: lease_entities, absence: absent_ok,
+                      description: "the permitted use of the premises as printed",
+                      where: "the Use section"}
+      governing_law: {type: name, source: llm, task: lease_entities, absence: absent_ok,
+                      description: "copy only the sentence naming the law that governs the lease; no venue",
+                      where: "a Governing Law or Miscellaneous section"}
+      intent: {type: label, source: llm, task: lease_entities, absence: never_absent,
+               vocabulary: lease_intent,
+               description: "what this document does: a new lease, an amendment, a renewal or extension, an assignment or sublease, a termination, or an estoppel certificate or SNDA",
+               where: "the title and the recitals"}
+
+tasks:
+  lease_entities: {class: commercial_lease, prompt: lease_entities, two_model: true,
+                   pilot_per_stratum: 3, max_tokens: 3000, typical_output: 1200,
+                   window: [16000, 6000]}

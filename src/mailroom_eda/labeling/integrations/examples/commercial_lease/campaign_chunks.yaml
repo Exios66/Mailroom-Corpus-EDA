@@ -1,0 +1,19 @@
+# Chunks for commercial_lease, to append under chunks: in a campaign once the class is merged.
+# A stratified pilot (3 rows per subclass, a human fills reviewer_verdict on every field),
+# then the remainder in slices gated on two-model agreement.
+# Sizes assume about 300 lease exhibits; adjust the slice count to the real row count
+# (about 150 rows per slice keeps each one under its cap).
+#
+# Calibration against labeled gold (ALeaseBERT, see this example's README.md) is optional and needs code:
+# a `calibration` set in runner.select and a gold mapping like operate.CUAD_GOLD_FIELDS.
+# Without it the human-verdict pilot is the quality gate, as for correspondence and claims.
+
+  - {id: "10a", task: lease_entities, set: pilot,
+     models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
+     reasoning: "off", cap_usd: 0.50, gate: {kind: human_verdicts, precision: 0.90}}
+  - {id: "10b", needs: ["10a"], task: lease_entities, set: remainder, chunk: "1/2",
+     models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
+     reasoning: "off", cap_usd: 1.50, gate: {kind: agreement}}
+  - {id: "10c", needs: ["10a"], task: lease_entities, set: remainder, chunk: "2/2",
+     models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
+     reasoning: "off", cap_usd: 1.50, gate: {kind: agreement}}

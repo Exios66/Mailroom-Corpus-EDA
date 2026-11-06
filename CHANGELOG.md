@@ -8,6 +8,53 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 
 ## Unreleased
 
+- v10 labeling playbook (`src/mailroom_eda/labeling/`). It is offline until a person runs a
+  chunk; no dataset is regenerated or published.
+  - Campaign commands read every setting from `campaigns/v10/campaign.yaml`:
+    `stage`, `doctor`, `prices`, `ping`, `chunk <id>`, `gate <id> --approve`, `status`.
+    `needs:` enforces chunk order, and approvals (with served providers and the prompt
+    sha) are recorded in `campaigns/v10/approved.yaml`.
+  - OpenRouter routing is pinned per model in `models.yaml` (`route:`):
+    `require_parameters`, pinned providers, fp8 and `max_price` for DeepSeek, and `seed`
+    only where the endpoints accept it (the z-ai GLM endpoint does not). Prices were
+    re-checked on 2026-11-06 (DeepSeek 0.15/0.65, MiniMax 0.15/0.60). The campaign projects
+    $14.68 against $28.90 of chunk caps.
+  - Chunks run four calls in parallel. The budget reserves each call's worst case, so
+    concurrent calls cannot exceed the cap together.
+  - `integrations/` (was `new_doc_types/`, which now only points here): one runbook for
+    every cross-repository change, either a new document type or expanded labeling on the
+    core five. It sets the release order (llm-dojo-scoring, this repository, llm-mailroom,
+    then the sandbox vendor refresh), a version lockstep table that `check_lockstep.py`
+    reads from the four checkouts (it exits 1 on drift, and today reports dataset tag v9.2
+    here against v9.1 in llm-mailroom and the sandbox, and llm-mailroom's standalone Dojo
+    ref v0.22.0 against 0.27.2), the drift tests per repository, a checklist for each
+    kind of change, and `CANDIDATES.md` (lease, regulatory notice, litigation filing,
+    NDA, charity report, invoice, with source datasets, licences and the niche each
+    fills). The walkthrough, `find_touchpoints.py` (now with `--class`, the
+    `fields.yaml` classes, nested `data/` folders, and exit 1 on a missing repo),
+    templates and the validated `commercial_lease` example moved with it. ALeaseBERT's
+    data licence is corrected to CC BY-NC 4.0.
+  - Merger consideration labeling. The 56 MAUD merger agreements whose subclass is
+    `other` stay in the dataset: they have full MAUD clause labels and lack only the
+    expert Type of Consideration answer. A new `merger_consideration` task labels it from
+    a window of the conversion clauses; chunk `6c0` calibrates both models on the 95
+    mergers with the expert answer (new gate `consideration_accuracy`, ≥ 0.95 per model,
+    with a confusion table) and `6c1` labels the 56 before the merger entity chunks run.
+    `merger_entities` no longer asks for it. Row count and splits are unchanged (3,292
+    rows, train 2,971 / test 321, 151 mergers); only the v10 merger subclass distribution
+    changes.
+  - PR review fixes: the journal reader no longer splits records on U+2028/U+2029/U+0085;
+    CSV cells that start with a formula character are prefixed; billed truncated or
+    malformed answers are settled and journaled, and unreadable bodies become provider
+    errors; NaN or infinite caps are refused; `requires:` chunks need `--ack-requires`;
+    the Modal fallback maps models (`--model-map`) and has a token-equivalent price;
+    the agreement gate needs every (document, model) pair answered; `review` applies
+    reviewer verdicts to `final_decision`/`final_value`; resume keys include the prompt
+    sha, which now covers field specs and vocabularies; failed CUAD repairs are retried;
+    evidence grounding is stricter (full dates, exact money with decimals and sign, the
+    value in its own evidence quote, `never_absent` absences adjudicated); the contract
+    calibration set no longer shows the expert spans it is scored against; corporate rows
+    with no subclass get the `other` fields.
 - DMR-091 independent source audit: join cross-config metadata, text, provenance,
   split and MAUD reports by unique filename, rejecting ambiguous identities.
   Verify staged parquet class/subclass routing against JSONL, and retain native

@@ -50,6 +50,11 @@ uv member (no build).
     verified LLM CUAD/intent label ingest (approved labeler `LABEL_MODEL` =
     `Qwen/Qwen3-32B-FP8` only, held until it passes expert calibration)
     (`scripts/build/build_v9_4_dedup_labels.py`, `scripts/audit/verify_v9_4_conformance.py`)
+  - `labeling/` — v10 label-completion playbook (OpenRouter or Modal): field registry,
+    prompts, pinned provider routing, spend gate, campaign chunks and gates; start at
+    `labeling/campaigns/v10/runbook.md`. `labeling/integrations/` is the cross-repo runbook for
+    new document types and expanded labeling (lockstep table, drift checks, checklists,
+    candidate types, `check-class`)
   - `docclass_uploader.py` — docclass v7 publish, surgical card render, leak guard
   - `intent_backfill.py` — correspondence intent hydration (issue #5):
     cross-walk, Enron/AESLC sha256 join, constrained LLM pass, provenance
@@ -94,6 +99,7 @@ uv member (no build).
 .venv/bin/python scripts/backfill/backfill_intent.py --check
 .venv/bin/python scripts/build/build_v9.py --help
 .venv/bin/python scripts/audit/coverage_matrix.py --check
+PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling doctor   # labeling readiness, no paid call
 ```
 
 **Summary writes**: `reports/SUMMARY_REPORT.json` is written only by a

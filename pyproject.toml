@@ -14,6 +14,7 @@ dependencies = [
     "squarify>=0.4",
     "huggingface_hub>=1.29",
     "tiktoken>=0.14",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

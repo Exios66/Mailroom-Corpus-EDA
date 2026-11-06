@@ -1,0 +1,1601 @@
+{
+ "corporate_subclass_schemas": {
+  "articles_of_incorporation": {
+   "core_applicable": [
+    "entity_name",
+    "record_type",
+    "effective_date",
+    "signatories",
+    "jurisdiction",
+    "filing_number",
+    "intent",
+    "subject_matter",
+    "keywords"
+   ],
+   "entities": [
+    {
+     "description": "Persons who signed to form the corporation.",
+     "key": "incorporators",
+     "required": false,
+     "type": "entity_list:name",
+     "where": "Signature block / 'Incorporator' line"
+    },
+    {
+     "description": "Registered agent for service of process.",
+     "key": "registered_agent",
+     "required": true,
+     "type": "name",
+     "where": "'Registered Agent' / 'Resident Agent' article"
+    },
+    {
+     "description": "Authorized share classes and counts, as written.",
+     "key": "authorized_capital",
+     "required": false,
+     "type": "free_text",
+     "where": "Capital stock article"
+    }
+   ],
+   "intent": "entity_formation",
+   "label": "Articles / Certificate of Incorporation",
+   "record_type": "articles_of_incorporation",
+   "summary": "Charter that creates a corporation (name, purpose, share structure, agent)."
+  },
+  "board_resolution": {
+   "core_applicable": [
+    "entity_name",
+    "record_type",
+    "effective_date",
+    "signatories",
+    "jurisdiction",
+    "intent",
+    "subject_matter",
+    "keywords"
+   ],
+   "entities": [
+    {
+     "description": "Body that acted: board of directors / committee / stockholders.",
+     "key": "acting_body",
+     "required": true,
+     "type": "name",
+     "where": "Heading / first recital"
+    },
+    {
+     "description": "What was resolved, one grounded sentence.",
+     "key": "action_approved",
+     "required": true,
+     "type": "free_text",
+     "where": "'RESOLVED' clauses"
+    },
+    {
+     "description": "Each separate resolution.",
+     "key": "resolutions",
+     "required": false,
+     "type": "entity_list:free_text",
+     "where": "'RESOLVED' clauses"
+    }
+   ],
+   "intent": "corporate_action_approval",
+   "label": "Board / Stockholder Resolution or Written Consent",
+   "record_type": "other",
+   "summary": "Action taken by a board, committee or stockholders (meeting or written consent)."
+  },
+  "bylaws": {
+   "core_applicable": [
+    "entity_name",
+    "record_type",
+    "effective_date",
+    "signatories",
+    "jurisdiction",
+    "intent",
+    "subject_matter",
+    "keywords"
+   ],
+   "entities": [
+    {
+     "description": "Secretary/officer who certifies the bylaws as adopted.",
+     "key": "certifying_officer",
+     "required": false,
+     "type": "name",
+     "where": "Secretary's certificate or closing attestation"
+    },
+    {
+     "description": "Date of the most recent amendment/restatement stated.",
+     "key": "last_amended_date",
+     "required": false,
+     "type": "date",
+     "where": "Title block, 'Amended and Restated as of', or adoption legend"
+    }
+   ],
+   "intent": "governance_rules",
+   "label": "Bylaws",
+   "record_type": "bylaws",
+   "summary": "Internal operating rules of the corporation (meetings, board, officers, indemnification, amendment)."
+  },
+  "certificate_of_formation": {
+   "core_applicable": [
+    "entity_name",
+    "record_type",
+    "effective_date",
+    "signatories",
+    "jurisdiction",
+    "filing_number",
+    "intent",
+    "subject_matter",
+    "keywords"
+   ],
+   "entities": [
+    {
+     "description": "Persons who signed to form the entity.",
+     "key": "organizers",
+     "required": false,
+     "type": "entity_list:name",
+     "where": "Signature block / 'Organizer' line"
+    },
+    {
+     "description": "Registered agent for service of process.",
+     "key": "registered_agent",
+     "required": true,
+     "type": "name",
+     "where": "'Registered Agent' article"
+    }
+   ],
+   "intent": "entity_formation",
+   "label": "Certificate of Formation (LLC)",
+   "record_type": "articles_of_incorporation",
+   "summary": "Filing that forms an LLC or similar non-corporate entity."
+  },
+  "charter_amendment": {
+   "core_applicable": [
+    "entity_name",
+    "record_type",
+    "effective_date",
+    "signatories",
+    "jurisdiction",
+    "filing_number",
+    "intent",
+    "subject_matter",
+    "keywords"
+   ],
+   "entities": [
+    {
+     "description": "Each charter article/section amended and what changes (one item per provision).",
+     "key": "amended_provisions",
+     "required": true,
+     "type": "entity_list:free_text",
+     "where": "'Article X is hereby amended to read'"
+    },
+    {
+     "description": "Date the board/stockholders adopted the amendment.",
+     "key": "approval_date",
+     "required": false,
+     "type": "date",
+     "where": "Adoption recital"
+    },
+    {
+     "description": "Former legal name when the amendment changes the name.",
+     "key": "prior_entity_name",
+     "required": false,
+     "type": "name",
+     "where": "Name-change article"
+    }
+   ],
+   "intent": "entity_formation",
+   "label": "Certificate of Amendment / Restated Charter",
+   "record_type": "articles_of_incorporation",
+   "summary": "Filing that amends or restates an existing charter."
+  },
+  "indenture": {
+   "core_applicable": [
+    "entity_name",
+    "record_type",
+    "effective_date",
+    "signatories",
+    "jurisdiction",
+    "intent",
+    "subject_matter",
+    "keywords"
+   ],
+   "entities": [
+    {
+     "description": "Indenture trustee.",
+     "key": "trustee",
+     "required": true,
+     "type": "name",
+     "where": "Preamble, 'as Trustee'"
+    },
+    {
+     "description": "Guarantors of the notes.",
+     "key": "guarantors",
+     "required": false,
+     "type": "entity_list:name",
+     "where": "Guarantor signature pages"
+    },
+    {
+     "description": "Designation of the notes, e.g. '5.25% Senior Notes due 2030'.",
+     "key": "securities_series",
+     "required": true,
+     "type": "name",
+     "where": "Title and Section 2.01"
+    },
+    {
+     "description": "Aggregate principal amount, as written.",
+     "key": "principal_amount",
+     "required": false,
+     "type": "money",
+     "where": "Terms of the securities"
+    },
+    {
+     "description": "Stated maturity.",
+     "key": "maturity_date",
+     "required": false,
+     "type": "date",
+     "where": "Terms of the securities"
+    }
+   ],
+   "intent": "investor_rights",
+   "label": "Indenture / Debt Instrument",
+   "record_type": "other",
+   "summary": "Contract between an issuer and a trustee governing a debt issue."
+  },
+  "officer_certificate": {
+   "core_applicable": [
+    "entity_name",
+    "record_type",
+    "effective_date",
+    "signatories",
+    "jurisdiction",
+    "intent",
+    "subject_matter",
+    "keywords"
+   ],
+   "entities": [
+    {
+     "description": "Officer who signs the certificate.",
+     "key": "certifying_officer",
+     "required": true,
+     "type": "name",
+     "where": "Signature block"
+    },
+    {
+     "description": "That officer's title.",
+     "key": "officer_title",
+     "required": true,
+     "type": "name",
+     "where": "Signature block"
+    },
+    {
+     "description": "What is certified (charter, bylaws, resolutions, incumbency).",
+     "key": "certified_matter",
+     "required": true,
+     "type": "free_text",
+     "where": "Certification recital"
+    },
+    {
+     "description": "Party relying on the certificate (trustee, lender, agent).",
+     "key": "addressee",
+     "required": false,
+     "type": "name",
+     "where": "'delivered pursuant to' recital"
+    }
+   ],
+   "intent": "governance_rules",
+   "label": "Officer / Secretary Certificate",
+   "record_type": "other",
+   "summary": "Certificate by an officer attesting to facts or attaching governing documents."
+  },
+  "other": {
+   "core_applicable": [
+    "entity_name",
+    "record_type",
+    "effective_date",
+    "signatories",
+    "jurisdiction",
+    "filing_number",
+    "intent",
+    "subject_matter",
+    "keywords"
+   ],
+   "entities": [],
+   "intent": "other",
+   "label": "Other governance record",
+   "record_type": "other",
+   "summary": "Residual: a governance record that fits none of the ten shapes above."
+  },
+  "powers_of_attorney": {
+   "core_applicable": [
+    "entity_name",
+    "record_type",
+    "effective_date",
+    "signatories",
+    "jurisdiction",
+    "intent",
+    "subject_matter",
+    "keywords"
+   ],
+   "entities": [
+    {
+     "description": "Person or entity granting the authority.",
+     "key": "principal",
+     "required": true,
+     "type": "name",
+     "where": "'The undersigned' / signature block"
+    },
+    {
+     "description": "Persons empowered to act.",
+     "key": "attorneys_in_fact",
+     "required": true,
+     "type": "entity_list:name",
+     "where": "'hereby constitutes and appoints'"
+    },
+    {
+     "description": "What the attorney-in-fact may do.",
+     "key": "authority_scope",
+     "required": false,
+     "type": "free_text",
+     "where": "Grant clause"
+    },
+    {
+     "description": "Date authority lapses, when stated.",
+     "key": "expiration_date",
+     "required": false,
+     "type": "date",
+     "where": "Term clause"
+    }
+   ],
+   "intent": "authority_delegation",
+   "label": "Power of Attorney",
+   "record_type": "powers_of_attorney",
+   "summary": "Grant of authority from a principal to an attorney-in-fact (often to sign SEC filings)."
+  },
+  "rights_instrument": {
+   "core_applicable": [
+    "entity_name",
+    "record_type",
+    "effective_date",
+    "signatories",
+    "jurisdiction",
+    "intent",
+    "subject_matter",
+    "keywords"
+   ],
+   "entities": [
+    {
+     "description": "Kind of instrument: warrant / rights plan / preferred stock / registration rights / specimen stock.",
+     "key": "instrument_kind",
+     "required": true,
+     "type": "name",
+     "where": "Title and first recital"
+    },
+    {
+     "description": "Registered holder or beneficiary, when a named party.",
+     "key": "holder",
+     "required": false,
+     "type": "name",
+     "where": "Face of warrant / schedule"
+    },
+    {
+     "description": "Rights/warrant/transfer agent.",
+     "key": "rights_agent",
+     "required": false,
+     "type": "name",
+     "where": "Agent signature block"
+    },
+    {
+     "description": "Class and number of securities, as written.",
+     "key": "securities_covered",
+     "required": false,
+     "type": "free_text",
+     "where": "Operative grant"
+    },
+    {
+     "description": "Exercise/strike price, as written.",
+     "key": "exercise_price",
+     "required": false,
+     "type": "money",
+     "where": "Exercise clause"
+    }
+   ],
+   "intent": "investor_rights",
+   "label": "Rights / Warrant / Preferred / Specimen-Stock Instrument",
+   "record_type": "rights_instrument",
+   "summary": "Instrument that grants securities holders rights (warrants, stockholder rights, preferred designations, registration rights, specimen certificates)."
+  },
+  "subsidiary_list": {
+   "core_applicable": [
+    "entity_name",
+    "record_type",
+    "effective_date",
+    "intent",
+    "subject_matter",
+    "keywords"
+   ],
+   "entities": [
+    {
+     "description": "Each listed subsidiary, legal name as written.",
+     "key": "subsidiaries",
+     "required": true,
+     "type": "entity_list:name",
+     "where": "Subsidiary table, first column"
+    },
+    {
+     "description": "Distinct jurisdictions of organization listed for subsidiaries.",
+     "key": "subsidiary_jurisdictions",
+     "required": false,
+     "type": "entity_list:name",
+     "where": "Subsidiary table, jurisdiction column"
+    }
+   ],
+   "intent": "other",
+   "label": "List of Subsidiaries",
+   "record_type": "other",
+   "summary": "Schedule of the registrant's subsidiaries (typically Exhibit 21)."
+  }
+ },
+ "cuad_categories": [
+  {
+   "description": "The name of the contract",
+   "name": "Document Name"
+  },
+  {
+   "description": "The two or more parties who signed the contract",
+   "name": "Parties"
+  },
+  {
+   "description": "The date of the contract",
+   "name": "Agreement Date"
+  },
+  {
+   "description": "The date when the contract is effective",
+   "name": "Effective Date"
+  },
+  {
+   "description": "On what date will the contract's initial term expire?",
+   "name": "Expiration Date"
+  },
+  {
+   "description": "What is the renewal term after the initial term expires? This includes automatic extensions and unilateral extensions with prior notice.",
+   "name": "Renewal Term"
+  },
+  {
+   "description": "What is the notice period required to terminate renewal?",
+   "name": "Notice Period To Terminate Renewal"
+  },
+  {
+   "description": "Which state/country's law governs the interpretation of the contract?",
+   "name": "Governing Law"
+  },
+  {
+   "description": "Is there a clause that if a third party gets better terms on the licensing or sale of technology/goods/services described in the contract, the buyer of such technology/goods/services under the contract shall be entitled to those better terms?",
+   "name": "Most Favored Nation"
+  },
+  {
+   "description": "This category includes the exceptions or carveouts to Non-Compete, Exclusivity and No-Solicit of Customers above.",
+   "name": "Competitive Restriction Exception"
+  },
+  {
+   "description": "Is there a restriction on the ability of a party to compete with the counterparty or operate in a certain geography or business or technology sector?",
+   "name": "Non-Compete"
+  },
+  {
+   "description": "Is there an exclusive dealing commitment with the counterparty? This includes a commitment to procure all \"requirements\" from one party of certain technology, goods, or services or a prohibition on licensing or selling technology, goods or services to third parties, or a prohibition on collaborating or working with other parties), whether during the contract or after the contract ends (or both).",
+   "name": "Exclusivity"
+  },
+  {
+   "description": "Is a party restricted from contracting or soliciting customers or partners of the counterparty, whether during the contract or after the contract ends (or both)?",
+   "name": "No-Solicit Of Customers"
+  },
+  {
+   "description": "Is there a restriction on a party's soliciting or hiring employees and/or contractors from the counterparty, whether during the contract or after the contract ends (or both)?",
+   "name": "No-Solicit Of Employees"
+  },
+  {
+   "description": "Is there a requirement on a party not to disparage the counterparty?",
+   "name": "Non-Disparagement"
+  },
+  {
+   "description": "Can a party terminate this contract without cause (solely by giving a notice and allowing a waiting period to expire)?",
+   "name": "Termination For Convenience"
+  },
+  {
+   "description": "Is there a clause granting one party a right of first refusal, right of first offer or right of first negotiation to purchase, license, market, or distribute equity interest, technology, assets, products or services?",
+   "name": "Rofr/Rofo/Rofn"
+  },
+  {
+   "description": "Does one party have the right to terminate or is consent or notice required of the counterparty if such party undergoes a change of control, such as a merger, stock sale, transfer of all or substantially all of its assets or business, or assignment by operation of law?",
+   "name": "Change Of Control"
+  },
+  {
+   "description": "Is consent or notice required of a party if the contract is assigned to a third party?",
+   "name": "Anti-Assignment"
+  },
+  {
+   "description": "Is one party required to share revenue or profit with the counterparty for any technology, goods, or services?",
+   "name": "Revenue/Profit Sharing"
+  },
+  {
+   "description": "Is there a restriction on the ability of a party to raise or reduce prices of technology, goods, or services provided?",
+   "name": "Price Restrictions"
+  },
+  {
+   "description": "Is there a minimum order size or minimum amount or units per-time period that one party must buy from the counterparty under the contract?",
+   "name": "Minimum Commitment"
+  },
+  {
+   "description": "Is there a fee increase or consent requirement, etc. if one party's use of the product/services exceeds certain threshold?",
+   "name": "Volume Restriction"
+  },
+  {
+   "description": "Does intellectual property created by one party become the property of the counterparty, either per the terms of the contract or upon the occurrence of certain events?",
+   "name": "Ip Ownership Assignment"
+  },
+  {
+   "description": "Is there any clause providing for joint or shared ownership of intellectual property between the parties to the contract?",
+   "name": "Joint Ip Ownership"
+  },
+  {
+   "description": "Does the contract contain a license granted by one party to its counterparty?",
+   "name": "License Grant"
+  },
+  {
+   "description": "Does the contract limit the ability of a party to transfer the license being granted to a third party?",
+   "name": "Non-Transferable License"
+  },
+  {
+   "description": "Does the contract contain a license grant by affiliates of the licensor or that includes intellectual property of affiliates of the licensor?",
+   "name": "Affiliate License-Licensor"
+  },
+  {
+   "description": "Does the contract contain a license grant to a licensee (incl. sublicensor) and the affiliates of such licensee/sublicensor?",
+   "name": "Affiliate License-Licensee"
+  },
+  {
+   "description": "Is there a clause granting one party an \"enterprise,\" \"all you can eat\" or unlimited usage license?",
+   "name": "Unlimited/All-You-Can-Eat-License"
+  },
+  {
+   "description": "Does the contract contain a license grant that is irrevocable or perpetual?",
+   "name": "Irrevocable Or Perpetual License"
+  },
+  {
+   "description": "Is one party required to deposit its source code into escrow with a third party, which can be released to the counterparty upon the occurrence of certain events (bankruptcy, insolvency, etc.)?",
+   "name": "Source Code Escrow"
+  },
+  {
+   "description": "Is a party subject to obligations after the termination or expiration of a contract, including any post-termination transition, payment, transfer of IP, wind-down, last-buy, or similar obligations?",
+   "name": "Post-Termination Services"
+  },
+  {
+   "description": "Does a party have the right to audit the books, records, or physical locations of the counterparty to ensure compliance with the contract?",
+   "name": "Audit Rights"
+  },
+  {
+   "description": "Is a party's liability uncapped upon the breach of its obligation in the contract? This also includes uncap liability for a particular type of breach such as IP infringement or breach of confidentiality obligation.",
+   "name": "Uncapped Liability"
+  },
+  {
+   "description": "Does the contract include a cap on liability upon the breach of a party's obligation? This includes time limitation for the counterparty to bring claims or maximum amount for recovery.",
+   "name": "Cap On Liability"
+  },
+  {
+   "description": "Does the contract contain a clause that would award either party liquidated damages for breach or a fee upon the termination of a contract (termination fee)?",
+   "name": "Liquidated Damages"
+  },
+  {
+   "description": "What is the duration of any warranty against defects or errors in technology, products, or services provided under the contract?",
+   "name": "Warranty Duration"
+  },
+  {
+   "description": "Is there a requirement for insurance that must be maintained by one party for the benefit of the counterparty?",
+   "name": "Insurance"
+  },
+  {
+   "description": "Is a party restricted from contesting the validity of the counterparty's ownership of intellectual property or otherwise bringing a claim against the counterparty for matters unrelated to the contract?",
+   "name": "Covenant Not To Sue"
+  },
+  {
+   "description": "Is there a non-contracting party who is a beneficiary to some or all of the clauses in the contract and therefore can enforce its rights against a contracting party?",
+   "name": "Third Party Beneficiary"
+  }
+ ],
+ "cuad_families": [
+  {
+   "definition": "Affiliate or referral-program agreement: a publisher or partner promotes the counterparty's products for a commission or referral fee.",
+   "family_fields": [
+    {
+     "description": "Commission or referral fee rate",
+     "informs": "contract_value",
+     "name": "commission_rate"
+    },
+    {
+     "description": "Territory or channels the affiliate may promote in",
+     "informs": null,
+     "name": "program_territory"
+    }
+   ],
+   "key": "affiliate",
+   "label": "Affiliate Agreement",
+   "salient": [
+    "Affiliate License-Licensee",
+    "Affiliate License-Licensor",
+    "License Grant",
+    "Non-Transferable License",
+    "Revenue/Profit Sharing",
+    "Termination For Convenience",
+    "Exclusivity",
+    "Anti-Assignment",
+    "Governing Law",
+    "Renewal Term"
+   ],
+   "surfaces": [
+    "Affiliate_Agreements"
+   ]
+  },
+  {
+   "definition": "Agency agreement: one party (agent) represents or sells for the other (principal), usually for a commission.",
+   "family_fields": [
+    {
+     "description": "Which party is principal and which is agent",
+     "informs": null,
+     "name": "principal_and_agent"
+    },
+    {
+     "description": "Commission rate or schedule",
+     "informs": "contract_value",
+     "name": "commission_rate"
+    },
+    {
+     "description": "Territory the agent covers",
+     "informs": null,
+     "name": "territory"
+    }
+   ],
+   "key": "agency",
+   "label": "Agency Agreement",
+   "salient": [
+    "Termination For Convenience",
+    "Governing Law",
+    "Notice Period To Terminate Renewal",
+    "Exclusivity",
+    "Non-Compete",
+    "Revenue/Profit Sharing",
+    "Anti-Assignment",
+    "Renewal Term",
+    "Expiration Date"
+   ],
+   "surfaces": [
+    "Agency Agreements"
+   ]
+  },
+  {
+   "definition": "Collaboration or cooperation agreement: parties pool R&D or other effort toward a shared program.",
+   "family_fields": [
+    {
+     "description": "Program or field of collaboration",
+     "informs": null,
+     "name": "collaboration_scope"
+    },
+    {
+     "description": "How costs and revenue are split",
+     "informs": "contract_value",
+     "name": "cost_sharing"
+    }
+   ],
+   "key": "collaboration",
+   "label": "Collaboration / Cooperation Agreement",
+   "salient": [
+    "Joint Ip Ownership",
+    "Ip Ownership Assignment",
+    "License Grant",
+    "Exclusivity",
+    "Revenue/Profit Sharing",
+    "Termination For Convenience",
+    "Expiration Date",
+    "Governing Law",
+    "Non-Compete",
+    "Change Of Control"
+   ],
+   "surfaces": [
+    "Collaboration"
+   ]
+  },
+  {
+   "definition": "Co-branding agreement: parties combine marks or properties on jointly branded products, sites or campaigns.",
+   "family_fields": [
+    {
+     "description": "Product, site or program carrying both brands",
+     "informs": null,
+     "name": "co_branded_product"
+    },
+    {
+     "description": "Trademarks licensed to each party",
+     "informs": null,
+     "name": "licensed_marks"
+    }
+   ],
+   "key": "co_branding",
+   "label": "Co-Branding Agreement",
+   "salient": [
+    "License Grant",
+    "Non-Transferable License",
+    "Ip Ownership Assignment",
+    "Exclusivity",
+    "Revenue/Profit Sharing",
+    "Non-Compete",
+    "Termination For Convenience",
+    "Governing Law",
+    "Audit Rights"
+   ],
+   "surfaces": [
+    "Co_Branding"
+   ]
+  },
+  {
+   "definition": "Consulting or advisory services agreement: a consultant provides expertise for fees.",
+   "family_fields": [
+    {
+     "description": "Hourly rate, retainer or fixed fee",
+     "informs": "contract_value",
+     "name": "fee_structure"
+    },
+    {
+     "description": "Description of the consulting services",
+     "informs": null,
+     "name": "services_scope"
+    }
+   ],
+   "key": "consulting",
+   "label": "Consulting Agreement",
+   "salient": [
+    "Termination For Convenience",
+    "Cap On Liability",
+    "Ip Ownership Assignment",
+    "Non-Compete",
+    "No-Solicit Of Employees",
+    "Insurance",
+    "Expiration Date",
+    "Governing Law",
+    "Post-Termination Services"
+   ],
+   "surfaces": [
+    "Consulting Agreements"
+   ]
+  },
+  {
+   "definition": "Development agreement: one party builds a product, software or deliverable, often against milestones.",
+   "family_fields": [
+    {
+     "description": "Product or software to be developed",
+     "informs": null,
+     "name": "deliverables"
+    },
+    {
+     "description": "Milestone or acceptance payments",
+     "informs": "contract_value",
+     "name": "milestone_fees"
+    }
+   ],
+   "key": "development",
+   "label": "Development Agreement",
+   "salient": [
+    "Ip Ownership Assignment",
+    "Joint Ip Ownership",
+    "License Grant",
+    "Source Code Escrow",
+    "Warranty Duration",
+    "Termination For Convenience",
+    "Post-Termination Services",
+    "Expiration Date",
+    "Cap On Liability",
+    "Governing Law"
+   ],
+   "surfaces": [
+    "Development"
+   ]
+  },
+  {
+   "definition": "Distributor agreement: a distributor buys and resells the supplier's goods in a territory.",
+   "family_fields": [
+    {
+     "description": "Distribution territory",
+     "informs": null,
+     "name": "territory"
+    },
+    {
+     "description": "Products the distributor may sell",
+     "informs": null,
+     "name": "distributed_products"
+    },
+    {
+     "description": "Minimum purchase or quota",
+     "informs": "contract_value",
+     "name": "minimum_purchase"
+    }
+   ],
+   "key": "distributor",
+   "label": "Distributor Agreement",
+   "salient": [
+    "License Grant",
+    "Exclusivity",
+    "Minimum Commitment",
+    "Anti-Assignment",
+    "Non-Compete",
+    "Price Restrictions",
+    "Termination For Convenience",
+    "Rofr/Rofo/Rofn",
+    "Competitive Restriction Exception",
+    "Volume Restriction",
+    "Governing Law",
+    "Renewal Term"
+   ],
+   "surfaces": [
+    "Distributor"
+   ]
+  },
+  {
+   "definition": "Endorsement agreement (or rider): a person or entity lends name, likeness or reputation to promote a product.",
+   "family_fields": [
+    {
+     "description": "Person or entity giving the endorsement",
+     "informs": null,
+     "name": "endorser"
+    },
+    {
+     "description": "Endorsement fee or compensation",
+     "informs": "contract_value",
+     "name": "endorsement_fee"
+    }
+   ],
+   "key": "endorsement",
+   "label": "Endorsement Agreement",
+   "salient": [
+    "License Grant",
+    "Non-Transferable License",
+    "Exclusivity",
+    "Non-Disparagement",
+    "Ip Ownership Assignment",
+    "Expiration Date",
+    "Termination For Convenience",
+    "Non-Compete",
+    "Governing Law"
+   ],
+   "surfaces": [
+    "Endorsement"
+   ]
+  },
+  {
+   "definition": "Franchise agreement: a franchisor grants the right to operate under its system and marks in exchange for fees.",
+   "family_fields": [
+    {
+     "description": "Franchised territory",
+     "informs": null,
+     "name": "territory"
+    },
+    {
+     "description": "Initial franchise fee and royalty rate",
+     "informs": "contract_value",
+     "name": "franchise_fees"
+    },
+    {
+     "description": "Brand or business system franchised",
+     "informs": null,
+     "name": "franchised_system"
+    }
+   ],
+   "key": "franchise",
+   "label": "Franchise Agreement",
+   "salient": [
+    "Non-Compete",
+    "Exclusivity",
+    "Revenue/Profit Sharing",
+    "Audit Rights",
+    "Minimum Commitment",
+    "Renewal Term",
+    "Cap On Liability",
+    "License Grant",
+    "Termination For Convenience",
+    "Anti-Assignment",
+    "Post-Termination Services",
+    "Insurance",
+    "No-Solicit Of Employees",
+    "Rofr/Rofo/Rofn",
+    "Governing Law"
+   ],
+   "surfaces": [
+    "Franchise"
+   ]
+  },
+  {
+   "definition": "Hosting agreement: a provider hosts web sites, applications or data for a customer.",
+   "family_fields": [
+    {
+     "description": "Site, application or data being hosted",
+     "informs": null,
+     "name": "hosted_service"
+    },
+    {
+     "description": "Uptime or service-level commitments",
+     "informs": null,
+     "name": "service_levels"
+    },
+    {
+     "description": "Recurring hosting fees",
+     "informs": "contract_value",
+     "name": "hosting_fees"
+    }
+   ],
+   "key": "hosting",
+   "label": "Hosting Agreement",
+   "salient": [
+    "Price Restrictions",
+    "Renewal Term",
+    "Expiration Date",
+    "Warranty Duration",
+    "Cap On Liability",
+    "Uncapped Liability",
+    "Insurance",
+    "Audit Rights",
+    "Post-Termination Services",
+    "Termination For Convenience",
+    "Volume Restriction",
+    "Source Code Escrow",
+    "Governing Law"
+   ],
+   "surfaces": [
+    "Hosting"
+   ]
+  },
+  {
+   "definition": "Intellectual-property agreement: assignment, transfer or licensing of patents, marks, copyrights or software.",
+   "family_fields": [
+    {
+     "description": "Patents, marks, copyrights or software covered",
+     "informs": null,
+     "name": "ip_assets"
+    },
+    {
+     "description": "Purchase price or royalty for the IP",
+     "informs": "contract_value",
+     "name": "consideration"
+    }
+   ],
+   "key": "ip",
+   "label": "IP Agreement",
+   "salient": [
+    "Ip Ownership Assignment",
+    "License Grant",
+    "Joint Ip Ownership",
+    "Source Code Escrow",
+    "Non-Transferable License",
+    "Irrevocable Or Perpetual License",
+    "Covenant Not To Sue",
+    "Anti-Assignment",
+    "Warranty Duration",
+    "Governing Law"
+   ],
+   "surfaces": [
+    "IP"
+   ]
+  },
+  {
+   "definition": "Joint-venture agreement: parties form or operate a shared venture or project and divide contributions and returns.",
+   "family_fields": [
+    {
+     "description": "Name of the joint venture entity or project",
+     "informs": null,
+     "name": "venture_entity"
+    },
+    {
+     "description": "Each party's contribution",
+     "informs": "contract_value",
+     "name": "capital_contributions"
+    },
+    {
+     "description": "Ownership or profit-split percentages",
+     "informs": null,
+     "name": "ownership_split"
+    }
+   ],
+   "key": "joint_venture",
+   "label": "Joint Venture Agreement",
+   "salient": [
+    "Joint Ip Ownership",
+    "Governing Law",
+    "Change Of Control",
+    "Revenue/Profit Sharing",
+    "Non-Compete",
+    "Exclusivity",
+    "Rofr/Rofo/Rofn",
+    "Anti-Assignment",
+    "Termination For Convenience",
+    "Ip Ownership Assignment",
+    "Expiration Date",
+    "Competitive Restriction Exception"
+   ],
+   "surfaces": [
+    "Joint Venture",
+    "Joint Venture _ Filing"
+   ]
+  },
+  {
+   "definition": "License agreement: one party licenses technology, content or IP to another, typically for royalties.",
+   "family_fields": [
+    {
+     "description": "Royalty rate or license fee",
+     "informs": "contract_value",
+     "name": "royalty_rate"
+    },
+    {
+     "description": "Licensed territory",
+     "informs": null,
+     "name": "territory"
+    },
+    {
+     "description": "Licensed technology, content or product",
+     "informs": null,
+     "name": "licensed_product"
+    },
+    {
+     "description": "Exclusive / non-exclusive, field of use, sublicensing",
+     "informs": null,
+     "name": "license_scope"
+    }
+   ],
+   "key": "license",
+   "label": "License Agreement",
+   "salient": [
+    "License Grant",
+    "Non-Transferable License",
+    "Irrevocable Or Perpetual License",
+    "Ip Ownership Assignment",
+    "Affiliate License-Licensor",
+    "Affiliate License-Licensee",
+    "Source Code Escrow",
+    "Unlimited/All-You-Can-Eat-License",
+    "Revenue/Profit Sharing",
+    "Exclusivity",
+    "Covenant Not To Sue",
+    "Audit Rights",
+    "Anti-Assignment",
+    "Termination For Convenience",
+    "Joint Ip Ownership",
+    "Most Favored Nation"
+   ],
+   "surfaces": [
+    "License_Agreements"
+   ]
+  },
+  {
+   "definition": "Maintenance or support agreement: a provider keeps software, equipment or systems operating.",
+   "family_fields": [
+    {
+     "description": "Software or equipment under maintenance",
+     "informs": null,
+     "name": "supported_product"
+    },
+    {
+     "description": "Annual or recurring maintenance fee",
+     "informs": "contract_value",
+     "name": "support_fees"
+    }
+   ],
+   "key": "maintenance",
+   "label": "Maintenance Agreement",
+   "salient": [
+    "Warranty Duration",
+    "Post-Termination Services",
+    "Expiration Date",
+    "Renewal Term",
+    "Price Restrictions",
+    "Cap On Liability",
+    "Termination For Convenience",
+    "Source Code Escrow",
+    "Insurance",
+    "Notice Period To Terminate Renewal"
+   ],
+   "surfaces": [
+    "Maintenance"
+   ]
+  },
+  {
+   "definition": "Manufacturing agreement: one party makes goods to specification for another, often with supply commitments.",
+   "family_fields": [
+    {
+     "description": "Goods to be manufactured",
+     "informs": null,
+     "name": "manufactured_product"
+    },
+    {
+     "description": "Minimum or forecast volumes",
+     "informs": null,
+     "name": "minimum_volume"
+    },
+    {
+     "description": "Unit price or pricing formula",
+     "informs": "contract_value",
+     "name": "unit_price"
+    }
+   ],
+   "key": "manufacturing",
+   "label": "Manufacturing Agreement",
+   "salient": [
+    "Minimum Commitment",
+    "Volume Restriction",
+    "Price Restrictions",
+    "Warranty Duration",
+    "Exclusivity",
+    "Insurance",
+    "Ip Ownership Assignment",
+    "License Grant",
+    "Most Favored Nation",
+    "Termination For Convenience",
+    "Audit Rights",
+    "Uncapped Liability"
+   ],
+   "surfaces": [
+    "Manufacturing"
+   ]
+  },
+  {
+   "definition": "Marketing agreement: a party markets, promotes or co-promotes products or services.",
+   "family_fields": [
+    {
+     "description": "Product or service being marketed",
+     "informs": null,
+     "name": "marketed_product"
+    },
+    {
+     "description": "Fees or commission for marketing services",
+     "informs": "contract_value",
+     "name": "marketing_fees"
+    }
+   ],
+   "key": "marketing",
+   "label": "Marketing Agreement",
+   "salient": [
+    "Exclusivity",
+    "Non-Compete",
+    "Revenue/Profit Sharing",
+    "License Grant",
+    "Termination For Convenience",
+    "Expiration Date",
+    "Renewal Term",
+    "Ip Ownership Assignment",
+    "Minimum Commitment",
+    "Competitive Restriction Exception",
+    "Governing Law"
+   ],
+   "surfaces": [
+    "Marketing"
+   ]
+  },
+  {
+   "definition": "Restrictive-covenant agreement: non-compete, non-solicit and non-disparagement undertakings.",
+   "family_fields": [
+    {
+     "description": "Duration of the restrictive covenants",
+     "informs": "term_length",
+     "name": "restricted_period"
+    },
+    {
+     "description": "Geography the restriction covers",
+     "informs": null,
+     "name": "restricted_territory"
+    },
+    {
+     "description": "Business or activity restricted",
+     "informs": null,
+     "name": "restricted_business"
+    }
+   ],
+   "key": "non_compete_no_solicit",
+   "label": "Non-Compete / No-Solicit / Non-Disparagement Agreement",
+   "salient": [
+    "Non-Compete",
+    "No-Solicit Of Customers",
+    "No-Solicit Of Employees",
+    "Non-Disparagement",
+    "Competitive Restriction Exception",
+    "Expiration Date",
+    "Governing Law",
+    "Covenant Not To Sue",
+    "Liquidated Damages",
+    "Exclusivity"
+   ],
+   "surfaces": [
+    "Non_Compete_Non_Solicit"
+   ]
+  },
+  {
+   "definition": "Outsourcing agreement: a provider takes over a business process or function for a customer.",
+   "family_fields": [
+    {
+     "description": "Business process or function outsourced",
+     "informs": null,
+     "name": "outsourced_function"
+    },
+    {
+     "description": "Service levels and credits",
+     "informs": null,
+     "name": "service_levels"
+    },
+    {
+     "description": "Base fee or charges",
+     "informs": "contract_value",
+     "name": "service_fees"
+    }
+   ],
+   "key": "outsourcing",
+   "label": "Outsourcing Agreement",
+   "salient": [
+    "Audit Rights",
+    "Cap On Liability",
+    "Uncapped Liability",
+    "Termination For Convenience",
+    "Post-Termination Services",
+    "Change Of Control",
+    "Insurance",
+    "Minimum Commitment",
+    "Volume Restriction",
+    "Price Restrictions",
+    "Expiration Date",
+    "No-Solicit Of Employees",
+    "Liquidated Damages",
+    "Ip Ownership Assignment"
+   ],
+   "surfaces": [
+    "Outsourcing"
+   ]
+  },
+  {
+   "definition": "Promotion agreement: promotional services, campaigns or co-promotion of a product.",
+   "family_fields": [
+    {
+     "description": "Product or service being promoted",
+     "informs": null,
+     "name": "promoted_product"
+    },
+    {
+     "description": "Fees or compensation for promotion",
+     "informs": "contract_value",
+     "name": "promotion_fees"
+    }
+   ],
+   "key": "promotion",
+   "label": "Promotion Agreement",
+   "salient": [
+    "Exclusivity",
+    "Revenue/Profit Sharing",
+    "Expiration Date",
+    "Renewal Term",
+    "License Grant",
+    "Non-Disparagement",
+    "Termination For Convenience",
+    "Minimum Commitment",
+    "Non-Compete",
+    "Ip Ownership Assignment"
+   ],
+   "surfaces": [
+    "Promotion"
+   ]
+  },
+  {
+   "definition": "Reseller agreement: a reseller or value-added reseller buys or licenses products to resell to customers.",
+   "family_fields": [
+    {
+     "description": "Reseller territory",
+     "informs": null,
+     "name": "territory"
+    },
+    {
+     "description": "Products the reseller may resell",
+     "informs": null,
+     "name": "resold_products"
+    },
+    {
+     "description": "Discount off list price",
+     "informs": "contract_value",
+     "name": "reseller_discount"
+    }
+   ],
+   "key": "reseller",
+   "label": "Reseller Agreement",
+   "salient": [
+    "License Grant",
+    "Minimum Commitment",
+    "Anti-Assignment",
+    "Price Restrictions",
+    "Exclusivity",
+    "Non-Transferable License",
+    "Most Favored Nation",
+    "Termination For Convenience",
+    "Volume Restriction",
+    "Rofr/Rofo/Rofn",
+    "Competitive Restriction Exception",
+    "Audit Rights",
+    "Warranty Duration"
+   ],
+   "surfaces": [
+    "Reseller"
+   ]
+  },
+  {
+   "definition": "Service agreement: general professional, support or operational services for fees.",
+   "family_fields": [
+    {
+     "description": "Description of the services",
+     "informs": null,
+     "name": "services_scope"
+    },
+    {
+     "description": "Service fees or rate card",
+     "informs": "contract_value",
+     "name": "service_fees"
+    }
+   ],
+   "key": "service",
+   "label": "Service Agreement",
+   "salient": [
+    "Termination For Convenience",
+    "Warranty Duration",
+    "Cap On Liability",
+    "Expiration Date",
+    "Renewal Term",
+    "Insurance",
+    "Ip Ownership Assignment",
+    "Post-Termination Services",
+    "Uncapped Liability",
+    "Audit Rights",
+    "Governing Law",
+    "No-Solicit Of Employees",
+    "Price Restrictions"
+   ],
+   "surfaces": [
+    "Service"
+   ]
+  },
+  {
+   "definition": "Sponsorship agreement: a sponsor funds an event, team or content in exchange for promotional benefits.",
+   "family_fields": [
+    {
+     "description": "Event, team or content sponsored",
+     "informs": null,
+     "name": "sponsored_property"
+    },
+    {
+     "description": "Sponsorship fee",
+     "informs": "contract_value",
+     "name": "sponsorship_fee"
+    },
+    {
+     "description": "Rights and benefits the sponsor receives",
+     "informs": null,
+     "name": "sponsor_benefits"
+    }
+   ],
+   "key": "sponsorship",
+   "label": "Sponsorship Agreement",
+   "salient": [
+    "Exclusivity",
+    "License Grant",
+    "Non-Transferable License",
+    "Revenue/Profit Sharing",
+    "Rofr/Rofo/Rofn",
+    "Termination For Convenience",
+    "Expiration Date",
+    "Renewal Term",
+    "Competitive Restriction Exception",
+    "Non-Disparagement",
+    "Ip Ownership Assignment",
+    "Minimum Commitment"
+   ],
+   "surfaces": [
+    "Sponsorship"
+   ]
+  },
+  {
+   "definition": "Strategic-alliance agreement: parties partner on a commercial initiative without forming a separate entity.",
+   "family_fields": [
+    {
+     "description": "Field or initiative of the alliance",
+     "informs": null,
+     "name": "alliance_scope"
+    },
+    {
+     "description": "How revenue or profit is divided",
+     "informs": null,
+     "name": "revenue_split"
+    }
+   ],
+   "key": "strategic_alliance",
+   "label": "Strategic Alliance Agreement",
+   "salient": [
+    "Joint Ip Ownership",
+    "Exclusivity",
+    "Change Of Control",
+    "Non-Compete",
+    "Revenue/Profit Sharing",
+    "Rofr/Rofo/Rofn",
+    "Competitive Restriction Exception",
+    "License Grant",
+    "Ip Ownership Assignment",
+    "Termination For Convenience",
+    "Governing Law",
+    "No-Solicit Of Customers",
+    "No-Solicit Of Employees",
+    "Anti-Assignment"
+   ],
+   "surfaces": [
+    "Strategic Alliance"
+   ]
+  },
+  {
+   "definition": "Supply agreement: a supplier sells goods or materials to a buyer on stated quantities and prices.",
+   "family_fields": [
+    {
+     "description": "Goods or materials supplied",
+     "informs": null,
+     "name": "supplied_goods"
+    },
+    {
+     "description": "Minimum or forecast quantities",
+     "informs": null,
+     "name": "minimum_quantity"
+    },
+    {
+     "description": "Unit price or pricing formula",
+     "informs": "contract_value",
+     "name": "unit_price"
+    }
+   ],
+   "key": "supply",
+   "label": "Supply Agreement",
+   "salient": [
+    "Minimum Commitment",
+    "Volume Restriction",
+    "Price Restrictions",
+    "Governing Law",
+    "Warranty Duration",
+    "Exclusivity",
+    "Most Favored Nation",
+    "Insurance",
+    "Termination For Convenience",
+    "Uncapped Liability",
+    "Cap On Liability",
+    "Expiration Date",
+    "Renewal Term",
+    "Audit Rights"
+   ],
+   "surfaces": [
+    "Supply"
+   ]
+  },
+  {
+   "definition": "Transportation agreement: carriage, logistics or freight services.",
+   "family_fields": [
+    {
+     "description": "Routes, lanes or territory served",
+     "informs": null,
+     "name": "route_or_lane"
+    },
+    {
+     "description": "Freight rates or fees",
+     "informs": "contract_value",
+     "name": "freight_rates"
+    }
+   ],
+   "key": "transportation",
+   "label": "Transportation Agreement",
+   "salient": [
+    "Insurance",
+    "Cap On Liability",
+    "Uncapped Liability",
+    "Price Restrictions",
+    "Volume Restriction",
+    "Minimum Commitment",
+    "Termination For Convenience",
+    "Expiration Date",
+    "Exclusivity",
+    "Audit Rights",
+    "Liquidated Damages",
+    "Anti-Assignment",
+    "Governing Law"
+   ],
+   "surfaces": [
+    "Transportation"
+   ]
+  },
+  {
+   "definition": "Commercial contract that fits none of the 25 listed families; extract every present category from the text and never invent a family from the filename.",
+   "family_fields": [],
+   "key": "other",
+   "label": "Other / unlisted",
+   "salient": [],
+   "surfaces": []
+  }
+ ],
+ "default_field_types": {
+  "contract": {
+   "contract_value": "money",
+   "cuad_clauses": "entity_list:free_text",
+   "cuad_family": "name",
+   "document_name": "name",
+   "effective_date": "date",
+   "governing_law": "name",
+   "maud_clauses": "entity_list:free_text",
+   "merger_consideration": "name",
+   "parties": "entity_list:name",
+   "renewal_terms": "free_text",
+   "term_length": "free_text"
+  },
+  "corporate_record": {
+   "effective_date": "date",
+   "entity_name": "name",
+   "filing_number": "id",
+   "intent": "label",
+   "jurisdiction": "name",
+   "keywords": "entity_list:name",
+   "record_type": "name",
+   "signatories": "entity_list:name",
+   "subject_matter": "free_text"
+  },
+  "correspondence": {
+   "action_items": "entity_list",
+   "additional_recipients": "entity_list",
+   "communication_date": "date",
+   "communication_type": "name",
+   "demand_amount": "money",
+   "intent": "label",
+   "keywords": "entity_list:name",
+   "recipient": "name",
+   "sender": "name",
+   "subject_matter": "free_text",
+   "urgency": "name"
+  },
+  "insurance_claim": {
+   "adjuster": "name",
+   "claim_checklist": "entity_list:free_text",
+   "claim_number": "id",
+   "claim_type": "name",
+   "claimed_amount": "money",
+   "coverage_determination": "name",
+   "damages_description": "free_text",
+   "date_filed": "date",
+   "date_of_loss": "date",
+   "denial_reasons": "entity_list:free_text",
+   "insured_party": "name",
+   "insurer": "name",
+   "intent": "label",
+   "keywords": "entity_list:name",
+   "policy_number": "id",
+   "subject_matter": "free_text",
+   "supporting_documents": "entity_list"
+  },
+  "merger_agreement": {
+   "document_name": "name",
+   "effective_date": "date",
+   "effective_time": "free_text",
+   "governing_law": "name",
+   "intent": "name",
+   "keywords": "entity_list:name",
+   "maud_clauses": "entity_list:free_text",
+   "merger_consideration": "name",
+   "parties": "entity_list:name",
+   "subject_matter": "free_text"
+  }
+ },
+ "dojo_commit": "1cd4aba76d82eea20c6e8dfcc0d760881bf84924",
+ "dojo_version": "0.27.2",
+ "maud_consideration_types": [
+  "all_cash",
+  "all_stock",
+  "mixed_cash_stock",
+  "mixed_cash_stock_election",
+  "other"
+ ],
+ "maud_type_of_consideration_to_token": {
+  "All Cash": "all_cash",
+  "All Stock": "all_stock",
+  "Mixed Cash/Stock": "mixed_cash_stock",
+  "Mixed Cash/Stock: Election": "mixed_cash_stock_election"
+ }
+}
