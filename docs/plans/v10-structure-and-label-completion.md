@@ -570,10 +570,10 @@ The machine-readable sequence is `src/mailroom_eda/labeling/campaigns/v10/campai
 | # | chunk | config | rows | cap | gate to proceed |
 |---|---|---|---|---|---|
 | 0 | build: cleanup, layout, specialist fix, deterministic fields, card | none | all | — | C3 gates 1–8, 12 and 13 pass. Deterministic fields: `cuad_family`, `merger_consideration`, `communication_type` |
-| 1 | CUAD model bake-off | DeepSeek v4.1 Flash low / off, DeepSeek v4.1 Flash 1017 off, GLM-5.3 FlashX Legal low, GPT-6 Luna Pro, Claude Haiku 5.5, MiniMax M3.1 Flash low | 40 × 7 arms | $0.35 / $0.30 / $0.55 / $0.75 / $0.25 / $0.25 / $0.35 | micro-F1 ≥ 0.75 and P ≥ 0.80, else STOP |
+| 1 | CUAD model bake-off | DeepSeek v4.1 Flash low / off, DeepSeek v4.1 Flash 1017 off, GLM-5.3 FlashX Legal low, GPT-6 Luna Pro, Claude Haiku 5.5, MiniMax M3.1 Flash low | 40 × 7 arms | $0.35 / $0.30 / $0.55 / $0.63 / $0.25 / $0.25 / $0.35 | micro-F1 ≥ 0.75 and P ≥ 0.80, else STOP |
 | 2a–c | CUAD on EX-10 | winner of #1 | 89 (30/30/29) | $0.55 / $0.55 / $0.45 | spans re-verify; the user reviews `spans.csv` |
-| 3 | intent model bake-off | DeepSeek v4.1 Flash off / low, DeepSeek v4.1 Flash 1017 off, GPT-6 Luna Pro, Claude Haiku 5.5, MiniMax M3.1 Flash low | 96 × 2 passes × 6 arms | $0.10 / $0.25 / $0.20 / $0.10 / $0.10 / $0.15 | κ ≥ 0.75 |
-| 4 | flagged intents | winner of #3 | 25 × 2 passes | $0.10 | two-pass agreement; the user reviews the CSV |
+| 3 | intent model bake-off | DeepSeek v4.1 Flash off / low, DeepSeek v4.1 Flash 1017 off, GPT-6 Luna Pro, Claude Haiku 5.5, MiniMax M3.1 Flash low | 96 × 2 passes × 6 arms | $0.10 / $0.30 / $0.20 / $0.10 / $0.10 / $0.15 | κ ≥ 0.75 |
+| 4 | flagged intents | winner of #3 | 25 × 2 passes | $0.17 | two-pass agreement; the user reviews the CSV |
 | 5a | contract entity calibration | GLM-legal + DeepSeek | 40 | $0.75 | per-field accuracy ≥ 0.85 against gold derived from the expert CUAD spans (Parties, dates, Governing Law, Renewal Term) |
 | 5b | contract entity pilot (2 per CUAD family) | as 5a | 52 | $1.00 | human verdicts ≥ 0.90 |
 | 5c–e | contract entities | as 5a | 545 (182/182/181) | $3.00 each | agreement, verbatim checks, adjudication CSV |

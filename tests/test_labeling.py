@@ -1596,3 +1596,16 @@ def test_cuad_window_is_part_of_the_prompt_sha(rows, monkeypatch):
     before = tasks.build_cuad(rows[0]).prompt_sha256
     monkeypatch.setattr(tasks, "CUAD_HEAD_CHARS", 48_000)
     assert tasks.build_cuad(rows[0]).prompt_sha256 != before
+
+
+def test_costs_use_measured_reasoning_tokens():
+    """Low reasoning is priced from the reasoning tokens each model was measured to spend,
+    not a flat output multiplier (DeepSeek reasoned 250-1,600 tokens on one email)."""
+    est = {"output_tokens": 1000, "calls": 192}
+    ds = "deepseek/deepseek-v4.1-flash"
+    assert runner.reasoning_tokens(ds, "intent", "off") == 0
+    assert runner.reasoning_tokens(ds, "intent", "low") == 900
+    assert runner.reasoning_tokens(ds, "corporate", "low") == 1200
+    assert runner.reasoning_tokens("anthropic/claude-haiku-5.5", "cuad", "low") == 1200
+    assert (runner.projected_output(ds, "intent", "low", est) - runner.projected_output(ds, "intent", "off", est)
+            == round(900 * 192 * runner.RETRY_FACTOR))

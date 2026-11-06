@@ -25,6 +25,7 @@ models:
     context: 1048576
     max_completion: 131072
     roles: [legal_primary]
+    reasoning_tokens: {low: {default: 300}}
     route: {only: [z-ai], max_price: {prompt: 0.37, completion: 1.25}, seed: false}
   deepseek/deepseek-v4.1-flash:
     provider: openrouter
@@ -33,6 +34,8 @@ models:
     context: 1040000
     max_completion: 393216
     roles: [general_primary, legal_second_opinion]
+    # measured 2026-11-06 (p75 of real-document calls, rounded up); used by `labeling costs`
+    reasoning_tokens: {low: {intent: 900, cuad: 1500, default: 1200}}
     route: {only: [deepinfra, atlas-cloud, coreweave, inference-net], quantizations: [fp8],
             max_price: {prompt: 0.15, completion: 0.65}, seed: true,
             # low (2026-11-06 real-document probes): DeepInfra spent 0 reasoning tokens on a CUAD
@@ -46,6 +49,7 @@ models:
     context: 1048576
     max_completion: 524288
     roles: [general_second_opinion]
+    reasoning_tokens: {low: {intent: 250, cuad: 1000, default: 600}}
     route: {only: [parasail, together, fireworks, sambanova], max_price: {prompt: 0.15, completion: 0.60},
             seed: false,
             # low: Parasail and Together reported 0 reasoning tokens on the 2026-11-06 ping
