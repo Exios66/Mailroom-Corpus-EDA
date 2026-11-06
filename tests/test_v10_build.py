@@ -295,9 +295,27 @@ def test_every_class_record_fits_its_arrow_schema():
 
 
 def test_default_record_is_blind_and_carries_no_metadata():
-    """Metadata gives away class, subclass and some gold values, so the blind config has none."""
-    rec = v10.default_record(v10.derive_row(contract_row()))
-    assert list(rec) == ["filename", "document_id", "doc_text", "prompt"]
+    """Metadata gives away class, subclass and some gold values, so the blind config has none.
+
+    The source filename leaks too (``auto:CLM-000803.txt`` names the subclass and the gold
+    claim number; ``contract_7_merger_agreement.txt`` names the class), so the blind config
+    joins on the opaque ``document_id`` and the filename lives in ``source_metadata``.
+    """
+    row = v10.derive_row(make_row("auto:CLM-000803.txt", "insurance_claim", "auto"))
+    rec = v10.default_record(row)
+    assert list(rec) == ["document_id", "doc_text", "prompt"]
+    assert tuple(rec) == v10.DEFAULT_COLUMNS
+    assert "auto:CLM-000803.txt" not in rec.values()
+
+
+def test_stage_document_ids_are_opaque_hashes():
+    """The blind join key carries nothing: every staged document_id is DOC- plus 16 hex digits."""
+    import re
+    from mailroom_eda.labeling import runner
+    if not (runner.DEFAULT_STAGE).exists():
+        pytest.skip("no local v9.4 stage")
+    ids = [r["document_id"] for r in runner.load_stage(runner.DEFAULT_STAGE)]
+    assert ids and all(re.fullmatch(r"DOC-[0-9a-f]{16}", i) for i in ids)
 
 
 def test_source_metadata_record_drops_build_internal_and_label_derived_keys():

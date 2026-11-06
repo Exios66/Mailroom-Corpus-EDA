@@ -62,7 +62,7 @@ The user also wants these entity-schema changes:
   - Corporate `not_applicable` is treated inconsistently between `corporate_record_schema.py:380` and `:381`.
   - There is no HF loader, and the vendor snapshot has no tests.
 - **llm-mailroom:**
-  - Joins `default` and `ground_truth` on `filename`. Counts rows where `content_sha256` doesn't equal sha256(`doc_text`).
+  - Joins `default` and `ground_truth` on `filename`; v10's blind `default` has no `filename`, so the join moves to `document_id` (patch below). Counts rows where `content_sha256` doesn't equal sha256(`doc_text`).
   - Every `result_cache` key hashes `doc_text`.
   - `load_dataset` without a config name relies on `default` being the default config.
   - **Bug:** the viewer `/rows` fallbacks send no revision, so once v10 is on the Hub main branch, pinned v9.1 runs would silently read v10.
@@ -183,7 +183,12 @@ labeling/{providers,spend,runner,verify,export}.py
   - `merger_consideration` is `populated` on all 151 mergers (95 from the expert answer, 56 from the task), and the 95 keep the expert value whatever the models answered in calibration.
 - **Splits are unchanged.** The md5 rule is untouched and no row is added or removed: 3,292 rows (train 2,971 / test 321) and 151 mergers. Only the merger subclass distribution in the new configs changes (today all_cash 57, all_stock 24, mixed_cash_stock 13, mixed_cash_stock_election 1, other 56; the 56 split 48 train / 8 test); the card's composition and per-subclass tables are rendered from the data, so they follow.
 - **New configs drop:** the empty and constant columns, `source_filename`, the nested mirrors, and build-internal metadata keys.
-- **`default` keeps:** `filename`, `doc_text` and `metadata`, minus the build-internal keys (`gt_label_ex10` needs `metadata`), plus `document_id`. It stays the **first config**, because llm-mailroom calls `load_dataset` without a config name.
+- **`default` is blind:** `document_id`, `doc_text` and the empty `prompt`, nothing else. It stays the **first config**, because llm-mailroom calls `load_dataset` without a config name.
+  - **No `metadata`:** a leak scan on the v9.4 stage found metadata values that give away the class, the subclass and gold values (`source_row_id` equals `claim_number`).
+  - **No `filename`:** the source filename names the subclass or class on 1,346 of 3,292 rows, test split included: `carrier:…`, `inpatient:…`, `auto:CLM-000803.txt` (subclass plus the gold claim number; 96 of 114 test insurance rows), `contract_#_merger_agreement.txt` (all 17 test mergers), CUAD names such as `…_Co-Branding Agreement_ Agency Agreement.pdf` (46 of 60 test contracts). `document_id` is an opaque hash (`DOC-` plus 16 hex digits, checked on every staged row) and is the join key.
+  - `doc_text` carries no build-injected header; its first lines are the documents' own titles.
+- **`source_metadata`** (non-blind, like the GT configs): `document_id`, `filename` and `metadata` minus the build-internal keys. `gt_label_ex10` and anything else that needs the source fields reads it.
+- **Labels land only in the GT-tier configs** (`ground_truth`, `gt_<class>`, `routing`, `cuad_clauses`, `maud_answers`), never in `default`. The labeling journals under `docs/reports/audits/v10_labels/` are build inputs, not dataset configs.
 - **`prompt`** is dropped from the new configs. It stays as an empty column in the legacy and default configs for one release.
 - **Fixes:**
   - `expected_specialist` comes from the taxonomy (`merger_agreement_specialist`).

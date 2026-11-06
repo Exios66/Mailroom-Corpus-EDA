@@ -378,14 +378,16 @@ DROPPED_METADATA_KEYS = frozenset({"built_by", "sample_method", "source_provenan
 #: ``claim_subtype``, ``exhibit_description``) and some gold values
 #: (``source_row_id`` == ``claim_number``), so a model could answer without reading
 #: the text. Metadata moves to the non-blind ``source_metadata`` config.
-DEFAULT_COLUMNS = ("filename", "document_id", "doc_text", "prompt")
+#: The blind config joins on the opaque document_id only: the source filename names the
+#: subclass or class on 1,346 rows (``carrier:…``, ``auto:CLM-…``, ``…_merger_agreement.txt``)
+#: and lives in ``source_metadata`` with the rest of the non-blind source fields.
+DEFAULT_COLUMNS = ("document_id", "doc_text", "prompt")
 SOURCE_METADATA_COLUMNS = ("document_id", "filename", "metadata")
 
 
 def default_record(row: Mapping[str, Any]) -> dict[str, Any]:
-    """The blind ``default`` record: the text and join keys only."""
-    return {"filename": row["filename"], "document_id": row["document_id"], "doc_text": row["doc_text"],
-            "prompt": ""}
+    """The blind ``default`` record: the opaque join key and the text only."""
+    return {"document_id": row["document_id"], "doc_text": row["doc_text"], "prompt": ""}
 
 
 def source_metadata_record(row: Mapping[str, Any]) -> dict[str, Any]:
