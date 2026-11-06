@@ -843,7 +843,10 @@ def cmd_inspect(args: argparse.Namespace) -> int:
             raise SystemExit(f"{d} has no labels to inspect (run `labeling review` first)")
         task, records = "fields", export.read_csv(d / "fields.csv")
     calls = export.read_journal(d / "calls.jsonl") if (d / "calls.jsonl").exists() else []
-    md = inspect_report(runner.load_stage(args.stage), records, task, args.n, calls)
+    rows = runner.load_stage(args.stage)
+    if task == "intent":  # the gold the gate scores against (corrections live in the labels root)
+        rows, _ = corrected_gold(rows, gold_corrections(d.parent))
+    md = inspect_report(rows, records, task, args.n, calls)
     (d / "inspect.md").write_text(md, encoding="utf-8")
     print(d / "inspect.md")
     return 0
