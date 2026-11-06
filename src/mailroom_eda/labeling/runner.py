@@ -40,7 +40,7 @@ DEFAULT_STAGE = ROOT / "data" / "v9_4" / "stage"
 DEFAULT_OUT = ROOT / "docs" / "reports" / "audits" / "v10_labels"
 #: the sibling sandbox checkout the interim cross-check reads (``labeling/interim.py``)
 DEFAULT_SANDBOX = ROOT.parent / "local-mailroom-sandbox"
-SETS = ("calibration", "holdout", "pilot", "remainder", "pending", "flagged", "all")
+SETS = ("calibration", "holdout", "pilot", "remainder", "pending", "flagged", "relabel", "all")
 PILOT_PER_STRATUM = {"contract_entities": 2, "merger_entities": 3, "merger_consideration": 3, "correspondence": 5,
                      "claim_checklist": 5, "corporate": 3}
 #: Output-token budget per call, by task (also the worst case the spend gate reserves).
@@ -133,8 +133,11 @@ def select(rows: Sequence[Mapping[str, Any]], task: str, set_name: str) -> list[
             out = v94.manual_intent_rows(rows)
         elif set_name == "flagged":
             out = v94.flagged_intent_rows(rows)
+        elif set_name == "relabel":  # every machine-made intent (flagged included), re-read
+            out = [r for r in rows if r["expected"] == "correspondence"
+                   and r["gt_fields"].get("intent_status") != "manual"]
         else:
-            raise SystemExit("intent sets: calibration, flagged")
+            raise SystemExit("intent sets: calibration, flagged, relabel")
     else:
         pool = [r for r in pool if tasks._task_fields(r, task)]
         if set_name == "pilot":
@@ -817,8 +820,12 @@ def campaign_costs(rows: Sequence[Mapping[str, Any]], name: str = "v10") -> dict
     tokens: dict[str, list[int]] = {}
     for ch in camp["chunks"]:
         picked = chunk(select(rows, ch["task"], ch["set"]), ch.get("chunk"))
-        models = [PLACEHOLDER_MODELS.get(m, m) for m in ch["models"]]
-        reasoning = PLACEHOLDER_REASONING.get(str(ch["reasoning"]), str(ch["reasoning"]))
+        try:  # an approved bake-off winner is priced as itself, otherwise as the costliest arm
+            from .operate import resolve  # noqa: PLC0415
+            models, reasoning = resolve(name, ch)
+        except SystemExit:
+            models = [PLACEHOLDER_MODELS.get(m, m) for m in ch["models"]]
+            reasoning = PLACEHOLDER_REASONING.get(str(ch["reasoning"]), str(ch["reasoning"]))
         est = estimate(picked, ch["task"], models, ch["set"])
         outputs = {m: projected_output(m, ch["task"], reasoning, est) for m in models}
         cost = 0.0 if ch.get("skip") else sum(spend.token_cost(m, est["prompt_tokens"], outputs[m]) for m in models)
@@ -875,8 +882,9 @@ def render_costs(c: Mapping[str, Any]) -> str:
         lines.append(f"| {ch['id']} | {ch['task']} | {ch['set']} | {ch.get('chunk') or 'all'} | "
                      f"{ch['documents']} | {ch['calls']} | {models} | {ch['reasoning']} | "
                      f"{ch['projected_usd']:.2f} | {ch['cap_usd']:.2f} |")
-    lines += ["", "`winner_of_1` is priced as `glm-5.3-flashx-legal` at low; "
-              "`winner_of_3` as `deepseek-v4.1-flash-1017` at low (the costliest arms).", ""]
+    lines += ["", "An approved `winner_of_<id>` is priced as the approved arm; until then `winner_of_1` "
+              "is priced as `glm-5.3-flashx-legal` at low and `winner_of_3` as `deepseek-v4.1-flash-1017` "
+              "at low (the costliest arms).", ""]
     return "\n".join(lines)
 
 
@@ -1014,7 +1022,10 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
     # ingested as labels, so one model is enough there; everywhere else two must agree
     if task in tasks.TWO_MODEL_TASKS and len(models) != 2 and set_name not in ("pilot", "calibration"):
         raise SystemExit(f"{task} needs --second-model outside pilots and calibration (two-model agreement)")
-    if task not in tasks.TWO_MODEL_TASKS and len(models) != 1:
+    if task == "intent" and set_name == "relabel":
+        if len(models) != 2:  # rewriting existing labels needs a second opinion that agrees
+            raise SystemExit("the intent relabel needs --second-model (two-model agreement)")
+    elif task not in tasks.TWO_MODEL_TASKS and len(models) != 1:
         raise SystemExit(f"{task} runs one model")
     proj = estimate(picked, task, models, set_name)
     print(json.dumps({"chunk": chunk_id, "out": str(out_dir), "reasoning": reasoning, **proj}, indent=1))

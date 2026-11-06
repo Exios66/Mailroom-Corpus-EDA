@@ -218,26 +218,122 @@ the labels root is gitignored, because this GitHub repo is public. A paid run re
   checkout is missing (never overwriting local files), so a later run reuses those answers
   instead of buying them again.
 
-## Funded now (2026-11-06: $9.12 credit, $6.12 usable above the $3 reserve)
+## Funded now (2026-11-06: $8.92 credit, $5.92 usable above the $3 reserve, after Jev)
 
-The full campaign projects to $20.42, so only this prefix runs before a top-up. It is ordered
+The full campaign projects to $21.40, so only this prefix runs before a top-up. Running
+totals count from the $5.99 usable after the relabel and the Jev calibration. It is ordered
 so every paid step feeds a decision. Each chunk starts only when usable credit covers its cap.
 
 | step | chunks | projected USD | running total |
 |---|---|---:|---:|
-| 1 | `3`: intent bake-off, 6 arms (`--chunk 3` ping first) | 0.47 | 0.47 |
-| 2 | `4`: 25 flagged intents with the chunk-3 winner | 0.11 | 0.58 |
-| 3 | `1`: CUAD bake-off, 7 arms | 1.48 | 2.07 |
-| 4 | `1h`: CUAD holdout, only the arms `bakeoff 1` did not exclude | ≤ 1.53 | ≤ 3.59 |
-| 5 | merger window A/B (below) | 0.36 | ≤ 3.95 |
-| 6 | `2a`–`2c`: CUAD on the 89 EX-10 contracts with the chunk-1 winner | ≤ 0.81 | ≤ 4.77 |
-| 7 | `7a`, `8a`: correspondence and claim-checklist pilots | 0.18 | ≤ 4.94 |
+| 1 | `3`: intent bake-off; done 2026-11-06 (6 arms, then arms 1, 3, 5, 6 on the new prompt) | spent 0.36 | — |
+| 2 | `4a`–`4c`: re-read the 904 machine-made intents (below); supersedes `4`. Answers done; gate waits on the 23 test-split decisions | spent 0.50 | — |
+| 2j | Jev 1.14 intent QA (below): v1–v4 calibrations, noise check, audit of 819 train rows done | spent 0.081 | — |
+| 3 | `1`: CUAD bake-off, 7 arms | 1.48 | ≤ 1.58 |
+| 4 | `1h`: CUAD holdout, only the arms `bakeoff 1` did not exclude | ≤ 1.53 | ≤ 3.11 |
+| 5 | merger window A/B (below) | 0.36 | ≤ 3.47 |
+| 6 | `2a`–`2c`: CUAD on the 89 EX-10 contracts with the chunk-1 winner | ≤ 0.81 | ≤ 4.28 |
+| 7 | `7a`, `8a`: correspondence and claim-checklist pilots | 0.18 | ≤ 4.46 |
 
-- Steps 2 and 6 are priced at the costliest possible winner; a DeepSeek winner costs less.
-- About $1.18 stays unspent as slack for repairs and re-runs.
+- Step 6 is priced at the costliest possible winner; a DeepSeek winner costs less.
+- About $1.50 stays unspent as slack for repairs and re-runs.
 - Chunks 5, 6, 9 and the remainders of 7 and 8 (about $15.5) wait for a top-up and for the
   post-bake-off re-plan (plan Task 7).
 - Report credit after every step.
+
+## Intent relabel (chunks 4a–4c; done 2026-11-06 for chunk 3)
+
+Chunk 3 ran twice. On the 2026-11-06 re-run (new prompt, 7 gold corrections the user accepted
+in `v10_labels/gold-corrections.csv`) every arm passed κ 0.75. The primary is DeepSeek v4.1
+Flash 1017 at off, κ 0.823. No other-vendor arm cleared the 0.05 non-inferiority bound on 96
+emails, so the user picked Haiku 5.5 (κ 0.763) as the second opinion. Each of the 904 emails
+gets four answers (two models, two passes); the gate writes `decisions.csv`:
+
+| decision | when | written |
+|---|---|---|
+| `confirm` / `change` | all four agree and the label fits the subtype | the agreed label |
+| `keep` | the answers split, one of them is the existing label | nothing changes |
+| `adjudicate` | a subtype conflict, or a split with no answer keeping the existing label | the reviewer's decision |
+
+Subtypes (`expected_subclass`) came from older automatic labelers, so a conflict is read, not
+trusted either way. Only `press_release`, `meeting_request` and `notice` point to an intent;
+`demand` and `attorney_demand` do not (a demand is often for an action, not a payment).
+
+```bash
+$L chunk 4a --initials XX        # then 4b, 4c
+$L gate 4a                       # writes decisions.csv; fill reviewer_decision (an intent or keep)
+$L gate 4a --signed-off --approve --initials XX
+```
+
+**Test split (85 of the 904):** labels there score models later, and labels written by
+DeepSeek and Haiku would favor models that read email like them. So a test-split change is
+never written automatically: it becomes `adjudicate`, and the gate requires a person's
+initials in `reviewed_by` (Claude may not decide these: it is a third model). `confirm` and
+`keep` leave the existing label as it is.
+
+Changes reach the `ground_truth` config only, with their provenance, at ingest.
+
+**Status (2026-11-06):** answers bought for all 904 ($0.50, no errors). Train: 394 confirm,
+202 keep, 104 change, 119 adjudicate, all decided. Test: 40 confirm, 22 keep, 23 adjudicate
+waiting on a person (`v10_labels/4-test-split-review.md`). 158 of the 223 Claude-decided train
+rows were first decided on a 650-character excerpt; all 158 were re-read (4 decisions changed,
+noted in `reviewer_note`). Seven of them exceed 7,500 characters and their middles are not yet
+read; their `reviewer_note` says so and they stay provisional until read.
+
+The model passes see the intent window (first 6,000 and last 2,000 characters), not whole
+emails; Jev (below) reads whole emails, so it also checks what the window cut.
+
+## Jev intent QA (TypeSafe `typesafe/jev-1.14`; third vendor, not a labeler)
+
+Jev is a decisions model: it answers a typed `choice` question with a probability per label,
+served from `POST https://openrouter.ai/api/alpha/decisions` (chat/completions returns 400).
+About $0.042 per million input tokens, output free; the 96 gold emails cost $0.005. It never
+writes a label: it flags rows where it disagrees with the agreed label, for a reviewer.
+
+```bash
+$L jev calibrate --initials XX --api-cost-cap-usd 0.02     # scores prompts/jev_intent.json on the 96 gold
+$L jev calibrate --prompt draft.json --initials XX --api-cost-cap-usd 0.02   # a refinement draft
+$L jev audit --initials XX --api-cost-cap-usd 0.10         # refused until the prompt calibrates
+```
+
+- Request (`labeling/jev.py`): `state = {"email": <full text>}`, one `choice` question whose
+  `criteria` are the eight intent definitions, `provider.data_collection = deny`. The current
+  label is never sent (it would anchor the answer). Text over 32 KB runs in Jev's slower,
+  less accurate long-context mode; the journal marks it per row (`long_context`).
+- Spend: initials, a run cap and a wall limit are required and the cap must fit the key's
+  headroom; the worst-case estimate must fit both the run cap and the campaign Jev budget
+  (`campaign.yaml` `jev.total_cap_usd`, $0.30, counted over every Jev journal) before any
+  call; answers are journaled by (filename, prompt sha) and never bought twice.
+- Gate: `audit` runs only when the current prompt sha has a calibration covering all 96 gold
+  rows at κ ≥ `jev.kappa_floor` (0.75). It audits train relabel rows only (test labels are a
+  person's decision) and writes `jev_intent-audit/flags-<sha>.csv`: rows whose agreed label
+  gets probability below `jev.flag_below` (0.30), for a reviewer.
+- Refinement: change the instructions or criteria only from calibration misses, read against
+  the email; each change is a new prompt sha and re-asks the 96 gold (about $0.005).
+- Calibrations (2026-11-06, 96 gold; snapshots `jev_intent-calibrate/prompt-v<n>.json`):
+
+  | prompt | sha | accuracy | κ | misses | v1 hits lost |
+  |---|---|---:|---:|---:|---:|
+  | v1 | `6bf9331b95a6` | 0.781 | 0.735 | 21 | — |
+  | v2 | `bdb07bfcfae9` | 0.813 | 0.776 | 18 | 6 |
+  | v3 | `704ec69ae1be` | 0.833 | 0.800 | 16 | 5 |
+  | v4 (live) | `9f283f818cdb` | 0.875 | 0.849 | 12 | 1 (a noise row) |
+
+  v2 added: judge the newest message (an answer to a quoted ask reports); suggestions, courtesy
+  "let me know" and standing procedures are not explicit asks; reporter news articles are
+  update; out-of-office replies (not all automatic mail) are other. v2 over-reached on wire
+  news releases, directives and action proposals; v3 fixed those (wire releases are
+  press_communication; an instruction to act is request; a proposal asking for agreement is
+  request). v4 fixed v3's over-reach (a deadline-for-objections notice stays notice; a brief
+  point plus a direct question is request; vendor order confirmations are update).
+- Overfitting: every version was tuned and scored on the same 96 gold, so v4's κ is optimistic.
+  Stopped at v4 for that reason. Jev only flags rows for a reviewer; it never writes a label.
+- Noise: the 31 rows any version missed were re-asked on v3 (`jev_intent-noise-v3`); 1 flipped.
+- Gold disputes: 5 of v4's 12 misses look like gold errors against the written definitions
+  (`jev_intent-calibrate/gold-disputes-v4.csv`, with 4 ambiguous and 3 gold-right). They are
+  not applied; the user decides, then `gold-corrections.csv` and a free re-score.
+- Audit (v4): 819 train rows, $0.0555, 163 flagged (`jev_intent-audit/flags-9f283f818cdb.csv`):
+  121 llm_zero_shot, 27 aeslc_join, 15 heuristic. Every flag gets a full-text read.
 
 ## Adjudication (step 10)
 
@@ -315,15 +411,16 @@ $L bakeoff 3
 - the second opinion is the cheapest other-vendor arm within 0.05 of the primary (lo95 ≥ −0.05);
 - an arm with hi95 < −0.05 is clearly worse and skips the holdout.
 
-`gate --approve` on a bake-off chunk accepts only the arm `bakeoff` picked, because chunks 2 and 4
-use that arm (`winner_of_*`).
+`gate --approve` on a bake-off chunk accepts only the arm `bakeoff` picked, because chunks 2 and
+4a–4c use that arm (`winner_of_*`).
 
 ## Gates
 
 | kind | passes when |
 |---|---|
 | `cuad_f1` | micro-F1 ≥ 0.75 and precision ≥ 0.80 against the expert CUAD spans (`v9_4_revision.score_cuad_calibration`). Bake-off arms are compared by paired bootstrap intervals (`docs/plans/2026-11-06-labeling-settings-optimization.md`), not by raw F1 gaps |
-| `intent_kappa` | Cohen's κ ≥ 0.75 against the manual intent labels (`v9_4_revision.score_intent_calibration`) |
+| `intent_kappa` | Cohen's κ ≥ 0.75 against the manual intent labels (`v9_4_revision.score_intent_calibration`), after `gold-corrections.csv` |
+| `intent_relabel` | both models answered both passes on every email, every `adjudicate` row in `decisions.csv` has a reviewer decision, signed off |
 | `field_accuracy` | per-field accuracy ≥ 0.85 against values derived from the expert CUAD spans |
 | `consideration_accuracy` | each model answers every one of the 95 mergers with an expert MAUD Type of Consideration answer, and each reaches ≥ 0.95 accuracy against it; `gate.json` has a confusion table per model |
 | `human_verdicts` | at least 30 accepted `fields.csv` rows reviewed, and at least 90% of them marked correct |
@@ -362,6 +459,78 @@ The v10 build refuses labels whose configuration has no passing calibration or p
   tokens per GPU-hour), so the cap still bounds spend; `costs.md` therefore shows a
   ceiling for it, not an estimate.
 - Spend: the chunk caps add up to $29.76 and the projection is about $20.42 (`costs.md`).
+
+## Handoff (2026-11-06, for the next agent)
+
+Read this section, then `Remaining checklist` below. Private state lives in the gitignored
+`docs/reports/audits/v10_labels/` (restore it with `$L checkpoint --restore` from the private HF
+`Lucius-Morningstar/mailroom-dataset-v10-staging` before any paid step; never re-buy answers).
+Keys: `OPENROUTER_API_KEY` and `HF_TOKEN` from the operator, per command; never written to the repo.
+Commits use the user's git identity with no Claude trailers.
+
+State
+- Branch `feat/v10-structure-labeling` (PR 43) at the Jev v4 commit; tests: 173 passed, 1 skipped
+  (`tests/test_jev.py`, `tests/test_labeling.py`). Credit: $8.92 total, $5.92 usable.
+- Intent relabel 4a–4c: answers done; 23 test-split decisions made at JJB's direction; waiting on
+  JJB's sign-off (`gate 4a|4b|4c --signed-off --approve --initials JJB`). Do not sign for the user.
+  7 long train emails are still provisional (their `reviewer_note` says so): their middles are unread.
+- Jev: prompt v4 live (κ 0.849 on the 96 gold, optimistic: tuned on the same rows). Audit of 819 train
+  rows done: `jev_intent-audit/flags-9f283f818cdb.csv` (163) plus 66 rows where Jev's top choice
+  disagrees above the flag cutoff = 229 review rows. Spent $0.081 of the $0.30 Jev budget.
+- Jev review: rows 0–69 have Claude proposals in `jev_intent-review/proposals.csv` (28 would change a
+  label); rows 70–228 are unread (`queue.csv`). NOTHING is applied. The proposals rest on rules the
+  user has NOT approved (`jev_intent-review/proposed-rules.md`, which also lists the v4 prompt
+  additions). The user objected to the agent inventing rules: get each rule approved before using it,
+  and do not write proposals into any `decisions.csv` until then.
+- Gold disputes: `jev_intent-calibrate/gold-disputes-v4.csv` — 5 proposed corrections of the 96 manual
+  gold, undecided. Accepted ones go to `gold-corrections.csv` (decided_by), then `jev calibrate`
+  re-scores for free.
+- Hand labeling: the user may hand-label from `v10_labels/hand_label/intent_review.csv` (247 emails)
+  and `fields_to_label.csv` (23,002 field rows: 7 tasks, 3,292 documents). Document texts:
+  `data/hand_label/docs/`. Before any paid chunk, read back what the user filled and exclude those
+  rows/fields; ingest them through the PR 45 override path with `labeled_by` provenance.
+- PR 44: the merge of this branch into `claude/v10-sweep-ops` was in a session-scratch worktree that
+  will not survive; its uncommitted diff is saved at `v10_labels/handoff/pr44-merge-wip.patch`
+  (+ `.status`; base `72be2a0`, merging `fb3c469`). Redo the merge from origin, compare with the patch,
+  fix `test_resolved_gate_passes_only_with_no_open_items`, push.
+- PR 45 (four ingest gaps) and PR 46 (blocked externally): unchanged, see checklist.
+
+Next, in order: (1) user approves/rejects the proposed rules and the 5 gold disputes; (2) finish the
+Jev review (rows 70–228) and the 7 middles under the approved rules only; (3) user sign-off on
+4a–4c; (4) PR 44, PR 45; (5) step 3 CUAD bake-off onward, skipping hand-labeled rows.
+
+## Remaining checklist (updated 2026-11-06)
+
+Labels
+- [x] The 23 test-split relabel emails: decided 2026-11-06 by Claude at JJB's direction (16
+      changes, 7 keeps; each `reviewer_note` says so).
+- [ ] JJB signs off: `gate 4a|4b|4c --signed-off --approve --initials JJB`.
+- [ ] Claude reads the unread middles of the 7 long train emails; clears their provisional notes.
+- [x] Jev: prompt refined v1→v4 (κ 0.735→0.849), audit of 819 train rows done (163 flags).
+- [ ] JJB decides the 5 proposed gold corrections in `gold-disputes-v4.csv`.
+- [ ] JJB approves or rejects each rule in `jev_intent-review/proposed-rules.md`.
+- [ ] Review all 229 Jev rows (163 flags + 66 disagreements) under approved rules; 70 proposed so far, none applied.
+- [ ] Read back the user's hand labels (`v10_labels/hand_label/`) and exclude them from paid chunks.
+- [ ] Step 3: chunk 1 CUAD bake-off (7 arms), `bakeoff 1`, approve the winner.
+- [ ] Step 4: chunk 1h holdout for the surviving arms; `bakeoff 1` again.
+- [ ] Step 5: merger window A/B.
+- [ ] Step 6: chunks 2a–2c (EX-10 CUAD).
+- [ ] Step 7: pilots 7a, 8a.
+- [ ] Top-up, then the re-plan (plan Task 7): chunks 5, 6, 9 and the 7/8 remainders (~$15.5).
+- [ ] Chunk 10 human adjudication; chunk 11 v10 build and every gate.
+
+Code (stacked PRs on this branch)
+- [ ] PR 44 (sweep ops): finish the merge onto this branch, fix
+      `test_resolved_gate_passes_only_with_no_open_items`, push.
+- [ ] PR 45 (build/ingest): rebase on PR 44 and close its four gaps: ingest relabel
+      `decisions.csv` (reviewer decision first, never a test-split proposal); an override path
+      with provenance for relabel changes and gold corrections; record the second opinion's
+      passing calibration for `check_calibrated`; drift gates allow recorded intent changes.
+- [ ] PR 46 (publish): rebase; blocked on Dojo 0.28.0, the llm-mailroom JOIN_KEY and the
+      sandbox refresh.
+
+Every paid step: checkpoint (automatic after chunks; `$L checkpoint` after ad-hoc runs such as
+Jev) and report credit.
 
 ## Sign-off log
 
