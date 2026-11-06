@@ -19,7 +19,8 @@ from typing import Any, Iterable, Mapping, Sequence
 DOCUMENT_COLUMNS = (
     "document_id", "filename", "doc_class", "subclass", "split", "task", "status", "problems",
     "fields_present", "fields_absent", "fields_not_found", "model", "provider", "served_model",
-    "reasoning", "prompt_sha256", "prompt_tokens", "completion_tokens", "cost_usd", "labeled_utc",
+    "reasoning", "prompt_sha256", "document_tokens", "prompt_tokens", "completion_tokens", "cost_usd",
+    "labeled_utc",
 )
 FIELD_COLUMNS = (
     "document_id", "doc_class", "subclass", "field", "type", "model_a", "model_a_value",

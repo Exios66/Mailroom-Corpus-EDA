@@ -520,6 +520,7 @@ def test_run_and_review_two_model_extraction(tmp_path, rows):
     adj = export.read_csv(tmp_path / "adjudication.csv")
     assert {r["field"] for r in adj} == {"urgency"}
     doc = export.read_csv(tmp_path / "documents.csv")[0]
+    assert doc["cost_usd"] == "" and doc["document_tokens"] == str(spend.estimate_tokens(row["doc_text"]))
     assert doc["status"] == "needs_review" and doc["model"] == ",".join(models)
     assert summary["documents"] == 1
 
@@ -564,6 +565,10 @@ def test_cuad_run_repairs_and_review_writes_v94_records(tmp_path, rows):
     assert row["doc_text"][gl["start"]:gl["start"] + len(gl["text"])] == gl["text"]
     assert {"filename", "model", "accepted", "span_count", "cuad_clause_labels"} <= set(rec)
     assert export.read_csv(tmp_path / "spans.csv")
+    doc = export.read_csv(tmp_path / "documents.csv")[0]  # usage covers the first call and the repair
+    assert (doc["prompt_tokens"], doc["completion_tokens"]) == ("200", "100")
+    assert doc["cost_usd"] == ""  # cost stays in calls.jsonl, never in the CSVs
+    assert doc["document_tokens"] == str(spend.estimate_tokens(row["doc_text"]))
 
 
 def test_intent_review_pairs_two_passes(tmp_path, rows):
@@ -578,6 +583,10 @@ def test_intent_review_pairs_two_passes(tmp_path, rows):
     rec = export.read_journal(tmp_path / "intent-labels.jsonl")[0]
     assert rec["pass_a"]["intent"] == rec["pass_b"]["intent"] == "payment_demand"
     assert rec["reasoning"] == "low"
+    doc = export.read_csv(tmp_path / "documents.csv")[0]  # usage covers both passes
+    assert (doc["prompt_tokens"], doc["completion_tokens"]) == ("200", "100")
+    assert doc["cost_usd"] == ""  # cost stays in calls.jsonl, never in the CSVs
+    assert doc["document_tokens"] == str(spend.estimate_tokens(row["doc_text"]))
 
 
 def test_cli_refuses_paid_run_without_initials(tmp_path, monkeypatch, rows):

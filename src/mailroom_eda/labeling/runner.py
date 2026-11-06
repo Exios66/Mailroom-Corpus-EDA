@@ -492,9 +492,9 @@ def field_decisions(rows: Sequence[Mapping[str, Any]], calls: Sequence[Mapping[s
             "model": ",".join(m for m, c in zip(models, got) if c), "provider": first["provider"],
             "served_model": first.get("served_model"), "reasoning": first["reasoning"],
             "prompt_sha256": first["prompt_sha256"],
+            "document_tokens": spend.estimate_tokens(str(r.get("doc_text") or "")),
             "prompt_tokens": sum((c or {}).get("prompt_tokens") or 0 for c in got),
             "completion_tokens": sum((c or {}).get("completion_tokens") or 0 for c in got),
-            "cost_usd": round(sum((c or {}).get("cost_usd") or 0 for c in got), 6),
             "labeled_utc": first["labeled_utc"],
         })
     return field_rows, doc_rows
@@ -519,11 +519,32 @@ def _reviewer_columns(path: Path) -> dict[tuple[str, str], dict[str, str]]:
     return out
 
 
+def _usage_by_document(calls: Sequence[Mapping[str, Any]]) -> dict[str, dict[str, int]]:
+    """Billed tokens per document, over every call (repairs and failed calls included).
+
+    Cost is deliberately left out: it stays in ``calls.jsonl`` / ``runs.jsonl`` and is
+    never written to the CSVs.
+    """
+    out: dict[str, dict[str, int]] = {}
+    for c in calls:
+        u = out.setdefault(c["document_id"], {"prompt_tokens": 0, "completion_tokens": 0})
+        u["prompt_tokens"] += c.get("prompt_tokens") or 0
+        u["completion_tokens"] += c.get("completion_tokens") or 0
+    return out
+
+
+def _document_tokens(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    """Token estimate of each document's full text (the corpus ``token_estimate`` rule)."""
+    return {str(r.get("document_id")): spend.estimate_tokens(str(r.get("doc_text") or "")) for r in rows}
+
+
 def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
            reasoning: str | None = None) -> dict[str, Any]:
     """Rebuild the derived journals and CSVs for one chunk directory (calls at ``reasoning``)."""
     calls = [c for c in export.read_journal(out_dir / "calls.jsonl")
              if reasoning is None or c.get("reasoning") == reasoning]
+    usage = _usage_by_document(calls)
+    doc_tokens = _document_tokens(rows)
     models = sorted({c["model"] for c in calls if not c.get("error")},
                     key=lambda m: [c["model"] for c in calls].index(m))
     if task == "cuad":
@@ -541,7 +562,8 @@ def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
                  "fields_present": sum(1 for v in rec["cuad_clause_labels"].values() if v),
                  "model": rec["model"], "provider": rec["provider"], "served_model": rec["served_model"],
                  "reasoning": rec["reasoning"], "prompt_sha256": rec["prompt_sha256"],
-                 "labeled_utc": rec["labeled_utc"]} for rec in recs]
+                 "labeled_utc": rec["labeled_utc"], "document_tokens": doc_tokens.get(rec["document_id"]),
+                 **usage.get(rec["document_id"], {})} for rec in recs]
         export.write_csv(out_dir / "documents.csv", export.DOCUMENT_COLUMNS, docs)
         return {"records": len(recs), "spans": len(spans)}
     if task == "intent":
@@ -554,7 +576,8 @@ def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
                  "status": "agree" if rec["pass_a"]["intent"] == rec["pass_b"]["intent"] else "disagree",
                  "problems": "", "model": rec["model"], "provider": rec["provider"],
                  "reasoning": rec["reasoning"], "prompt_sha256": rec["prompt_sha256"],
-                 "labeled_utc": rec["labeled_utc"]} for rec in recs]
+                 "labeled_utc": rec["labeled_utc"], "document_tokens": doc_tokens.get(rec["document_id"]),
+                 **usage.get(rec["document_id"], {})} for rec in recs]
         export.write_csv(out_dir / "documents.csv", export.DOCUMENT_COLUMNS, docs)
         return {"records": len(recs)}
     fields, docs = field_decisions(rows, calls, task, models)
