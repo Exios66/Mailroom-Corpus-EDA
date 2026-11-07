@@ -351,7 +351,7 @@ def test_only_manifest_findings_can_be_accepted():
         rv.make_spec("v0.1", "abc", {}, accepted=[rv.Finding("blind", "x")], reason="r")
 
 
-def test_fetch_takes_only_a_commit_and_never_reuses_a_leftover(tmp_path, monkeypatch):
+def test_fetch_takes_only_a_commit_and_uses_a_fresh_dir_per_call(tmp_path, monkeypatch):
     import huggingface_hub
 
     with pytest.raises(ValueError, match="not a commit sha"):
@@ -359,8 +359,18 @@ def test_fetch_takes_only_a_commit_and_never_reuses_a_leftover(tmp_path, monkeyp
     sha = "a" * 40
     (tmp_path / sha).mkdir()
     (tmp_path / sha / "stale.txt").write_text("x", encoding="utf-8")
-    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda **k: None)
-    assert not (rv.fetch(sha, cache_dir=tmp_path) / "stale.txt").exists()
+    seen = []
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda **k: seen.append(k["local_dir"]))
+    first, second = rv.fetch(sha, cache_dir=tmp_path), rv.fetch(sha, cache_dir=tmp_path)
+    assert first != second and seen == [first, second]  # concurrent runs never share a dir
+    assert not (first / "stale.txt").exists() and first.parent == tmp_path
+
+
+def test_ground_truth_filenames_must_be_unique(tmp_path):
+    def dup(rows):
+        rows["ground_truth", "train"].append(dict(rows["ground_truth", "train"][0], document_id="id-other"))
+    assert "[identity] ground_truth/train: duplicate filenames" in [
+        str(f) for f in rv.check_splits_and_identity(make_snapshot(tmp_path, dup))]
 
 
 SHA = "c" * 40

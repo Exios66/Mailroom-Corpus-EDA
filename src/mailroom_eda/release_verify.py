@@ -30,6 +30,7 @@ import hashlib
 import json
 import re
 import shutil
+import tempfile
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -303,8 +304,9 @@ def check_splits_and_identity(snap: Path) -> list[Finding]:
             out.append(Finding("split", f"ground_truth/{s}: split column disagrees on {len(bad_col)} rows"))
         dnames = [r["filename"] for r in default]
         gnames = [r["filename"] for r in gt]
-        if len(set(dnames)) != len(dnames):
-            out.append(Finding("identity", f"default/{s}: duplicate filenames"))
+        for cfg, names in (("default", dnames), ("ground_truth", gnames)):
+            if len(set(names)) != len(names):
+                out.append(Finding("identity", f"{cfg}/{s}: duplicate filenames"))
         if set(dnames) != set(gnames):
             out.append(Finding("identity", f"{s}: default and ground_truth filename sets differ "
                                            f"({len(set(dnames) ^ set(gnames))} names)"))
@@ -516,13 +518,15 @@ def resolve_tag(api, tag: str, repo_id: str = REPO_ID) -> str:
 
 
 def fetch(revision: str, repo_id: str = REPO_ID, cache_dir: Path = CACHE_DIR) -> Path:
-    """Download every file the Hub serves at ``revision`` (a commit sha)."""
+    """Download every file the Hub serves at ``revision`` (a commit sha) into a new
+    directory under ``cache_dir``; the caller removes it."""
     from huggingface_hub import snapshot_download
 
     if not re.fullmatch(r"[0-9a-f]{40}", revision or ""):
         raise ValueError(f"not a commit sha: {revision!r}")
-    dest = cache_dir / revision
-    shutil.rmtree(dest, ignore_errors=True)  # never trust a leftover copy
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    # A fresh directory per call: never a leftover copy, never one another run is reading.
+    dest = Path(tempfile.mkdtemp(prefix=f"{revision}-", dir=cache_dir))
     snapshot_download(repo_id=repo_id, repo_type="dataset", revision=revision, local_dir=dest)
     return dest
 
