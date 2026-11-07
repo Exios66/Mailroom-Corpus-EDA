@@ -11,14 +11,17 @@ Usage:
     python scripts/publish/verify_release.py --all           # every frozen release
     python scripts/publish/verify_release.py --tag v9.4 --freeze   # after publishing v9.4
 
-``--freeze`` runs the invariants first and refuses to write a spec for a
-release that fails them; it prints what changed since the previous release
-so the diff can be reviewed before the spec is committed.
+``--freeze`` refuses to write a spec when the tag already has one (unless
+``--refreeze``), when any invariant or the Hub card check fails (only
+``manifest`` findings of an immutable release may be recorded, with
+``--accept-findings REASON``), when routing differs from today's registry, or
+when the release adds a blind metadata key (unless ``--allow-new-blind-keys``).
+It prints what changed since the previous release so the diff can be
+reviewed before the spec is committed.
 """
 from __future__ import annotations
 
 import argparse
-import shutil
 import sys
 from pathlib import Path
 
@@ -33,34 +36,16 @@ from mailroom_eda import release_verify as rv
 from mailroom_eda.config import REPO_ID, REPO_TAG
 
 
-def freeze(api: HfApi, tag: str, accept_reason: str | None) -> int:
-    commit = rv.resolve_tag(api, tag)
-    snap = rv.fetch(commit)
-    try:
-        card = rv.check_card_on_hub(snap)
-        findings = rv.check_invariants(snap)
-        if card or (findings and not accept_reason):
-            print(f"{tag} @ {commit[:8]}: {len(card + findings)} invariant failures; spec NOT written")
-            for f in card + findings:
-                print(f"  {f}")
-            if findings and not card:
-                print("a published release that cannot be fixed in place may record them with "
-                      "--accept-findings REASON, after review")
-            return 1
-        spec = rv.make_spec(tag, commit, rv.collect_facts(snap),
-                            accepted=findings, reason=accept_reason or "")
-    finally:
-        shutil.rmtree(snap, ignore_errors=True)
-    for f in findings:
-        print(f"  accepted: {f}")
-    prev_tag = rv.previous_tag(tag)
-    if prev_tag:
-        prev = rv.load_spec(prev_tag)
-        print(f"changes since {prev['tag']}:")
-        for line in rv.diff_specs(prev, spec):
-            print(f"  {line}")
+def freeze(api: HfApi, args: argparse.Namespace) -> int:
+    spec, lines = rv.freeze_release(api, args.tag, accept_reason=args.accept_findings,
+                                    refreeze=args.refreeze, allow_new_blind_keys=args.allow_new_blind_keys)
+    for line in lines:
+        print(line)
+    if spec is None:
+        return 1
     path = rv.write_spec(spec)
-    print(f"froze {tag} @ {commit[:8]} -> {path.relative_to(ROOT)}; review the diff, then commit it")
+    print(f"froze {args.tag} @ {spec['revision'][:8]} -> {path.relative_to(ROOT)}; "
+          "review the diff, then commit it")
     return 0
 
 
@@ -85,12 +70,18 @@ def main() -> int:
                     help="write the spec for --tag from the Hub (after publishing it)")
     ap.add_argument("--accept-findings", metavar="REASON", default=None,
                     help="with --freeze: record the current invariant failures as reviewed "
-                         "exceptions of an already-published release")
+                         "exceptions of an already-published release (manifest findings only)")
+    ap.add_argument("--refreeze", action="store_true",
+                    help="with --freeze: replace an existing spec (prints the diff against it)")
+    ap.add_argument("--allow-new-blind-keys", action="store_true",
+                    help="with --freeze: allow blind metadata keys the previous release did not have")
     args = ap.parse_args()
+    if not args.freeze and (args.accept_findings or args.refreeze or args.allow_new_blind_keys):
+        ap.error("--accept-findings, --refreeze and --allow-new-blind-keys need --freeze")
     api = HfApi()
     print(f"repo {REPO_ID}")
     if args.freeze:
-        return freeze(api, args.tag, args.accept_findings)
+        return freeze(api, args)
     tags = rv.frozen_tags() if args.all else [args.tag]
     return max([verify(api, t) for t in tags])
 

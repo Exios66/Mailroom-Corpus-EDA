@@ -232,8 +232,9 @@ def test_the_local_pinned_snapshot_matches_the_frozen_spec():
     facts = rv.collect_facts(DATA_DIR)
     parquet_facts = ("rows", "columns", "classes", "subclasses", "annotation_method",
                      "gt_fields_keys", "routing", "blind_metadata_keys")
-    assert rv.compare_facts(facts, {k: spec[k] for k in parquet_facts}) == []
-    assert rv.check_blind(DATA_DIR) + rv.check_splits_and_identity(DATA_DIR) + rv.check_routing(DATA_DIR) == []
+    assert rv.compare_facts({k: facts[k] for k in parquet_facts}, {k: spec[k] for k in parquet_facts}) == []
+    assert (rv.check_presence(DATA_DIR) + rv.check_blind(DATA_DIR) + rv.check_splits_and_identity(DATA_DIR)
+            + rv.check_routing(DATA_DIR) + rv.check_routing_matches_registry(DATA_DIR)) == []
     local = {f: rv.sha256_path(DATA_DIR / f) for f in spec["files"] if f.startswith("parquet/")}
     assert local == {f: s for f, s in spec["files"].items() if f.startswith("parquet/")}
 
@@ -244,3 +245,191 @@ def test_live_release_on_the_hub(tag, tmp_path):
     from huggingface_hub import HfApi
 
     assert rv.verify_release(HfApi(), tag, cache_dir=tmp_path) == []
+
+
+# --- review findings (stand-in review of 9363de2) ---------------------------
+
+def test_card_must_map_each_config_to_its_own_dirs(tmp_path):
+    snap = make_snapshot(tmp_path)
+    card = CARD.replace("path: parquet/default/train/*", "path: parquet/ground_truth/train/*")
+    (snap / "README.md").write_text(card, encoding="utf-8")
+    assert "config default maps to" in str(rv.check_card_configs(snap))
+    swapped = CARD.replace("parquet/bundles/train/*", "TMP").replace(
+        "parquet/bundles/test/*", "parquet/bundles/train/*").replace("TMP", "parquet/bundles/test/*")
+    (snap / "README.md").write_text(swapped, encoding="utf-8")
+    assert "config bundles maps to" in str(rv.check_card_configs(snap))
+
+
+def test_blind_metadata_must_be_a_struct(tmp_path):
+    def stringify(rows):
+        for r in rows["default", "test"]:
+            r["metadata"] = json.dumps({"intent": "notice"})
+    assert "metadata is not a struct on 2 rows" in str(rv.check_blind(make_snapshot(tmp_path, stringify)))
+
+
+@pytest.mark.parametrize("key,label", [("gt_intent", True), ("expected_class", True), ("doc_label", True),
+                                       ("routing_specialist", True), ("source", False), ("subject", False)])
+def test_label_shaped_keys_are_caught(key, label):
+    assert rv.is_label_key(key) is label
+
+
+def test_every_config_must_be_present_with_rows(tmp_path):
+    import shutil
+
+    snap = make_snapshot(tmp_path)
+    shutil.rmtree(snap / "parquet" / "streams" / "test")
+    _write(snap / "parquet" / "fixtures" / "test" / "test-00000-of-00001.parquet", [{"filename": "x"}])
+    found = [str(f) for f in rv.check_presence(snap)]
+    assert "[presence] streams/test: no parquet files" in found
+    assert any(f.startswith("[schema] fixtures: shards disagree") for f in found)
+
+
+def test_an_empty_split_is_reported(tmp_path):
+    snap = make_snapshot(tmp_path)
+    path = snap / "parquet" / "bundles" / "test" / "test-00000-of-00001.parquet"
+    pq.write_table(pq.read_table(path).slice(0, 0), path)
+    assert "[presence] bundles/test: no rows" in [str(f) for f in rv.check_presence(snap)]
+
+
+def test_ground_truth_needs_its_split_column(tmp_path):
+    def drop(rows):
+        for s in ("train", "test"):
+            for r in rows["ground_truth", s]:
+                del r["split"]
+    found = [str(f) for f in rv.check_invariants(make_snapshot(tmp_path, drop))]
+    assert "[schema] ground_truth/train has no split column" in found
+    assert any("split column disagrees" in f for f in found)
+
+
+def test_routed_rows_need_a_specialist(tmp_path):
+    def blank(rows):
+        rows["streams", "test"][0]["expected_specialist"] = ""
+    assert "[routing] streams/test: 1 rows without a class or specialist" in [
+        str(f) for f in rv.check_routing(make_snapshot(tmp_path, blank))]
+
+
+def test_a_new_release_must_route_per_the_registry(tmp_path):
+    def old(rows):
+        for rs in rows.values():
+            for r in rs:
+                if "expected_specialist" in r:
+                    r["expected_specialist"] = "legacy_specialist"
+    snap = make_snapshot(tmp_path, old)
+    assert rv.check_routing(snap) == []  # consistent, so the invariant passes
+    assert "the registry says 'contracts_specialist'" in str(rv.check_routing_matches_registry(snap))
+
+
+def test_an_observed_fact_the_spec_does_not_pin_fails(tmp_path):
+    snap = make_snapshot(tmp_path)
+    spec = rv.make_spec("v0.1", "abc", rv.collect_facts(snap))
+    del spec["routing"]
+    assert [str(f) for f in rv.compare_facts(rv.collect_facts(snap), spec)] == [
+        "[spec] observed fact 'routing' is not pinned by the spec"]
+
+
+def test_only_manifest_findings_can_be_accepted():
+    with pytest.raises(ValueError, match=r"\['blind'\] can never be accepted"):
+        rv.make_spec("v0.1", "abc", {}, accepted=[rv.Finding("blind", "x")], reason="r")
+
+
+def test_fetch_takes_only_a_commit_and_never_reuses_a_leftover(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    with pytest.raises(ValueError, match="not a commit sha"):
+        rv.fetch("", cache_dir=tmp_path)
+    sha = "a" * 40
+    (tmp_path / sha).mkdir()
+    (tmp_path / sha / "stale.txt").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda **k: None)
+    assert not (rv.fetch(sha, cache_dir=tmp_path) / "stale.txt").exists()
+
+
+SHA = "c" * 40
+
+
+class _Api:
+    def __init__(self, sha=SHA):
+        self.sha = sha
+
+    def list_repo_refs(self, repo, repo_type):
+        from types import SimpleNamespace as NS
+        return NS(tags=[NS(name="v1.0", target_commit="tagobject"), NS(name="v1.1", target_commit="t2")])
+
+    def dataset_info(self, repo, revision):
+        from types import SimpleNamespace as NS
+        return NS(sha=self.sha)
+
+
+@pytest.fixture
+def hub(tmp_path, monkeypatch):
+    """Specs in tmp; fetch copies a synthetic snapshot; no network card check."""
+    import shutil
+
+    monkeypatch.setattr(rv, "SPEC_DIR", tmp_path / "specs")
+    monkeypatch.setattr(rv, "check_card_on_hub", lambda snap: [])
+    source = {"snap": make_snapshot(tmp_path / "source")}
+
+    def fake_fetch(revision, repo_id=rv.REPO_ID, cache_dir=rv.CACHE_DIR):
+        dest = tmp_path / "cache" / revision
+        shutil.rmtree(dest, ignore_errors=True)
+        shutil.copytree(source["snap"], dest)
+        return dest
+
+    monkeypatch.setattr(rv, "fetch", fake_fetch)
+    return source
+
+
+def test_freeze_then_verify_round_trip_and_cleanup(tmp_path, hub):
+    spec, _ = rv.freeze_release(_Api(), "v1.0")
+    assert spec["revision"] == SHA and spec["tag"] == "v1.0"
+    rv.write_spec(spec)
+    assert rv.verify_release(_Api(), "v1.0", cache_dir=tmp_path / "cache") == []
+    assert not (tmp_path / "cache" / SHA).exists()
+
+
+def test_verify_reports_a_moved_tag_and_a_foreign_spec(tmp_path, hub):
+    rv.write_spec(rv.freeze_release(_Api(), "v1.0")[0])
+    found = [str(f) for f in rv.verify_release(_Api("d" * 40), "v1.0", repo_id="someone/else")]
+    assert found[0] == f"[spec] spec is for {rv.REPO_ID}, not someone/else"
+    assert found[1] == f"[tag] v1.0 resolves to {'d' * 40}, spec pins {SHA}"
+
+
+def test_freeze_refuses_an_existing_spec_without_refreeze(hub):
+    rv.write_spec(rv.freeze_release(_Api(), "v1.0")[0])
+    spec, lines = rv.freeze_release(_Api(), "v1.0")
+    assert spec is None and "already exists" in lines[0]
+    spec, lines = rv.freeze_release(_Api(), "v1.0", refreeze=True)
+    assert spec is not None and "changes since the existing spec:" in lines
+
+
+def test_freeze_refuses_a_failing_release(tmp_path, hub):
+    def leak(rows):
+        for r in rows["default", "test"]:
+            r["metadata"] = {"source": "x", "intent": "notice"}
+    hub["snap"] = make_snapshot(tmp_path / "leaky", leak)
+    spec, lines = rv.freeze_release(_Api(), "v1.0", accept_reason="please")
+    assert spec is None and any("label keys ['intent']" in ln for ln in lines)
+
+
+def test_freeze_records_reviewed_manifest_findings(tmp_path, hub):
+    snap = hub["snap"]
+    (snap / "notes.txt").write_text("x", encoding="utf-8")  # served but unhashed
+    spec, lines = rv.freeze_release(_Api(), "v1.0")
+    assert spec is None and "--accept-findings" in lines[-1]
+    spec, lines = rv.freeze_release(_Api(), "v1.0", accept_reason="immutable")
+    assert spec["accepted_findings"] == [{"finding": "[manifest] served file not in the manifest: notes.txt",
+                                          "reason": "immutable"}]
+
+
+def test_freeze_refuses_new_blind_metadata_keys(tmp_path, hub):
+    rv.write_spec(rv.freeze_release(_Api(), "v1.0")[0])
+
+    def add_key(rows):
+        for s in ("train", "test"):
+            for r in rows["default", s]:
+                r["metadata"] = {"source": "x", "category": "Distributor"}
+    hub["snap"] = make_snapshot(tmp_path / "next", add_key)
+    spec, lines = rv.freeze_release(_Api("e" * 40), "v1.1")
+    assert spec is None and "adds blind metadata keys ['category']" in lines[0]
+    spec, _ = rv.freeze_release(_Api("e" * 40), "v1.1", allow_new_blind_keys=True)
+    assert spec["blind_metadata_keys"] == ["category", "source"]

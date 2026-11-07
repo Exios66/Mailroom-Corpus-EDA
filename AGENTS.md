@@ -115,16 +115,32 @@ PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling doctor   # labeling rea
 MAILROOM_LIVE_HUB=1 .venv/bin/python -m pytest tests/test_release_verify.py   # same, as tests
 ```
 
-Invariants (code) cover every release: manifest sha table vs the served bytes, card
-configs vs parquet dirs, blind `default` columns and metadata free of label keys in
-both splits, the md5 split rule, `default`/`ground_truth` row sets and content hashes,
-unique `document_id`, one specialist per class, line-safe sidecars, and the Hub's own
-card validation. The spec (data) pins the tag's commit, row counts, columns, class and
-subclass counts, routing, `gt_fields` keys, blind metadata keys, provenance and every
-file sha256. `--freeze` refuses a release that fails an invariant; an already-published
-release that cannot be fixed records reviewed exceptions with `--accept-findings REASON`
-(v9.2: its manifest does not hash the five `dataset_info.json` files). Re-pinning
-`REPO_TAG` without freezing its spec fails `test_the_pinned_release_has_a_frozen_spec`.
+Invariants (code) cover every release:
+- the manifest sha table matches the served bytes and lists every served file;
+- the card maps each of the five configs to exactly its own `parquet/<config>/{train,test}/*`;
+- every config has rows in both splits, and all of a config's shards share one schema;
+- blind `default` has only its four columns, its `metadata` is a struct, and no key in it is a label or shaped like one, in both splits;
+- the md5 split rule holds;
+- `default` and `ground_truth` have the same row sets and their content hashes agree;
+- `document_id` is unique;
+- every routed row names a class and a specialist, with exactly one specialist per class;
+- the sidecar JSONL is line-safe and matches the parquet row counts;
+- the Hub's own card validation passes.
+
+The spec (data) pins the tag's commit, row counts, columns, class and subclass counts, routing,
+`gt_fields` keys, blind metadata keys, provenance and every file's sha256. A fact the spec does not
+pin is itself a failure.
+
+`--freeze` refuses in five cases:
+- the tag already has a spec (unless `--refreeze`; it then prints the diff against that spec);
+- any invariant fails;
+- routing differs from today's `taxonomy.yaml` registry;
+- the release adds a blind metadata key (unless `--allow-new-blind-keys`, after checking the key reveals no label);
+- the release has `manifest` findings and no `--accept-findings REASON`. Only `manifest` findings
+  of an immutable, published release may be accepted (v9.2: its manifest does not hash the five
+  `dataset_info.json` files).
+
+Re-pinning `REPO_TAG` without freezing its spec fails `test_the_pinned_release_has_a_frozen_spec`.
 
 **Summary writes**: `reports/SUMMARY_REPORT.json` is written only by a
 full-pipeline run (all seven phases). `--phases` subset runs — and
