@@ -50,8 +50,12 @@ def freeze(api: HfApi, args: argparse.Namespace) -> int:
 
 
 def verify(api: HfApi, tag: str) -> int:
-    findings = rv.verify_release(api, tag)
-    spec = rv.load_spec(tag)
+    try:
+        spec = rv.load_spec(tag)
+        findings = rv.verify_release(api, tag)
+    except Exception as exc:  # noqa: BLE001 - one broken release must not stop --all
+        print(f"FAIL {tag}: {exc!r}")
+        return 1
     if findings:
         print(f"FAIL {tag} @ {spec['revision'][:8]}: {len(findings)} findings")
         for f in findings:

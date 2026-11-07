@@ -121,6 +121,17 @@ def test_blind_metadata_rejects_a_label_key(tmp_path, key):
     assert f"label keys ['{key}']" in str(rv.check_blind(make_snapshot(tmp_path, leak)))
 
 
+@pytest.mark.parametrize("name,test", [('doc2.txt', True), ('doc7.txt', True), ('doc20.txt', True),
+                                       ('GAINSCOINC_01_21_2010-EX-10.41-SPONSORSHIP AGREEMENT.PDF', False), ('property:269222192.txt', False), ('ünïcode.txt', False)])
+def test_split_rule_matches_the_build_rule(name, test):
+    """Expected values were computed once from md5(name) % 10 == 0, independently of
+    both implementations, so a change to either rule shows up here."""
+    from mailroom_eda.config import split_rule
+
+    assert rv.is_test(name) is test
+    assert split_rule(name) == ("test" if test else "train")
+
+
 def test_split_rule_is_enforced(tmp_path):
     def swap(rows):
         moved = rows["default", "train"].pop()
@@ -327,6 +338,14 @@ def test_an_observed_fact_the_spec_does_not_pin_fails(tmp_path):
         "[spec] observed fact 'routing' is not pinned by the spec"]
 
 
+def test_unparseable_gt_fields_is_reported_not_raised(tmp_path):
+    def corrupt(rows):
+        rows["ground_truth", "train"][0]["gt_fields"] = "{not json"
+    snap = make_snapshot(tmp_path, corrupt)
+    assert "gt_fields does not parse" in str(rv.check_invariants(snap))
+    assert rv.collect_facts(snap)["gt_fields_keys"] == ["keywords"]
+
+
 def test_only_manifest_findings_can_be_accepted():
     with pytest.raises(ValueError, match=r"\['blind'\] can never be accepted"):
         rv.make_spec("v0.1", "abc", {}, accepted=[rv.Finding("blind", "x")], reason="r")
@@ -433,3 +452,25 @@ def test_freeze_refuses_new_blind_metadata_keys(tmp_path, hub):
     assert spec is None and "adds blind metadata keys ['category']" in lines[0]
     spec, _ = rv.freeze_release(_Api("e" * 40), "v1.1", allow_new_blind_keys=True)
     assert spec["blind_metadata_keys"] == ["category", "source"]
+
+
+def test_verify_all_keeps_going_past_a_broken_release(monkeypatch, capsys):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "verify_release_cli", rv.Path(__file__).resolve().parents[1] / "scripts" / "publish" / "verify_release.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    calls = []
+
+    def fake_verify(api, tag, **k):
+        calls.append(tag)
+        if tag == "v1.0":
+            raise LookupError("no tag 'v1.0'")
+        return []
+
+    monkeypatch.setattr(rv, "verify_release", fake_verify)
+    monkeypatch.setattr(rv, "load_spec", lambda tag: {"revision": "f" * 40})
+    assert [cli.verify(None, t) for t in ("v1.0", "v1.1")] == [1, 0]
+    assert calls == ["v1.0", "v1.1"]
+    assert "FAIL v1.0: LookupError" in capsys.readouterr().out

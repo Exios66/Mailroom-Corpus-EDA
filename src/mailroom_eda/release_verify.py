@@ -175,7 +175,10 @@ def collect_facts(snap: Path) -> dict[str, Any]:
         facts["annotation_method"] = dict(sorted(Counter(r["annotation_method"] for r in gt).items()))
         keys: set[str] = set()
         for r in gt:
-            keys |= set(_gt_fields(r))
+            try:
+                keys |= set(_gt_fields(r))
+            except (TypeError, ValueError):
+                pass  # check_splits_and_identity reports the row
         facts["gt_fields_keys"] = sorted(keys)
 
     routing = collect_routing(snap)
