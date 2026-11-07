@@ -44,6 +44,7 @@ Imbalance: families range 49–161 (3.3×). Leaves range 0–87.
 ## Coverage targets (proposed)
 
 - Every family has at least 100 rows. Every leaf has at least 30, with at least 3 in the test split.
+- **Open (needs a decision):** the planned additions leave governance at 99 rows and authority_and_structure at 89 (subsidiary_list 53 + powers_of_attorney 36), below the 100-row family target. Either the allocations rise or the target changes; neither is decided.
 - No existing record is dropped to reach balance. Balance comes from sourcing new records and
   from stratified sampling weights.
 
@@ -55,7 +56,7 @@ Imbalance: families range 49–161 (3.3×). Leaves range 0–87.
 | board_resolution | 4 | 30 | board resolutions and written consents (EX-3, EX-99, 8-K exhibits) |
 | certificate_of_formation | 0 | 30 | certificates of formation of LLC co-registrants and guarantors (S-4 / S-1 EX-3) |
 | warrant (form) | 11 | 30 | EX-4 warrant agreements and certificates |
-| bylaw amendment (form) | 9 | — | the bylaws leaf already meets 30; this form needs test-split rows only |
+| bylaw amendment (form) | 10 | — | the bylaws leaf already meets 30; all 10 (8 published as board_resolution, 2 as bylaws; sandbox rule C) are in train, so this form needs test-split rows. **Open:** no source for them is planned yet (the gold draw rejects bylaws under rule C) |
 
 That is about 110 new records, which takes governance_rules_and_actions to about 113.
 
@@ -99,7 +100,7 @@ blind `default` config.
 | subsidiary_list | subsidiary_list | 53 | — | 53 |
 | powers_of_attorney | sec_signing_poa | 26 | +10 | 36 |
 | other | residual (1 unresolved filing acknowledgement) | 1 | — | 1 |
-| *(removed)* | subscription agreement filed as EX-4.1 (rule F, user decision 2026-11-07: not a governance record, leaves the corpus in v10) | 1 | — | 0 |
+| *(removed, if rule F is approved)* | subscription agreement filed as EX-4.1 (proposed rule F: not a governance record, would leave the corpus in v10; pending sign-off, see Status) | 1 | — | 0 |
 
 That gives 9 subclasses in a 36–99 range, down from 11 published leaves in a 2–80 range (true
 membership 0–87), and 109 new records. Families stay as the routing umbrella:
@@ -112,7 +113,7 @@ membership 0–87), and 109 new records. Families stay as the routing umbrella:
 
 - **Dojo** (owner of the corporate schema): new leaves, merged entity schemas keyed by `record_form`, and the `record_form` vocabulary. This goes first.
 - **Sorter:** the adopted condensed sorter guard "officer_certificate, never rights_instrument" (llm-mailroom #179, `SORTER_CONDENSED_GUARDS`) encodes the v9 mislabel. #179 still lands, because it matches the published v9.3 labels. The v10 taxonomy needs a new sorter lineage version, and the guard set changes with it.
-- **Bylaws are bylaws (user directive, 2026-11-07):** #179's production sorter is now `sorter_condensed_v5`, which is v1 with "a bylaw amendment is bylaws, never board_resolution" (rule C). The v1 bytes stay as history. The opposite rule still lives in Dojo `sorter_guide` (the `board_resolution` meaning), sandbox `sorter_condensed_v1`–`v4`, reviewer_decisions v1–v4 and the frozen V15 S2. Dojo is fixed first, then the sandbox lineage gets a v5 entry. Scoring against v9.3 counts the 9 bylaw amendments labelled `board_resolution` as wrong until v10 relabels them.
+- **Bylaws are bylaws (user directive, 2026-11-07):** #179's production sorter is now `sorter_condensed_v5`, which is v1 with "a bylaw amendment is bylaws, never board_resolution" (rule C). The v1 bytes stay as history. The opposite rule still lives in Dojo `sorter_guide` (the `board_resolution` meaning), sandbox `sorter_condensed_v1`–`v4`, reviewer_decisions v1–v4 and the frozen V15 S2. Dojo v0.28.1 now carries the rule in `sorter_guide`, and the sandbox vendors it with the v5 lineage entry (local-mailroom-sandbox #265). Scoring against v9.3 counts the 8 bylaw amendments labelled `board_resolution` as wrong until v10 relabels them.
 - **Corporate condensed specialist:** its v7 record_type map is replaced in a `condensed_v2` mutation.
 - **Release:** a v10 corpus expansion with new rows, frozen-spec verification, and the split rule md5(filename) % 10 == 0 → test.
 - **Sourcing compliance:** v9 fetched SEC through the Jina Reader proxy with a browser User-Agent, because SEC blocked direct requests. v10 sourcing uses direct sec.gov requests with a declared User-Agent (name and contact) at 10 requests/s or fewer, per SEC fair-access policy. That needs a contact email: on 2026-11-07, a declared User-Agent with only a GitHub contact got 403 from both efts.sec.gov and sec.gov/Archives. The user asked to reuse the v9 Jina proxy with a browser User-Agent. That was declined, because it evades SEC's access control.
@@ -129,8 +130,8 @@ The ~110 new records are labelled fully, once, as gold examples of corporate-rec
 entity extraction above all. They go into the private `mailroom-dataset-v10-staging`, not
 into a campaign chunk.
 
-- **Schema:** every core field plus every entity field of the record's Dojo 0.28 leaf schema. The leaf is the `record_form`: officer_certificate, board_resolution, certificate_of_formation, rights_instrument for warrants, or powers_of_attorney. This matches the staging `gt_corporate_record` columns (for example `certifying_officer`, `officer_title`, `certified_matter`, `addressee`, `acting_body`, `action_approved`, `resolutions`, `organizers`, `registered_agent`, `instrument_kind`, `holder`, `rights_agent`, `securities_covered`, `exercise_price`, `principal`, `attorneys_in_fact`, `authority_scope`, `expiration_date`), plus `presence`, `evidence` and `provenance`. The leaf schemas fold into the v10 subclasses unchanged, so these labels carry forward when Dojo adds the new leaves.
-- **Evidence:** every populated value has a verbatim quote and character offsets into `doc_text`, checked mechanically, so a value must appear in the text. Every absent field has a presence code (`schema_documented_absence` or `not_applicable`), never a blank.
+- **Schema:** every core field plus every entity field of the record's Dojo 0.28 leaf schema. `record_form` takes the gold spec's vocabulary (officer_certificate, secretary_certificate, board_resolution, written_consent, minutes, warrant, sec_signing_poa, certificate_of_formation, articles_of_incorporation); the Dojo leaf is recorded separately and follows from it (warrant → rights_instrument, sec_signing_poa → powers_of_attorney, secretary_certificate → officer_certificate, written_consent and minutes → board_resolution). This matches the staging `gt_corporate_record` columns (for example `certifying_officer`, `officer_title`, `certified_matter`, `addressee`, `acting_body`, `action_approved`, `resolutions`, `organizers`, `registered_agent`, `instrument_kind`, `holder`, `rights_agent`, `securities_covered`, `exercise_price`, `principal`, `attorneys_in_fact`, `authority_scope`, `expiration_date`), plus `presence`, `evidence` and `provenance`. The leaf schemas fold into the v10 subclasses unchanged, so these labels carry forward when Dojo adds the new leaves.
+- **Evidence:** every populated value has a verbatim quote and character offsets into `doc_text`, checked mechanically. Extractive values (names, ids, keywords) must appear in their evidence; dates and money are parsed from it; free-text values restate it. The categorical `record_type` and `intent` come from the Dojo schema snapshot for the leaf and carry no span, so they are never checked verbatim. Every absent field has a presence code (`schema_documented_absence` or `not_applicable`), never a blank.
 - **Who labels:** Claude drafts each record from the document, a script checks every value against its evidence span, and the user reviews every record before it is staged. Provenance: `annotation_method = human_annotated`, `annotation_model = claude-opus-5-5` (the drafter), `annotation_reviewer = human`, with the review date. *(Pending user approval.)*
 - **Keywords:** pending the keyword rule (Option A, names).
 - **Staging path:** `labels/10.1_corporate-gold-additions/`, with `documents.csv` (ids, source, sha256), `corporate-labels.jsonl`, `review.csv` (the user's verdict per record) and `provenance.json`. It is checkpointed to the private staging repo, then ingested into `build/v10-stage` as new rows by a new revision module with tests. Split by md5(filename) % 10.

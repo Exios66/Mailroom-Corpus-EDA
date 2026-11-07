@@ -4,6 +4,12 @@
 
 **Goal:** Land the condensed production sorter across llm-mailroom, the sandbox and Dojo as separate, reviewable PRs, so the Dojo 0.28 scoring change gets its own PR. Then align the v10 labeling plan with v9.3 and the private staging repo, and put a corporate-keywords task up for approval, gated on a person's verdicts.
 
+> **Status (2026-11-07, later the same day).** Parts of this plan were overtaken by decisions taken while running it. Where a step below disagrees, this block wins:
+> - **v33:** the user chose a new compact specialist lineage. `contracts_specialist_v33` is frozen at its published bytes (sha256 `6a5047ed…`, `FROZEN` in the sandbox `scripts/sync_specialist_prompts.py`), and `--check` verifies that pin instead of vendor parity (Task 2 Step 6).
+> - **Pins:** llm-mailroom is vendored at its merged main `19203eac07f67c215f50af2fd498560ce195adae`, used as both ref and expected SHA, so a later main head never breaks `fetch-deps`. Dojo is `v0.28.1`, which carries rule C in `sorter_guide` (the v0.28.0 guide still had the old bylaw rule). Both land in local-mailroom-sandbox #265, which also absorbs #258 (Task 3).
+> - **Production sorter:** `sorter_condensed_v5`, not v1 (Task 4 Step 2's expectation). v1 stays as history.
+> - **Keywords gold draw:** the consolidated taxonomy has 1 eligible `other` record, so `other` takes what exists (1), not 2 (Task 7 (b)).
+
 **Architecture:** There are four PRs, merged in order.
 - llm-mailroom #179 holds the production sorter switch.
 - A new sandbox PR vendors llm-mailroom `main@6de82bc` and Dojo `v0.28.0`. This is the scoring change, and it carries its own golden diffs.
@@ -147,7 +153,7 @@ Rulings made without a spec are provisional.
   - Run `git fetch && git checkout claude/sorter-condensed-v2 && git merge origin/claude/sorter-condensed-v2 && git merge origin/main`.
   - Resolve vendor conflicts by taking `main`'s side.
   - Expected: `git merge-base --is-ancestor d75333d HEAD` exits 0.
-- [ ] **Step 2: Re-vendor llm-mailroom at `SORTER_MERGE_SHA`.** Set the `_VENDOR_PINS` llm-mailroom entry to `("llm-mailroom", "main", …, SORTER_MERGE_SHA)` and its comment to "main at #179". Run `sandbox fetch-deps`.
+- [ ] **Step 2: Re-vendor llm-mailroom at `SORTER_MERGE_SHA`.** Set the `_VENDOR_PINS` llm-mailroom entry to `("llm-mailroom", SORTER_MERGE_SHA, …, SORTER_MERGE_SHA)` (the full SHA as the ref, so a moved `main` never fails the fetch) and its comment to "main at #179". Run `sandbox fetch-deps`.
   Expected: `git diff --stat vendor/llm-dojo-scoring` is empty, so the Dojo stays at 0.28.0, and the llm-mailroom diff touches only the sorter files from #179.
 - [ ] **Step 3: Correct the figures and the README claim.**
   Run: `git grep -n "96 vs 80\|V15 won"`. Expected after the edits: no output.
@@ -170,7 +176,7 @@ Rulings made without a spec are provisional.
 
 - [ ] **Step 1:** Check out #126 in a temporary clone at `$SP/dojo-126`, not in a shared checkout. Merge `origin/main` into it.
 - [ ] **Step 2:** Re-vendor the prompt files from `llm-mailroom@SORTER_MERGE_SHA` with the repo's own vendor or sync script. Its name is in the PR's description or in `scripts/`. A hand copy is not allowed.
-  Expected: the sorter production text is `sorter_condensed_v1`, and the repo's prompt-parity tests pass.
+  Expected: the sorter production text is `sorter_condensed_v5` (v1 is kept only as history), and the repo's prompt-parity tests pass.
 - [ ] **Step 3:** Fetch, commit and push. Update the PR body with the new source commit. Then reviews and merge, per the merge rule. Afterwards `rm -rf $SP/dojo-126`.
 
 ### Task 5: Vet the remaining open PRs (sandbox #256, llm-mailroom #175 and #160, Dojo #128)
@@ -201,7 +207,7 @@ Rulings made without a spec are provisional.
   Run: `PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling doctor`. Expected: PASS, apart from the shell's missing keys.
 - [ ] **Step 2:** Fetch, commit, push and open a PR. Message: "v10 campaign: the stage applies the v9.3 and v9.4 revisions on top of the v9.2 tag". Then reviews and merge, per the merge rule.
 - [ ] **Step 3: Inspect `Lucius-Morningstar/mailroom-dataset-v10-staging` read-only.**
-  - Run `HF_TOKEN="$(cat $SP/hf.key)"`, then `HfApi().list_repo_files(…, repo_type="dataset")` and `list_repo_commits`.
+  - Run the Python with the token in its environment: `HF_TOKEN="$(cat "$SP/hf.key")" .venv/bin/python -c …`, calling `HfApi().list_repo_files(…, repo_type="dataset")` and `list_repo_commits`.
   - Download only manifests or checkpoint indexes into `$SP/v10-staging/`. Print only counts, chunk ids and field keys, never label values.
   - Expected: checkpoints exist for the approved chunks 3 and 4a–c (intent).
   - Record each chunk's rows, model, sha and stage sha (expected `eccb0acf…`) in `$SP/v10-staging-reconcile.md`.
@@ -239,7 +245,7 @@ Rulings made without a spec are provisional.
     - for "FORM OF" drafts, blanks yield nothing, and no value is ever filled in;
     - whether the `[record type, entity]` floor is kept or replaced;
     - metadata (form type, filer) never becomes a keyword; keywords come from the text alone.
-  - **(b) Gold, first and free:** the user labels about 20 records, at least 2 per subclass (9 subclasses plus `other`), chosen by a seeded draw (`RANDOM_STATE = 42`) before any model runs. Only one row per near-duplicate group is drawn. No heuristic record serves as the reference set, gate set or few-shot examples.
+  - **(b) Gold, first and free:** the user labels about 20 records, at least 2 per subclass (9 subclasses plus `other`; `other` has only 1 eligible record, so it takes 1), chosen by a seeded draw (`RANDOM_STATE = 42`) before any model runs. Only one row per near-duplicate group is drawn. No heuristic record serves as the reference set, gate set or few-shot examples.
   - **(c) Paid pilot, needs approval:**
     - the approved labeler pair on those 20 plus 20 more;
     - the user gives verdicts on each keyword: accept or reject;
