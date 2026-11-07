@@ -192,6 +192,19 @@ def verify_manifest(stage_dir: Path) -> int:
     return len(table)
 
 
+def check_manifest_covers(stage_dir: Path, only: tuple[str, ...] | None = None) -> None:
+    """Before an upload: the manifest recomputes from the staged bytes and lists
+    every staged file (or every file in ``only`` except the manifest itself)."""
+    verify_manifest(stage_dir)
+    listed = set(re.findall(r"^\s*(\S+)\s+[0-9a-f]{64}\s*$",
+                            (stage_dir / "manifest.txt").read_text(encoding="utf-8"), flags=re.M))
+    staged = {str(p.relative_to(stage_dir)) for p in stage_dir.rglob("*")
+              if p.is_file() and p.name != "manifest.txt"}
+    want = (set(only) - {"manifest.txt"}) if only is not None else staged
+    if missing := sorted(want - listed):
+        raise SystemExit(f"manifest does not list {missing}; re-render it before publishing")
+
+
 def download_base(base_dir: Path) -> Path:
     from huggingface_hub import snapshot_download
 
@@ -199,8 +212,16 @@ def download_base(base_dir: Path) -> Path:
     return base_dir
 
 
+def check_dirs(base_dir: Path, stage_dir: Path) -> None:
+    """``build`` deletes ``stage_dir``: refuse any overlap with the base."""
+    b, s = Path(base_dir).resolve(), Path(stage_dir).resolve()
+    if b == s or b.is_relative_to(s) or s.is_relative_to(b):
+        raise SystemExit(f"stage dir {s} overlaps base dir {b}; refusing to delete it")
+
+
 def build(base_dir: Path, stage_dir: Path) -> dict:
     check_registry()
+    check_dirs(base_dir, stage_dir)
     if stage_dir.exists():
         shutil.rmtree(stage_dir)
     shutil.copytree(base_dir, stage_dir, ignore=shutil.ignore_patterns(".cache", ".gitattributes"))
@@ -247,6 +268,7 @@ def publish(stage_dir: Path, token: str, *, parent: str = BASE_REVISION,
     from huggingface_hub import CommitOperationAdd, HfApi, hf_hub_download
 
     api = HfApi(token=token)
+    check_manifest_covers(stage_dir, only)
     files = [p for p in sorted(stage_dir.rglob("*")) if p.is_file()
              and (only is None or str(p.relative_to(stage_dir)) in only)]
     if only is not None and len(files) != len(only):
@@ -262,12 +284,38 @@ def publish(stage_dir: Path, token: str, *, parent: str = BASE_REVISION,
                                                token=token, force_download=True)))
         if got != sha256_file(p):
             raise AssertionError(f"Hub copy of {rel} differs; tag NOT moved")
-    api.delete_tag(REPO_ID, tag=TAG, repo_type="dataset")
-    api.create_tag(REPO_ID, tag=TAG, revision=ci.oid, repo_type="dataset",
-                   tag_message="v9.3: corporate presence layer, merger routing amendment, card and CHANGELOG")
-    if api.dataset_info(REPO_ID, revision=TAG).sha != ci.oid:
-        raise AssertionError("tag did not move")
+    move_tag(api, ci.oid)
     return ci.oid
+
+
+def _tag_target(api, tag: str) -> str | None:
+    refs = api.list_repo_refs(REPO_ID, repo_type="dataset")
+    if not any(t.name == tag for t in refs.tags):
+        return None
+    return api.dataset_info(REPO_ID, revision=tag).sha
+
+
+def move_tag(api, new_sha: str, tag: str = TAG) -> None:
+    """Re-point ``tag`` to ``new_sha``. The Hub cannot move a tag in place, so
+    this deletes and re-creates it; on failure the old target is restored (if
+    the tag is missing) and both SHAs are reported."""
+    old_sha = _tag_target(api, tag)
+    if old_sha == new_sha:
+        return
+    try:
+        if old_sha is not None:
+            api.delete_tag(REPO_ID, tag=tag, repo_type="dataset")
+        api.create_tag(REPO_ID, tag=tag, revision=new_sha, repo_type="dataset",
+                       tag_message="v9.3: corporate presence layer, merger routing amendment, card and CHANGELOG")
+    except Exception as exc:
+        now = _tag_target(api, tag)
+        if now is None and old_sha is not None:
+            api.create_tag(REPO_ID, tag=tag, revision=old_sha, repo_type="dataset")
+            now = _tag_target(api, tag)
+        raise SystemExit(f"moving {tag} failed ({exc}); old target {old_sha}, new target {new_sha}, "
+                         f"tag now at {now}") from exc
+    if _tag_target(api, tag) != new_sha:
+        raise SystemExit(f"{tag} is not at {new_sha} after the move (old target {old_sha})")
 
 
 def main() -> int:

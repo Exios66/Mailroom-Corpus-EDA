@@ -8,6 +8,10 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 
 ## Unreleased
 
+- `config.py` pins the Hub tag `v9.3` (`ccd040f6`, data `7fd99b40`), so P0 downloads and every
+  report and build read v9.3. The full-corpus tests now assert the v9.3 schema (corporate
+  `entity_name`/`record_type`) and pin its two known label gaps: the 91 EX-10 CUAD clauses and
+  the 411 corporate records whose `keywords` are only `[record type, entity]`.
 - v9.3 amendment (`mailroom_eda.v9_3_merger_routing`): the 152 merger agreements, and the 8 bundle,
   8 stream and 4 fixture rows built on them, route to `merger_agreement_specialist` instead of
   `contracts_specialist`. Only that value changes; the build checks every other parquet cell and

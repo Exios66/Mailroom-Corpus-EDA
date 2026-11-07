@@ -98,3 +98,70 @@ def test_manifest_refuses_a_changed_file_set(tmp_path):
     old = "labels_version: v\nsha256     :\n  a.txt  " + "0" * 64 + "\n"
     with pytest.raises(AssertionError, match="file set"):
         m.render_manifest(old, tmp_path)
+
+
+@pytest.mark.parametrize("stage", ["same", "inside_base", "contains_base"])
+def test_build_refuses_overlapping_dirs(tmp_path, stage):
+    base = tmp_path / "base"
+    base.mkdir()
+    s = {"same": base, "inside_base": base / "stage", "contains_base": tmp_path}[stage]
+    with pytest.raises(SystemExit, match="overlaps"):
+        m.check_dirs(base, s)
+    assert base.is_dir()
+
+
+def _stage(tmp_path, files):
+    for name, text in files.items():
+        (tmp_path / name).write_text(text, encoding="utf-8")
+    old = "labels_version: v\nsha256     :\n" + "".join(f"  {n}  {'0' * 64}\n" for n in files)
+    (tmp_path / "manifest.txt").write_text(m.render_manifest(old, tmp_path), encoding="utf-8")
+
+
+def test_publish_check_rejects_a_doc_changed_after_the_manifest(tmp_path):
+    _stage(tmp_path, {"README.md": "card", "CHANGELOG.md": "log"})
+    m.check_manifest_covers(tmp_path, m.DOC_FILES)
+    (tmp_path / "README.md").write_text("edited later", encoding="utf-8")
+    with pytest.raises(AssertionError, match="README.md"):
+        m.check_manifest_covers(tmp_path, m.DOC_FILES)
+
+
+def test_publish_check_rejects_an_unlisted_doc(tmp_path):
+    _stage(tmp_path, {"README.md": "card"})
+    with pytest.raises(SystemExit, match="CHANGELOG.md"):
+        m.check_manifest_covers(tmp_path, m.DOC_FILES)
+
+
+class _FakeHub:
+    """Tags only: delete/create/list, with an optional failing create."""
+
+    def __init__(self, tags, fail_on=None):
+        self.tags, self.fail_on = dict(tags), fail_on
+
+    def list_repo_refs(self, repo, repo_type):
+        from types import SimpleNamespace as NS
+        return NS(tags=[NS(name=n) for n in self.tags])
+
+    def dataset_info(self, repo, revision):
+        from types import SimpleNamespace as NS
+        return NS(sha=self.tags[revision])
+
+    def delete_tag(self, repo, tag, repo_type):
+        del self.tags[tag]
+
+    def create_tag(self, repo, tag, revision, repo_type, tag_message=None):
+        if revision == self.fail_on:
+            raise RuntimeError("hub error")
+        self.tags[tag] = revision
+
+
+def test_move_tag_moves_it():
+    hub = _FakeHub({"v9.3": "old"})
+    m.move_tag(hub, "new")
+    assert hub.tags == {"v9.3": "new"}
+
+
+def test_move_tag_restores_the_old_target_when_create_fails():
+    hub = _FakeHub({"v9.3": "old"}, fail_on="new")
+    with pytest.raises(SystemExit, match="old target old, new target new, tag now at old"):
+        m.move_tag(hub, "new")
+    assert hub.tags == {"v9.3": "old"}

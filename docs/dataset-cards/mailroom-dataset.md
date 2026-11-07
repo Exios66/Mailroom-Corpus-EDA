@@ -86,20 +86,22 @@ configs:
 ## Quick start
 
 ```python
+import json
 from datasets import load_dataset
 
 repo = "Lucius-Morningstar/mailroom-dataset"
-docs = load_dataset(repo, "default", revision="v9.3")       # documents; keep filename for the join
-gt   = load_dataset(repo, "ground_truth", revision="v9.3")  # labels, identity, eval contract
+docs = load_dataset(repo, "default", revision="v9.3")["test"]       # documents
+gold = load_dataset(repo, "ground_truth", revision="v9.3")["test"]  # labels, identity, eval contract
+gold_by_name = {r["filename"]: r for r in gold}
 
-# what the model sees: text and prompt only (filename and metadata can reveal answers)
-model_input = docs["test"].select_columns(["doc_text", "prompt"])
-
-# pair documents with labels on `filename`; gt_fields is a JSON string
-import json
-row = gt["test"][0]
-labels = json.loads(row["gt_fields"])
-presence = json.loads(labels["gt_presence"])                # per-field presence code
+# The model sees text and prompt only: filename and metadata can reveal answers.
+# Keep each filename beside its prediction, outside the model input, for the join.
+for name, doc in zip(docs["filename"], docs.select_columns(["doc_text", "prompt"])):
+    prediction = my_model(doc["doc_text"], doc["prompt"])          # your model here
+    row = gold_by_name[name]
+    labels = json.loads(row["gt_fields"])                           # gt_fields is a JSON string
+    presence = json.loads(labels["gt_presence"])                    # per-field presence code
+    # score prediction against row["expected"], labels and presence
 ```
 
 ## Configs
@@ -186,6 +188,7 @@ The correspondence class is real Enron email: it contains the names and addresse
 - Contracts, mergers and corporate records are US public-company filings; other jurisdictions are rare.
 - The insurance claims are synthetic and simpler than real claim files.
 - 742 of the 1,000 correspondence intents are machine labels (637 `llm_zero_shot`) or heuristics (105); 258 are human or exact gold joins. `intent_source` and `intent_status` say which, and 25 rows are `flagged_review`.
+- On 411 SEC EDGAR corporate records, `keywords` holds only the record type and the entity name. The v9.2.1 repair removed the exhibit, form, accession and CIK strings that filled it before. Treat these keywords as not yet labeled.
 - Corporate-record `entity_name` is the EDGAR filer name, not always the string printed in the document (about a quarter differ, mostly `Co.` vs `Company`).
 - **Blind metadata is not fully blind.** Some source fields in `default`'s `metadata` give away the answer without reading the text: the subclass (`category`, `lob`, `claim_subtype`, `exhibit_description`), the class (which keys are non-empty, and source-style filenames such as `carrier:…`), insurance `claim_number` (`source_row_id`), and on the 152 merger agreements the per-category MAUD annotation counts (`maud_categories`). To score a model fairly, give it `doc_text` and `prompt` only. v10 removes metadata and filenames from the blind config.
 

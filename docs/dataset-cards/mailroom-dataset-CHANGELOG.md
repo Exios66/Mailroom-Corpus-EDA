@@ -48,6 +48,9 @@ Corporate-record presence layer and merger routing. Rows, `document_id`s and tex
 - This changelog was added.
 - The card states which blind `metadata` fields reveal the class, subclass or MAUD annotation counts (see the card's limitations); v10 removes them.
 
+### Known issues
+- On 411 SEC EDGAR corporate records, `keywords` holds only `[record type, entity name]`, below the 3–8 keywords the other classes carry. These rows need real keyword annotation.
+
 ## [v9.2.1] - 2026-10-17
 
 Published as the Hub branch `corporate-labels-v9.2.1`, not as a tag. Its content is included in v9.3.

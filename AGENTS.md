@@ -4,10 +4,10 @@ Exploratory data analysis (and the centralized HF upload helpers) for the
 [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset)
 corpus (v1, canonically **v9** of the mailroom corpus family) — **3,302** legal
 documents across 5 doc_types (insurance_claim, merger_agreement, contract,
-correspondence, corporate_record), 55 strata. Canonical Hub tag **`v9.2`**
-(`670e8bc6…`, docs/card pin on the data commit `d49f60a4…` — relations &
-provenance revision; zero row/identity/content drift from the v9.1 tip
-`bc9eab28…` / data `ed7576b6…` it revises); standalone successor of the
+correspondence, corporate_record), 55 strata. Canonical Hub tag **`v9.3`**
+(`ccd040f6…`, docs/card pin on the data commit `7fd99b40…` — corporate
+presence layer plus the merger routing amendment; zero row/identity/content
+drift from `v9.2` (`670e8bc6…` / data `d49f60a4…`) it revises); standalone successor of the
 frozen v8 `mailroom-corpus` baseline (2,000 rows, `eafe1ab4` — never
 destroyed).
 
@@ -176,14 +176,42 @@ to include it). Every class now routes to its own specialist.
 
 `run_all.py --phases P0` fetches the public
 `Lucius-Morningstar/mailroom-dataset` snapshot into gitignored `data/`
-(3,302 rows at the v9.2 data commit `d49f60a4`). Publishing needs `HF_TOKEN`.
+(3,302 rows at the v9.3 data commit `7fd99b40`). Publishing needs `HF_TOKEN`.
 Reading the public snapshot does not. Full-corpus tests skip until that
 snapshot exists. `tests/test_contract.py::test_mailroom_contract_snapshot`
-asserts the v9.2 schema (35 top-level columns; 34-key `gt_fields` union) and
+asserts the v9.3 schema (35 top-level columns; 36-key `gt_fields` union: v9.2's 34 plus the
+corporate `entity_name` and `record_type`) and
 registers the five quality-revision meta keys (`clause_count`, `maud_label_count`,
 `gt_presence`, `token_estimate`, `context_window_band`) via `GT_META_KEYS`,
 so the §64 checker skips them instead of failing on the B2/B4 additions.
 `scripts/audit/coverage_matrix.py --check` is the read-only corpus audit.
+
+## HF facts (verified 2026-11-07, dataset v1 / corpus v9.3)
+
+Labels-only revision of v9.2; same 3,302 rows (train 2,979 / test 323),
+`document_id`s and text. The blind `default` files are byte-identical to v9.2.
+Release notes: the Hub `CHANGELOG.md` (source
+`docs/dataset-cards/mailroom-dataset-CHANGELOG.md`).
+
+- Repo: `Lucius-Morningstar/mailroom-dataset`, tag `v9.3`, docs/card commit
+  `ccd040f6a1b6b414bdefd161cdc622b68f6dacf8`, data commit
+  `7fd99b406ab1b627f43602dd6a3af5fb5b7a3ac5`. The tag was re-pointed on its
+  release day (2026-11-06/07) to include the amendment and the card; first
+  data commit `6889230c`.
+- Corporate presence layer (`mailroom_eda.v9_3_revision`): the v9.2.1 label
+  repair (`entity_name`, `record_type`, grounded `subject_matter`, cleaned
+  `keywords`, 12 subclass re-assignments) plus 37 per-subclass corporate
+  `gt_presence` keys; `labels_version` in `manifest.txt`.
+- Merger routing amendment (`mailroom_eda.v9_3_merger_routing`): the 152 merger
+  agreements and their 8 bundle, 8 stream and 4 fixture rows route to
+  `merger_agreement_specialist`. Every class routes to its own specialist.
+- Known gaps (`tests/test_gt_quality.py` pins them): the 91 EX-10 contracts'
+  CUAD clauses, and `keywords` on 411 corporate records = `[record type,
+  entity]` only.
+- Card: `license: other` / `mixed-per-source`; source in
+  `docs/dataset-cards/mailroom-dataset.md`.
+- `config.py` pins `REPO_TAG="v9.3"`, `REPO_REVISION=ccd040f6…`,
+  `REPO_DATA_REVISION=7fd99b40…`.
 
 ## HF facts (verified 2026-10-06, dataset v1 / corpus v9.2 quality revision)
 
