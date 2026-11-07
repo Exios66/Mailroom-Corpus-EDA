@@ -63,6 +63,7 @@ LABEL_KEYS = frozenset(GT_SCALAR_KEYS) | {
     "retry_expected", "expected_post_retry_state", "annotation_method",
     "annotation_source", "annotation_model", "annotation_confidence",
 }
+LABEL_KEYS_LOWER = frozenset(k.lower() for k in LABEL_KEYS)
 LINE_BREAKERS = ("\u2028", "\u2029", "\u0085")
 
 _ENTRY_RE = re.compile(r"^[ \t]*(\S+)[ \t]+([0-9a-f]{64})[ \t]*$", re.MULTILINE)
@@ -137,6 +138,8 @@ def card_splits(snap: Path) -> dict[str, dict[str, list[str]]]:
         files = cfg.get("data_files") or []
         if isinstance(files, str):
             files = [files]
+        if isinstance(files, dict):  # the mapping form: {train: path(s), test: path(s)}
+            files = [{"split": k, "path": v} for k, v in files.items()]
         by: dict[str, list[str]] = {}
         for f in files:
             split, paths = (f.get("split", "train"), f["path"]) if isinstance(f, dict) else ("train", f)
@@ -211,7 +214,7 @@ def check_manifest(snap: Path) -> list[Finding]:
         return [Finding("manifest", "manifest.txt missing or has no sha256 table")]
     served = set(served_files(snap)) - UNHASHED
     for name in sorted(served - set(entries)):
-        out.append(Finding("manifest", f"served file not in the manifest: {name}"))
+        out.append(Finding("manifest_coverage", f"served file not in the manifest: {name}"))
     for name, sha in sorted(entries.items()):
         if name not in served:
             out.append(Finding("manifest", f"manifest lists a file the Hub does not serve: {name}"))
@@ -267,7 +270,7 @@ def check_presence(snap: Path) -> list[Finding]:
 def is_label_key(key: str) -> bool:
     """A label name, or one shaped like one (gt_*, expected*, *label*)."""
     k = key.lower()
-    return key in LABEL_KEYS or k.startswith(("gt_", "expected")) or "label" in k or "specialist" in k
+    return k in LABEL_KEYS_LOWER or k.startswith(("gt_", "expected")) or "label" in k or "specialist" in k
 
 
 def check_blind(snap: Path) -> list[Finding]:
@@ -434,7 +437,7 @@ def previous_tag(tag: str) -> str | None:
 SPEC_META = ("format", "repo_id", "tag", "revision", "accepted_findings")
 #: Invariant categories an immutable, already-published release may record as
 #: reviewed exceptions. Label leaks, split, identity and routing never qualify.
-ACCEPTABLE_CHECKS = frozenset({"manifest"})
+ACCEPTABLE_CHECKS = frozenset({"manifest_coverage"})  # an unhashed file; never a sha mismatch
 
 
 def make_spec(tag: str, revision: str, facts: dict[str, Any], repo_id: str = REPO_ID,
@@ -527,7 +530,11 @@ def fetch(revision: str, repo_id: str = REPO_ID, cache_dir: Path = CACHE_DIR) ->
     cache_dir.mkdir(parents=True, exist_ok=True)
     # A fresh directory per call: never a leftover copy, never one another run is reading.
     dest = Path(tempfile.mkdtemp(prefix=f"{revision}-", dir=cache_dir))
-    snapshot_download(repo_id=repo_id, repo_type="dataset", revision=revision, local_dir=dest)
+    try:
+        snapshot_download(repo_id=repo_id, repo_type="dataset", revision=revision, local_dir=dest)
+    except BaseException:
+        shutil.rmtree(dest, ignore_errors=True)  # never leave a partial download behind
+        raise
     return dest
 
 

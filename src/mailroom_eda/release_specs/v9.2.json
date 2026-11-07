@@ -1,23 +1,23 @@
 {
   "accepted_findings": [
     {
-      "finding": "[manifest] served file not in the manifest: parquet/bundles/dataset_info.json",
+      "finding": "[manifest_coverage] served file not in the manifest: parquet/bundles/dataset_info.json",
       "reason": "The v9.2 manifest predates hashing the five parquet/*/dataset_info.json files; v9.3 hashes them. v9.2 is published and immutable."
     },
     {
-      "finding": "[manifest] served file not in the manifest: parquet/default/dataset_info.json",
+      "finding": "[manifest_coverage] served file not in the manifest: parquet/default/dataset_info.json",
       "reason": "The v9.2 manifest predates hashing the five parquet/*/dataset_info.json files; v9.3 hashes them. v9.2 is published and immutable."
     },
     {
-      "finding": "[manifest] served file not in the manifest: parquet/fixtures/dataset_info.json",
+      "finding": "[manifest_coverage] served file not in the manifest: parquet/fixtures/dataset_info.json",
       "reason": "The v9.2 manifest predates hashing the five parquet/*/dataset_info.json files; v9.3 hashes them. v9.2 is published and immutable."
     },
     {
-      "finding": "[manifest] served file not in the manifest: parquet/ground_truth/dataset_info.json",
+      "finding": "[manifest_coverage] served file not in the manifest: parquet/ground_truth/dataset_info.json",
       "reason": "The v9.2 manifest predates hashing the five parquet/*/dataset_info.json files; v9.3 hashes them. v9.2 is published and immutable."
     },
     {
-      "finding": "[manifest] served file not in the manifest: parquet/streams/dataset_info.json",
+      "finding": "[manifest_coverage] served file not in the manifest: parquet/streams/dataset_info.json",
       "reason": "The v9.2 manifest predates hashing the five parquet/*/dataset_info.json files; v9.3 hashes them. v9.2 is published and immutable."
     }
   ],

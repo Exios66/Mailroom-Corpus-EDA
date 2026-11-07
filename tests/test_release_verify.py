@@ -92,7 +92,7 @@ def test_manifest_catches_changed_unlisted_and_missing_files(tmp_path):
     assert [str(f) for f in rv.check_manifest(snap)] == ["[manifest] sha256 mismatch: README.md"]
     write_manifest(snap)
     (snap / "extra.json").write_text("{}", encoding="utf-8")
-    assert "served file not in the manifest: extra.json" in str(rv.check_manifest(snap))
+    assert "[manifest_coverage] served file not in the manifest: extra.json" in [str(f) for f in rv.check_manifest(snap)]
     write_manifest(snap)
     (snap / "extra.json").unlink()
     assert "does not serve: extra.json" in str(rv.check_manifest(snap))
@@ -182,12 +182,13 @@ def test_facts_are_compared_exactly(tmp_path):
 
 
 def test_accepted_findings_need_a_reason_and_must_keep_occurring():
-    f = rv.Finding("manifest", "x")
+    f = rv.Finding("manifest_coverage", "x")
     with pytest.raises(ValueError, match="reason"):
         rv.make_spec("v0.1", "abc", {}, accepted=[f])
     spec = rv.make_spec("v0.1", "abc", {}, accepted=[f], reason="immutable")
     assert rv.apply_accepted([f, rv.Finding("blind", "y")], spec) == [rv.Finding("blind", "y")]
-    assert rv.apply_accepted([], spec) == [rv.Finding("spec", "accepted finding no longer occurs: [manifest] x")]
+    assert rv.apply_accepted([], spec) == [
+        rv.Finding("spec", "accepted finding no longer occurs: [manifest_coverage] x")]
 
 
 def test_resolve_tag_returns_the_commit_not_the_tag_object():
@@ -446,7 +447,7 @@ def test_freeze_records_reviewed_manifest_findings(tmp_path, hub):
     spec, lines = rv.freeze_release(_Api(), "v1.0")
     assert spec is None and "--accept-findings" in lines[-1]
     spec, lines = rv.freeze_release(_Api(), "v1.0", accept_reason="immutable")
-    assert spec["accepted_findings"] == [{"finding": "[manifest] served file not in the manifest: notes.txt",
+    assert spec["accepted_findings"] == [{"finding": "[manifest_coverage] served file not in the manifest: notes.txt",
                                           "reason": "immutable"}]
 
 
@@ -484,3 +485,52 @@ def test_verify_all_keeps_going_past_a_broken_release(monkeypatch, capsys):
     assert [cli.verify(None, t) for t in ("v1.0", "v1.1")] == [1, 0]
     assert calls == ["v1.0", "v1.1"]
     assert "FAIL v1.0: LookupError" in capsys.readouterr().out
+
+
+# --- stand-in review of 9363de2..7677183 ------------------------------------
+
+def test_a_sha_mismatch_can_never_be_accepted(hub):
+    snap = hub["snap"]
+    (snap / "README.md").write_text(CARD + "corrupted\n", encoding="utf-8")
+    spec, lines = rv.freeze_release(_Api(), "v1.0", accept_reason="immutable")
+    assert spec is None and "  [manifest] sha256 mismatch: README.md" in lines
+    with pytest.raises(ValueError, match=r"\['manifest'\] can never be accepted"):
+        rv.make_spec("v1.0", SHA, {}, accepted=[rv.Finding("manifest", "sha256 mismatch: x")], reason="r")
+
+
+def test_freeze_refuses_legacy_routing(tmp_path, hub):
+    def old(rows):
+        for rs in rows.values():
+            for r in rs:
+                if "expected_specialist" in r:
+                    r["expected_specialist"] = "legacy_specialist"
+    hub["snap"] = make_snapshot(tmp_path / "legacy", old)
+    spec, lines = rv.freeze_release(_Api(), "v1.0")
+    assert spec is None and any("the registry says 'contracts_specialist'" in ln for ln in lines)
+
+
+def test_fetch_removes_a_failed_download(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    def boom(**k):
+        (k["local_dir"] / "partial.parquet").write_text("x", encoding="utf-8")
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", boom)
+    with pytest.raises(OSError):
+        rv.fetch("b" * 40, cache_dir=tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("key", ["Intent", "EXPECTED_SPECIALIST", "Keywords"])
+def test_label_keys_match_case_insensitively(key):
+    assert rv.is_label_key(key)
+
+
+def test_card_mapping_form_is_read(tmp_path):
+    snap = make_snapshot(tmp_path)
+    card = "---\nconfigs:\n" + "".join(
+        f"- config_name: {c}\n  data_files:\n    train: parquet/{c}/train/*\n    test: parquet/{c}/test/*\n"
+        for c in rv.CONFIGS) + "---\n# card\n"
+    (snap / "README.md").write_text(card, encoding="utf-8")
+    assert rv.check_card_configs(snap) == []

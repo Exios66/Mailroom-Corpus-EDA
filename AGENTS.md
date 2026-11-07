@@ -136,9 +136,13 @@ pin is itself a failure.
 - any invariant fails;
 - routing differs from today's `taxonomy.yaml` registry;
 - the release adds a blind metadata key (unless `--allow-new-blind-keys`, after checking the key reveals no label);
-- the release has `manifest` findings and no `--accept-findings REASON`. Only `manifest` findings
-  of an immutable, published release may be accepted (v9.2: its manifest does not hash the five
-  `dataset_info.json` files).
+- the release has `manifest_coverage` findings (a served file the manifest does not hash) and no
+  `--accept-findings REASON`. Only those may be accepted, for an immutable, published release
+  (v9.2: its manifest does not hash the five `dataset_info.json` files); a sha mismatch, a label
+  leak, a split, identity or routing failure never can.
+
+Older releases keep the routing their spec pins: v9.2 routes merger agreements to
+`contracts_specialist`, so it can be re-verified but never re-frozen.
 
 Re-pinning `REPO_TAG` without freezing its spec fails `test_the_pinned_release_has_a_frozen_spec`.
 
