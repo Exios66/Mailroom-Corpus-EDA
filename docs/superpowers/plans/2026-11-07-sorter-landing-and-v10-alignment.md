@@ -8,6 +8,7 @@
 > - **v33:** the user chose a new compact specialist lineage. `contracts_specialist_v33` is frozen at its published bytes (sha256 `6a5047ed…`, `FROZEN` in the sandbox `scripts/sync_specialist_prompts.py`), and `--check` verifies that pin instead of vendor parity (Task 2 Step 6).
 > - **Pins:** llm-mailroom is vendored at its merged main `19203eac07f67c215f50af2fd498560ce195adae`, used as both ref and expected SHA, so a later main head never breaks `fetch-deps`. Dojo is `v0.28.1`, which carries rule C in `sorter_guide` (the v0.28.0 guide still had the old bylaw rule). Both land in local-mailroom-sandbox #265, which also absorbs #258 (Task 3).
 > - **Production sorter:** `sorter_condensed_v5`, not v1 (Task 4 Step 2's expectation). v1 stays as history.
+> - **Scoring audit (Task 2 Step 5):** done in local-mailroom-sandbox #265 with Dojo v0.28.1 vendored. 21 golden cases changed; all 287 changed values match the Dojo departures payload (0 unexplained, mutation-checked). v0.28.1 changes only `sorter_guide` (the catalog sent with the sorter prompt), which no scoring golden reads; the sorter-task inputs are byte-identical across the vendor change.
 > - **Keywords gold draw:** the consolidated taxonomy has 1 eligible `other` record, so `other` takes what exists (1), not 2 (Task 7 (b)).
 
 **Architecture:** There are four PRs, merged in order.
@@ -177,6 +178,7 @@ Rulings made without a spec are provisional.
 - [ ] **Step 1:** Check out #126 in a temporary clone at `$SP/dojo-126`, not in a shared checkout. Merge `origin/main` into it.
 - [ ] **Step 2:** Re-vendor the prompt files from `llm-mailroom@SORTER_MERGE_SHA` with the repo's own vendor or sync script. Its name is in the PR's description or in `scripts/`. A hand copy is not allowed.
   Expected: the sorter production text is `sorter_condensed_v5` (v1 is kept only as history), and the repo's prompt-parity tests pass.
+  - `tests/test_prompt_lineage.py::test_sorter_v4_drops_the_duplicate_block_and_matches_production` asserts that production is `sorter_v15` and compares it with the historical lineage, so it fails after the sync. Split it: the v4 lineage check compares against its own historical text, and a separate assertion pins production to `sorter_condensed_v5`. Then run the full Dojo suite, not only the lineage tests.
 - [ ] **Step 3:** Fetch, commit and push. Update the PR body with the new source commit. Then reviews and merge, per the merge rule. Afterwards `rm -rf $SP/dojo-126`.
 
 ### Task 5: Vet the remaining open PRs (sandbox #256, llm-mailroom #175 and #160, Dojo #128)
@@ -265,7 +267,7 @@ Rulings made without a spec are provisional.
 
 - [ ] **Step 1:** List every test and config that pins the `*_simplified` defaults: `git grep -n "_simplified" config tests src`. The SAND-027-3 eval-environment default changes with this, so name every run that would change baseline in the PR body.
 - [ ] **Step 2:** Switch the three pins. Run the full suite (`--basetemp=$SP/pt-spec`). Expected: `0 failed`, with every pin test updated on purpose.
-- [ ] **Step 3:** Branch, fetch, commit, PR, reviews, merge. Then do the llm-mailroom PR the same way, and re-vendor it in the sandbox as in Task 3, Step 2.
+- [ ] **Step 3:** Branch, fetch, commit, PR, reviews, merge. Then do the llm-mailroom PR the same way, and re-vendor it in the sandbox as in Task 3, Step 2, but at that PR's own merge commit: record `SPECIALIST_MERGE_SHA=$(gh pr view <n> -R Exios66/llm-mailroom --json mergeCommit -q .mergeCommit.oid)` and use it for both the ref and the expected SHA. `SORTER_MERGE_SHA` is older and would vendor main without the specialist change.
 - [ ] **Step 4:** The corporate condensed v1 prompt uses the v7 record_type map, which conflicts with the Dojo 0.28 subclass schemas. Write that in the PR body as a known limitation, to fix in a `condensed_v2` lineage mutation after the subclass check (Task 7, Step 0) settles the strata.
 
 ### Task 8: Hand off

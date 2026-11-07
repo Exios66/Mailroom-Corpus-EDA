@@ -45,6 +45,8 @@ Imbalance: families range 49–161 (3.3×). Leaves range 0–87.
 
 - Every family has at least 100 rows. Every leaf has at least 30, with at least 3 in the test split.
 - **Open (needs a decision):** the planned additions leave governance at 99 rows and authority_and_structure at 89 (subsidiary_list 53 + powers_of_attorney 36), below the 100-row family target. Either the allocations rise or the target changes; neither is decided.
+- **Open (needs a decision):** `other` keeps 1 record (the unresolved filing acknowledgement) and no sourcing is planned, so it cannot meet the 30-row or 3-test-row leaf target. It is a residual bucket, not a form to source; the decision is whether `other` is exempt from the leaf target or the record is resolved into a real leaf.
+- **Count note:** 8 published `board_resolution` rows move to `bylaws` under rule C: 7 bylaw amendments and 1 full restated bylaws (SunGard Public Sector). With the 2 amendments already published as `bylaws`, that is 9 amendments (line 29).
 - No existing record is dropped to reach balance. Balance comes from sourcing new records and
   from stratified sampling weights.
 
@@ -56,7 +58,7 @@ Imbalance: families range 49–161 (3.3×). Leaves range 0–87.
 | board_resolution | 4 | 30 | board resolutions and written consents (EX-3, EX-99, 8-K exhibits) |
 | certificate_of_formation | 0 | 30 | certificates of formation of LLC co-registrants and guarantors (S-4 / S-1 EX-3) |
 | warrant (form) | 11 | 30 | EX-4 warrant agreements and certificates |
-| bylaw amendment (form) | 10 | — | the bylaws leaf already meets 30; all 10 (8 published as board_resolution, 2 as bylaws; sandbox rule C) are in train, so this form needs test-split rows. **Open:** no source for them is planned yet (the gold draw rejects bylaws under rule C) |
+| bylaw amendment (form) | 9 | — | the bylaws leaf already meets 30; all 9 (7 published as board_resolution, 2 as bylaws; sandbox rule C) are in train, so this form needs test-split rows. **Open:** no source for them is planned yet (the gold draw rejects bylaws under rule C) |
 
 That is about 110 new records, which takes governance_rules_and_actions to about 113.
 
