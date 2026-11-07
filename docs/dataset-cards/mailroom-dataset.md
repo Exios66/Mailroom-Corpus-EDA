@@ -1,6 +1,8 @@
 ---
 pretty_name: Mailroom Dataset
-license: cc-by-4.0
+license: other
+license_name: mixed-per-source
+license_link: https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset#sources-and-licenses
 language:
 - en
 task_categories:
@@ -87,8 +89,11 @@ configs:
 from datasets import load_dataset
 
 repo = "Lucius-Morningstar/mailroom-dataset"
-docs = load_dataset(repo, "default", revision="v9.3")       # blind: what the model sees
+docs = load_dataset(repo, "default", revision="v9.3")       # documents; keep filename for the join
 gt   = load_dataset(repo, "ground_truth", revision="v9.3")  # labels, identity, eval contract
+
+# what the model sees: text and prompt only (filename and metadata can reveal answers)
+model_input = docs["test"].select_columns(["doc_text", "prompt"])
 
 # pair documents with labels on `filename`; gt_fields is a JSON string
 import json
@@ -120,6 +125,8 @@ presence = json.loads(labels["gt_presence"])                # per-field presence
 
 `gt_fields` holds the class's label fields plus `gt_presence`, `token_estimate`, `context_window_band` (`<=4k`, `<=16k`, `<=32k`, `>32k`), `clause_count` and `maud_label_count`. CUAD and MAUD clause annotations are in `cuad_clause_labels` and `maud_clause_labels`.
 
+On the 350 GNOTHEIA and BDR insurance rows, six fields hold the string `"nan"` as an absence placeholder, not a value: `content_topic`, `label_evidence`, `sentiment_evidence`, `sentiment_label`, `sentiment_score` and `topic_evidence` (2,100 cells). Treat them as absent, and use `gt_presence` where it has a code. The `"N/A"` dates on 3 CMS outpatient claims are the source's own marker; keep them.
+
 </details>
 
 ### Presence codes
@@ -144,16 +151,16 @@ A row is in `test` when `md5(filename) % 10 == 0` (≈10%). The rule is stable a
 | class | source | rows | license |
 |---|---|---:|---|
 | contract | CUAD v1 ([`theatticusproject/cuad`](https://huggingface.co/datasets/theatticusproject/cuad)) | 509 | CC BY 4.0 |
-| contract | SEC EDGAR EX-10 exhibits | 91 | US public domain |
+| contract | SEC EDGAR EX-10 exhibits | 91 | public SEC filings; company-authored, not US-government works (see below) |
 | merger_agreement | MAUD v1 (Zenodo 7500064) | 152 | CC BY 4.0 |
-| corporate_record | SEC EDGAR S-1 / 8-K exhibits | 450 | US public domain |
+| corporate_record | SEC EDGAR S-1 / 8-K exhibits | 450 | public SEC filings; company-authored, not US-government works (see below) |
 | correspondence | Enron, deduplicated ([`enron-correspondence-dedup`](https://huggingface.co/datasets/Lucius-Morningstar/enron-correspondence-dedup)) | 1,000 | research use; contains real names |
 | insurance_claim | CMS DE-SynPUF (synthetic Medicare claims) | 600 | US public domain |
 | insurance_claim | GNOTHEIA synthetic property FNOL | 200 | Apache-2.0 |
 | insurance_claim | BDR motor-claim decisions | 150 | MIT |
 | insurance_claim | INSURBIAS claim narratives | 150 | CC BY 4.0 |
 
-The card license (CC BY 4.0) covers this compilation and its labels. Each document keeps its source's license. CC BY-NC sources were excluded.
+The licensing is mixed, so the Hub metadata says `mixed-per-source`. CC BY 4.0 covers this compilation and its labels; each document keeps its source's terms, as listed above. SEC EDGAR filings are free to access and reuse under the SEC's [public-access terms](https://www.sec.gov/about/webmaster-frequently-asked-questions), but the companies wrote them, so they are not US-government works and this card does not claim they are in the public domain. The Enron emails are released for research use and contain real names. CC BY-NC sources were excluded.
 
 ## Annotation
 
@@ -181,13 +188,12 @@ The correspondence class is real Enron email: it contains the names and addresse
 - 742 of the 1,000 correspondence intents are machine labels (637 `llm_zero_shot`) or heuristics (105); 258 are human or exact gold joins. `intent_source` and `intent_status` say which, and 25 rows are `flagged_review`.
 - Corporate-record `entity_name` is the EDGAR filer name, not always the string printed in the document (about a quarter differ, mostly `Co.` vs `Company`).
 - **Blind metadata is not fully blind.** Some source fields in `default`'s `metadata` give away the answer without reading the text: the subclass (`category`, `lob`, `claim_subtype`, `exhibit_description`), the class (which keys are non-empty, and source-style filenames such as `carrier:…`), insurance `claim_number` (`source_row_id`), and on the 152 merger agreements the per-category MAUD annotation counts (`maud_categories`). To score a model fairly, give it `doc_text` and `prompt` only. v10 removes metadata and filenames from the blind config.
-- The 152 merger agreements route to `contracts_specialist`; a later release moves them to `merger_agreement_specialist`.
 
 ## Versions
 
 | tag | change |
 |---|---|
-| [`v9.3`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset/tree/v9.3) | Corporate records gain per-subclass presence keys (label-only; rows and text unchanged). Labels are versioned separately (`labels_version` in `manifest.txt`). |
+| [`v9.3`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset/tree/v9.3) | Corporate records gain per-subclass presence keys; merger agreements route to `merger_agreement_specialist` (labels only; rows and text unchanged). Labels are versioned separately (`labels_version` in `manifest.txt`). |
 | `v9.2.1` (branch) | Corporate-record label repair: `entity_name`, `record_type`, grounded `subject_matter` |
 | [`v9.2`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset/tree/v9.2) | Six-regime annotation provenance; `related_document_ids` populated; build-internal column removed |
 | [`v9.1`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset/tree/v9.1) | Label-derived counts moved out of the blind config; presence codes; context-window bands |

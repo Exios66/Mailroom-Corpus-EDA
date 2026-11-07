@@ -4,7 +4,7 @@ All notable changes to the [Mailroom Dataset](https://huggingface.co/datasets/Lu
 
 ## Versioning
 
-Each release is a Hub tag. Pin one with `load_dataset(..., revision="v9.3")`; `main` moves. Tags are never moved or deleted.
+Each release is a Hub tag. Pin one with `load_dataset(..., revision="v9.3")`; `main` moves. Tags are not moved, with one exception: on 2026-11-06, its release day, `v9.3` was re-pointed to include the merger routing fix and the rewritten card (see [v9.3]).
 
 From v9.3 on, version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html), applied to data:
 
@@ -23,20 +23,22 @@ Card and documentation edits are not releases. They are listed under the release
 - Blind `default` config reduced to `document_id`, `doc_text` and `prompt`. Filenames and source metadata move to `source_metadata`; class and routing move to `routing`.
 - New `cuad_clauses` and `maud_answers` configs.
 - Labels completed by two calibrated models plus human review (the v10 labeling campaign).
-- The 152 merger agreements route to `merger_agreement_specialist`.
 - The legacy `ground_truth` config is deprecated, to be removed in v11.
 
 ### Staged as v9.4, to be folded into v10
-- 10 exact-duplicate documents removed (3,302 → 3,292 rows), plus one near-duplicate that leaked from train into test.
+- 10 duplicate documents removed (3,302 → 3,292 rows): 9 exact copies, and one near-duplicate that leaked from train into test.
 - 2,100 `"nan"` placeholder cells on GNOTHEIA and BDR insurance rows set to empty.
 
 ## [v9.3] - 2026-11-06
 
-Corporate-record presence layer. Labels only: rows, `document_id`s, text and every populated value are unchanged.
+Corporate-record presence layer and merger routing. Rows, `document_id`s and text are unchanged from v9.2. The corporate labels differ from the `v9.2` tag because v9.3 includes the v9.2.1 label repair; compared with v9.2.1 (branch `corporate-labels-v9.2.1`), every populated corporate value is unchanged.
 
 ### Added
 - Corporate records carry per-subclass entity keys in `gt_presence`: 6 core fields plus each subclass's own extensions, 37 keys in all, mirrored from `llm-dojo-scoring`'s corporate-record schema.
 - `labels_version` in `manifest.txt`, versioning labels separately from rows.
+
+### Fixed
+- Merger agreements route to `merger_agreement_specialist`, the class's own specialist in `llm-mailroom`, instead of `contracts_specialist`: `expected_specialist` on the 152 merger agreements and on the 8 bundle, 8 stream and 4 fixture rows built on them. No other value changed. Added on 2026-11-06 after v9.3 was first tagged; the tag now includes it.
 
 ### Changed
 - A corporate entity field that is blank with no documented absence is *unlabeled*: its key is left out of `gt_presence`, never shipped as a code. Scorers exclude it from both sides.

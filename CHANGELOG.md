@@ -8,6 +8,11 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 
 ## Unreleased
 
+- v9.3 amendment (`mailroom_eda.v9_3_merger_routing`): the 152 merger agreements, and the 8 bundle,
+  8 stream and 4 fixture rows built on them, route to `merger_agreement_specialist` instead of
+  `contracts_specialist`. Only that value changes; the build checks every other parquet cell and
+  JSONL byte, checks that every class routes to its own `taxonomy.yaml` specialist, and recomputes
+  the manifest. Published to the Hub and the `v9.3` tag re-pointed to it.
 - Dataset card rewritten and published to the Hub (v9.3, 2026-11-06), with a dataset `CHANGELOG.md`
   (Keep a Changelog, SemVer for data) on the Hub; source in
   `docs/dataset-cards/mailroom-dataset-CHANGELOG.md`. The v10 card generator's `license_name`

@@ -169,8 +169,10 @@ fails three routing tests. `main` routes `merger_agreement` to
 2026-10-17 (live-taxonomy alignment — see the D6 amendment in
 `docs/plans/v9.2-relations-provenance-revision.md`), so these tests expect
 `merger_agreement_specialist`. The 152 published merger
-`expected_specialist` values on the Hub still read `contracts_specialist`
-(v9.3 left them unchanged); v10 moves them to `merger_agreement_specialist`.
+`expected_specialist` values (and the 8 bundle, 8 stream and 4 fixture rows
+built on them) read `merger_agreement_specialist` as of the 2026-11-06 v9.3
+amendment (`mailroom_eda.v9_3_merger_routing`; the `v9.3` tag was re-pointed
+to include it). Every class now routes to its own specialist.
 
 `run_all.py --phases P0` fetches the public
 `Lucius-Morningstar/mailroom-dataset` snapshot into gitignored `data/`
