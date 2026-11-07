@@ -45,6 +45,8 @@ uv member (no build).
   - `visualizations.py` — P3 static PNG figures (30) + EDA tables
   - `visualizations_interactive.py` — P4 Plotly HTML figures (18)
   - `hf_interface.py` — centralized Hub client (upload, sha256 verify)
+  - `release_verify.py` — post-publication release checks: invariants every release must
+    meet on the Hub, plus a frozen per-tag spec in `release_specs/<tag>.json` (aggregates only)
   - `dataset_export.py` — cast-safe JSONL (KANBAN-076/088), parquet staging, manifests
   - `v9_4_revision.py` — v9.4 STAGING: exact-dup removal, placeholder scrub,
     verified LLM CUAD/intent label ingest (approved labeler `LABEL_MODEL` =
@@ -73,6 +75,8 @@ uv member (no build).
 - `scripts/` — CLI wrappers, organized by purpose:
   - `build/build_v9.py` — build + publish the v9 `mailroom-dataset`
   - `publish/verify_hf.py` — byte-verify a local export against the Hub
+  - `publish/verify_release.py` — verify a published release on the Hub against its
+    frozen spec (`--all` for every release; `--freeze` after a new publish)
   - `audit/` — `baseline_audit.py`, `coverage_matrix.py` (→
     `docs/reports/audits/docclass_coverage_matrix.*`), `expansion_priorities.py`
     (→ `docs/reports/audits/docclass_expansion_priorities.*`)
@@ -101,6 +105,46 @@ uv member (no build).
 .venv/bin/python scripts/audit/coverage_matrix.py --check
 PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling doctor   # labeling readiness, no paid call
 ```
+
+**Release verification** (after every Hub publish or tag move, before re-pinning
+`config.py`):
+
+```bash
+.venv/bin/python scripts/publish/verify_release.py --tag v9.4 --freeze   # new release: review the printed diff, commit the spec
+.venv/bin/python scripts/publish/verify_release.py --all                 # re-verify every frozen release on the Hub
+MAILROOM_LIVE_HUB=1 .venv/bin/python -m pytest tests/test_release_verify.py   # same, as tests
+```
+
+Invariants (code) cover every release:
+- the manifest sha table matches the served bytes and lists every served file;
+- the card maps each of the five configs to exactly its own `parquet/<config>/{train,test}/*`;
+- every config has rows in both splits, and all of a config's shards share one schema;
+- blind `default` has only its four columns, its `metadata` is a struct, and no key in it is a label or shaped like one, in both splits;
+- the md5 split rule holds;
+- `default` and `ground_truth` have the same row sets and their content hashes agree;
+- `document_id` is unique;
+- every routed row names a class and a specialist, with exactly one specialist per class;
+- the sidecar JSONL is line-safe and matches the parquet row counts;
+- the Hub's own card validation passes.
+
+The spec (data) pins the tag's commit, row counts, columns, class and subclass counts, routing,
+`gt_fields` keys, blind metadata keys, provenance and every file's sha256. A fact the spec does not
+pin is itself a failure.
+
+`--freeze` refuses in five cases:
+- the tag already has a spec (unless `--refreeze`; it then prints the diff against that spec);
+- any invariant fails;
+- routing differs from today's `taxonomy.yaml` registry;
+- the release adds a blind metadata key (unless `--allow-new-blind-keys`, after checking the key reveals no label);
+- the release has `manifest_coverage` findings (a served file the manifest does not hash) and no
+  `--accept-findings REASON`. Only those may be accepted, for an immutable, published release
+  (v9.2: its manifest does not hash the five `dataset_info.json` files); a sha mismatch, a label
+  leak, a split, identity or routing failure never can.
+
+Older releases keep the routing their spec pins: v9.2 routes merger agreements to
+`contracts_specialist`, so it can be re-verified but never re-frozen.
+
+Re-pinning `REPO_TAG` without freezing its spec fails `test_the_pinned_release_has_a_frozen_spec`.
 
 **Summary writes**: `reports/SUMMARY_REPORT.json` is written only by a
 full-pipeline run (all seven phases). `--phases` subset runs — and
