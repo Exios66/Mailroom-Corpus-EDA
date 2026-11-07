@@ -195,7 +195,7 @@ def test_move_tag_reports_when_the_restore_also_fails():
         m.move_tag(hub, "new")
 
 
-def test_move_tag_restores_when_the_new_tag_resolves_elsewhere():
+def test_move_tag_reports_when_the_new_tag_resolves_elsewhere():
     hub = _FakeHub({"v9.3": "old"})
     real_info = hub.dataset_info
     calls = {"n": 0}
@@ -211,6 +211,7 @@ def test_move_tag_restores_when_the_new_tag_resolves_elsewhere():
     hub.dataset_info = info
     with pytest.raises(SystemExit, match="old target old, new target new"):
         m.move_tag(hub, "new")
+    assert hub.tags == {"v9.3": "new"}  # the tag exists, so nothing is restored over it
 
 
 def test_build_checks_dirs_before_deleting(tmp_path, monkeypatch):
@@ -230,16 +231,27 @@ def test_check_dirs_refuses_a_stage_outside_data_dir(tmp_path, monkeypatch):
         m.check_dirs(tmp_path / "data" / "base", tmp_path / "repo")
     with pytest.raises(SystemExit, match="not a directory inside"):
         m.check_dirs(tmp_path / "base", tmp_path / "data")
-    m.check_dirs(tmp_path / "data" / "base", tmp_path / "data" / "stage")
+    m.check_dirs(tmp_path / "data" / "base", tmp_path / "data" / "x_stage")
+
+
+def test_check_dirs_refuses_the_pinned_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setattr(m, "DATA_DIR", tmp_path)
+    with pytest.raises(SystemExit, match=r"not named \*_stage"):
+        m.check_dirs(tmp_path / "base", tmp_path / "parquet")
+    (tmp_path / "real_stage").mkdir()
+    (tmp_path / "link_stage").symlink_to(tmp_path / "real_stage")
+    with pytest.raises(SystemExit, match="is a symlink"):
+        m.check_dirs(tmp_path / "base", tmp_path / "link_stage")
 
 
 def test_check_dirs_sees_through_symlinks(tmp_path, monkeypatch):
     monkeypatch.setattr(m, "DATA_DIR", tmp_path)
     base = tmp_path / "base"
     base.mkdir()
+    (tmp_path / "base" / "x_stage").mkdir()
     (tmp_path / "alias").symlink_to(base)
     with pytest.raises(SystemExit, match="overlaps"):
-        m.check_dirs(base, tmp_path / "alias")
+        m.check_dirs(base, tmp_path / "alias" / "x_stage")
 
 
 def test_manifest_covers_every_staged_file_by_default(tmp_path):
@@ -285,3 +297,49 @@ def test_publish_checks_before_committing(tmp_path, monkeypatch):
     monkeypatch.setattr(huggingface_hub, "HfApi", _NoCommit)
     with pytest.raises(AssertionError, match="manifest sha mismatch: README.md"):
         m.publish(tmp_path, "tok", parent="p", only=m.DOC_FILES)
+
+
+class _ParentHub:
+    """HfApi stand-in: a parent whose data file does not match the manifest."""
+
+    token = "tok"
+
+    def __init__(self, token=None, sha="0" * 64, lfs=True):
+        self.sha, self.lfs = sha, lfs
+
+    def get_paths_info(self, repo, paths, repo_type, revision):
+        from types import SimpleNamespace as NS
+        return [NS(path=p, lfs=NS(sha256=self.sha) if self.lfs else None) for p in paths]
+
+    def create_commit(self, *a, **k):
+        raise AssertionError("create_commit reached although the parent differs from the manifest")
+
+
+def test_publish_runs_the_parent_check_before_committing(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    _stage(tmp_path, {"README.md": "card", "CHANGELOG.md": "log", "data.parquet": "rows"})
+    m.check_manifest_covers(tmp_path, m.DOC_FILES)  # the stage itself is valid
+    monkeypatch.setattr(huggingface_hub, "HfApi", _ParentHub)
+    with pytest.raises(SystemExit, match="data.parquet: manifest sha"):
+        m.publish(tmp_path, "tok", parent="p", only=m.DOC_FILES)
+
+
+def test_parent_check_hashes_a_non_lfs_file(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    _stage(tmp_path, {"README.md": "card", "small.json": "{}"})
+    served = tmp_path / "served.json"
+    seen = {}
+
+    def fake_download(repo, rel, repo_type, revision, token=None):
+        seen.update(rel=rel, revision=revision, token=token)
+        return str(served)
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", fake_download)
+    served.write_text("{}", encoding="utf-8")
+    assert m.check_parent_matches_manifest(_ParentHub(lfs=False), tmp_path, "p", m.DOC_FILES) == 1
+    assert seen == {"rel": "small.json", "revision": "p", "token": "tok"}
+    served.write_text("{ }", encoding="utf-8")
+    with pytest.raises(SystemExit, match="small.json: manifest sha"):
+        m.check_parent_matches_manifest(_ParentHub(lfs=False), tmp_path, "p", m.DOC_FILES)

@@ -213,13 +213,19 @@ def download_base(base_dir: Path) -> Path:
 
 
 def check_dirs(base_dir: Path, stage_dir: Path) -> None:
-    """``build`` deletes ``stage_dir``: refuse any overlap with the base."""
+    """``build`` deletes ``stage_dir``: refuse any overlap with the base, a
+    stage outside ``DATA_DIR``, a symlinked stage, and any stage not named
+    ``*_stage`` (so ``data/parquet``, the pinned EDA snapshot, can never be one)."""
+    if Path(stage_dir).is_symlink():
+        raise SystemExit(f"stage dir {stage_dir} is a symlink; refusing to delete it")
     b, s = Path(base_dir).resolve(), Path(stage_dir).resolve()
     if b == s or b.is_relative_to(s) or s.is_relative_to(b):
         raise SystemExit(f"stage dir {s} overlaps base dir {b}; refusing to delete it")
     data = Path(DATA_DIR).resolve()
     if s == data or not s.is_relative_to(data):
         raise SystemExit(f"stage dir {s} is not a directory inside {data}; refusing to delete it")
+    if not s.name.endswith("_stage"):
+        raise SystemExit(f"stage dir {s} is not named *_stage; refusing to delete it")
 
 
 def build(base_dir: Path, stage_dir: Path) -> dict:
@@ -308,7 +314,7 @@ def check_parent_matches_manifest(api, stage_dir: Path, parent: str, skip: tuple
             raise SystemExit(f"{rel} is in the manifest but not at {parent}")
         lfs = getattr(info, "lfs", None)
         got = lfs.sha256 if lfs else sha256_file(Path(hf_hub_download(
-            REPO_ID, rel, repo_type="dataset", revision=parent)))
+            REPO_ID, rel, repo_type="dataset", revision=parent, token=api.token)))
         if got != sha:
             raise SystemExit(f"{rel}: manifest sha {sha} != {got} at {parent}; re-stage from it")
     return len(want)
