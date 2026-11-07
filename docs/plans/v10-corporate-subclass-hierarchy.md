@@ -39,14 +39,14 @@ leaves stay as the fine label.
 | | powers_of_attorney | SEC signing authority | 26 (3) |
 | out of class (2) | — | subscription agreement; unresolved filing acknowledgement | 2 |
 
-Imbalance: families range 49–161 (3.3×). Leaves range 0–87.
+Imbalance: families range 49–161 (3.3×). Leaves range 0–87. Counts in this table are from the mapping CSV, before the Expion360 correction (see the count note under Coverage targets): after it, charter_documents is 160, governance 50, and bylaw amendments 10.
 
 ## Coverage targets (proposed)
 
 - Every family has at least 100 rows. Every leaf has at least 30, with at least 3 in the test split.
 - **Open (needs a decision):** the planned additions leave governance at 99 rows (100 once the Expion360 mapping error below is corrected) and authority_and_structure at 89 (subsidiary_list 53 + powers_of_attorney 36), below the 100-row family target. Either the allocations rise or the target changes; neither is decided.
 - **Open (needs a decision):** `other` keeps 1 record (the unresolved filing acknowledgement) and no sourcing is planned, so it cannot meet the 30-row or 3-test-row leaf target. It is a residual bucket, not a form to source; the decision is whether `other` is exempt from the leaf target or the record is resolved into a real leaf.
-- **Count note:** there are 10 bylaw amendments, all in train: 8 published as `board_resolution` and 2 as `bylaws`. The sandbox rule C title rule finds exactly these 10. The table above shows 9 because the mapping CSV files one of them, Expion360's "Certificate of Amendment of the Amended and Restated Bylaws" (published `board_resolution`), under `charter_amendment`. That is a mapping error: under rule C it is `bylaws`, which moves one row from charter_documents to governance (50, and 100 after the additions). SunGard Public Sector's full restated bylaws, also published `board_resolution`, is a separate user decision (bylaws), not an amendment.
+- **Count note:** there are 10 bylaw amendments, all in train: 8 published as `board_resolution` and 2 as `bylaws`. The sandbox rule C title rule (`BYLAW_AMENDMENT` in `scripts/patch_sorter_handoff.py`), run over the corporate rows' titles, matches exactly these 10. The table above shows 9 because the mapping CSV files one of them, Expion360's "Certificate of Amendment of the Amended and Restated Bylaws" (published `board_resolution`), under `charter_amendment`. That is a mapping error: under rule C it is `bylaws`, which moves one row from charter_documents to governance (50, and 100 after the additions). SunGard Public Sector's full restated bylaws, also published `board_resolution`, is a separate user decision (bylaws), not an amendment.
 - No existing record is dropped to reach balance. Balance comes from sourcing new records and
   from stratified sampling weights.
 
@@ -60,7 +60,7 @@ Imbalance: families range 49–161 (3.3×). Leaves range 0–87.
 | warrant (form) | 11 | 30 | EX-4 warrant agreements and certificates |
 | bylaw amendment (form) | 10 | — | the bylaws leaf already meets 30; all 10 (8 published as board_resolution, 2 as bylaws; sandbox rule C) are in train, so this form needs test-split rows. **Open:** no source for them is planned yet (the gold draw rejects bylaws under rule C) |
 
-That is about 110 new records, which takes governance_rules_and_actions to about 113.
+That is about 110 new records. Governance gets 50 of them (25 resolutions or consents, 25 officer or secretary certificates), which takes it to 99, or 100 after the Expion360 correction.
 
 ## Decisions for the user
 
@@ -104,7 +104,7 @@ blind `default` config.
 | other | residual (1 unresolved filing acknowledgement) | 1 | — | 1 |
 | *(removed, if rule F is approved)* | subscription agreement filed as EX-4.1 (proposed rule F: not a governance record, would leave the corpus in v10; pending sign-off, see Status) | 1 | — | 0 |
 
-That gives 9 subclasses in a 36–99 range, down from 11 published leaves in a 2–80 range (true
+(Counts are before the Expion360 correction: governance_record is 50 now and 100 after the additions, and charter_amendment is 39.) That gives 9 subclasses in a 36–99 range (36–100 after it), down from 11 published leaves in a 2–80 range (true
 membership 0–87), and 109 new records. Families stay as the routing umbrella:
 - charter_documents = original_charter, restated_charter, charter_amendment;
 - governance = governance_record;
