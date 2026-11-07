@@ -12,10 +12,11 @@ Usage:
     python scripts/publish/verify_release.py --tag v9.4 --freeze   # after publishing v9.4
 
 ``--freeze`` refuses to write a spec when the tag already has one (unless
-``--refreeze``), when any invariant or the Hub card check fails (only
-``manifest`` findings of an immutable release may be recorded, with
-``--accept-findings REASON``), when routing differs from today's registry, or
-when the release adds a blind metadata key (unless ``--allow-new-blind-keys``).
+``--refreeze``), when any invariant or the Hub card check fails (only a
+``manifest_coverage`` finding, a served file the manifest does not hash, of an
+immutable release may be recorded, with ``--accept-findings REASON``), when
+routing differs from today's registry, or when the release adds a blind
+metadata key (unless ``--allow-new-blind-keys``).
 It prints what changed since the previous release so the diff can be
 reviewed before the spec is committed.
 """
@@ -74,7 +75,7 @@ def main() -> int:
                     help="write the spec for --tag from the Hub (after publishing it)")
     ap.add_argument("--accept-findings", metavar="REASON", default=None,
                     help="with --freeze: record the current invariant failures as reviewed "
-                         "exceptions of an already-published release (manifest findings only)")
+                         "exceptions of an already-published release (only a served file the manifest does not hash)")
     ap.add_argument("--refreeze", action="store_true",
                     help="with --freeze: replace an existing spec (prints the diff against it)")
     ap.add_argument("--allow-new-blind-keys", action="store_true",

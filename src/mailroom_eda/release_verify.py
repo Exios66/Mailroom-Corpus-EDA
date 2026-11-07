@@ -576,9 +576,10 @@ def freeze_release(api, tag: str, *, accept_reason: str | None = None, refreeze:
     """Build the spec for a newly published ``tag`` from the Hub. Returns
     (spec, report lines); spec is None when a gate refuses. Gates: no existing
     spec (unless ``refreeze``); every invariant and the Hub card check pass,
-    except reviewed ``manifest`` findings recorded with ``accept_reason``;
-    routing equals today's registry; no blind metadata key the previous
-    release did not have (unless ``allow_new_blind_keys``)."""
+    except reviewed ``manifest_coverage`` findings (a served file the manifest
+    does not hash) recorded with ``accept_reason``; routing equals today's
+    registry; no blind metadata key the previous release did not have (unless
+    ``allow_new_blind_keys``)."""
     lines: list[str] = []
     existing = load_spec(tag) if spec_path(tag).is_file() else None
     if existing and not refreeze:
