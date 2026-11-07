@@ -8,6 +8,12 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 
 ## Unreleased
 
+- Post-publication release verification (`mailroom_eda.release_verify`,
+  `scripts/publish/verify_release.py`): downloads what the Hub serves at a tag and checks it
+  against invariants every release must meet and a frozen per-tag spec
+  (`src/mailroom_eda/release_specs/`, aggregates and sha256s only). Specs frozen for `v9.2` and
+  `v9.3`; both pass live. A new release is added with `--freeze`, which refuses a release
+  that fails an invariant and prints the diff against the previous release.
 - `config.py` pins the Hub tag `v9.3` (`ccd040f6`, data `7fd99b40`), so P0 downloads and every
   report and build read v9.3. The full-corpus tests now assert the v9.3 schema (corporate
   `entity_name`/`record_type`) and pin its two known label gaps: the 91 EX-10 CUAD clauses and
