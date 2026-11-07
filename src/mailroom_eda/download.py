@@ -33,11 +33,13 @@ REVISION_MARKER = DATA_DIR / ".hub_revision"
 
 
 def download_corpus(force: bool = False) -> Path:
-    """Snapshot-download the pinned v9 parquet configs + manifest into data/.
+    """Download the pinned parquet configs, manifest, GT sidecar, and card to data/.
 
-    A snapshot on disk is reused only when it was fetched at ``REPO_REVISION``
-    (``data/.hub_revision``). After a re-pin, or for a snapshot with no marker,
-    the pinned revision is fetched again, so reports never read an old tag."""
+    Reuse the local snapshot only when a ground-truth train parquet exists
+    and the revision marker matches ``REPO_REVISION``, unless ``force`` is true.
+    Write the revision marker after downloading and return ``DATA_DIR``.
+    Filesystem and Hub download errors propagate to the caller.
+    """
     marker = PARQUET_DIR / "ground_truth" / "train"
     have = REVISION_MARKER.read_text(encoding="utf-8").strip() if REVISION_MARKER.is_file() else ""
     if marker.exists() and list(marker.glob("*.parquet")) and have == REPO_REVISION and not force:

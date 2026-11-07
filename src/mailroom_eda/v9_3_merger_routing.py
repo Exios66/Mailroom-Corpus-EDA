@@ -72,6 +72,7 @@ STAGE_DIR_DEFAULT = DATA_DIR / "v9_3_merger_stage"
 
 
 def sha256_file(path: Path) -> str:
+    """Return the file's hexadecimal SHA-256 digest; file access errors propagate."""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -80,7 +81,10 @@ def sha256_file(path: Path) -> str:
 
 
 def check_registry() -> None:
-    """The class map this amendment publishes must be the live routing."""
+    """Raise AssertionError if either routing registry disagrees with ``NEW``.
+
+    The taxonomy lookup falls back to the constant registry when unavailable.
+    """
     if SPECIALIST_BY_CLASS.get(CLASS) != NEW:
         raise AssertionError(f"eval_contract routes {CLASS} to {SPECIALIST_BY_CLASS.get(CLASS)!r}")
     if expected_specialist({"expected": CLASS}) != NEW:
@@ -89,8 +93,13 @@ def check_registry() -> None:
 
 
 def reroute_jsonl_line(line: str) -> tuple[str, bool]:
-    """Return (line, changed). Edits the one value in place, so every other
-    byte of the line is kept; the parsed result must differ only there."""
+    """Return (line, changed), replacing only the old merger specialist value.
+
+    Other classes and specialist values pass through unchanged. Matching rows
+    must contain exactly one ``"expected_specialist": "contracts_specialist"``
+    substring; otherwise raise AssertionError, also raised if other parsed
+    values change. JSON decoding errors propagate; the input must be an object.
+    """
     row = json.loads(line)
     if row.get("expected") != CLASS or row.get("expected_specialist") != OLD:
         return line, False
@@ -104,6 +113,12 @@ def reroute_jsonl_line(line: str) -> tuple[str, bool]:
 
 
 def reroute_jsonl(src: Path, dst: Path) -> int:
+    """Write rerouted UTF-8 JSONL to ``dst`` and return the changed row count.
+
+    Create destination parents and overwrite the destination, preserving blank
+    lines and line endings. Invalid rows propagate errors from
+    ``reroute_jsonl_line``; file access errors also propagate.
+    """
     changed = 0
     with open(src, encoding="utf-8", newline="") as f:
         lines = f.read().split("\n")
@@ -122,7 +137,13 @@ def reroute_jsonl(src: Path, dst: Path) -> int:
 
 
 def reroute_parquet(src: Path, dst: Path) -> int:
-    """Rewrite one column; schema, row order and every other column are kept."""
+    """Write corrected merger routing to ``dst`` and return the changed row count.
+
+    Create destination parents and overwrite the destination. Schema, row order,
+    and other columns are kept; raise AssertionError if the written schema or
+    other column values differ. Arrow read/write and missing-column errors
+    propagate, and a failed verification leaves the destination in place.
+    """
     import pyarrow as pa
     import pyarrow.parquet as pq
 
@@ -146,7 +167,12 @@ def reroute_parquet(src: Path, dst: Path) -> int:
 
 
 def verify_routing(stage_dir: Path) -> dict[str, int]:
-    """Every row with a class carries that class's registry specialist."""
+    """Check files in ``EXPECTED_CHANGES`` and return merger row counts by path.
+
+    Raise AssertionError for a specialist that differs from a nonempty registry
+    result. Rows without a known class are not checked; files with no merger
+    rows are omitted from the result. File, JSON, and Arrow read errors propagate.
+    """
     import pyarrow.parquet as pq
 
     seen: dict[str, int] = {}
@@ -169,6 +195,13 @@ def verify_routing(stage_dir: Path) -> dict[str, int]:
 
 
 def render_manifest(old: str, stage_dir: Path) -> str:
+    """Return an amended manifest with hashes of staged files except manifest.txt.
+
+    Replace existing amendment lines and retain the other header lines. Raise
+    StopIteration if the sha256 section or labels_version header is missing,
+    and AssertionError if the staged file set differs from the old hash table.
+    File access errors propagate.
+    """
     lines = old.splitlines()
     sha_idx = next(i for i, ln in enumerate(lines) if ln.strip().rstrip(":").strip() == "sha256")
     header = [ln for ln in lines[:sha_idx] if not ln.startswith("amendment  :")]
@@ -186,6 +219,11 @@ def render_manifest(old: str, stage_dir: Path) -> str:
 
 
 def verify_manifest(stage_dir: Path) -> int:
+    """Verify listed hashes and return the number of recognized manifest entries.
+
+    Raise AssertionError on a hash mismatch; file access errors propagate.
+    Unlisted files and malformed entries are not checked.
+    """
     table = _ENTRY_RE.findall((stage_dir / "manifest.txt").read_text(encoding="utf-8"))
     for rel, sha in table:
         if sha256_file(stage_dir / rel) != sha:
@@ -194,8 +232,12 @@ def verify_manifest(stage_dir: Path) -> int:
 
 
 def check_manifest_covers(stage_dir: Path, only: tuple[str, ...] | None = None) -> None:
-    """Before an upload: the manifest recomputes from the staged bytes and lists
-    every staged file (or every file in ``only`` except the manifest itself)."""
+    """Verify all listed hashes and require coverage of the intended upload.
+
+    ``only`` contains stage-relative paths; None requires every staged file.
+    The manifest itself is excluded from coverage. Raise SystemExit for missing
+    entries; hash mismatches raise AssertionError and file access errors propagate.
+    """
     verify_manifest(stage_dir)
     listed = {rel for rel, _ in _ENTRY_RE.findall((stage_dir / "manifest.txt").read_text(encoding="utf-8"))}
     staged = {str(p.relative_to(stage_dir)) for p in stage_dir.rglob("*")
@@ -206,6 +248,10 @@ def check_manifest_covers(stage_dir: Path, only: tuple[str, ...] | None = None) 
 
 
 def download_base(base_dir: Path) -> Path:
+    """Download ``BASE_REVISION`` into ``base_dir`` and return that path.
+
+    Hub download and local file errors propagate to the caller.
+    """
     from huggingface_hub import snapshot_download
 
     snapshot_download(REPO_ID, repo_type="dataset", revision=BASE_REVISION, local_dir=str(base_dir))
@@ -229,6 +275,14 @@ def check_dirs(base_dir: Path, stage_dir: Path) -> None:
 
 
 def build(base_dir: Path, stage_dir: Path) -> dict:
+    """Recreate ``stage_dir`` from the base and apply the merger routing amendment.
+
+    The stage must pass ``check_dirs`` before deletion. Copy the repository card
+    and changelog and recompute the manifest. Return per-file ``changes``, the
+    ``untouched_identical`` file count, and the ``manifest_entries`` count.
+    Validation failures raise AssertionError or SystemExit; file, JSON, and
+    Arrow errors propagate. Failures can leave a partially built stage.
+    """
     check_registry()
     check_dirs(base_dir, stage_dir)
     if stage_dir.exists():
@@ -271,9 +325,16 @@ DOC_FILES = ("README.md", "CHANGELOG.md", "manifest.txt")
 def publish(stage_dir: Path, token: str, *, parent: str = BASE_REVISION,
             only: tuple[str, ...] | None = None,
             message: str = "v9.3 amendment: merger agreements route to merger_agreement_specialist") -> str:
-    """One commit on top of ``parent`` (refused if main has moved), then
-    re-point the v9.3 tag to it. Every uploaded file is sha-checked on the Hub.
-    ``only`` limits the upload (a docs-only follow-up passes ``DOC_FILES``)."""
+    """Commit staged files on ``parent``, verify uploaded bytes, and move the v9.3 tag.
+
+    Return the new commit SHA. ``only`` limits uploads to stage-relative paths
+    (a docs-only follow-up passes ``DOC_FILES``); other manifest entries must
+    match the parent. The Hub refuses the commit if main has moved.
+    Manifest or parent validation can raise AssertionError or SystemExit;
+    missing upload files or mismatched Hub bytes raise AssertionError.
+    File and Hub errors propagate, while tag-move failures become SystemExit.
+    A failure after committing leaves the commit on the Hub.
+    """
     from huggingface_hub import CommitOperationAdd, HfApi, hf_hub_download
 
     api = HfApi(token=token)
@@ -300,8 +361,12 @@ def publish(stage_dir: Path, token: str, *, parent: str = BASE_REVISION,
 
 
 def check_parent_matches_manifest(api, stage_dir: Path, parent: str, skip: tuple[str, ...]) -> int:
-    """A partial upload keeps the parent's other files, so every manifest entry
-    not being uploaded must already have that sha256 at ``parent`` on the Hub."""
+    """Verify non-uploaded manifest entries at ``parent`` and return their count.
+
+    ``skip`` contains stage-relative paths being uploaded. Raise SystemExit for
+    missing or mismatched parent files. File and Hub lookup/download errors
+    propagate.
+    """
     from huggingface_hub import hf_hub_download
 
     want = {rel: sha for rel, sha in _ENTRY_RE.findall(
@@ -321,6 +386,7 @@ def check_parent_matches_manifest(api, stage_dir: Path, parent: str, skip: tuple
 
 
 def _tag_target(api, tag: str) -> str | None:
+    """Return the dataset tag's commit SHA, or None if absent; Hub errors propagate."""
     refs = api.list_repo_refs(REPO_ID, repo_type="dataset")
     if not any(t.name == tag for t in refs.tags):
         return None
@@ -331,10 +397,14 @@ TAG_MESSAGE = "v9.3: corporate presence layer, merger routing amendment, card an
 
 
 def move_tag(api, new_sha: str, tag: str = TAG, message: str = TAG_MESSAGE) -> None:
-    """Re-point ``tag`` to ``new_sha``. The Hub cannot move a tag in place, so
-    this deletes and re-creates it. On any failure or interrupt after the
-    delete, the old target is restored if the tag is missing, and the error
-    names both SHAs and the command to fix it by hand."""
+    """Re-point ``tag`` to ``new_sha`` by deleting and re-creating it.
+
+    Do nothing if the tag already points there. On failure or interruption
+    during the move, attempt to restore the old target only if the tag is
+    missing. Raise SystemExit with both SHAs, recovery status, and a manual
+    repair command, even if restoration succeeds. Errors reading the initial
+    tag target propagate directly.
+    """
     old_sha = _tag_target(api, tag)
     if old_sha == new_sha:
         return
@@ -361,6 +431,13 @@ def move_tag(api, new_sha: str, tag: str = TAG, message: str = TAG_MESSAGE) -> N
 
 
 def main() -> int:
+    """Run the amendment CLI and return 0 on success.
+
+    Optionally download the base, then build and optionally publish. With
+    ``--docs-only PARENT``, publish staged docs without building. Publication
+    reads ``HF_TOKEN`` and raises KeyError if absent. Argument parsing and
+    validation may raise SystemExit; build and publish errors propagate.
+    """
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--base-dir", type=Path, default=BASE_DIR_DEFAULT)
     ap.add_argument("--stage-dir", type=Path, default=STAGE_DIR_DEFAULT)

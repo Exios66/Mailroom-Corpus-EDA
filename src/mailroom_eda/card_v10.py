@@ -53,7 +53,12 @@ def _pct(n: int, d: int) -> str:
 
 
 def stats(stage: Path) -> dict[str, Any]:
-    """Every number the card prints, from the built stage."""
+    """Return card statistics from the built stage and field registry.
+
+    Coverage counts populated values and documented absences among applicable
+    rows; provenance counts populated field values by labeler kind. Field
+    descriptions use the first line of the registry description or note.
+    """
     from .v10_conformance import Stage, coverage_residue
 
     st = Stage(stage, stage)
@@ -95,6 +100,7 @@ def _approvals(campaign: str = "v10") -> list[dict[str, Any]]:
 
 
 def _yaml(s: Mapping[str, Any]) -> str:
+    """Return Hub YAML front matter using config names and split counts in ``s``."""
     lines = ["---", "pretty_name: \"Mailroom Dataset v10\"", "license: other",
              "license_name: mixed-per-source",
              f"license_link: https://huggingface.co/datasets/{REPO}#sources-and-licenses",
