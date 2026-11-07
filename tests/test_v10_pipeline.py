@@ -155,6 +155,26 @@ def test_card_check_detects_a_stale_card(tmp_path, stage):
     assert not card_v10.check(out)[0]
 
 
+
+def test_card_metadata_passes_the_hub_checks(tmp_path, stage):
+    """license_name must match the Hub's ^[a-z0-9-.]+$ or every upload with the card is refused."""
+    import re
+    import yaml
+    out = tmp_path / "out"
+    v10.build(stage, out)
+    meta = yaml.safe_load((out / "README.md").read_text().split("---")[1])
+    assert re.fullmatch(r"[a-z0-9-.]+", meta["license_name"]), meta["license_name"]
+
+
+def test_card_counts_override_labels_by_who_labeled_them():
+    """Relabels count as llm; reviewer decisions and gold corrections as reviewer."""
+    assert card_v10._kind("override:relabel:4a+llm:a@openrouter/x+llm:b@openrouter/y") == "llm"
+    assert card_v10._kind("override:reviewer:JJB+relabel:4a") == "reviewer"
+    assert card_v10._kind("override:gold_correction:JJB") == "reviewer"
+    assert card_v10._kind("reviewer:JJB") == "reviewer"
+    assert card_v10._kind("gold") == "gold" and card_v10._kind("llm:a+llm:b") == "llm"
+
+
 # ---------------------------------------------------------------- ingest
 
 A, B = "deepseek/deepseek-v4.1-flash", "z-ai/glm-5.3-flashx-legal"

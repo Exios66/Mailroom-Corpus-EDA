@@ -1,9 +1,31 @@
 ---
-license: cc-by-4.0
-task_categories:
-- text-classification
+pretty_name: Mailroom Dataset
+license: other
+license_name: mixed-per-source
+license_link: https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset#sources-and-licenses
 language:
 - en
+task_categories:
+- text-classification
+- token-classification
+task_ids:
+- multi-class-classification
+- named-entity-recognition
+annotations_creators:
+- expert-generated
+- machine-generated
+language_creators:
+- found
+multilinguality:
+- monolingual
+source_datasets:
+- Lucius-Morningstar/enron-correspondence-dedup
+- theatticusproject/cuad
+- bdr-ai-org/insurance-motor-claims-decision-v1
+- feihuangfh/INSURBIAS
+- gratex/GNOTHEIA-synthetic-insurance-dataset
+size_categories:
+- 1K<n<10K
 tags:
 - legal
 - contracts
@@ -13,9 +35,6 @@ tags:
 - evaluation
 - arxiv:2103.06268
 - arxiv:2301.00876
-pretty_name: "Mailroom Dataset v1 (canonical successor of mailroom-corpus v8)"
-size_categories:
-- 1K<n<10K
 configs:
 - config_name: default
   data_files:
@@ -49,153 +68,154 @@ configs:
     path: parquet/fixtures/test/*
 ---
 
-# Mailroom Dataset v1
+# Mailroom Dataset
 
-> **Lineage**: this is the **standalone successor** of
-> [`Lucius-Morningstar/mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus)
-> (frozen v8 baseline, 2,000 rows — never destroyed, plan §4; hardened
-> release pinned at revision `eafe1ab4c0d330d8f9c7a5fb254155e75d290828`).
-> It is canonically referred to as **v9** of the mailroom corpus family;
-> within this repository's own lineage it is versioned **v1**
-> (dataset_version, plan §62). The original corpus remains available and
-> pinned; evaluation traces that target the successor should record this
-> repo + the parent revision above.
+3,302 real and synthetic business documents across five classes (contracts, merger agreements, correspondence, insurance claims and corporate records) for **evaluating** document triage: classification, routing, field extraction, grouping and recovery. Documents arrive *blind*; ground truth is kept in a separate config so a model under test never sees a label.
 
-## What this is (and is not)
+**Current release: v9.3** (Hub tag [`v9.3`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset/tree/v9.3)). Pin a tag in evaluations; `main` moves.
 
-`mailroom-dataset` is an **evaluation/ingress simulation corpus** for
-LLM-Mailroom: it simulates documents arriving at a mailroom pipeline so that
-classification, routing, extraction, grouping, adjudication, and recovery can
-be measured end-to-end. It is **not** a model-training dataset, and its
-component corpora are deliberately heterogeneous (plan §1, §78).
+| class | train | test | total | subclasses |
+|---|---:|---:|---:|---:|
+| `contract` | 540 | 60 | 600 | 26 |
+| `corporate_record` | 403 | 47 | 450 | 10 |
+| `correspondence` | 915 | 85 | 1,000 | 8 |
+| `insurance_claim` | 986 | 114 | 1,100 | 6 |
+| `merger_agreement` | 135 | 17 | 152 | 5 |
+| **all** | **2,979** | **323** | **3,302** | **55** |
 
-**Splits**: the md5(filename) 90/10 split is an **evaluation partition for
-reproducible sampling** — NOT ML train/test semantics. The corpus is not
-organized around training; the primary unit is the evaluation scenario
-(plan §48–49).
+## Quick start
 
-**Label separation (LLM-safe formatting)**: the `default` (blind) config
-carries exactly 4 columns — `filename`, `doc_text`, `prompt`, `metadata` —
-and **never** contains a label column. All ground truth lives in the
-`ground_truth` config, joined on `filename`. An LLM processing the blind
-config cannot see labels, intent, expected classes, or clause annotations.
+```python
+import json
+from datasets import load_dataset
 
-> **v8-inherited metadata aggregates (resolved in v9.1)**: 509 v8 contract
-> rows once carried a `clause_count` and 152 v8 merger rows a
-> `maud_label_count` integer inside their `metadata` blob (inherited verbatim
-> from `mailroom-corpus` v8 to preserve zero identity drift). These are
-> label-*derived aggregate counts* and leaked a weak "this document has
-> labeled clauses" signal into the blind config, so the v9.1 quality revision
-> (B1) relocated them out of `metadata`: they are now **GT-only** in
-> `gt_fields.clause_count` / `gt_fields.maud_label_count` and never appear on
-> the blind surface.
+repo = "Lucius-Morningstar/mailroom-dataset"
+docs = load_dataset(repo, "default", revision="v9.3")["test"]       # documents
+gold = load_dataset(repo, "ground_truth", revision="v9.3")["test"]  # labels, identity, eval contract
+gold_by_name = {r["filename"]: r for r in gold}
 
-> **GT completeness**: every expected ground-truth field is populated for all
-> 3,302 rows — `label_evidence` is derived from the CUAD/MAUD clause
-> annotations on the 509 contract / 152 merger rows; list-typed fields
-> (`denial_reasons`, `supporting_documents`, `relationships`,
-> `related_document_ids`) carry a valid JSON array (`[]` = no items); clause
-> labels are JSON objects (`{}` = no annotations on the 91 SEC EDGAR EX-10
-> contracts). The single documented allowance is `adjuster`: the CMS
-> DE-SynPUF, GNOTHEIA property, and INSURBIAS subclasses have no adjuster in
-> their sources, so those 950 rows leave `adjuster` empty (BDR auto rows
-> carry their pseudonyms). Three outpatient `:2` notices with service dates
-> literally "N/A" in the source carry the verbatim `N/A` marker.
-
-## Composition (v1 = v8 + expansions)
-
-| Document class | Rows | Share | Δ vs v8 |
-|---|---:|---:|---:|
-| `contract` | 600 | 18.2% | +91 |
-| `corporate_record` | 450 | 13.6% | +411 |
-| `correspondence` | 1,000 | 30.3% | +650 |
-| `insurance_claim` | 1,100 | 33.3% | +150 |
-| `merger_agreement` | 152 | 4.6% | +0 |
-
-Expansion draws (deterministic, sha256-within-stratum):
-
-| contract | +91 |
-| corporate_record | +411 |
-| correspondence | +650 |
-| insurance_claim | +150 |
+# The model sees text and prompt only: filename and metadata can reveal answers.
+# Keep each filename beside its prediction, outside the model input, for the join.
+for name, doc in zip(docs["filename"], docs.select_columns(["doc_text", "prompt"])):
+    prediction = my_model(doc["doc_text"], doc["prompt"])          # your model here
+    row = gold_by_name[name]
+    labels = json.loads(row["gt_fields"])                           # gt_fields is a JSON string
+    presence = json.loads(labels["gt_presence"])                    # per-field presence code
+    # score prediction against row["expected"], labels and presence
+```
 
 ## Configs
 
-| Config | Rows | Contents |
+| config | rows | contents |
 |---|---:|---|
-| `default` (blind) | 3,302 | filename, doc_text, prompt, metadata — **zero labels by construction** |
-| `ground_truth` | 3,302 | labels (`gt_fields` JSON: 34-key union — 32 scalar + 2 matter lists), identity/hashes, evaluation contract, matter/group |
-| `bundles` | 50 | §14 synthetic bundle families over real anchors (flagged `synthetic_constructed`) |
-| `streams` | 62 | §27–29 interleaved ingress stream (`RUN-SIM-001`) with distractors |
-| `fixtures` | 32 | §68–§72A recovery/adversarial fixtures (calibration quartet, arbiter, failure stages) |
+| `default` | 3,302 | `filename`, `doc_text`, `prompt`, `metadata`. No label columns, but see the metadata caveat under [Bias and limitations](#bias-and-limitations). |
+| `ground_truth` | 3,302 | class and subclass, `gt_fields` (JSON), identity and hashes, the evaluation contract, matter grouping and provenance |
+| `bundles` | 50 | synthetic multi-document families built over real anchor documents (flagged `synthetic_constructed`) |
+| `streams` | 62 | one interleaved ingress stream (`RUN-SIM-001`) over the bundle matters, with 12 unrelated distractors |
+| `fixtures` | 32 | recovery and adversarial cases: calibration quartet, arbiter scenarios, failure stages |
 
-## Sources & licensing
+<details><summary><code>ground_truth</code> columns (35)</summary>
 
-| Class | Source | License |
-|---|---|---|
-| contract | CUAD v1 (509) + SEC EDGAR EX-10 (91) | CC BY 4.0 / US public domain |
-| merger_agreement | MAUD v1 (Zenodo 7500064) | CC BY 4.0 |
-| corporate_record | SEC EDGAR S-1/8-K exhibits | US public domain |
-| correspondence | Enron deduplicated corpus (247,523-row pool) | research-use (`other`); real named-individual PII — conservative handling |
-| insurance_claim | CMS DE-SynPUF + GNOTHEIA + BDR + INSURBIAS narratives | Apache-2.0 / MIT / CC BY 4.0 |
+| group | columns |
+|---|---|
+| labels | `expected`, `expected_subclass`, `gt_fields` |
+| identity | `document_id`, `content_sha256`, `normalized_text_sha256`, `source_corpus`, `source_document_id`, `source_filename`, `source_revision` |
+| evaluation contract | `expected_specialist`, `expected_stage`, `review_expected`, `review_reason`, `retry_expected`, `expected_post_retry_state` |
+| provenance | `annotation_source`, `annotation_method`, `annotation_model`, `annotation_prompt_version`, `annotation_confidence`, `annotation_reviewer`, `annotation_timestamp` |
+| matter and grouping | `matter_id`, `matter_construction`, `group_id`, `group_role`, `thread_position`, `thread_size`, `thread_evidence`, `relationships`, `related_document_ids` |
+| other | `filename`, `prompt`, `split` |
 
-## Family & related repositories
+`gt_fields` holds the class's label fields plus `gt_presence`, `token_estimate`, `context_window_band` (`<=4k`, `<=16k`, `<=32k`, `>32k`), `clause_count` and `maud_label_count`. CUAD and MAUD clause annotations are in `cuad_clause_labels` and `maud_clause_labels`.
 
-The [**Mailroom Corpus Family**](https://huggingface.co/collections/Lucius-Morningstar/mailroom-corpus-family-6aa715cce29d415b0db92473)
-collection catalogs this corpus, its frozen lineage parent, and the upstream
-source corpora:
+On the 350 GNOTHEIA and BDR insurance rows, six fields hold the string `"nan"` as an absence placeholder, not a value: `content_topic`, `label_evidence`, `sentiment_evidence`, `sentiment_label`, `sentiment_score` and `topic_evidence` (2,100 cells). Treat them as absent, and use `gt_presence` where it has a code. The `"N/A"` dates on 3 CMS outpatient claims are the source's own marker; keep them.
 
-| Repo | Role |
-|:---|:---|
-| [`mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset) | this corpus — v1 (canonically v9), 3,302 rows |
-| [`mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus) | frozen v8 lineage parent (2,000 rows, `eafe1ab4`) |
-| [`enron-correspondence-dedup`](https://huggingface.co/datasets/Lucius-Morningstar/enron-correspondence-dedup) | correspondence source (247,523-row dedup pool) |
-| [`mailroom-cuad-contracts-full`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts-full) | CUAD contract source (byte-verified mirror) |
-| [`cms-desynpuf-insurance-claims`](https://huggingface.co/datasets/Lucius-Morningstar/cms-desynpuf-insurance-claims) | CMS DE-SynPUF insurance source (rendered EOBs) |
+</details>
 
-The EDA pipeline and centralized upload helpers live in the
-[`Exios66/Mailroom-Corpus-EDA`](https://github.com/Exios66/Mailroom-Corpus-EDA)
-repository (per-source dataset cards under `docs/dataset-cards/`; `run_all.py`
-reproduces every number on this card).
+### Presence codes
 
-Usage:
+Every label-bearing field in `gt_presence` carries one code, so a blank value is never ambiguous:
 
-```python
-from datasets import load_dataset
-blind = load_dataset("Lucius-Morningstar/mailroom-dataset", "default")
-gt = load_dataset("Lucius-Morningstar/mailroom-dataset", "ground_truth")
-# join on "filename" to pair documents with their labels
-```
+| code | meaning | cells |
+|---|---|---:|
+| `populated` | a real expected value | 23,453 |
+| `schema_documented_absence` | the field applies, but this document has none (e.g. `denial_reasons` on an approved claim) | 2,020 |
+| `pending_annotation` | not labeled yet (the 91 SEC EDGAR EX-10 contracts' CUAD clauses) | 91 |
+| `not_applicable` | the class never carries this field | 41,758 |
+
+A field missing from `gt_presence` is **unlabeled**. Scorers should exclude it from both sides, so neither a filled nor an empty prediction counts. On corporate records, the per-subclass entity fields from `llm-dojo-scoring`'s corporate-record schema stay unlabeled until they are annotated.
+
+## Splits
+
+A row is in `test` when `md5(filename) % 10 == 0` (≈10%). The rule is stable across releases. The splits are an evaluation partition for reproducible sampling, not a training/validation design: this is not a training corpus.
+
+## Sources and licenses
+
+| class | source | rows | license |
+|---|---|---:|---|
+| contract | CUAD v1 ([`theatticusproject/cuad`](https://huggingface.co/datasets/theatticusproject/cuad)) | 509 | CC BY 4.0 |
+| contract | SEC EDGAR EX-10 exhibits | 91 | public SEC filings; company-authored, not US-government works (see below) |
+| merger_agreement | MAUD v1 (Zenodo 7500064) | 152 | CC BY 4.0 |
+| corporate_record | SEC EDGAR S-1 / 8-K exhibits | 450 | public SEC filings; company-authored, not US-government works (see below) |
+| correspondence | Enron, deduplicated ([`enron-correspondence-dedup`](https://huggingface.co/datasets/Lucius-Morningstar/enron-correspondence-dedup)) | 1,000 | research use; contains real names |
+| insurance_claim | CMS DE-SynPUF (synthetic Medicare claims) | 600 | US public domain |
+| insurance_claim | GNOTHEIA synthetic property FNOL | 200 | Apache-2.0 |
+| insurance_claim | BDR motor-claim decisions | 150 | MIT |
+| insurance_claim | INSURBIAS claim narratives | 150 | CC BY 4.0 |
+
+The licensing is mixed, so the Hub metadata says `mixed-per-source`. CC BY 4.0 covers this compilation and its labels; each document keeps its source's terms, as listed above. SEC EDGAR filings are free to access and reuse under the SEC's [public-access terms](https://www.sec.gov/about/webmaster-frequently-asked-questions), but the companies wrote them, so they are not US-government works and this card does not claim they are in the public domain. The Enron emails are released for research use and contain real names. CC BY-NC sources were excluded.
+
+## Annotation
+
+Labels come from six regimes, recorded per row in `annotation_method`:
+
+| `annotation_method` | rows | what it means |
+|---|---:|---|
+| `synthetic` | 1,100 | generated with the document (insurance sources) |
+| `source_native` | 661 | the source corpus's own expert labels (CUAD, MAUD) |
+| `heuristic` | 646 | deterministic rules over the document or its metadata |
+| `llm_zero_shot` | 637 | `deepseek-chat` zero-shot (correspondence intent), with confidence and status |
+| `verified_join` | 162 | exact sha256 body match to AESLC/Enron gold |
+| `human_annotated` | 96 | a person's label |
+
+Correspondence intent uses a closed 8-class vocabulary: `payment_demand`, `notice`, `analysis`, `request`, `update`, `meeting_invite`, `press_communication`, `other`. All eight occur in the test split.
+
+## Personal information
+
+The correspondence class is real Enron email: it contains the names and addresses of real people. Use it for evaluation only, and do not use it to profile individuals. The insurance claims are synthetic or anonymized; contracts, mergers and corporate records are public filings.
+
+## Bias and limitations
+
+- Contracts, mergers and corporate records are US public-company filings; other jurisdictions are rare.
+- The insurance claims are synthetic and simpler than real claim files.
+- 742 of the 1,000 correspondence intents are machine labels (637 `llm_zero_shot`) or heuristics (105); 258 are human or exact gold joins. `intent_source` and `intent_status` say which, and 25 rows are `flagged_review`.
+- On 411 SEC EDGAR corporate records, `keywords` holds only the record type and the entity name. The v9.2.1 repair removed the exhibit, form, accession and CIK strings that filled it before. Treat these keywords as not yet labeled.
+- Corporate-record `entity_name` is the EDGAR filer name, not always the string printed in the document (about a quarter differ, mostly `Co.` vs `Company`).
+- **Blind metadata is not fully blind.** Some source fields in `default`'s `metadata` give away the answer without reading the text: the subclass (`category`, `lob`, `claim_subtype`, `exhibit_description`), the class (which keys are non-empty, and source-style filenames such as `carrier:…`), insurance `claim_number` (`source_row_id`), and on the 152 merger agreements the per-category MAUD annotation counts (`maud_categories`). To score a model fairly, give it `doc_text` and `prompt` only. v10 removes metadata and filenames from the blind config.
+
+## Versions
+
+| tag | change |
+|---|---|
+| [`v9.3`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset/tree/v9.3) | Corporate records gain per-subclass presence keys; merger agreements route to `merger_agreement_specialist` (labels only; rows and text unchanged). Labels are versioned separately (`labels_version` in `manifest.txt`). |
+| `v9.2.1` (branch) | Corporate-record label repair: `entity_name`, `record_type`, grounded `subject_matter` |
+| [`v9.2`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset/tree/v9.2) | Six-regime annotation provenance; `related_document_ids` populated; build-internal column removed |
+| [`v9.1`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset/tree/v9.1) | Label-derived counts moved out of the blind config; presence codes; context-window bands |
+| v9 | 3,302 rows: correspondence, corporate records, EX-10 contracts and insurance narratives added to the v8 base |
+| v8 | [`mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus), 2,000 rows (frozen at `eafe1ab4`) |
+
+Every release since v9 keeps the row set, `document_id`s and document text unchanged. Release notes: [`CHANGELOG.md`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset/blob/main/CHANGELOG.md). Byte checksums for every file are in [`manifest.txt`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset/blob/v9.3/manifest.txt).
 
 ## Citation
 
-If you use `mailroom-dataset` in published work, please cite the corpus and
-its primary component corpora:
-
 ```bibtex
 @misc{mailroom_dataset,
-  title        = {Mailroom Dataset v1: An Evaluation and Ingress Simulation Corpus for Legal Document Triage},
+  title        = {Mailroom Dataset: An Evaluation and Ingress Simulation Corpus for Legal Document Triage},
   author       = {Morningstar, Lucius},
   year         = {2026},
-  howpublished = {Hugging Face: \url{https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset}},
-  note         = {Canonically v9 of the mailroom corpus family; lineage parent mailroom-corpus v8 (2,000 rows, frozen).}
-}
-@inproceedings{wang2021cuad,
-  title     = {CUAD: An Expert-Annotated NLP Dataset for Legal Contract Review},
-  author    = {Hendrycks, Dan and Burns, Collin and Chen, Anya and Ball, Spencer},
-  booktitle = {NeurIPS Datasets and Benchmarks},
-  year      = {2021}
-}
-@inproceedings{holzenberger2023maud,
-  title     = {MAUD: An Expert-Annotated Merger Agreement Understanding Dataset},
-  author    = {Holzenberger, Nils and Blair-Stanek, Andrew and Van Durme, Benjamin},
-  booktitle = {Findings of ACL},
-  year      = {2023}
-}
-@inproceedings{klimt2004enron,
-  title     = {The Enron Corpus: A New Dataset for Email Classification Research},
-  author    = {Klimt, Bryan and Yang, Yiming},
-  booktitle = {ECML},
-  year      = {2004}
+  howpublished = {Hugging Face: \url{https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset}}
 }
 ```
+
+Please also cite the source corpora you use: CUAD ([arXiv:2103.06268](https://arxiv.org/abs/2103.06268)) and MAUD ([arXiv:2301.00876](https://arxiv.org/abs/2301.00876)).
+
+Issues and pull requests: [Exios66/Mailroom-Corpus-EDA](https://github.com/Exios66/Mailroom-Corpus-EDA).

@@ -42,9 +42,9 @@ def _codes(row: dict) -> set[tuple[str, str, str]]:
     return {(f.severity, f.field, f.code) for f in gq.audit_row(row)}
 
 
-def test_hub_pin_is_tag_v9_2():
-    assert REPO_TAG == "v9.2"
-    assert REPO_REVISION == "670e8bc6f8d82221f741d5da479ee88bed8cac4a"
+def test_hub_pin_is_tag_v9_3():
+    assert REPO_TAG == "v9.3"
+    assert REPO_REVISION == "ccd040f6a1b6b414bdefd161cdc622b68f6dacf8"
     assert gq.HUB_REVISION == REPO_REVISION
 
 
@@ -293,20 +293,32 @@ def test_foreign_subclass_extension_key_fails_audit_row():
 
 @pytest.mark.skipif(
     not (PARQUET_DIR / "ground_truth" / "train").exists(),
-    reason="v9.1 snapshot not fetched",
+    reason="pinned Hub snapshot not fetched (run_all.py --phases P0)",
 )
-def test_v9_1_snapshot_queue_is_the_ex10_gap():
+def test_v9_3_snapshot_queue_is_the_ex10_and_corporate_keyword_gaps():
     rows = gq.load_snapshot()
     assert len(rows) == 3302
     findings = gq.audit_rows(rows)
-    summary = gq.summarize(findings, n_rows=len(rows))
-    assert summary["by_severity"].get("error", 0) == 0
+    # The only errors are a known v9.3 gap: the v9.2.1 repair stripped the
+    # exhibit/form/accession/CIK strings from corporate keywords, leaving 411
+    # SEC EDGAR records with just [record type, entity] (2 < the 3..8 range).
+    # Real keywords need annotation; any other error still fails here.
+    errors = [f for f in findings if f.severity == "error"]
+    assert len(errors) == 411
+    assert {(f.doc_class, f.field, f.code) for f in errors} == {("corporate_record", "keywords", "format")}
+    assert all(f.detail == "keywords length 2 outside 3..8" for f in errors)
     targets = gq.backfill_targets(rows, findings)
-    assert len(targets) == 91
-    assert {tuple(item["fields"]) for item in targets} == {("cuad_clause_labels",)}
-    assert {item["source_dataset"] for item in targets} == {"sec_edgar"}
-    assert all(item["doc_class"] == "contract" for item in targets)
+    # the backfill queue: the 91 EX-10 contracts' CUAD clauses, plus the 411
+    # corporate keyword rows above
+    queue = {}
+    for item in targets:
+        key = (item["doc_class"], tuple(item["fields"]))
+        queue[key] = queue.get(key, 0) + 1
+    assert queue == {("contract", ("cuad_clause_labels",)): 91,
+                     ("corporate_record", ("keywords",)): 411}
+    assert all(item["source_dataset"] == "sec_edgar"
+               for item in targets if item["doc_class"] == "contract")
     plan = gq.chunk_plan(targets)
-    assert [chunk["doc_count"] for chunk in plan] == [40, 40, 11]
+    assert [chunk["doc_count"] for chunk in plan] == [40] * 12 + [22]
     reviews = [f for f in findings if f.code == "flagged_review"]
     assert len(reviews) == 25

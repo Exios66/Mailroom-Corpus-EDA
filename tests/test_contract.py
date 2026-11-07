@@ -31,6 +31,8 @@ from mailroom_eda.docclass_uploader import GT_SCALAR_KEYS
 from mailroom_eda.identity import enrich_rows
 
 GT_KEY_SET = set(GT_SCALAR_KEYS)
+#: gt_fields keys v9.3 adds on corporate records (the v9.2.1 label repair).
+V9_3_CORPORATE_KEYS = {"entity_name", "record_type"}
 
 
 def _gt_value_present(v) -> bool:
@@ -171,7 +173,7 @@ def test_mailroom_contract_snapshot(snapshot_rows):
 
 
 def test_snapshot_gt_schema_is_v9(snapshot_rows):
-    """The published ground_truth config carries the v9.2 schema: 35
+    """The published ground_truth config carries the v9.3 schema: 35
     top-level columns (v9.1's 36 minus the removed, build-internal
     `_published`) with the label keys expanded to flat GT keys by the test
     harness — i.e. the 35-column set + the 32-key GT scalar set. The nested
@@ -182,8 +184,11 @@ def test_snapshot_gt_schema_is_v9(snapshot_rows):
     # doc_text is joined in from the default config by the test harness;
     # it is not a ground_truth config column.
     cols = set(snapshot_rows[0].keys()) - {"doc_text"}
-    assert len(cols) == 35 + len(GT_KEY_SET)
-    assert cols == GT_TOP_LEVEL_KEYS | set(GT_KEY_SET)
+    # v9.3 (the v9.2.1 corporate label repair) adds two corporate entity keys
+    # to gt_fields: entity_name (EDGAR filer name) and record_type (subclass).
+    gt_keys = set(GT_KEY_SET) | V9_3_CORPORATE_KEYS
+    assert len(cols) == 35 + len(gt_keys)
+    assert cols == GT_TOP_LEVEL_KEYS | gt_keys
     assert "_published" not in cols
     # every row carries the identical flat schema (no sparse rows)
     assert {frozenset(set(r.keys()) - {"doc_text"}) for r in snapshot_rows} == {frozenset(cols)}
@@ -192,7 +197,7 @@ def test_snapshot_gt_schema_is_v9(snapshot_rows):
     for row in snapshot_rows:
         gf = row["gt_fields"]
         union |= set(json.loads(gf) if isinstance(gf, str) else gf)
-    assert union == set(GT_KEY_SET) | {"relationships", "related_document_ids"}
+    assert union == gt_keys | {"relationships", "related_document_ids"}
 
 
 def test_edgar_cuad_exception_documented(snapshot_rows):
