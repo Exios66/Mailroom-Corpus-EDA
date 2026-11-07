@@ -6,7 +6,7 @@ corpus (v1, canonically **v9** of the mailroom corpus family) — **3,302** lega
 documents across 5 doc_types (insurance_claim, merger_agreement, contract,
 correspondence, corporate_record), 55 strata. Canonical Hub tag **`v9.3`**
 (`ccd040f6…`, docs/card pin on the data commit `7fd99b40…` — corporate
-presence layer plus the merger routing amendment; zero row/identity/content
+presence layer plus the merger routing amendment; labels only, zero row/identity/text
 drift from `v9.2` (`670e8bc6…` / data `d49f60a4…`) it revises); standalone successor of the
 frozen v8 `mailroom-corpus` baseline (2,000 rows, `eafe1ab4` — never
 destroyed).
@@ -186,7 +186,7 @@ registers the five quality-revision meta keys (`clause_count`, `maud_label_count
 so the §64 checker skips them instead of failing on the B2/B4 additions.
 `scripts/audit/coverage_matrix.py --check` is the read-only corpus audit.
 
-## HF facts (verified 2026-11-07, dataset v1 / corpus v9.3)
+## HF facts (verified 2026-11-07 UTC, dataset v1 / corpus v9.3)
 
 Labels-only revision of v9.2; same 3,302 rows (train 2,979 / test 323),
 `document_id`s and text. The blind `default` files are byte-identical to v9.2.

@@ -28,10 +28,19 @@ ALLOW_PATTERNS = [
 ]
 
 
+#: Records the Hub revision the local snapshot was downloaded at.
+REVISION_MARKER = DATA_DIR / ".hub_revision"
+
+
 def download_corpus(force: bool = False) -> Path:
-    """Snapshot-download the pinned v9 parquet configs + manifest into data/."""
+    """Snapshot-download the pinned v9 parquet configs + manifest into data/.
+
+    A snapshot on disk is reused only when it was fetched at ``REPO_REVISION``
+    (``data/.hub_revision``). After a re-pin, or for a snapshot with no marker,
+    the pinned revision is fetched again, so reports never read an old tag."""
     marker = PARQUET_DIR / "ground_truth" / "train"
-    if marker.exists() and list(marker.glob("*.parquet")) and not force:
+    have = REVISION_MARKER.read_text(encoding="utf-8").strip() if REVISION_MARKER.is_file() else ""
+    if marker.exists() and list(marker.glob("*.parquet")) and have == REPO_REVISION and not force:
         return DATA_DIR
     snapshot_download(
         repo_id=REPO_ID,
@@ -40,6 +49,7 @@ def download_corpus(force: bool = False) -> Path:
         local_dir=DATA_DIR,
         allow_patterns=ALLOW_PATTERNS,
     )
+    REVISION_MARKER.write_text(REPO_REVISION + "\n", encoding="utf-8")
     return DATA_DIR
 
 

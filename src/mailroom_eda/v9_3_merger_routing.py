@@ -64,6 +64,9 @@ AMENDMENT_LINE = (
     "contracts_specialist; no other value changed"
 )
 
+#: One manifest sha-table entry; ``[ \t]`` so a match never spans lines.
+_ENTRY_RE = re.compile(r"^[ \t]*(\S+)[ \t]+([0-9a-f]{64})[ \t]*$", re.M)
+
 BASE_DIR_DEFAULT = DATA_DIR / "v9_3_merger_base"
 STAGE_DIR_DEFAULT = DATA_DIR / "v9_3_merger_stage"
 
@@ -176,16 +179,14 @@ def render_manifest(old: str, stage_dir: Path) -> str:
         for p in sorted(stage_dir.rglob("*"))
         if p.is_file() and p.name != "manifest.txt"
     }
-    old_rows = [m.group(1) for ln in lines[sha_idx + 1 :]
-                if (m := re.match(r"^\s*(\S+)\s+[0-9a-f]{64}\s*$", ln))]
+    old_rows = [m.group(1) for ln in lines[sha_idx + 1 :] if (m := _ENTRY_RE.match(ln))]
     if sorted(old_rows) != sorted(shas):
         raise AssertionError(f"manifest file set changed: {sorted(set(old_rows) ^ set(shas))}")
     return "\n".join(header + ["sha256     :", *[f"  {k}  {v}" for k, v in sorted(shas.items())], ""])
 
 
 def verify_manifest(stage_dir: Path) -> int:
-    table = re.findall(r"^\s*(\S+)\s+([0-9a-f]{64})\s*$",
-                       (stage_dir / "manifest.txt").read_text(encoding="utf-8"), flags=re.M)
+    table = _ENTRY_RE.findall((stage_dir / "manifest.txt").read_text(encoding="utf-8"))
     for rel, sha in table:
         if sha256_file(stage_dir / rel) != sha:
             raise AssertionError(f"manifest sha mismatch: {rel}")
@@ -196,8 +197,7 @@ def check_manifest_covers(stage_dir: Path, only: tuple[str, ...] | None = None) 
     """Before an upload: the manifest recomputes from the staged bytes and lists
     every staged file (or every file in ``only`` except the manifest itself)."""
     verify_manifest(stage_dir)
-    listed = set(re.findall(r"^\s*(\S+)\s+[0-9a-f]{64}\s*$",
-                            (stage_dir / "manifest.txt").read_text(encoding="utf-8"), flags=re.M))
+    listed = {rel for rel, _ in _ENTRY_RE.findall((stage_dir / "manifest.txt").read_text(encoding="utf-8"))}
     staged = {str(p.relative_to(stage_dir)) for p in stage_dir.rglob("*")
               if p.is_file() and p.name != "manifest.txt"}
     want = (set(only) - {"manifest.txt"}) if only is not None else staged
@@ -217,6 +217,9 @@ def check_dirs(base_dir: Path, stage_dir: Path) -> None:
     b, s = Path(base_dir).resolve(), Path(stage_dir).resolve()
     if b == s or b.is_relative_to(s) or s.is_relative_to(b):
         raise SystemExit(f"stage dir {s} overlaps base dir {b}; refusing to delete it")
+    data = Path(DATA_DIR).resolve()
+    if s == data or not s.is_relative_to(data):
+        raise SystemExit(f"stage dir {s} is not a directory inside {data}; refusing to delete it")
 
 
 def build(base_dir: Path, stage_dir: Path) -> dict:
@@ -269,6 +272,8 @@ def publish(stage_dir: Path, token: str, *, parent: str = BASE_REVISION,
 
     api = HfApi(token=token)
     check_manifest_covers(stage_dir, only)
+    if only is not None:
+        check_parent_matches_manifest(api, stage_dir, parent, skip=only)
     files = [p for p in sorted(stage_dir.rglob("*")) if p.is_file()
              and (only is None or str(p.relative_to(stage_dir)) in only)]
     if only is not None and len(files) != len(only):
@@ -288,6 +293,27 @@ def publish(stage_dir: Path, token: str, *, parent: str = BASE_REVISION,
     return ci.oid
 
 
+def check_parent_matches_manifest(api, stage_dir: Path, parent: str, skip: tuple[str, ...]) -> int:
+    """A partial upload keeps the parent's other files, so every manifest entry
+    not being uploaded must already have that sha256 at ``parent`` on the Hub."""
+    from huggingface_hub import hf_hub_download
+
+    want = {rel: sha for rel, sha in _ENTRY_RE.findall(
+        (stage_dir / "manifest.txt").read_text(encoding="utf-8")) if rel not in skip}
+    infos = {i.path: i for i in api.get_paths_info(REPO_ID, sorted(want), repo_type="dataset",
+                                                     revision=parent)}
+    for rel, sha in want.items():
+        info = infos.get(rel)
+        if info is None:
+            raise SystemExit(f"{rel} is in the manifest but not at {parent}")
+        lfs = getattr(info, "lfs", None)
+        got = lfs.sha256 if lfs else sha256_file(Path(hf_hub_download(
+            REPO_ID, rel, repo_type="dataset", revision=parent)))
+        if got != sha:
+            raise SystemExit(f"{rel}: manifest sha {sha} != {got} at {parent}; re-stage from it")
+    return len(want)
+
+
 def _tag_target(api, tag: str) -> str | None:
     refs = api.list_repo_refs(REPO_ID, repo_type="dataset")
     if not any(t.name == tag for t in refs.tags):
@@ -295,27 +321,37 @@ def _tag_target(api, tag: str) -> str | None:
     return api.dataset_info(REPO_ID, revision=tag).sha
 
 
-def move_tag(api, new_sha: str, tag: str = TAG) -> None:
+TAG_MESSAGE = "v9.3: corporate presence layer, merger routing amendment, card and CHANGELOG"
+
+
+def move_tag(api, new_sha: str, tag: str = TAG, message: str = TAG_MESSAGE) -> None:
     """Re-point ``tag`` to ``new_sha``. The Hub cannot move a tag in place, so
-    this deletes and re-creates it; on failure the old target is restored (if
-    the tag is missing) and both SHAs are reported."""
+    this deletes and re-creates it. On any failure or interrupt after the
+    delete, the old target is restored if the tag is missing, and the error
+    names both SHAs and the command to fix it by hand."""
     old_sha = _tag_target(api, tag)
     if old_sha == new_sha:
         return
     try:
         if old_sha is not None:
             api.delete_tag(REPO_ID, tag=tag, repo_type="dataset")
-        api.create_tag(REPO_ID, tag=tag, revision=new_sha, repo_type="dataset",
-                       tag_message="v9.3: corporate presence layer, merger routing amendment, card and CHANGELOG")
-    except Exception as exc:
+        api.create_tag(REPO_ID, tag=tag, revision=new_sha, repo_type="dataset", tag_message=message)
         now = _tag_target(api, tag)
-        if now is None and old_sha is not None:
-            api.create_tag(REPO_ID, tag=tag, revision=old_sha, repo_type="dataset")
+        if now != new_sha:
+            raise RuntimeError(f"{tag} resolves to {now} after the move")
+    except BaseException as exc:  # incl. KeyboardInterrupt between delete and create
+        now = "unknown"
+        try:
             now = _tag_target(api, tag)
-        raise SystemExit(f"moving {tag} failed ({exc}); old target {old_sha}, new target {new_sha}, "
-                         f"tag now at {now}") from exc
-    if _tag_target(api, tag) != new_sha:
-        raise SystemExit(f"{tag} is not at {new_sha} after the move (old target {old_sha})")
+            if now is None and old_sha is not None:
+                api.create_tag(REPO_ID, tag=tag, revision=old_sha, repo_type="dataset")
+                now = _tag_target(api, tag)
+        except BaseException as restore_exc:  # noqa: BLE001 — report, never mask the original
+            now = f"unknown (restore failed: {restore_exc})"
+        raise SystemExit(
+            f"moving {tag} failed ({exc!r}); old target {old_sha}, new target {new_sha}, tag now at {now}. "
+            f"To fix by hand: HfApi().create_tag({REPO_ID!r}, tag={tag!r}, revision=<sha>, repo_type='dataset')"
+        ) from exc
 
 
 def main() -> int:

@@ -293,7 +293,7 @@ def test_foreign_subclass_extension_key_fails_audit_row():
 
 @pytest.mark.skipif(
     not (PARQUET_DIR / "ground_truth" / "train").exists(),
-    reason="v9.1 snapshot not fetched",
+    reason="pinned Hub snapshot not fetched (run_all.py --phases P0)",
 )
 def test_v9_3_snapshot_queue_is_the_ex10_and_corporate_keyword_gaps():
     rows = gq.load_snapshot()

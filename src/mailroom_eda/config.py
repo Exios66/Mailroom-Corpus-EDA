@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 # six-regime annotation provenance, relation producer + gt_fields mirror SSOT,
 # build-internal `_published` removal, GT-registry single-sourcing. Zero
 # row-set/identity/content drift from v9.1; row set unchanged (3,302).)
-# Re-pinned 2026-11-07 to the Hub tag v9.3 (ccd040f6), the docs/card commit on the
+# Re-pinned 2026-11-07 UTC to the Hub tag v9.3 (ccd040f6), the docs/card commit on the
 # v9.3 data commit 7fd99b40: the corporate presence layer (6889230c) plus the merger
 # routing amendment (mailroom_eda.v9_3_merger_routing). Row set unchanged (3,302).
 REPO_ID = "Lucius-Morningstar/mailroom-dataset"

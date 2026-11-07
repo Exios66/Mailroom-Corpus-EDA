@@ -151,6 +151,8 @@ class _FakeHub:
     def create_tag(self, repo, tag, revision, repo_type, tag_message=None):
         if revision == self.fail_on:
             raise RuntimeError("hub error")
+        if tag in self.tags:  # the Hub refuses to overwrite a tag
+            raise RuntimeError(f"tag {tag} exists")
         self.tags[tag] = revision
 
 
@@ -165,3 +167,121 @@ def test_move_tag_restores_the_old_target_when_create_fails():
     with pytest.raises(SystemExit, match="old target old, new target new, tag now at old"):
         m.move_tag(hub, "new")
     assert hub.tags == {"v9.3": "old"}
+
+
+def test_move_tag_creates_a_missing_tag():
+    hub = _FakeHub({})
+    m.move_tag(hub, "new")
+    assert hub.tags == {"v9.3": "new"}
+
+
+def test_move_tag_is_a_no_op_when_already_there():
+    hub = _FakeHub({"v9.3": "same"}, fail_on="same")
+    m.move_tag(hub, "same")
+    assert hub.tags == {"v9.3": "same"}
+
+
+def test_move_tag_reports_when_the_restore_also_fails():
+    hub = _FakeHub({"v9.3": "old"}, fail_on="new")
+    real_create = hub.create_tag
+
+    def create(repo, tag, revision, repo_type, tag_message=None):
+        if revision == "old":
+            raise RuntimeError("restore refused")
+        return real_create(repo, tag, revision, repo_type, tag_message)
+
+    hub.create_tag = create
+    with pytest.raises(SystemExit, match=r"old target old, new target new, tag now at unknown \(restore failed"):
+        m.move_tag(hub, "new")
+
+
+def test_move_tag_restores_when_the_new_tag_resolves_elsewhere():
+    hub = _FakeHub({"v9.3": "old"})
+    real_info = hub.dataset_info
+    calls = {"n": 0}
+
+    def info(repo, revision):
+        calls["n"] += 1
+        out = real_info(repo, revision)
+        if calls["n"] == 2:  # the post-create check
+            from types import SimpleNamespace as NS
+            return NS(sha="elsewhere")
+        return out
+
+    hub.dataset_info = info
+    with pytest.raises(SystemExit, match="old target old, new target new"):
+        m.move_tag(hub, "new")
+
+
+def test_build_checks_dirs_before_deleting(tmp_path, monkeypatch):
+    base = tmp_path / "base"
+    (base / "keep.txt").parent.mkdir(parents=True)
+    (base / "keep.txt").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(m, "check_registry", lambda: None)
+    with pytest.raises(SystemExit, match="overlaps"):
+        m.build(base, base / "stage")
+    assert (base / "keep.txt").is_file()
+
+
+def test_check_dirs_refuses_a_stage_outside_data_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(m, "DATA_DIR", tmp_path / "data")
+    (tmp_path / "data").mkdir()
+    with pytest.raises(SystemExit, match="not a directory inside"):
+        m.check_dirs(tmp_path / "data" / "base", tmp_path / "repo")
+    with pytest.raises(SystemExit, match="not a directory inside"):
+        m.check_dirs(tmp_path / "base", tmp_path / "data")
+    m.check_dirs(tmp_path / "data" / "base", tmp_path / "data" / "stage")
+
+
+def test_check_dirs_sees_through_symlinks(tmp_path, monkeypatch):
+    monkeypatch.setattr(m, "DATA_DIR", tmp_path)
+    base = tmp_path / "base"
+    base.mkdir()
+    (tmp_path / "alias").symlink_to(base)
+    with pytest.raises(SystemExit, match="overlaps"):
+        m.check_dirs(base, tmp_path / "alias")
+
+
+def test_manifest_covers_every_staged_file_by_default(tmp_path):
+    _stage(tmp_path, {"README.md": "card"})
+    m.check_manifest_covers(tmp_path)
+    (tmp_path / "new.parquet").write_text("x", encoding="utf-8")
+    with pytest.raises(SystemExit, match="new.parquet"):
+        m.check_manifest_covers(tmp_path)
+
+
+class _PathsHub:
+    def __init__(self, shas):
+        self.shas = shas
+
+    def get_paths_info(self, repo, paths, repo_type, revision):
+        from types import SimpleNamespace as NS
+        return [NS(path=p, lfs=NS(sha256=self.shas[p])) for p in paths if p in self.shas]
+
+
+def test_docs_only_parent_must_hold_the_manifest_shas(tmp_path):
+    _stage(tmp_path, {"README.md": "card", "data.parquet": "rows"})
+    good = m.sha256_file(tmp_path / "data.parquet")
+    assert m.check_parent_matches_manifest(_PathsHub({"data.parquet": good}), tmp_path, "p", m.DOC_FILES) == 1
+    with pytest.raises(SystemExit, match="data.parquet: manifest sha"):
+        m.check_parent_matches_manifest(_PathsHub({"data.parquet": "0" * 64}), tmp_path, "p", m.DOC_FILES)
+    with pytest.raises(SystemExit, match="not at p"):
+        m.check_parent_matches_manifest(_PathsHub({}), tmp_path, "p", m.DOC_FILES)
+
+
+def test_publish_checks_before_committing(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    _stage(tmp_path, {"README.md": "card", "CHANGELOG.md": "log"})
+    (tmp_path / "README.md").write_text("edited after the manifest", encoding="utf-8")
+
+    class _NoCommit:
+        def __init__(self, token=None):
+            pass
+
+        def create_commit(self, *a, **k):
+            raise AssertionError("create_commit reached with a stale manifest")
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", _NoCommit)
+    with pytest.raises(AssertionError, match="manifest sha mismatch: README.md"):
+        m.publish(tmp_path, "tok", parent="p", only=m.DOC_FILES)
