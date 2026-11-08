@@ -311,6 +311,8 @@ def batch_ids(root: Path, stem: str) -> list[str]:
     """Source ids with resolved labels whose saved draft lives in ``<stem>.drafts.jsonl``.
 
     Deliberate order: the draft file's own order, which mirrors the labeling run."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", stem):
+        raise ValueError("batch stem must be a plain draft-file stem")
     labels = _index(_journal(_inside(root, PACKAGE / "corporate-labels.jsonl")))
     path = _inside(root, PACKAGE / "drafts") / f"{stem}.drafts.jsonl"
     ids = [draft["kl3m_identifier"] for draft in _journal(path) if draft["kl3m_identifier"] in labels]

@@ -6,6 +6,8 @@ import csv
 import io
 from pathlib import Path
 
+import pytest
+
 from mailroom_eda.labeling import review_corporate
 from mailroom_eda.labeling.review_packet import _csv
 
@@ -59,3 +61,10 @@ def test_oversized_document_text_becomes_a_spreadsheet_pointer() -> None:
 
     workbook = review_corporate._workbook(rows, {"NOT_REVIEWED": "No decision"})
     assert workbook[:2] == b"PK"
+
+
+def test_batch_ids_rejects_non_plain_stems() -> None:
+    root = Path(__file__).resolve().parents[1]
+
+    with pytest.raises(ValueError, match="plain draft-file stem"):
+        review_corporate.batch_ids(root, "../corporate-labels")
