@@ -32,9 +32,17 @@ _MONTHS.update({k[:3]: v for k, v in list(_MONTHS.items())})
 _MONTHS["sept"] = 9
 
 
+#: Typographic characters models retype as plain ASCII (curly quotes, primes, dashes). One
+#: character maps to one, so folded offsets still point at the original text.
+_TYPOGRAPHY = str.maketrans({"\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"', "\u2033": '"',
+                             "\u00ab": '"', "\u00bb": '"', "\u2018": "'", "\u2019": "'", "\u201a": "'",
+                             "\u201b": "'", "\u2032": "'", "\u2010": "-", "\u2011": "-", "\u2012": "-",
+                             "\u2013": "-", "\u2014": "-", "\u2015": "-", "\u2212": "-"})
+
+
 def fold(text: str) -> tuple[str, list[int]]:
-    """Lower-case, collapse whitespace, drop markdown marks; return the folded text and
-    the original index of every kept character."""
+    """Lower-case, collapse whitespace, drop markdown marks, and fold typographic quotes and
+    dashes to ASCII; return the folded text and the original index of every kept character."""
     chars: list[str] = []
     idx: list[int] = []
     pending: int | None = None
@@ -49,14 +57,18 @@ def fold(text: str) -> tuple[str, list[int]]:
             chars.append(" ")
             idx.append(pending)
             pending = None
-        low = ch.lower()  # may be longer than one character ("İ" -> "i̇")
+        low = ch.translate(_TYPOGRAPHY).lower()  # may be longer than one character ("İ" -> "i̇")
         chars.append(low)
         idx.extend([i] * len(low))
     return "".join(chars), idx
 
 
+MIN_SPACELESS_QUOTE = 20  # non-space characters a quote needs for the space-blind tier
+
+
 def locate(doc: str, quote: str, folded: tuple[str, list[int]] | None = None) -> tuple[int, int] | None:
-    """Character span of ``quote`` in ``doc``: exact first, then whitespace/markdown folded.
+    """Character span of ``quote`` in ``doc``: exact first, then whitespace/markdown folded,
+    then (for quotes of at least ``MIN_SPACELESS_QUOTE`` characters) folded with spaces ignored.
 
     Returns ``(start, end)`` character offsets into the original ``doc``, with an
     exclusive end, or ``None`` for an empty or unmatched quote. Folded matching also
@@ -72,9 +84,20 @@ def locate(doc: str, quote: str, folded: tuple[str, list[int]] | None = None) ->
     if not fq:
         return None
     pos = fdoc.find(fq)
+    if pos >= 0:
+        return idx[pos], idx[pos + len(fq) - 1] + 1
+    # Last tier: ignore spaces too. Converted HTML loses a space beside a bold mark
+    # ("Ltd.,**a Hong" for "<b>Ltd.,</b> a Hong") and models type it back. Only for quotes
+    # long enough that joining words cannot make a false match.
+    sq = fq.replace(" ", "")
+    if len(sq) < MIN_SPACELESS_QUOTE:
+        return None
+    keep = [k for k, ch in enumerate(fdoc) if ch != " "]
+    sdoc = "".join(fdoc[k] for k in keep)
+    pos = sdoc.find(sq)
     if pos < 0:
         return None
-    return idx[pos], idx[pos + len(fq) - 1] + 1
+    return idx[keep[pos]], idx[keep[pos + len(sq) - 1]] + 1
 
 
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
@@ -132,7 +155,10 @@ def find_dates(text: str) -> list[date]:
             elif g["y3"]:
                 out.append(date(int(g["y3"]), int(g["mo3"]), int(g["d3"])))
             else:
-                out.append(date(int(g["y4"]), int(g["mo4"]), int(g["d4"])))
+                first, second = int(g["mo4"]), int(g["d4"])
+                # Month first unless that is impossible: 20/04/2001 can only be 20 April.
+                month, day = (second, first) if first > 12 >= second else (first, second)
+                out.append(date(int(g["y4"]), month, day))
         except ValueError:
             continue
     return out
