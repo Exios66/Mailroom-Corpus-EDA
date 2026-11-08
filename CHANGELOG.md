@@ -11,6 +11,12 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 - Review portal: Save now works. The page never set `updated_at` on an edited decision, so the
   server rejected every Accept/Correct/Reject with "reviewer initials and a timestamp are
   required". The browser smoke test now checks the timestamp.
+- Review portal keeps unsaved drafts across a reload. On load the page restored the browser draft
+  before any targets existed, then wrote server state over it, so unsaved notes and decisions were
+  lost. The browser smoke test's draft-resume step now passes.
+- Review portal shows values for people: the published ground truth is a table (nested JSON
+  parsed, lists as bullets, presence in words, the reviewed field highlighted, empty fields folded
+  into one line, dataset bookkeeping collapsed); internal codes move under "Technical details".
 - Review portal defaults to public insurance claims when no labeling packet exists yet: two
   claims per claim type from the pinned v9.3 dataset, every registry field
   (`--public-per-subclass`, `--public-revision`, `--no-public-fallback`). `review_production`
