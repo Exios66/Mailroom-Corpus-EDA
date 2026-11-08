@@ -1,0 +1,4 @@
+# metric_direction: higher_is_better
+iteration	timestamp	commit	metric	delta	guard	guard-metric	status	description
+0	2026-11-08T01:16:00Z	(ar/prompt-loop-1@9255691)	96	0.0	pass	-	baseline	baseline after rubric calibration: scorer false-misses fixed; rubric now encodes the real 34-row disagreement taxonomy; 2 deficit themes measured (printed typography + service-line tail)
+1	2026-11-08T01:40:00Z	(experiment commit below)	96	0	pass	-	discard	edited claim_checklist.md to cover both witnessed deficit themes (printed label prefix + trailing parenthetical + distinct-line dedupe); rubric 96->100 but the 1.4x cap-headroom guard rejected it: chunk 8c needs its projection to drop $0.0066 (-2.4k prompt bytes is not available without losing rules) — reverted to base; BLOCKED on an operator budget decision (raise claim chunk caps in campaign.yaml) or an operator-approved net-neutral rewrite of the category-rules block
