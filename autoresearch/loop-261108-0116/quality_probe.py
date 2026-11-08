@@ -26,7 +26,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
-from mailroom_eda.labeling import providers, runner, tasks  # noqa: E402
+from mailroom_eda.labeling import providers, registry, runner, tasks  # noqa: E402
 
 WHITESPACE = re.compile(r"\s+")
 
@@ -89,8 +89,17 @@ def main() -> int:
             if rec.get("text_sha256") and digest != rec["text_sha256"]:
                 report.setdefault("sha_mismatches", []).append(doc_id)
             doc_text[doc_id] = text
-            rows[doc_id] = {"document_id": doc_id, "doc_text": text,
-                            "expected_subclass": rec.get("v10_subclass") or "other"}
+            sub = rec.get("v10_subclass") or "other"
+            if sub not in registry.dojo_snapshot()["corporate_subclass_schemas"]:
+                # the draw names pre-v10 aliases; map through record_form into the pinned registry
+                sub = {"securities_rights": "rights_instrument",
+                       "original_charter": "certificate_of_formation" if rec.get("record_form") == "certificate_of_formation"
+                                           else "articles_of_incorporation",
+                       "governance_record": {"officer_certificate": "officer_certificate",
+                                             "board_resolution": "board_resolution"}.get(rec.get("record_form"), "other"),
+                      }.get(sub, "other")
+            rows[doc_id] = {"document_id": doc_id, "doc_text": text, "expected": "corporate_record",
+                            "expected_subclass": sub, "filename": rec["doc_file"]}
             doc_ids.append(doc_id)
     else:
         if not args.doc_tsv:
