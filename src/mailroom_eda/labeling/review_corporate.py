@@ -109,7 +109,7 @@ def build_packet(root: Path, *, source_ids: Sequence[str] = SAMPLE_IDS) -> dict[
             "record_form": label["record_form"], "dojo_pin": pinned["dojo_commit"],
             "human_approval": "pending", "human_decision": "NOT_REVIEWED",
             "corrected_labels_json": "", "reviewer_initials": "", "reviewer_notes": "",
-            "eligible_for_gold": False, "formal_corporate_9a_gate": "not_run",
+            "eligible_for_gold": True, "formal_corporate_9a_gate": "not_run",
             "provenance": {
                 "declared_labeler": draft.get("labeler"), "served_model": None,
                 "provider": None, "prompt_sha256": None, "request_id": None, "winner": None,
