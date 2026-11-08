@@ -119,6 +119,7 @@ The API key field is optional, is never stored (not even in this browser) and is
 <section class="panel">
 <label for="target">Review target</label><select id="target"></select>
 <div class="toolbar"><button id="previous">Previous target</button><button id="next">Next target</button><button id="next-pending" title="Jump to the next undecided target (keyboard: N)">Next pending</button><button id="next-pending-batch" title="Jump to the next undecided target inside the current batch, else the next pending anywhere (keyboard: Shift+N)">Next pending in batch</button><button id="bulk-accept" title="Set ACCEPT (with the remembered initials) for every undecided target in the current record's batch whose candidate passed the automated source checks; review then Save as usual">Accept verified in batch</button></div>
+<label for="batch-jump">Jump to batch</label><select id="batch-jump" aria-label="Jump to a batch's first pending target"></select>
 <p id="target-status"></p>
 </section>
 
@@ -469,6 +470,7 @@ function batchProgress(){
     const base=og.label.replace(/ — \d+\/\d+ decided$/, '');
     og.label=base+' — '+decided+'/'+inBatch.length+' decided';
   });
+  batchJumpRebuild();
 }
 function controls(){
   $('save').disabled=busy||staleDraft;
@@ -643,6 +645,30 @@ function nextPendingInBatch(from){
   return nextPending(from);
 }
 $('next-pending-batch').addEventListener('click', ()=>{ if (!records.length) return; current=nextPendingInBatch(current); renderTarget(); controls(); });
+// Batch jump: one select mirrors the batch groups (decided/total) and choosing a batch
+// lands on its first undefined target; a fully decided batch says so and stays put.
+function batchJumpRebuild(){
+  const sel=$('batch-jump'), groups=new Map();
+  records.forEach((r,i)=>{
+    const gid=String(r.batch||r.chunk||'');
+    if (!gid) return;
+    let g=groups.get(gid);
+    if (!g) groups.set(gid, g={decided:0, total:0});
+    g.total++;
+    if ((decisions.get(KEY(r))||{}).decision!=='NOT_REVIEWED') g.decided++;
+  });
+  sel.textContent='';
+  for (const [gid,g] of groups){
+    const o=node('option', humanize(gid)+' — '+(g.total-g.decided)+' pending of '+g.total);
+    o.value=gid; sel.append(o);
+  }
+}
+$('batch-jump').addEventListener('change', ()=>{
+  const gid=$('batch-jump').value;
+  const idx=records.findIndex((r)=>String(r.batch||r.chunk||'')===gid && (decisions.get(KEY(r))||{}).decision==='NOT_REVIEWED');
+  if (idx>=0){ current=idx; renderTarget(); controls(); }
+  renderTargetStatus(); batchProgress();
+});
 // Bulk "accept verified in batch": candidates the server already verified
 // (candidate_status 'source_checks_passed') get ACCEPT with the sticky initials.
 // Still one decision per (document, field): initials and Save remain

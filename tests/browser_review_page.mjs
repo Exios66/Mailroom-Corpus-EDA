@@ -258,6 +258,16 @@ try {
   await evaluate(`decisions.set('SYNTH-001\\nclaim_checklist',${JSON.stringify(saved0)});decisions.set('SYNTH-002\\nentity_name',${JSON.stringify(saved1)});`);
   assert.match(await evaluate(`$('kbd-legend').textContent`),/Shift\+N next pending in batch/);
   check('batch-scoped next pending and keyboard legend');
+  // Batch jump select mirrors batches with pending counts and lands on the pending target.
+  await evaluate(`decisions.set('SYNTH-001\\nclaim_checklist',{decision:'NOT_REVIEWED'});decisions.set('SYNTH-002\\nentity_name',{decision:'NOT_REVIEWED'});`);
+  const jumpData=await evaluate(`(()=>{const s=$('batch-jump');return [...s.options].map((o)=>o.text+':'+o.value);})()`);
+  assert.notEqual(jumpData.length,0,'batch jump lists the packet batches');
+  const nineA=jumpData.find((t)=>t.startsWith('9a'));
+  assert.ok(/pending of 1/.test(nineA), 'batch label shows pending counts: '+nineA);
+  await evaluate(`$('batch-jump').value='9a';$('batch-jump').dispatchEvent(new Event('change'));`);
+  assert.equal(await evaluate(`$('target').value`),'1','the jump lands on record 1 (the only pending target of batch 9a)');
+  await evaluate(`decisions.set('SYNTH-001\\nclaim_checklist',${JSON.stringify(saved0)});decisions.set('SYNTH-002\\nentity_name',${JSON.stringify(saved1)});`);
+  check('batch jump select navigates to a batch first pending');
   // Launch panel: shown because the server says launch is enabled.
   await waitFor(`!$('launch-panel').hidden && $('launch-target').options.length===3`);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#launch-target optgroup')].map(g=>g.label)`),['Campaign','Public trial']);
