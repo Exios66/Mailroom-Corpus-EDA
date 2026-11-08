@@ -169,6 +169,22 @@ def _confirmed_value(record: Mapping[str, Any], decision: Mapping[str, Any]) -> 
     return value
 
 
+def accept_blocker(record: Mapping[str, Any]) -> str:
+    """Why ACCEPT on this record's candidate would fail when saved, or an empty string.
+
+    Mirrors what ``ReviewPortal.save`` does for an ACCEPT: a schema-blocked target is
+    stored as reviewed-needs-schema without value checks, so it has no blocker here.
+    Exporters call this so a candidate that cannot be confirmed is marked
+    ``needs_source_review`` up front instead of failing at Save."""
+    if _schema_blocker(record):
+        return ""
+    try:
+        _confirmed_value(record, {"decision": "ACCEPT"})
+    except (ValueError, KeyError, TypeError) as exc:
+        return str(exc.args[0] if exc.args else exc) or type(exc).__name__
+    return ""
+
+
 class ReviewPortal:
     """One operator, multiple tabs; file locks also serialize cooperating CLI writers."""
 
@@ -232,7 +248,8 @@ class ReviewPortal:
             if before != _stat(path):
                 raise Conflict("source packet changed while it was being read; retry")
             origin = {"path": str(path.relative_to(self.labels_root)), "packet_id": packet["packet_id"],
-                      "source_revision": packet.get("source_revision")}
+                      # Hand-built packets set source_revision; production packets nest it under source.
+                      "source_revision": packet.get("source_revision") or (packet.get("source") or {}).get("revision")}
             for key, record in targets.items():
                 origins.setdefault(key, []).append(origin)
                 winners[key] = copy.deepcopy(record)

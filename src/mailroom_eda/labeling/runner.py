@@ -6,6 +6,7 @@
         --model A [--second-model B] [--reasoning off|low] --initials XX \
         --api-cost-cap-usd N --max-wall-seconds N --out DIR [--dry-run]
     python -m mailroom_eda.labeling review   --task T --set S --out DIR
+    python -m mailroom_eda.labeling export-review CHUNK_DIR [--stage DIR]
     python -m mailroom_eda.labeling costs    [--check]
 
 ``--stage`` defaults to ``data/v9_4/stage`` (the v10 build reads the same stage).
@@ -19,6 +20,8 @@
 * ``documents.csv``, ``fields.csv`` and ``adjudication.csv`` (extraction tasks; the
   last holds only the rows a human must decide), ``spans.csv`` (CUAD): written by
   ``review``, which needs no network and can be re-run at any time.
+* ``<dir>-review-data.json``: the same answers as a review-portal packet
+  (``review_export.py``), rewritten by every ``review`` and by ``export-review``.
 """
 from __future__ import annotations
 
@@ -757,6 +760,30 @@ def _run_set(out_dir: Path) -> str:
 
 def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
            reasoning: str | None = None, interim: Any = None) -> dict[str, Any]:
+    """Rebuild the derived journals and CSVs for one chunk directory, then its portal packet.
+
+    :func:`_review` does the rebuild. A chunk that ran through ``run``/``chunk`` (its
+    ``runs.jsonl`` names the task and models) also gets ``<dir>-review-data.json`` from
+    :func:`review_export.export_chunk`, so every reviewed batch reaches the review portal.
+    The packet is a derived file: a refusal is reported under ``review_packet_error`` and
+    never undoes the review. A directory without a start record writes no packet."""
+    from . import review_export  # noqa: PLC0415
+
+    out = _review(rows, task, out_dir, reasoning=reasoning, interim=interim)
+    try:
+        review_export._start_record(Path(out_dir))
+    except ValueError:
+        return out
+    try:
+        out["review_packet"] = str(review_export.export_chunk(Path(out_dir), rows=rows))
+    except (ValueError, KeyError, TypeError, OSError) as err:
+        out["review_packet_error"] = f"{type(err).__name__}: {err}"
+        print(f"review packet not written for {Path(out_dir).name}: {err}", file=sys.stderr)
+    return out
+
+
+def _review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
+            reasoning: str | None = None, interim: Any = None) -> dict[str, Any]:
     """Rebuild the derived journals and CSVs for one chunk directory (calls at ``reasoning``).
 
     With ``interim`` (an ``interim.Overlay``), field rows gain the flag-only ``interim_*``
@@ -1042,6 +1069,9 @@ def _parser() -> argparse.ArgumentParser:
                                 "(the located-vs-full A/B only; output goes to a -fulltext directory)")
     from . import operate  # noqa: PLC0415
 
+    e = sub.add_parser("export-review", help="write a chunk directory's review-portal packet (no network)")
+    e.add_argument("chunk_dir", type=Path)
+    e.add_argument("--stage", type=Path, default=DEFAULT_STAGE)
     operate.add_commands(sub)
     return ap
 
@@ -1077,6 +1107,11 @@ def _run(args: argparse.Namespace, full_text: bool) -> int:
             return 0 if ok else 1
         path.write_text(text, encoding="utf-8")
         print(path)
+        return 0
+    if args.cmd == "export-review":
+        from . import review_export  # noqa: PLC0415
+
+        print(review_export.export_chunk(args.chunk_dir, rows=rows))
         return 0
     picked = chunk(select(rows, args.task, args.set_name), args.chunk)
     if args.cmd == "select":

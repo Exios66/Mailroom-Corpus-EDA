@@ -90,6 +90,28 @@ of that upload recovers saved human decisions but may conservatively show them
 as human-confirmed until a later backup also contains the verification receipt.
 No review is lost; do not infer official staging from either state.
 
+## Every labeling batch becomes a packet
+
+`labeling review` (and therefore every `labeling run`/`chunk`, which ends with it) writes
+`<chunk_dir>/<chunk_dir.name>-review-data.json` beside the batch's CSVs, so a reviewed batch
+appears in the viewer with no extra step. To rebuild one by hand (no network):
+
+```bash
+PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling export-review \
+  docs/reports/audits/v10_labels/3.1_intent-calibration
+# or: python -m mailroom_eda.labeling.review_export --chunk-dir DIR [--stage data/v9_4/stage]
+```
+
+The exporter (`review_export.py`) handles every task: one record per document and field for the
+field tasks, one `cuad_clauses` record per contract (schema-pending, never gold-eligible) and one
+`intent` record per correspondence. Records carry the run (`task`, `chunk`, `models`,
+`reasoning`, `prompt_sha256`), the registry policy, the candidate and each model's own answer
+(`model_outputs`), so reviewers can compare models. A disagreement has no candidate and an issue
+sentence says who answered what. Evidence is `{start, end, quote}` into the full text, located
+in the source; a quote that cannot be found is reported in `issues`, never highlighted.
+A re-export overwrites the packet (atomically); the portal reopens only the fields whose
+target changed. Within one labels root the lexically last packet wins per (document, field).
+
 ## Export local source artifacts into packets
 
 ```bash

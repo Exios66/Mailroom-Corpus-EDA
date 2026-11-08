@@ -18,7 +18,7 @@ from typing import Any, Sequence
 from .. import config, hf_interface
 from .registry import class_fields, dojo_snapshot
 from .review_page import PACKET_SCHEMA, packet_id, validate_packet
-from .review_packet import DECISION_KEY, _json, _journal
+from .review_packet import DECISION_KEY, _json, _journal, correction_type
 
 PRODUCER = "production_manual_review/v1"
 SOURCE_FILE = "ground_truth_hardened.jsonl"
@@ -167,7 +167,7 @@ def build_packet(rows: list[dict[str, Any]], *, source_revision: str, source_sha
                 "document_sha256": _sha(text), "full_document_text": text,
                 "kind": "production_manual", "candidate_labels": value, "original_gt_candidate": raw,
                 "candidate_presence": state,
-                "correction_type": "array" if kind.startswith("entity_list") else "number" if kind == "money" else "string",
+                "correction_type": correction_type(kind),
                 "dojo_type": kind, "nullable": spec["absence"] != "never_absent",
                 "absence_policy": spec["absence"], "eligible_for_gold": not clause and not mismatched,
                 "schema_status": "schema_pending" if clause or mismatched else "pinned_registry",

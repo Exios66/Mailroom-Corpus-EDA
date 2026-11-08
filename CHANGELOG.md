@@ -8,6 +8,16 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 
 ## Unreleased
 
+- Labeling batches reach the review portal in one format. `labeling review` (so every `run` and `chunk`)
+  now writes `<chunk_dir>/<chunk_dir.name>-review-data.json` through the new `review_export.py`
+  (also `labeling export-review DIR` and `python -m mailroom_eda.labeling.review_export`): one
+  record per (document, field) for the field tasks, `cuad_clauses` per contract and `intent` per
+  email, each with `task`, `chunk`, `models`, `reasoning`, `prompt_sha256`, registry policy, each
+  model's own answer in `model_outputs`, and located `{start, end, quote}` evidence. The claim
+  checklist bundle (`review_packet`) takes its model and reasoning from `runs.jsonl` instead of
+  requiring GLM at `low`, and its records follow the same contract (`correction_type: array`,
+  sentence issues). The portal tracker now sees `task` on exported records and reads a production
+  packet's nested `source.revision`.
 - Review portal: Save now works. The page never set `updated_at` on an edited decision, so the
   server rejected every Accept/Correct/Reject with "reviewer initials and a timestamp are
   required". The browser smoke test now checks the timestamp.

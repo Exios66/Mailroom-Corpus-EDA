@@ -35,6 +35,34 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
+def correction_type(kind: str) -> str:
+    """The JSON type a reviewer supplies for a registry field type.
+
+    ``array`` for entity lists, ``number`` for money, otherwise ``string``. Every packet
+    producer uses this one mapping, so the review page and ``validate_return`` agree."""
+    return "array" if kind.startswith("entity_list") else "number" if kind == "money" else "string"
+
+
+def issue_sentence(code: str, item: int | None = None) -> str:
+    """A checklist finding as a plain sentence for the review page (``item`` is zero-based)."""
+    where = "Checklist" if item is None else f"Checklist item {item + 1}"
+    return f"{where}: {code.replace('_', ' ')}."
+
+
+def _run_config(chunk_dir: Path) -> tuple[str, str]:
+    """The (model, reasoning) a checklist packet is built from.
+
+    Read from the last start record of ``runs.jsonl`` that lists models: ``MODEL`` when it
+    ran in the chunk, otherwise the chunk's first model. Without such a record the
+    original pair, ``MODEL`` at ``low``, applies. Torn journal lines are skipped."""
+    starts = [r for r in export.read_journal(chunk_dir / "runs.jsonl")
+              if r.get("task") == FIELD and r.get("models")]
+    if not starts:
+        return MODEL, "low"
+    models = [str(m) for m in starts[-1]["models"]]
+    return (MODEL if MODEL in models else models[0]), str(starts[-1].get("reasoning") or "low")
+
+
 def _journal(path: Path) -> list[dict[str, Any]]:
     # A review packet must not silently skip a corrupt journal record.
     """Read nonblank UTF-8 JSONL records, requiring each record to be an object.
@@ -167,7 +195,8 @@ def _workbook(rows: Sequence[Mapping[str, str]]) -> bytes:
     return stable.getvalue()
 
 
-def export_packet(rows: Sequence[Mapping[str, Any]], chunk_dir: Path, dest: Path) -> dict[str, Any]:
+def export_packet(rows: Sequence[Mapping[str, Any]], chunk_dir: Path, dest: Path, *,
+                  model: str | None = None) -> dict[str, Any]:
     """Validate local candidates before writing CSV, Markdown and dropdown workbook files.
 
     CSVs use real quoted newlines, not export.py's backslash encoding. To recover an
@@ -177,11 +206,16 @@ def export_packet(rows: Sequence[Mapping[str, Any]], chunk_dir: Path, dest: Path
     Also write a JSON packet and return its ID, counts, and output paths. A
     review-candidates.json sidecar includes held examples without accepting them;
     without it only accepted fields are exported. At least one accepted field is
-    required. Raise ValueError for invalid source/provenance or unrepresentable
+    required. ``model`` is the answer the packet compares with the reviewed candidate;
+    by default it and the reasoning level come from the chunk's ``runs.jsonl`` (``MODEL``
+    at ``low`` when the chunk has none). Raise ValueError for invalid source/provenance or unrepresentable
     spreadsheet cells before writing outputs. Missing-data KeyError, optional
     workbook ImportError, and filesystem errors propagate; existing files are
     overwritten, and an I/O failure can leave partial output."""
     chunk_dir, dest = Path(chunk_dir), Path(dest)
+    run_model, reasoning = _run_config(chunk_dir)
+    model = model or run_model
+    label = "GLM" if model == MODEL else model
     fields = export.read_csv(chunk_dir / "fields.csv")
     calls = _journal(chunk_dir / "calls.jsonl")
     side_path = chunk_dir / "review-candidates.json"
@@ -252,33 +286,33 @@ def export_packet(rows: Sequence[Mapping[str, Any]], chunk_dir: Path, dest: Path
                              + ", ".join(f.code for f in score.findings))
         req = tasks.build(FIELD, row)
         input_sha = tasks.input_sha256(req.messages)
-        matching = [c for c in calls if c.get("document_id") == doc_id and c.get("model") == MODEL
-                    and c.get("reasoning") == "low" and not c.get("variant") and not c.get("error")
+        matching = [c for c in calls if c.get("document_id") == doc_id and c.get("model") == model
+                    and c.get("reasoning") == reasoning and not c.get("variant") and not c.get("error")
                     and c.get("prompt_sha256") == req.prompt_sha256]
         if not matching:
-            raise ValueError(f"{doc_id}: no successful current prompt GLM low call")
+            raise ValueError(f"{doc_id}: no successful current prompt {label} {reasoning} call")
         call = matching[-1]
         if call.get("filename") != row["filename"] or call.get("task", FIELD) != FIELD:
-            raise ValueError(f"{doc_id}: GLM call identity mismatch")
+            raise ValueError(f"{doc_id}: {label} call identity mismatch")
         if "input_sha256" in call and call["input_sha256"] != input_sha:
-            raise ValueError(f"{doc_id}: GLM input_sha256 mismatch")
+            raise ValueError(f"{doc_id}: {label} input_sha256 mismatch")
         for key in ("content_sha256", "doc_text_sha256", "document_sha256", "source_sha256"):
             if key in call and call[key] != sha:
-                raise ValueError(f"{doc_id}: GLM {key} mismatch")
+                raise ValueError(f"{doc_id}: {label} {key} mismatch")
         response = call.get("response")
         if not isinstance(response, dict) or not isinstance(response.get("fields"), dict):
-            raise ValueError(f"{doc_id}: corrupt GLM response")
+            raise ValueError(f"{doc_id}: corrupt {label} response")
         raw = response["fields"].get(FIELD)
         if not isinstance(raw, dict) or "value" not in raw or "status" not in raw or "evidence" not in raw:
-            raise ValueError(f"{doc_id}: corrupt GLM field response")
-        slots = [s for s in ("a", "b") if field.get(f"model_{s}") == MODEL]
+            raise ValueError(f"{doc_id}: corrupt {label} field response")
+        slots = [s for s in ("a", "b") if field.get(f"model_{s}") == model]
         if len(slots) != 1:
-            raise ValueError(f"{doc_id}: accepted field does not identify one GLM answer")
+            raise ValueError(f"{doc_id}: accepted field does not identify one {label} answer")
         slot = slots[0]
         if (json.loads(field[f"model_{slot}_value"]) != raw["value"]
                 or field[f"model_{slot}_status"] != raw["status"]
                 or field[f"model_{slot}_evidence"] != raw["evidence"]):
-            raise ValueError(f"{doc_id}: fields.csv differs from latest current GLM answer")
+            raise ValueError(f"{doc_id}: fields.csv differs from latest current {label} answer")
         changed = value != raw["value"]
         if changed and candidate is None and not (field.get("reviewer_verdict") or field.get("final_source")):
             raise ValueError(f"{doc_id}: changed candidate has no correction provenance")
@@ -306,16 +340,17 @@ def export_packet(rows: Sequence[Mapping[str, Any]], chunk_dir: Path, dest: Path
             "ai_sidecar_review_json": _json({k: candidate.get(k) for k in (
                 "notes", "reviewer_type", "human_approved", "hold", "hold_reason")}) if candidate is not None else "",
             "dojo_scoring": "not_run; catalog compatibility only", "document_sha256": sha,
-            "model": MODEL, "provider": str(call.get("provider") or ""),
+            "model": model, "provider": str(call.get("provider") or ""),
             "served_provider": str(call.get("served_provider") or ""),
-            "served_model": str(call.get("served_model") or ""), "reasoning": "low",
+            "served_model": str(call.get("served_model") or ""), "reasoning": reasoning,
             "prompt_sha256": req.prompt_sha256, "input_sha256": str(call.get("input_sha256") or ""),
             "expected_input_sha256": input_sha,
             "input_binding": "journal_hash_matched" if "input_sha256" in call else "legacy_journal_hash_unavailable",
             "labeled_utc": str(call.get("labeled_utc") or ""),
             "raw_glm_field_json": _json(raw), "raw_glm_labels_json": _json(raw["value"]),
             "reviewed_candidate_labels_json": _json(value),
-            "candidate_attribution": "AI source-review correction; not raw GLM" if changed else "unchanged raw GLM candidate",
+            "candidate_attribution": (f"AI source-review correction; not raw {label}" if changed
+                                      else f"unchanged raw {label} candidate"),
             "correction_provenance_json": _json({k: field.get(k, "") for k in (
                 "reviewer_verdict", "reviewer_value", "reviewer_note", "final_source", "reason")}),
             "source_evidence_json": _json(evidence), "full_document_text": text,
@@ -329,12 +364,25 @@ def export_packet(rows: Sequence[Mapping[str, Any]], chunk_dir: Path, dest: Path
                 for r in packet]
     sheets = _csv(readable)
     workbook = _workbook(readable)
+    spec = fields_registry()["classes"]["insurance_claim"]["fields"][FIELD]
+    # The portal contract shared with review_export.py: typed corrections, plain-sentence issues.
     records = [{**r, "candidate_labels": json.loads(r["reviewed_candidate_labels_json"]),
                 "raw_glm_labels": json.loads(r["raw_glm_labels_json"]),
                 "evidence": json.loads(r["source_evidence_json"]),
-                "issues": json.loads(r["source_check_issues_json"]),
+                "issues": [issue_sentence(i["code"], i["item"]) for i in json.loads(r["source_check_issues_json"])],
                 "existing_gt_fields": json.loads(r["existing_gt_fields_json"]),
-                "dojo_field_types": json.loads(r["dojo_field_types_json"])} for r in packet]
+                "dojo_field_types": json.loads(r["dojo_field_types_json"]),
+                "task": FIELD, "chunk": chunk_dir.name.split("_")[0], "models": [r["model"]], "correction_type": correction_type(spec["type"]),
+                "candidate_presence": "populated", "absence_policy": spec["absence"],
+                "nullable": spec["absence"] != "never_absent", "eligible_for_gold": True,
+                "schema_status": "pinned_registry", "schema_alignment": "aligned",
+                "review_provenance": (
+                    f"Claim checklist from {r['model']} (reasoning {r['reasoning']}); {r['candidate_attribution']}. "
+                    "Human approval is pending and nothing here is gold."),
+                "model_outputs": [{"model": r["model"], "value": json.loads(r["raw_glm_labels_json"]),
+                                   "status": json.loads(r["raw_glm_field_json"])["status"],
+                                   "evidence": json.loads(r["raw_glm_field_json"])["evidence"],
+                                   "evidence_spans": []}]} for r in packet]
     canonical = json.dumps(records, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     envelope = {"schema": "mailroom-review-packet/v1",
                 "packet_id": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
@@ -354,7 +402,7 @@ def export_packet(rows: Sequence[Mapping[str, Any]], chunk_dir: Path, dest: Path
           f"source checks passed: {len(passed)}; blocked/source-policy examples: {len(blocked)}; "
           f"root held: {len(excluded)}; omitted: {summary['excluded']}. Human approval: pending.\n",
           "Checks do not establish legal correctness, completeness, or official Dojo scores. "
-          "This GLM batch fills claim_checklist only. Existing GT entity fields/presence are separate "
+          f"This {label} batch fills claim_checklist only. Existing GT entity fields/presence are separate "
           "legacy context, not GLM-generated labels. Changed final lists are AI source-review corrections, "
           "not raw GLM outputs. The blind dataset config is not touched.\n",
           "## CSV import and reversible escaping\n",
