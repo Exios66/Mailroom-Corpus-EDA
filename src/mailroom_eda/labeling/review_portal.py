@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Mapping
 
-from . import checkpoint, registry, review_page, scoring, verify
+from . import checkpoint, local_backup, registry, review_page, scoring, verify
 from .review_packet import DECISION_KEY
 
 MAX_BODY = 10 * 1024 * 1024
@@ -190,19 +190,23 @@ class ReviewPortal:
 
     def __init__(self, labels_root: Path, out: Path, *, campaign: str = "v10",
                  stage: Path | None = None, hf_checkpoint: bool = False, launch_enabled: bool = False,
-                 launch_options: Mapping[str, Any] | None = None):
+                 launch_options: Mapping[str, Any] | None = None,
+                 local_backup: Path | None = None):
         """Create local portal and receipt directories and initialize review state caches.
 
         ``out`` must be a strict subfolder of labels_root, and campaign must be a safe
         name; invalid values raise ValueError. ``hf_checkpoint`` enables explicit
-        backup requests. ``launch_enabled`` turns on the paid-run launcher (``launch.py``;
-        ``launch_options`` are its test seams). Filesystem errors propagate."""
+        backup requests. ``local_backup`` mirrors every checkpoint into that
+        labels-staging folder so agents can read it without the Hub. ``launch_enabled``
+        turns on the paid-run launcher (``launch.py``; ``launch_options`` are its test
+        seams). Filesystem errors propagate."""
         self.labels_root, self.out = Path(labels_root).resolve(), Path(out).resolve()
         if not self.out.is_relative_to(self.labels_root) or self.out == self.labels_root:
             raise ValueError("portal output must be a subfolder of labels-root for private checkpoints")
         if not re.fullmatch(r"[A-Za-z0-9_-]+", campaign):
             raise ValueError("invalid campaign name")
         self.campaign, self.stage, self.hf_checkpoint = campaign, stage, hf_checkpoint
+        self.local_backup = Path(local_backup).resolve() if local_backup else None
         self.out.mkdir(parents=True, exist_ok=True)
         self.returns = self.out / "returns"
         self.returns.mkdir(exist_ok=True)
@@ -568,6 +572,10 @@ class ReviewPortal:
             latest = {(e["document_id"], e["field"]): e for e in _lines(self.journal)}
             event_ids = [latest[k]["event_id"] for k in sorted(pending)]
             state_revision = self._state_revision()
+            mirror = None
+            if self.local_backup is not None:
+                # Mirror the reviewed work locally first, so it survives an HF outage.
+                mirror = local_backup.backup(self.labels_root, self.local_backup, out=self.out)["path"]
             try:
                 api = api or checkpoint.hf_interface.get_hf_api()
                 result = checkpoint.checkpoint(self.labels_root, registry.CAMPAIGNS_DIR / self.campaign / "approved.yaml",
@@ -582,10 +590,11 @@ class ReviewPortal:
             except (Exception, SystemExit) as exc:
                 _append(self.checkpoints, [{"verified": False, "server_received_at": _now(),
                                            "error_type": type(exc).__name__, "event_ids": event_ids}])
-                return {"verified": False, "pending_fields": len(event_ids),
+                return {"verified": False, "pending_fields": len(event_ids), "local_backup": mirror,
                         "message": "private checkpoint failed; local confirmations remain pending"}
             receipt = {"verified": True, "revision": revision, "repo": result["repo"],
-                       "files": result["files"], "event_ids": event_ids, "server_received_at": _now()}
+                       "files": result["files"], "event_ids": event_ids, "server_received_at": _now(),
+                       "local_backup": mirror}
             _append(self.checkpoints, [receipt])
             return receipt
 
@@ -722,6 +731,8 @@ def main(argv=None) -> int:
     parser.add_argument("--stage", type=Path, default=DEFAULT_STAGE)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--hf-checkpoint", action="store_true", help="enable explicit private-checkpoint POSTs only")
+    parser.add_argument("--local-backup", type=Path, default=None,
+                        help="labels-staging folder mirrored on every checkpoint (survives an HF outage)")
     parser.add_argument("--enable-launch", action="store_true",
                         help="let the page launch PAID labeling batches (campaign arms and small public trials) "
                              "after a preflight checklist passes; off by default, see docs/labeler-review-viewer.md")
@@ -760,7 +771,7 @@ def main(argv=None) -> int:
                     print(f"No labeling packets yet; reviewing public insurance claims from {fallback}")
     portal = ReviewPortal(args.labels_root, out,
                           campaign=args.campaign, stage=args.stage, hf_checkpoint=args.hf_checkpoint,
-                          launch_enabled=args.enable_launch)
+                          launch_enabled=args.enable_launch, local_backup=args.local_backup)
     server = make_server(portal, args.port)
     print(f"Private review portal: http://127.0.0.1:{server.server_port}/ (no automatic uploads)"
           + ("; LAUNCHING PAID LABELING BATCHES IS ENABLED" if args.enable_launch else ""))
