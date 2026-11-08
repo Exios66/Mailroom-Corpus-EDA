@@ -23,44 +23,19 @@
   `grade_corporate.py` (field-type-aware: ISO dates re-graded against 18 printed spellings;
   self-check pins the oracle on human gold: 99 populated dates print, 21 correct absences, 0 false flags).
 
-## In flight RIGHT NOW
-- Background shell **sh_1bc719a2200148Sr4zREhN2qsj**: the corporate LIVE probe — 110 rows ×
-  2 models (`minimax/minimax-m3.1-flash`, `deepseek/deepseek-v4.1-flash`), cap $0.25, output →
-  `autoresearch/loop-261108-0116/quality_probe_report.json`. The report currently on disk is the
-  STALE it7 claim report (task=claim_checklist) — it is overwritten on completion. This run
-  predates the parsed-capture fix, so it carries violations only (quoting oracle).
-- **PAUSED for wifi loss, then RESUMED on the operator's "Please resume" (2026-11-08 ~13:1x local)**:
-  python PID **21512** + wrapper **21509** were SIGSTOPped (~24 min of completed rows preserved
-  in RAM) and are now running again (`kill -CONT 21512 21509`). The one in-flight API row may
-  return an error entry — acceptable, single-row loss.
-  - Key: `/private/tmp/opencode/orkey` (0600) stays on disk while paused; delete only after the
-    run's report lands and passes grading (protocol).
-- OPENROUTER key protocol: delete the moment the probe's report lands. Re-create ONLY on an
-  explicit new key from the operator.
-
-## On the probe's completion (exact steps, in order)
-1. `rm /private/tmp/opencode/orkey` (after any single re-verify pass you intend to run, not before).
-2. `.venv/bin/python autoresearch/loop-261108-0116/grade_corporate.py` →
-   `date_prints` = the probe's byte-only false positives (do NOT count); `date_real`/`real` = REAL.
-3. Map each REAL class to an it8 rule; patch a prompt ONLY where a confirmed failure class exists.
-   Nothing confirmed → say so, skip to 4. Every prompt edit bundles, in the SAME key window:
-   `smoke_fixtures record --types corporate_record --initials LM --cap-usd 0.10 --replace`
-   (echo the cap), then `check`+`replay`, then suites.
-4. `prompt_results.tsv` row (it9 note with the verdict), re-sync
-   `docs/plans/v10-structure-and-label-completion.md` quotes if any prompt file changed,
-   run `verify_all.sh` (AXE_PATH vendored) for the dimensions.tsv ledger row, commit+push.
-5. Final-results push to `~/Downloads/labels-staging/2026-11-08-session-1/` (EXACT commands):
-   ```
-   .venv/bin/python autoresearch/loop-261108-0116/grade_corporate.py \
-       > /Users/luciusjmorningstar/Downloads/labels-staging/2026-11-08-session-1/scan-results/corporate-grade-stdout.txt
-   cp autoresearch/loop-261108-0116/quality_probe_report.json \
-       /Users/luciusjmorningstar/Downloads/labels-staging/2026-11-08-session-1/scan-results/
-   shasum -a 256 2026-11-08-session-1/loop-final-state/* 2026-11-08-session-1/scan-results/* \
-       > 2026-11-08-session-1/manifest.sha256   # from the labels-staging dir
-   ```
-   then commit + push, refresh `loop-final-state/`, PR comment with the grading table,
-   then delete the key file if not done in 1. (`scan-results/it7-claim-scan-report-final.json`
-   + `corporate-scan-status.json` already staged; the running scan's report completes the set.)
+## Corporate scan: COMPLETED (2026-11-08 ~13:4x local)
+- 110 rows x 2 models, cap $0.25, spent **$0.2322**. **209/220 clean, ZERO printed-run violations**
+  (no phantom names/dates/numbers from either model; the date-aware re-grade in grade_corporate.py
+  had nothing to reclassify). All 11 bad calls = deepseek-v4.1-flash finish_reason=length 8k-output
+  truncation on 11 large docs, zero on minimax - the documented runtime window policy (it7), not a prompt defect.
+- Decision: **no it8 rule patch justified by live evidence** - the drafted candidates wait until a run
+  shows the classes; no prompt edit, so no fixture re-record and no quote re-sync. The key file was
+  deleted immediately after the verdict per protocol.
+- Honest limit: extraction ACCURACY vs the human gold is not measured in this run (it predates the
+  parsed-capture fix; quoting oracle only). Accuracy lands on the next corporate verify with parsed answers.
+- Final results pushed to labels-staging scan-results/ (report + grade stdout + completed status marker).
+- Runtime follow-up recorded: if deepseek serves corporate at scale, raise per-task max_tokens past 8k
+  (task/runner knob; never a prompt edit).
 
 ## Standing rules (never break)
 - Paid prompt changes land ONLY with live verification (fixture re-record `check`+`replay`

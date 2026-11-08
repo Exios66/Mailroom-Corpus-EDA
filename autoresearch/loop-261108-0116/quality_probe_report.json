@@ -1,176 +1,1322 @@
 {
- "task": "claim_checklist",
- "documents": 14,
+ "task": "corporate",
  "models": [
   "minimax/minimax-m3.1-flash",
   "deepseek/deepseek-v4.1-flash"
  ],
  "answers": [
   {
-   "document_id": "DOC-2d574972cb7a2f63",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000217346_0000217346-96-000008_18.json.txt",
    "model": "minimax/minimax-m3.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-2d574972cb7a2f63",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000217346_0000217346-96-000008_18.json.txt",
    "model": "deepseek/deepseek-v4.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-05d8be12f0b93d35",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000037996_0000037996-94-000005_11.json.txt",
    "model": "minimax/minimax-m3.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-05d8be12f0b93d35",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000037996_0000037996-94-000005_11.json.txt",
    "model": "deepseek/deepseek-v4.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-6e584b8a24fe3237",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950152_0000950152-95-000449_7.json.txt",
    "model": "minimax/minimax-m3.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-6e584b8a24fe3237",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950152_0000950152-95-000449_7.json.txt",
    "model": "deepseek/deepseek-v4.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-a45144527fdf86f9",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000753308_0000753308-96-000005_9.json.txt",
    "model": "minimax/minimax-m3.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-a45144527fdf86f9",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000753308_0000753308-96-000005_9.json.txt",
    "model": "deepseek/deepseek-v4.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-e32cb23329a4a3d2",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000217346_0000217346-97-000001_11.json.txt",
    "model": "minimax/minimax-m3.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-e32cb23329a4a3d2",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000217346_0000217346-97-000001_11.json.txt",
    "model": "deepseek/deepseek-v4.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-85d9e9f5e6019558",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950131_0000950131-02-000922_3.json.txt",
    "model": "minimax/minimax-m3.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-85d9e9f5e6019558",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950131_0000950131-02-000922_3.json.txt",
    "model": "deepseek/deepseek-v4.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-53f5588db67c2b85",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001079973_0001079973-07-000189_5.json.txt",
    "model": "minimax/minimax-m3.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-53f5588db67c2b85",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001079973_0001079973-07-000189_5.json.txt",
    "model": "deepseek/deepseek-v4.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-f3742e4778b4d648",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950152_0000950152-95-000550_8.json.txt",
    "model": "minimax/minimax-m3.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-f3742e4778b4d648",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950152_0000950152-95-000550_8.json.txt",
    "model": "deepseek/deepseek-v4.1-flash",
-   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
-  },
-  {
-   "document_id": "DOC-6dcc0b9ba494c25b",
-   "model": "minimax/minimax-m3.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-6dcc0b9ba494c25b",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000066756_0000066756-97-000034_7.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000066756_0000066756-97-000034_7.json.txt",
    "model": "deepseek/deepseek-v4.1-flash",
-   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
-  },
-  {
-   "document_id": "DOC-f4abca1c7ceedb03",
-   "model": "minimax/minimax-m3.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-f4abca1c7ceedb03",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000831259_0000831259-97-000009_22.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000831259_0000831259-97-000009_22.json.txt",
    "model": "deepseek/deepseek-v4.1-flash",
-   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
-  },
-  {
-   "document_id": "DOC-213e10442ee3dfea",
-   "model": "minimax/minimax-m3.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-213e10442ee3dfea",
-   "model": "deepseek/deepseek-v4.1-flash",
-   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
-  },
-  {
-   "document_id": "DOC-b25b2ca02e767426",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950129_0000950129-04-001267_4.json.txt",
    "model": "minimax/minimax-m3.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-b25b2ca02e767426",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950129_0000950129-04-001267_4.json.txt",
    "model": "deepseek/deepseek-v4.1-flash",
    "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
   },
   {
-   "document_id": "DOC-9a9cf3588165375a",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001005477_0001005477-00-002441_2.json.txt",
    "model": "minimax/minimax-m3.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-9a9cf3588165375a",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001005477_0001005477-00-002441_2.json.txt",
    "model": "deepseek/deepseek-v4.1-flash",
-   "items": 0,
-   "violations": []
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
   },
   {
-   "document_id": "DOC-2b71b5b077b26bf9",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950142_0000950142-04-000548_10.json.txt",
    "model": "minimax/minimax-m3.1-flash",
-   "items": 0,
+   "items": 1,
    "violations": []
   },
   {
-   "document_id": "DOC-2b71b5b077b26bf9",
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950142_0000950142-04-000548_10.json.txt",
    "model": "deepseek/deepseek-v4.1-flash",
-   "items": 0,
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950144_0000950144-04-002425_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950144_0000950144-04-002425_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950123_0000950123-94-000602_7.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950123_0000950123-94-000602_7.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950116_0000950116-95-000069_17.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950116_0000950116-95-000069_17.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000881791_0000881791-97-000004_5.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000881791_0000881791-97-000004_5.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950152_0000950152-03-003920_15.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950152_0000950152-03-003920_15.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950134_0000950134-06-006424_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950134_0000950134-06-006424_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950134_0000950134-08-004796_5.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950134_0000950134-08-004796_5.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-14-077944_16.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-14-077944_16.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-15-069449_4.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-15-069449_4.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001368148_0001368148-20-000020_6.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001368148_0001368148-20-000020_6.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950128_0000950128-94-000049_10.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950128_0000950128-94-000049_10.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950114_0000950114-95-000040_7.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950114_0000950114-95-000040_7.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000067182_0000067182-96-000010_7.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000067182_0000067182-96-000010_7.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000079282_0000079282-97-000004_10.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000079282_0000079282-97-000004_10.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950134_0000950134-99-000390_8.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950134_0000950134-99-000390_8.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950144_0000950144-00-004303_6.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950144_0000950144-00-004303_6.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001010549_0001010549-02-000036_4.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001010549_0001010549-02-000036_4.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001047469_0001047469-03-015900_8.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001047469_0001047469-03-015900_8.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950149_0000950149-04-000430_18.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950149_0000950149-04-000430_18.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001144204_0001144204-07-008016_4.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001144204_0001144204-07-008016_4.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000892569_0000892569-08-000173_7.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000892569_0000892569-08-000173_7.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0002026478_0002026478-25-000013_7.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0002026478_0002026478-25-000013_7.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001047469_0001047469-98-025498_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001047469_0001047469-98-025498_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000898430_0000898430-99-001006_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000898430_0000898430-99-001006_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000025354_0000025354-02-000007_7.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000025354_0000025354-02-000007_7.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950159_0000950159-04-000273_12.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950159_0000950159-04-000273_12.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001269678_0001269678-05-000086_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001269678_0001269678-05-000086_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001104659_0001104659-06-012011_11.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001104659_0001104659-06-012011_11.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000929455_0000929455-97-000003_6.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000929455_0000929455-97-000003_6.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-04-042090_4.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-04-042090_4.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-14-114512_5.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-14-114512_5.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-15-070241_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-15-070241_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001052918_0001052918-20-000008_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001052918_0001052918-20-000008_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-25-074703_6.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-25-074703_6.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001144204_0001144204-14-019408_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001144204_0001144204-14-019408_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001019687_0001019687-15-001463_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001019687_0001019687-15-001463_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001144204_0001144204-14-019417_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001144204_0001144204-14-019417_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950153_0000950153-97-000326_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950153_0000950153-97-000326_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001079382_0001079382-03-000010_6.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001079382_0001079382-03-000010_6.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001047469_0001047469-04-007137_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001047469_0001047469-04-007137_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001047469_0001047469-07-007205_8.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001047469_0001047469-07-007205_8.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000109380_0000109380-14-000048_5.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000109380_0000109380-14-000048_5.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001213900_0001213900-23-099889_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001213900_0001213900-23-099889_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001731289_0001731289-24-000053_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001731289_0001731289-24-000053_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000899243_0000899243-97-000695_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000899243_0000899243-97-000695_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001104659_0001104659-03-010472_11.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001104659_0001104659-03-010472_11.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950134_0000950134-04-003498_5.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950134_0000950134-04-003498_5.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001047469_0001047469-98-012358_17.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001047469_0001047469-98-012358_17.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001067312_0001067312-00-000145_10.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001067312_0001067312-00-000145_10.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001116502_0001116502-01-500261_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001116502_0001116502-01-500261_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001104659_0001104659-02-000950_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001104659_0001104659-02-000950_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001200952_0001200952-03-000360_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001200952_0001200952-03-000360_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001104659_0001104659-04-008740_5.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001104659_0001104659-04-008740_5.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950123_0000950123-05-002492_4.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950123_0000950123-05-002492_4.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-06-258353_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-06-258353_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-07-052327_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-07-052327_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001047469_0001047469-08-000291_4.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001047469_0001047469-08-000291_4.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001104659_0001104659-09-018509_4.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001104659_0001104659-09-018509_4.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-10-084344_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-10-084344_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001514226_0001514226-16-000057_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001514226_0001514226-16-000057_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001260221_0001260221-17-000060_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001260221_0001260221-17-000060_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001641172_0001641172-25-003967_4.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001641172_0001641172-25-003967_4.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0002089661_0002089661-26-000016_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0002089661_0002089661-26-000016_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000909012_0000909012-98-000128_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000909012_0000909012-98-000128_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000897101_0000897101-00-000644_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000897101_0000897101-00-000644_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950136_0000950136-03-000721_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950136_0000950136-03-000721_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-04-209468_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-04-209468_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950153_0000950153-97-000557_21.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950153_0000950153-97-000557_21.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000899243_0000899243-98-000570_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000899243_0000899243-98-000570_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001025894_0001025894-99-000280_4.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001025894_0001025894-99-000280_4.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000912057_0000912057-00-002687_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000912057_0000912057-00-002687_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950133_0000950133-01-001128_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950133_0000950133-01-001128_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001144204_0001144204-06-013285_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001144204_0001144204-06-013285_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001354488_0001354488-10-003001_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001354488_0001354488-10-003001_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001513162_0001513162-13-000396_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001513162_0001513162-13-000396_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001437749_0001437749-20-005921_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001437749_0001437749-20-005921_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001654954_0001654954-22-003300_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001654954_0001654954-22-003300_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000045012_0000045012-97-000011_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000045012_0000045012-97-000011_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001036050_0001036050-99-000637_5.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001036050_0001036050-99-000637_5.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001213900_0001213900-21-018703_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001213900_0001213900-21-018703_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001213900_0001213900-24-032825_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001213900_0001213900-24-032825_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000831259_0000831259-99-000003_15.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000831259_0000831259-99-000003_15.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950152_0000950152-97-002522_9.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950152_0000950152-97-002522_9.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000893220_0000893220-02-000320_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000893220_0000893220-02-000320_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001032210_0001032210-02-000479_4.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001032210_0001032210-02-000479_4.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000722051_0000722051-98-000009_4.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000722051_0000722051-98-000009_4.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001012870_0001012870-98-001020_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001012870_0001012870-98-001020_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000912057_0000912057-97-006143_2.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000912057_0000912057-97-006143_2.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000898430_0000898430-99-000295_4.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000898430_0000898430-99-000295_4.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950123_0000950123-94-000632_6.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000950123_0000950123-94-000632_6.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-08-057490_20.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001193125_0001193125-08-057490_20.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000910680_0000910680-97-000153_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000910680_0000910680-97-000153_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000075491_0000075491-97-000010_8.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000075491_0000075491-97-000010_8.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001108890_0001108890-03-000526_7.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0001108890_0001108890-03-000526_7.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000912057_0000912057-96-005465_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000912057_0000912057-96-005465_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000909567_0000909567-04-000367_8.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000909567_0000909567-04-000367_8.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000899243_0000899243-97-000417_3.json.txt",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 1,
+   "violations": []
+  },
+  {
+   "document_id": "s3_data.kl3m.ai_documents_edgar_0000899243_0000899243-97-000417_3.json.txt",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 1,
    "violations": []
   }
  ],
- "spent_usd": 0.0241,
- "clean_calls": 23,
- "bad_calls": 5
+ "documents": 110,
+ "spent_usd": 0.2322,
+ "clean_calls": 209,
+ "bad_calls": 11
 }
