@@ -43,8 +43,14 @@ exist, the fallback is skipped.
 PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.review_portal \
   --public-per-subclass 3            # more claims per type
   # --public-revision v9.2           # another published revision
-  # --no-public-fallback             # old behavior: fail with no packets
+  # --no-public-fallback             # skip the fallback entirely
 ```
+
+A failed fallback (no network, a Hub outage, a refused export) never blocks the page: the
+portal prints one line naming `--no-public-fallback` and starts anyway, showing "no finished
+packets" until packets exist. The fallback is also skipped when it would be written inside
+`--out`, because the portal hides everything under its own output directory — the same one
+line tells you, with the flag to silence it.
 
 The same packet can be built without the portal:
 
@@ -205,7 +211,9 @@ its output spent on reasoning is a **reasoning runaway**: it is billed, journale
 (`reasoning_runaway: true`, retried by the next run), and the record says "Reasoning ran away on
 `<model>`: N of M output tokens were reasoning ..." in `issues` and in that model's `model_outputs` entry.
 A disagreement has no candidate and an issue
-sentence says who answered what. Evidence is `{start, end, quote}` into the full text, located
+sentence says who answered what — and so does a configured model with no record for that
+document ("The intent readings are incomplete: `<model>` has no record for this document.");
+one model's two passes are never counted as an agreement. Evidence is `{start, end, quote}` into the full text, located
 in the source; a quote that cannot be found is reported in `issues`, never highlighted.
 A re-export overwrites the packet (atomically); the portal reopens only the fields whose
 target changed. Within one labels root the lexically last packet wins per (document, field).
@@ -281,7 +289,8 @@ and published id, subclass, characters, text sha256), the models with their reas
 projected calls and cost, the per-type cap and the gold check. The total cap (default $1.00) is split
 `cuad` 0.40, `corporate` 0.20, `merger_consideration` 0.15, `claim_checklist` 0.15, `correspondence` 0.10
 (scaled for another `--cap-usd`, or for a subset of `--types`, where the cap you give is the cap of those types
-together); a type whose projection times the repo's 1.4x headroom exceeds its share is refused. The contract
+together; repeated `--types` values dedupe, order preserved — a type typed twice cannot spend its cap twice);
+a type whose projection times the repo's 1.4x headroom exceeds its share is refused. The contract
 share is above the portal's $0.25 trial ceiling; the recorder applies its own cap, not that ceiling. A real
 run needs the total cap typed again on stdin, runs one worker per type (so which model is "A" and which "B" is
 the same every time), writes `tests/fixtures/live_smoke/<doc_type>/` atomically, and immediately runs `check`
@@ -302,7 +311,11 @@ PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.review_corporate \
 ```
 
 Workbook export requires `openpyxl==3.1.5` (the `review` optional dependency).
-Corporate new-draw identities are explicitly REVIEW-ONLY, with unassigned splits.
+An explicit model override (the `export_packet(model=...)` / `build_packet(model=...)`
+argument) names a model the chunk actually ran, and in a mixed-level run the packet uses
+that model's own recorded level, not the default model's; naming a model the chunk did not
+run is refused before any packet is built. Corporate new-draw identities are
+explicitly REVIEW-ONLY, with unassigned splits.
 Family proposals outside the pinned schema remain schema-pending. Saved model
 drafts are not represented as human-approved gold or verified best-model output.
 
