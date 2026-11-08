@@ -13,7 +13,7 @@
 - it4 intent prompt: paid κ **0.7356 < 0.75 gate** → HONEST DISCARD (reverted; evidence in
   `docs/reports/audits/v10_labeling_verify/3.3r_intent-prompt-verify/`). Keep the rule: prompt
   candidates live or die on a live verification, never the mechanical rubric alone.
-- Spend ~$0.139 of the operator's authorized $5. Cap bumps authorized: 8c→1.12, 8e→1.16
+- Spend ~$0.37 of the operator's authorized $5 (includes the $0.2322 corporate scan; no key currently stored). Cap bumps authorized: 8c→1.12, 8e→1.16
   (7c-e 0.88 earlier). Fixture record cap is $0.10 per record.
 - Corporate leg (it8): mined the 10.1 SEC draw OFFLINE ($0) — 110 reviewed rows / 102 notes
   (rule-6 ×15, rule-5 ×8, conformed-sig ×10) + 17 verify findings (3 errors / 14 doubts) →
@@ -44,6 +44,14 @@
   portal's explicit human Checkpoint (initials + one Save).
 - Prune nothing behind a wall of abstraction: smallest diff that verifies; keep fixtures
   hash-pinned; any prompt-file edit forces a fixture re-record.
+
+## Corporate review viewer: CONFIGURED (interface it11)
+- `review_corporate --batch pilot|batch_A..E` produces review packets for every staged SEC addition: 110 documents / 1,302 targets / 29 fields; oversize text is a linked pointer in spreadsheet cells (JSON/Markdown keep complete originals); `ReviewPortal._collect()` returns all 110 corporate records cleanly, including the 16 too-large documents. `verify_all` is green except the still-prepaid human evidence gates.
+
+## Next campaign steps
+- Current corporate production arms 9a-9e are a separate fresh-labeling campaign; 9a (29 documents) is pending, needs the operator's next OpenRouter key, then human verdicts against the 0.90 precision gate before 9b-e.
+- The 110 SEC additions remain review-only (unassigned split; not formal 9a gate evidence and not auto-ingested) until a human reviewer saves decisions with initials and an explicit Checkpoint.
+- After 9a, use the portal tracker for 9b-9e agreement gates; if deepseek is retained, raise its corporate completion-output ceiling through runner configuration before the sweep.
 
 ## Queued after it8 closes
 - interface it12 candidates (from the ledger's weakest dimension), offline mining legs,

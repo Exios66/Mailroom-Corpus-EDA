@@ -180,6 +180,40 @@ def build_packet(root: Path, *, source_ids: Sequence[str] = SAMPLE_IDS) -> dict[
     return packet
 
 
+SPREADSHEET_FULL_TEXT_MAX_UTF16 = 32_767
+
+
+def _utf16_units(value: str) -> int:
+    """Return the UTF-16 code-unit length used by spreadsheet cell limits."""
+    return len(value.encode("utf-16-le")) // 2
+
+
+def _spreadsheet_rows(packet: dict[str, Any]) -> tuple[list[str], list[dict[str, str]]]:
+    """Return flattened rows safe for a spreadsheet cell.
+
+    The original text remains unchanged in the JSON packet, Markdown, and linked
+    documents. Oversized text is represented by its linked path in spreadsheet
+    cells so conversion never needs to truncate source material.
+    """
+    records = packet["records"]
+    columns = list(dict.fromkeys(k for r in records for k in r))
+    for key in ("full_document_text_chars", "full_document_text_pointer"):
+        if key not in columns:
+            columns.append(key)
+    rows: list[dict[str, str]] = []
+    for record in records:
+        row = {k: record.get(k, "") if isinstance(record.get(k, ""), str) else _json(record[k]) for k in columns}
+        row["full_document_text_chars"] = str(len(record["full_document_text"]))
+        if _utf16_units(record["full_document_text"]) > SPREADSHEET_FULL_TEXT_MAX_UTF16:
+            row["full_document_text"] = (
+                "[Full document text is stored in the linked document file; use "
+                f"{record['document_link']} or corporate-review-data.json.]"
+            )
+            row["full_document_text_pointer"] = record["document_link"]
+        rows.append(row)
+    return columns, rows
+
+
 def _workbook(rows: list[dict[str, str]], decision_key: dict[str, str]) -> bytes:
     """Return a corporate review workbook with literal cells and decision choices.
 
@@ -239,15 +273,16 @@ def export_packet(root: Path, dest: Path, *, source_ids: Sequence[str] = SAMPLE_
     optional workbook ImportError, and filesystem errors propagate."""
     packet = build_packet(root, source_ids=source_ids)
     records = packet["records"]
-    columns = list(dict.fromkeys(k for r in records for k in r))
-    rows = [{k: r.get(k, "") if isinstance(r.get(k, ""), str) else _json(r[k]) for k in columns} for r in records]
+    _, rows = _spreadsheet_rows(packet)
     regular = _csv(rows)
     sheets = _csv(rows)
     workbook = _workbook(rows, packet["decision_key"])
     md = ["# Corporate review\n", SCOPE, "\n## Decisions\n", _fence(_json(packet["decision_key"]), "json"),
           "CSV escaping: remove one leading apostrophe only for columns listed in escaped_columns. "
           "Sheets CSV is UTF-8 BOM; disable automatic formula/date conversion. "
-          "CORRECT uses each target's native JSON type and absence policy; no automatic ingestion."]
+          "CORRECT uses each target's native JSON type and absence policy; no automatic ingestion. "
+          "Documents too large for a spreadsheet cell are represented there by their linked "
+          "documents file; the JSON packet and Markdown preserve the complete text unchanged."]
     contents = {}
     for doc_id in dict.fromkeys(r["document_id"] for r in records):
         targets = [r for r in records if r["document_id"] == doc_id]
@@ -272,13 +307,29 @@ def export_packet(root: Path, dest: Path, *, source_ids: Sequence[str] = SAMPLE_
             "files": [str(Path(dest) / name) for name in contents]}
 
 
+def batch_ids(root: Path, stem: str) -> list[str]:
+    """Source ids with resolved labels whose saved draft lives in ``<stem>.drafts.jsonl``.
+
+    Deliberate order: the draft file's own order, which mirrors the labeling run."""
+    labels = _index(_journal(_inside(root, PACKAGE / "corporate-labels.jsonl")))
+    path = _inside(root, PACKAGE / "drafts") / f"{stem}.drafts.jsonl"
+    ids = [draft["kl3m_identifier"] for draft in _journal(path) if draft["kl3m_identifier"] in labels]
+    if not ids:
+        raise ValueError(f"no labeled source in draft file {stem}.drafts.jsonl")
+    return ids
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Export staged corporate sources to the requested folder and print the summary."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--batch", default=None, metavar="STEM",
+                        help="review one draft batch (file stem, e.g. pilot or batch_A); "
+                             "default keeps the audited 5-document sample")
     args = parser.parse_args(argv)
-    print(_json(export_packet(args.root, args.out)))
+    source_ids = batch_ids(args.root, args.batch) if args.batch else SAMPLE_IDS
+    print(_json(export_packet(args.root, args.out, source_ids=source_ids)))
     return 0
 
 
