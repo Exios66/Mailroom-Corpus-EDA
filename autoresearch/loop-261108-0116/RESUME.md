@@ -49,8 +49,18 @@
 4. `prompt_results.tsv` row (it9 note with the verdict), re-sync
    `docs/plans/v10-structure-and-label-completion.md` quotes if any prompt file changed,
    run `verify_all.sh` (AXE_PATH vendored) for the dimensions.tsv ledger row, commit+push.
-5. Sync `~/Downloads/labels-staging/2026-11-08-session-1/loop-final-state/` + `manifest.sha256`,
-   PR comment with the grading table, then delete the key file if not done in 1.
+5. Final-results push to `~/Downloads/labels-staging/2026-11-08-session-1/` (EXACT commands):
+   ```
+   .venv/bin/python autoresearch/loop-261108-0116/grade_corporate.py \
+       > /Users/luciusjmorningstar/Downloads/labels-staging/2026-11-08-session-1/scan-results/corporate-grade-stdout.txt
+   cp autoresearch/loop-261108-0116/quality_probe_report.json \
+       /Users/luciusjmorningstar/Downloads/labels-staging/2026-11-08-session-1/scan-results/
+   shasum -a 256 2026-11-08-session-1/loop-final-state/* 2026-11-08-session-1/scan-results/* \
+       > 2026-11-08-session-1/manifest.sha256   # from the labels-staging dir
+   ```
+   then commit + push, refresh `loop-final-state/`, PR comment with the grading table,
+   then delete the key file if not done in 1. (`scan-results/it7-claim-scan-report-final.json`
+   + `corporate-scan-status.json` already staged; the running scan's report completes the set.)
 
 ## Standing rules (never break)
 - Paid prompt changes land ONLY with live verification (fixture re-record `check`+`replay`
