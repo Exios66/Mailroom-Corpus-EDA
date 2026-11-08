@@ -165,7 +165,8 @@ def main() -> int:
                         size += 1
                         if isinstance(v, str) and v and not printed_run_ok(doc, v, None):
                             bad.append(f"{field}: {v}")
-                entry = {"document_id": doc_id, "model": model, "items": size, "violations": bad}
+                entry = {"document_id": doc_id, "model": model, "items": size,
+                         "violations": bad, "parsed": parsed}
             else:
                 bad = [i for i in items or [] if isinstance(i, str) and not printed_run_ok(doc, i, labels=None)]
                 entry = {"document_id": doc_id, "model": model, "items": len(items or []),
