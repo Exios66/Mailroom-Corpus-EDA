@@ -360,6 +360,40 @@ try {
   assert.ok(launch.reloads>readsBefore,'a finished run reloads the batches');
   assert.equal(await evaluate(`JSON.stringify([localStorage,sessionStorage]).includes('BROWSER-SECRET')`),false);
   await screenshot('08-launch-finished');
+  // Fixed leg-2 task score; unlike checks.length this denominator never grows with features.
+  const uxTasks=await evaluate(`(()=>{
+    const oldRecords=records, oldDecisions=decisions, oldHistory=history, oldCurrent=current;
+    const oldPacket=packet, oldDirty=dirty;
+    const a={...records[0],document_id:'UX-A',field:'sender',batch:'alpha',chunk:''};
+    const b={...records[0],document_id:'UX-B',field:'intent',batch:'beta',chunk:''};
+    const c={...records[0],document_id:'UX-C',field:'recipient',batch:'alpha',chunk:''};
+    records=[a,b,c]; decisions=new Map(records.map(r=>[KEY(r),blank(r)])); history=[];current=0;
+    $('target').textContent='';render();
+    const groups=[...$('target').querySelectorAll('optgroup')].map(g=>g.dataset.gid);
+    const consolidated=groups.length===2&&new Set(groups).size===2;
+    let search=false, empty=false;
+    if ($('target-search')){
+      $('target-search').value='ux-b intent';$('target-search').dispatchEvent(new Event('input'));
+      search=[...$('target').options].length===1&&$('target').options[0].value==='1';
+      const before=current;
+      $('target-search').value='no-such-review-target';$('target-search').dispatchEvent(new Event('input'));
+      empty=$('target').options.length===0&&current===before&&!$('target-search-status').hidden;
+      $('target-search').value='';$('target-search').dispatchEvent(new Event('input'));
+    }
+    const complete={...blank(a),decision:'ACCEPT',reviewer_initials:'AB',updated_at:now()};
+    const incomplete={...blank(b),decision:'CORRECT',corrected_labels_json:'"unfinished"',reviewer_initials:'',updated_at:now()};
+    decisions.set(KEY(a),complete);decisions.set(KEY(b),incomplete);dirty=true;
+    applySave({data:{state_revision:'ux-state',saved_decisions:[complete],saved_history:[],review_states:[]}},true);
+    const partial=dirty&&decisions.get(KEY(b)).decision==='CORRECT';
+    records=oldRecords;decisions=oldDecisions;history=oldHistory;current=oldCurrent;packet=oldPacket;dirty=oldDirty;
+    $('target').textContent='';render();persist();
+    return {find_target:search,empty_search_preserves_position:empty,consolidated_batches:consolidated,
+            partial_save_preserves_unsaved_work:partial};
+  })()`);
+  const uxScore=Object.values(uxTasks).filter(Boolean).length;
+  fs.writeFileSync(path.join(out,'ux-tasks.json'),JSON.stringify({score:uxScore,total:4,tasks:uxTasks},null,2));
+  console.log('UX_TASK_SCORE '+uxScore+'/4');
+  await screenshot('09-review-ux-final');
   // A11y pass: when AXE_PATH is set, the served /axe.js (vendored axe-core) scans the live
   // document; the committed run stays offline and only the a11y invariants below execute.
   if (process.env.AXE_PATH){
