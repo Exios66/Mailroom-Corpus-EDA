@@ -59,6 +59,19 @@ def validate_packet(packet: Mapping[str, Any]) -> dict[tuple[str, str], Mapping[
     return by_key
 
 
+def _compact_payload(packet: Mapping[str, Any]) -> dict:
+    """Embed each source text once per content sha, not once per field record.
+
+    The page rehydrates ``full_document_text`` client-side; the packet contract and
+    /review-data.json keep their per-record text untouched."""
+    texts: dict[str, str] = {}
+    records = []
+    for record in packet["records"]:
+        texts.setdefault(record["document_sha256"], record["full_document_text"])
+        records.append({k: v for k, v in record.items() if k != "full_document_text"})
+    return {**packet, "records": records, "document_texts": texts}
+
+
 def render_page(packet: Mapping[str, Any], out: Path) -> Path:
     """Embed the full packet safely in a standalone page with no external resources.
 
@@ -70,7 +83,7 @@ def render_page(packet: Mapping[str, Any], out: Path) -> Path:
     marker = "__REVIEW_PACKET_JSON__"
     if template.count(marker) != 1:
         raise ValueError("review page must contain exactly one packet placeholder")
-    payload = json.dumps(packet, ensure_ascii=False)
+    payload = json.dumps(_compact_payload(packet), ensure_ascii=False)
     for char, escaped in (("<", "\\u003c"), (">", "\\u003e"), ("&", "\\u0026"),
                           ("\u2028", "\\u2028"), ("\u2029", "\\u2029")):
         payload = payload.replace(char, escaped)
@@ -119,7 +132,7 @@ def validate_return(packet: Mapping[str, Any], returned: Mapping[str, Any]) -> N
     seen = set()
     allowed = {"document_id", "field", "document_sha256", "decision", "corrected_labels_json",
                "reviewer_initials", "reviewer_notes", "updated_at",
-               "verified_models", "manual_source_verification"}
+               "verified_models", "verified_outputs", "manual_source_verification"}
     for d in decisions:
         if not isinstance(d, dict) or set(d) - allowed:
             raise ValueError("unknown decision fields")
@@ -139,9 +152,24 @@ def validate_return(packet: Mapping[str, Any], returned: Mapping[str, Any]) -> N
         verified_models = d.get("verified_models", [])
         if not isinstance(verified_models, list) or not all(isinstance(m, str) for m in verified_models):
             raise ValueError(f"verified_models must be a list of model names: {key}")
-        known_models = {str(o.get("model")) for o in source.get("model_outputs") or []
-                        if isinstance(o, dict) and o.get("model")}
-        if verified_models and known_models and not set(verified_models) <= known_models:
+        outputs = d.get("verified_outputs", [])
+        if not isinstance(outputs, list):
+            raise ValueError(f"verified_outputs must be a list: {key}")
+        known = {(str(o.get("model")), o.get("pass")) for o in source.get("model_outputs") or []
+                 if isinstance(o, dict) and o.get("model")}
+        seen_outputs = set()
+        for output in outputs:
+            if (not isinstance(output, dict) or set(output) - {"model", "pass"}
+                    or not isinstance(output.get("model"), str)
+                    or not (output.get("pass") is None or type(output.get("pass")) is int)):
+                raise ValueError(f"verified_outputs entries need a model name and an optional pass: {key}")
+            pair = (output["model"], output.get("pass"))
+            if pair in seen_outputs:
+                raise ValueError(f"repeated verified output: {key}")
+            seen_outputs.add(pair)
+            if known and pair not in known:
+                raise ValueError(f"verified_outputs names a run this target did not make: {key}")
+        if verified_models and known and not set(verified_models) <= {m for m, _ in known}:
             raise ValueError(f"verified_models names a model this target did not run: {key}")
         if not isinstance(d.get("manual_source_verification", False), bool):
             raise ValueError(f"manual_source_verification must be boolean: {key}")

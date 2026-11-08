@@ -401,18 +401,7 @@ class ReviewPortal:
         docs = {}
         for state in states:
             docs.setdefault(state["document_id"], []).append(state)
-        saved, history = [], []
-        for state in states:
-            if not state["receipt_id"]:
-                continue
-            path = self.returns / f"review-{state['receipt_id']}.json"
-            raw = path.read_bytes()
-            if hashlib.sha256(raw).hexdigest() != state["receipt_id"]:
-                raise ValueError("stored review receipt hash mismatch")
-            receipt = json.loads(raw)
-            key = state["document_id"], state["field"]
-            saved.extend(d for d in receipt["decisions"] if (d["document_id"], d["field"]) == key)
-            history.extend(h for h in receipt["history"] if (h["document_id"], h["field"]) == key)
+        saved, history = self._saved_receipts(states)
         records = {(r["document_id"], r["field"]): r for r in packet["records"]}
         decisions = {(d["document_id"], d["field"]): d for d in saved}
         revision_queue = []
@@ -441,10 +430,43 @@ class ReviewPortal:
                 "tracker": self._campaign_tracker(packet, states), "checkpoint_enabled": self.hf_checkpoint,
                 "launch_enabled": self.launcher.enabled}
 
+    def _saved_receipts(self, states: list[dict]) -> tuple[list, list]:
+        """Return the restored decisions and history for targets with stored receipts."""
+        saved, history = [], []
+        for state in states:
+            if not state["receipt_id"]:
+                continue
+            path = self.returns / f"review-{state['receipt_id']}.json"
+            raw = path.read_bytes()
+            if hashlib.sha256(raw).hexdigest() != state["receipt_id"]:
+                raise ValueError("stored review receipt hash mismatch")
+            receipt = json.loads(raw)
+            key = state["document_id"], state["field"]
+            saved.extend(d for d in receipt["decisions"] if (d["document_id"], d["field"]) == key)
+            history.extend(h for h in receipt["history"] if (h["document_id"], h["field"]) == key)
+        return saved, history
+
+    def _save_state(self) -> dict:
+        """Return the light post-save state: the page keeps its records and applies this.
+
+        Avoids re-sending every source text after each saved decision (the full
+        payload runs to tens of megabytes on the corporate corpus)."""
+        packet = self._collect()
+        states = self._states(packet)
+        saved, history = self._saved_receipts(states)
+        return {"packet_id": packet["packet_id"], "state_revision": self._state_revision(),
+                "review_states": states, "saved_decisions": saved, "saved_history": history,
+                "tracker": self._campaign_tracker(packet, states)}
+
     def data(self) -> dict:
         """Return the current packet and review state while holding the portal locks."""
         with self._locked():
             return self._data()
+
+    def state(self) -> dict:
+        """Return review state only (no records/texts) for an already-loaded page."""
+        with self._locked():
+            return self._save_state()
 
     def agent_contract(self) -> dict:
         """The machine-readable review contract: schemas, decision key, routes, per-label rules.
@@ -505,6 +527,8 @@ class ReviewPortal:
         Raise Conflict for stale packets or new receipts based on stale state.
         Return-contract, schema, grounding, and filesystem errors propagate."""
         with self._locked():
+            returned = dict(returned)
+            slim = bool(returned.pop("slim", False))  # transport hint, never part of the receipt
             packet = self._collect()
             if returned.get("packet_id") != packet["packet_id"]:
                 raise Conflict("packet changed; reload the latest source before saving")
@@ -537,13 +561,16 @@ class ReviewPortal:
                 value = (_confirmed_value(source, decision) if confirmed else
                          (json.loads(decision["corrected_labels_json"]) if decision["decision"] == "CORRECT"
                           else source.get("candidate_value", source.get("candidate_labels")) if reviewed else None))
+                outputs = list(decision.get("verified_outputs") or [])
                 changes.append({"event_id": event_id, "receipt_id": receipt_id,
                                 "receipt_sha256": receipt_id, "packet_id": packet["packet_id"],
                                 "document_id": key[0], "field": key[1], "document_sha256": source["document_sha256"],
                                 "target_sha256": target_hash, "split": source["split"],
                                 "decision": decision["decision"], "value": value, "human_confirmed": confirmed,
                                 "schema_blocker": schema_blocker,
-                                "verified_models": list(decision.get("verified_models") or []),
+                                "verified_models": (sorted({str(o["model"]) for o in outputs})
+                                                    or list(decision.get("verified_models") or [])),
+                                "verified_outputs": outputs,
                                 "manual_source_verification": bool(decision.get("manual_source_verification")),
                                 "reviewer": decision["reviewer_initials"], "reviewer_notes": decision["reviewer_notes"],
                                 "server_received_at": received_at, "decision_sha256": signature,
@@ -559,7 +586,8 @@ class ReviewPortal:
                 if receipt.read_bytes() != raw:
                     raise ValueError("immutable receipt content mismatch") from None
             _append(self.journal, changes)
-            return {"receipt_id": receipt_id, "changed_fields": len(changes), "data": self._data()}
+            return {"receipt_id": receipt_id, "changed_fields": len(changes),
+                    "data": self._save_state() if slim else self._data()}
 
     def checkpoint(self, packet_id: str, *, api: Any = None) -> dict:
         """Back up pending confirmations and return a checkpoint receipt or failure status.
@@ -667,6 +695,8 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
                     self._reply(200, portal.render(), "text/html; charset=utf-8")
                 elif self.path == "/review-data.json":
                     self._reply(200, portal.data())
+                elif self.path == "/review-state.json":
+                    self._reply(200, portal.state())
                 elif self.path == "/api/launch/options":
                     self._reply(200, portal.launcher.options())
                 elif self.path == "/api/launch/status":

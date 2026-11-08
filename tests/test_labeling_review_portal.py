@@ -110,6 +110,19 @@ def test_correct_can_drop_a_single_label_item(env):
     assert json.loads(row["corrected_labels_json"]) == [items[0], items[1]]
 
 
+def test_slim_save_returns_state_without_the_records(env):
+    """A save with slim:true answers the page with review state only; the receipt stays canonical."""
+    data = env.app.data()
+    body = returned(data, ("entity_name", "ACCEPT", None))
+    body["slim"] = True
+    result = env.app.save(body)
+    assert "records" not in result["data"] and "document_texts" not in result["data"]
+    assert result["data"]["state_revision"] and result["data"]["review_states"]
+    assert result["data"]["saved_decisions"][0]["field"] == "entity_name"
+    receipt = json.loads(next(iter(env.app.returns.glob("review-*.json"))).read_text())
+    assert "slim" not in receipt
+
+
 def test_save_logs_model_attribution_and_manual_verification(env):
     """The decision journal keeps which model(s) the reviewer verified and whether the
     human verified a source-check-blocked candidate themselves."""

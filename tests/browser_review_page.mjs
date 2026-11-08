@@ -41,6 +41,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.url==='/axe.js') {res.setHeader('Content-Type','text/javascript');if(!process.env.AXE_PATH){res.writeHead(404);res.end();return;}res.end(fs.readFileSync(process.env.AXE_PATH));return;}
   res.setHeader('Content-Type','application/json');
   if(req.url==='/review-data.json') {launch.reloads++;res.end(JSON.stringify(packet));return;}
+  if(req.url==='/review-state.json') {res.end(JSON.stringify({packet_id:packet.packet_id,state_revision:packet.state_revision,review_states:packet.review_states,saved_decisions:packet.saved_decisions,saved_history:packet.saved_history,tracker:packet.tracker}));return;}
   if(req.url==='/api/launch/options') {res.end(JSON.stringify({enabled:true,campaign:'synthetic',targets:launchTargets,trial:{default_documents:2,max_documents:5,cap_ceiling_usd:0.25}}));return;}
   if(req.url==='/api/launch/status') {
     launch.statusReads++;
@@ -59,7 +60,9 @@ const server=http.createServer(async(req,res)=>{
     if(failSave) {res.writeHead(409);res.end(JSON.stringify({error:'synthetic revision conflict'}));return;}
     posts.push(body); saves++;
     packet={...packet,state_revision:'r'+(saves+1),saved_decisions:body.decisions,saved_history:body.history,review_states:[{document_id:record.document_id,field:record.field,status:'human_confirmed'}],tracker:{...packet.tracker,human_confirmed_fields:1,remaining_loaded_fields:1}};
-    res.end(JSON.stringify({saved:true}));return;
+    res.end(JSON.stringify({receipt_id:'synthetic-receipt-'+saves,changed_fields:body.decisions.length,
+      data:{packet_id:packet.packet_id,state_revision:packet.state_revision,review_states:packet.review_states,
+            saved_decisions:packet.saved_decisions,saved_history:packet.saved_history,tracker:packet.tracker}}));return;
   }
   if(req.url==='/api/checkpoint') {assert.deepEqual(body,{packet_id:packet.packet_id,confirm:true});checkpoints++;packet={...packet,state_revision:'checkpoint-1',tracker:{...packet.tracker,checkpointed_fields:1}};res.end(JSON.stringify({checkpointed:true}));return;}
   res.writeHead(404);res.end('{}');
@@ -92,6 +95,7 @@ try {
   await call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/review.html`});
   await waitFor(`document.getElementById('save') && !$('save').disabled`);
   assert.equal(await evaluate(`$('source').textContent`),text);
+  await evaluate(`autosaveEnabled=false`);
   assert.equal(await evaluate(`document.querySelector('#source mark').textContent`),quote);
   assert.equal(await evaluate(`document.querySelectorAll('#source img, #links a').length`),0);
   assert.match(await evaluate(`$('tasks').textContent`),/pending/);
@@ -272,8 +276,8 @@ try {
   // automated source checks can now be ACCEPTed after the reviewer verifies it against
   // the full source, and the decision records which model(s) produced the verified value.
   await evaluate(`$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
-  const ticked=await evaluate(`(()=>{[...document.querySelectorAll('#model-answers input')][0].click();return decisions.get('SYNTH-002\\nentity_name').verified_models;})()`);
-  assert.deepEqual(ticked,['synthetic/model-a'],'ticking a model row records the attribution');
+  const ticked=await evaluate(`(()=>{[...document.querySelectorAll('#model-answers input')][0].click();return decisions.get('SYNTH-002\\nentity_name').verified_outputs;})()`);
+  assert.deepEqual(ticked,[{model:'synthetic/model-a',pass:null}],'ticking a model row records the exact run');
   // "Use value" turns the verified model answer into the CORRECT replacement in one click.
   await evaluate(`[...document.querySelectorAll('#model-answers button')][0].click()`);
   assert.equal(await evaluate(`$('decision').value`),'CORRECT','use-value selects CORRECT');
@@ -291,6 +295,19 @@ try {
     'the verification flag travels with the decision');
   await evaluate(`records[1].candidate_status='source_checks_passed';decisions.set('SYNTH-002\\nentity_name',${JSON.stringify(saved1)});persist();$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
   check('manual source verification and per-model attribution');
+  // Autosave: complete decisions reach the server without the Save click, so a crash or
+  // restart cannot strand reviewed work inside this tab.
+  failSave=false; // the 409 rehearsal above left the mock rejecting writes
+  await evaluate(`autosaveEnabled=true`);
+  const postsBefore=posts.length;
+  await input('notes','Autosave probe note.');
+  await waitFor(`$('message').textContent.includes('Auto-saved at')`);
+  assert.ok(posts.length>postsBefore,'a decision was posted without clicking Save');
+  assert.equal(posts.at(-1).slim,true,'autosave uses the slim response');
+  assert.equal(await evaluate(`dirty`),false,'the applied autosave clears the dirty flag');
+  assert.match(await evaluate(`$('target-status').textContent`),/auto-saved/);
+  await evaluate(`autosaveEnabled=false`);
+  check('autosave persists complete decisions without Save');
   // Launch panel: shown because the server says launch is enabled.
   await waitFor(`!$('launch-panel').hidden && $('launch-target').options.length===3`);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#launch-target optgroup')].map(g=>g.label)`),['Campaign','Public trial']);

@@ -154,17 +154,21 @@ let records=[], current=0, busy=false, dirty=false, staleDraft=false, pendingDat
 let decisions=new Map(), history=[];
 const KEY=(r)=>r.document_id+'\n'+r.field;
 const storageKey='mailroom-review-draft/'+packet.packet_id;
-function blank(r){ return {document_id:r.document_id, field:r.field, document_sha256:r.document_sha256, decision:'NOT_REVIEWED', corrected_labels_json:'', reviewer_initials:'', reviewer_notes:'', updated_at:'', verified_models:[], manual_source_verification:false}; }
+function blank(r){ return {document_id:r.document_id, field:r.field, document_sha256:r.document_sha256, decision:'NOT_REVIEWED', corrected_labels_json:'', reviewer_initials:'', reviewer_notes:'', updated_at:'', verified_models:[], verified_outputs:[], manual_source_verification:false}; }
 function localDraft(){ return [...decisions.values()].some((d)=>d.decision!=='NOT_REVIEWED'||d.reviewer_notes||d.reviewer_initials||d.corrected_labels_json); }
 /** Reset targets, item choices, decisions, and history from packet data.
  * A truthy keep marks the resulting state as unsaved.
  */
 function seed(data, keep){
-  records=[...(data.records||[])];
+  // Text travels once per content sha (compact payload); rehydrate before use.
+  records=[...(data.records||[])].map((r)=>({...r, full_document_text: r.full_document_text!==undefined
+    ? r.full_document_text : ((data.document_texts||{})[r.document_sha256]||'')}));
   decisions=new Map();
   itemState=new Map();
   records.forEach((r)=>decisions.set(KEY(r), blank(r)));
-  (data.saved_decisions||[]).forEach((d)=>{ if(decisions.has(d.document_id+'\n'+d.field)) decisions.set(d.document_id+'\n'+d.field, clone(d)); });
+  const byKey=new Map(records.map((r)=>[KEY(r),r]));
+  (data.saved_decisions||[]).forEach((d)=>{ const k=d.document_id+'\n'+d.field;
+    if(decisions.has(k)) decisions.set(k, {...blank(byKey.get(k)), ...clone(d)}); }); // older receipts lack new fields
   history=clone(data.saved_history||[]);
   if (keep) dirty=true; else dirty=false;
 }
@@ -172,7 +176,9 @@ function overlay(kind){
   // Local draft fields stay on top of server values unless explicitly reset.
   if (kind==='reset') return;
   const draft=JSON.parse(localStorage.getItem(storageKey)||'null');
-  (draft&&draft.packet_id===packet.packet_id?draft.decisions:[]).forEach((d)=>{ if(decisions.has(d.document_id+'\n'+d.field)) decisions.set(d.document_id+'\n'+d.field, clone(d)); });
+  const byKey=new Map(records.map((r)=>[KEY(r),r]));
+  (draft&&draft.packet_id===packet.packet_id?draft.decisions:[]).forEach((d)=>{ const k=d.document_id+'\n'+d.field;
+    if(decisions.has(k)) decisions.set(k, {...blank(byKey.get(k)), ...clone(d)}); });
   if (draft&&draft.history&&draft.history.length>=history.length) history=clone(draft.history);
 }
 function decision(){ return decisions.get(KEY(records[current])); }
@@ -286,7 +292,7 @@ function persist(){
 }
 function logChange(before, after){
   history.push({at:now(), document_id:after.document_id, field:after.field, before:clone(before), after:clone(after)});
-  dirty=true; persist(); renderJournal(); renderTargetStatus(); controls();
+  dirty=true; editSeq++; persist(); scheduleAutoSave(); renderJournal(); renderTargetStatus(); controls();
 }
 function stateOf(record){
   const found=(packet.review_states||[]).find((s)=>s.document_id===record.document_id&&s.field===record.field);
@@ -398,6 +404,8 @@ function modelAnswers(record){
   const outs=Array.isArray(record.model_outputs)?record.model_outputs.filter((o)=>o&&typeof o==='object'):[];
   if (!outs.length) return null;
   const state=decisions.get(KEY(record))||{};
+  const verified=(x,o)=>String(x.model)===String(o.model)&&((x.pass==null&&o.pass==null)||(x.pass===o.pass));
+  const isTicked=(o)=>(state.verified_outputs||[]).some((x)=>verified(x,o));
   const box=node('details'); box.id='model-answers'; box.open=true;
   box.append(node('summary','Model answers ('+outs.length+')'));
   const t=node('table'), head=node('tr');
@@ -406,12 +414,14 @@ function modelAnswers(record){
     const tr=node('tr'), verified=node('td'), value=node('td'), status=node('td'), ev=node('td'), use=node('td');
     if (o.model){
       const tick=node('input'); tick.type='checkbox'; tick.setAttribute('aria-label','Verified model '+o.model);
-      tick.checked=(state.verified_models||[]).includes(String(o.model));
+      tick.checked=isTicked(o);
       tick.addEventListener('change', ()=>{
         const before=clone(decisions.get(KEY(record))), d=decisions.get(KEY(record));
-        const names=new Set(d.verified_models||[]);
-        if (tick.checked) names.add(String(o.model)); else names.delete(String(o.model));
-        d.verified_models=[...names].sort(); d.updated_at=now();
+        const list=(d.verified_outputs||[]).filter((x)=>!verified(x,o));
+        if (tick.checked) list.push({model:String(o.model), pass:o.pass==null?null:o.pass});
+        d.verified_outputs=list;
+        d.verified_models=[...new Set(list.map((x)=>x.model))].sort();
+        d.updated_at=now();
         logChange(before, d);
       });
       verified.append(tick);
@@ -487,7 +497,9 @@ function renderTarget(){
 function renderTargetStatus(){
   const d=decision();
   $('target-status').textContent='Server state: '+stateOf(records[current]).status
-    +(dirty?' (unsaved local edits)':'')+(staleDraft?' (stale packet; discard or reload)':'')
+    +(syncPending?' · sync pending (kept in this browser)':dirty?' (autosaving…)':'')
+    +(lastSavedAt?' · auto-saved '+lastSavedAt:'')
+    +(staleDraft?' (stale packet; discard or reload)':'')
     +' · Decided: '+d.decision+(d.updated_at?' at '+d.updated_at:'');
   batchProgress();
 }
@@ -585,26 +597,104 @@ async function request(url, body){
   if (!res.ok){ const err=new Error(res.status+' '+res.statusText+' — '+(value.error||'')); err.status=res.status; throw err; }
   return value;
 }
-async function refresh(reset){
+async function refresh(reset, forceFull){
   busy=true; controls(); message('Syncing with portal server…');
-  const hadDirty=dirty&&!reset;
+  const hadDirty=dirty&&!reset; // reset discards the local draft; a plain reload keeps it
   try {
-    const data=await request('/review-data.json');
+    // Records are already embedded; only an explicit re-read pulls the packets again.
+    const data=await request((forceFull||reset)?'/review-data.json':'/review-state.json');
     const same=data.packet_id===packet.packet_id;
     if (same && hadDirty && data.state_revision!==packet.state_revision){
       pendingData=true; staleDraft=true;
       packet=data; overlay(); tracker(); render(); controls();
       message('Server data changed (state revision '+(data.state_revision||'?')+'); your local draft is retained. Download JSON or use Discard to accept the new data.'); return;
     }
-    packet=data; seed(data); if (hadDirty) { overlay(); dirty=true; } else if (!reset) overlay();
+    if (data.records){
+      packet=data; seed(data); if (hadDirty) { overlay(); dirty=true; } else if (!reset) overlay();
+    } else { // state-only response: records stay, server decisions replace their targets
+      packet={...packet, ...(['state_revision','review_states','saved_decisions','saved_history','tracker']
+        .reduce((acc,k)=>{ if (data[k]!==undefined) acc[k]=data[k]; return acc; }, {}))};
+      const byKey=new Map(records.map((r)=>[KEY(r),r]));
+      (data.saved_decisions||[]).forEach((d)=>{ const k=d.document_id+'\n'+d.field;
+        if(decisions.has(k)) decisions.set(k, {...blank(byKey.get(k)), ...clone(d)}); });
+      overlay(); dirty=hadDirty;
+    }
     current=Math.min(current, records.length-1);
     staleDraft=false; pendingData=false;
     message('Loaded '+records.length+' review targets'+((data.saved_decisions||[]).length?' with '+(data.saved_decisions||[]).length+' saved decisions restored.':'')
       +' Review one target at a time; nothing publishes automatically.', true);
     render();
+    if (dirty) scheduleAutoSave();
   } catch (exc) {
     message('Reload failed: '+exc.message+(localDraft()?' Your local draft is retained; use Export JSON to keep it.':''));
   } finally { busy=false; controls(); }
+}
+// ---- Autosave: every complete decision reaches the server within ~1.2s, so a
+// browser crash, a server restart or a dropped connection cannot strand reviewed
+// work in this tab. Incomplete decisions stay local until they are valid.
+let autoTimer=null, syncPending=false, lastSavedAt='', autosaveEnabled=true, editSeq=0;
+function scheduleAutoSave(){
+  if (!autosaveEnabled) return;
+  if (autoTimer) clearTimeout(autoTimer);
+  autoTimer=setTimeout(runAutoSave, 1200);
+}
+function autosavePayload(){
+  const byKey=new Map(records.map((r)=>[KEY(r),r]));
+  const ds=[...decisions.values()].filter((d)=>{
+    if (d.decision==='NOT_REVIEWED') return true;
+    if (!/^[A-Z]{2,6}$/.test(d.reviewer_initials||'')) return false;
+    if (d.decision==='CORRECT'){ try { JSON.parse(d.corrected_labels_json||''); } catch (exc) { return false; } }
+    const r=byKey.get(d.document_id+'\n'+d.field)||{};
+    if (d.decision==='ACCEPT'&&r.candidate_status!=='source_checks_passed'&&!d.manual_source_verification) return false;
+    return true;
+  });
+  return {schema:'mailroom-human-review/v1', packet_id:packet.packet_id, state_revision:packet.state_revision,
+          exported_at:now(), decisions:ds, history:clone(history), slim:true};
+}
+/** Apply a save/slim response: state and tracker always; decisions only when no newer edit raced it. */
+function applySave(result, applyDecisions){
+  const d=result.data||{};
+  packet={...packet};
+  if (d.state_revision) packet.state_revision=d.state_revision;
+  if (Array.isArray(d.review_states)) packet.review_states=d.review_states;
+  if (d.tracker) packet.tracker=d.tracker;
+  if (applyDecisions){
+    if (Array.isArray(d.saved_decisions)){
+      packet.saved_decisions=d.saved_decisions;
+      (d.saved_decisions||[]).forEach((x)=>{ if(decisions.has(x.document_id+'\n'+x.field)) decisions.set(x.document_id+'\n'+x.field, clone(x)); });
+    }
+    if (Array.isArray(d.saved_history)){ packet.saved_history=d.saved_history; history=clone(d.saved_history); }
+    dirty=false;
+  }
+  persist();
+  tracker(); renderTargetStatus(); controls(); renderJournal();
+}
+async function runAutoSave(){
+  autoTimer=null;
+  if (!autosaveEnabled) return;
+  if (busy||pendingData||staleDraft){ autoTimer=setTimeout(runAutoSave, 2000); return; }
+  const body=autosavePayload();
+  if (!body.decisions.some((d)=>d.decision!=='NOT_REVIEWED')){
+    if (localDraft()) message('Draft kept in this browser only: finish the decision (initials, valid CORRECT JSON, or the manual-verification tick for a blocked candidate) and it saves itself.');
+    return;
+  }
+  const seq=editSeq;
+  busy=true; controls();
+  try{
+    const result=await request('/api/reviews', body);
+    applySave(result, seq===editSeq);
+    syncPending=false; lastSavedAt=new Date().toLocaleTimeString();
+    message('Auto-saved at '+lastSavedAt+' (receipt '+String(result.receipt_id||'').slice(0,12)+').', true);
+  }catch(exc){
+    if (exc.status===409){ // another tab moved the audit state; only an explicit reload merges safely
+      syncPending=true;
+      message('Auto-save conflict: another tab changed the review state. Your edits stay local; use Reload batches to merge, then keep reviewing.');
+    } else {
+      syncPending=true;
+      message('Auto-save failed ('+exc.message+'). Decisions stay in this browser (local draft) and the save retries every 5s.');
+      setTimeout(()=>{ if(syncPending&&autosaveEnabled&&!busy) runAutoSave(); }, 5000);
+    }
+  }finally{ busy=false; controls(); renderTargetStatus(); }
 }
 function validate(){
   const d=decision();
@@ -621,12 +711,11 @@ async function operation(fn){ if (busy) return; busy=true; controls(); try { awa
 $('save').addEventListener('click', ()=>operation(async()=>{
   if (!dirty){ message('Nothing unsaved.', true); return; }
   if (!validate()) return;
-  const body=payload();
+  const body={...payload(), slim:true};
   try {
     const result=await request('/api/reviews', body);
-    persist();
-    await refresh();
-    dirty=false; controls();
+    applySave(result, true);
+    syncPending=false; lastSavedAt=new Date().toLocaleTimeString();
     message('Saved. Receipt '+(result.receipt_id||'')+' · fields changed '+(result.changed_fields==null?'?':result.changed_fields)+'.', true);
   } catch (exc) { message('Save failed: '+exc.message+' — Draft retained.'); }
 }));
@@ -636,13 +725,14 @@ $('export').addEventListener('click', ()=>{
   setTimeout(()=>URL.revokeObjectURL(url),4000);
   message('Exported machine-readable decisions; return the file to the agent under the packet returns/ folder.', true);
 });
-$('reload').addEventListener('click', ()=>operation(async()=>{ await refresh(); }));
+$('reload').addEventListener('click', ()=>operation(async()=>{ await refresh(false, true); }));
 $('checkpoint').addEventListener('click', ()=>operation(async()=>{
   if (!confirm('Checkpoint all locally confirmed fields to the private staging repo now?')) return;
   try {
     const result=await request('/api/checkpoint', {packet_id:packet.packet_id, confirm:true});
-    message(result.verified===true?'Private checkpoint verified at revision '+result.revision+'.'
-      :'Checkpoint not verified: '+(result.message||'server said not verified'), result.verified===true);
+    message((result.verified===true?'Private checkpoint verified at revision '+result.revision+'.'
+      :'Checkpoint not verified: '+(result.message||'server said not verified'))
+      +(result.local_backup?' Local mirror: '+result.local_backup+'.':''), result.verified===true);
     await refresh();
   } catch (exc) { message('Checkpoint failed: '+exc.message+' — local confirmations remain pending.'); }
 }));
@@ -921,10 +1011,13 @@ window.onbeforeunload=(event)=>{ if (dirty||staleDraft){ event.preventDefault();
   try {
     const saved=JSON.parse(localStorage.getItem(storageKey)||'null');
     if (saved&&saved.packet_id===packet.packet_id){
-      saved.decisions.forEach((d)=>{ if(decisions.has(d.document_id+'\n'+d.field)) decisions.set(d.document_id+'\n'+d.field, clone(d)); });
+      const byKey=new Map(records.map((r)=>[KEY(r),r]));
+      saved.decisions.forEach((d)=>{ const k=d.document_id+'\n'+d.field;
+        if(decisions.has(k)) decisions.set(k, {...blank(byKey.get(k)), ...clone(d)}); });
       if (Array.isArray(saved.history)&&saved.history.length) history=clone(saved.history);
       const server=new Map((packet.saved_decisions||[]).map((d)=>[d.document_id+'\n'+d.field, JSON.stringify(d)]));
       dirty=[...decisions.entries()].some(([k,d])=>JSON.stringify(d)!==(server.get(k)||JSON.stringify(blank(records.find((r)=>KEY(r)===k)))));
+      if (dirty) scheduleAutoSave(); // a resumed unsaved draft flushes itself to the server
     }
   } catch (exc) {}
   persist();
