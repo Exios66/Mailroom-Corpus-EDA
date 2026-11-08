@@ -2151,9 +2151,9 @@ def test_skipped_arm_neither_runs_nor_costs_nor_ranks(tmp_path):
     import argparse
     camp = campaign("v10")
     skipped = [(c, i) for i, c in enumerate((c for c in camp["chunks"] if str(c["id"]) == "3"), 1) if c.get("skip")]
-    assert [c["models"][0] for c, _ in skipped] == ["deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash-1017",
-                                                    "openai/gpt-6-luna-pro", "anthropic/claude-haiku-5.5",
-                                                    "minimax/minimax-m3.1-flash"]
+    assert [c["models"][0] for c, _ in skipped] == ["deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash",
+                                                    "deepseek/deepseek-v4.1-flash-1017", "openai/gpt-6-luna-pro",
+                                                    "anthropic/claude-haiku-5.5", "minimax/minimax-m3.1-flash"]
     entry, arm = skipped[0]
     args = argparse.Namespace(campaign="v10", id="3", arm=arm, dry_run=True, ack_requires=False,
                               provider="openrouter", model_map=[], stage=tmp_path, initials="JB",

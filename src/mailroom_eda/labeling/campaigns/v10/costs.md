@@ -25,7 +25,7 @@ exact windowed prompts, typical output per call, x1.25 for retries and repairs;
 
 ## Recommended plan, chunk by chunk
 
-Projected total **$23.09**; the chunk caps add up to **$33.44**.
+Projected total **$23.03**; the chunk caps add up to **$33.34**.
 Two-model chunks are priced for both models.
 
 | chunk | task | set | slice | docs | calls | models | reasoning | projected USD | cap USD |
@@ -47,7 +47,7 @@ Two-model chunks are priced for both models.
 | 2a | cuad | pending | 1/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.29 | 0.45 |
 | 2b | cuad | pending | 2/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.30 | 0.45 |
 | 2c | cuad | pending | 3/3 | 29 | 29 | `winner_of_1` | winner_of_1 | 0.22 | 0.35 |
-| 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash` | off | 0.06 | 0.10 |
+| 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash` | off | 0.00 | 0.00 |
 | 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash` | low | 0.00 | 0.00 |
 | 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash-1017` | off | 0.00 | 0.00 |
 | 3 | intent | calibration | all | 96 | 192 | `gpt-6-luna-pro` | off | 0.00 | 0.00 |
