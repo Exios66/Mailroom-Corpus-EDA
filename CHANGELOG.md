@@ -8,6 +8,19 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 
 ## Unreleased
 
+- Review portal can launch labeling batches from the page, off unless started with `--enable-launch`
+  (`labeling/launch.py`; `GET /api/launch/options`, `POST /api/launch/preflight`, `POST /api/launch/start`,
+  `GET /api/launch/status`). Targets are campaign arms (run through `operate.cmd_chunk`, labeled Labeling or
+  Qualification) and public trials of 1 to 5 documents per type, capped at $0.25, drawn only from documents
+  that need labels and refused if any is CUAD or MAUD gold. A loud preflight checklist (key and credit, models,
+  stage sha, ping, HF checkpoint, cap headroom, approvals, ...) with a fix for every failure gates a
+  server-rechecked start that needs the cap typed again; one run at a time, bounded log, receipts in
+  `launches.jsonl`. A pasted API key stays in memory and reaches the run through `execute(env=...)`, never
+  `os.environ`, disk or a response. The page also shows a Model answers table from `model_outputs`.
+  `runner.model_problem`, `runner.projected_cost` and `runner.CAP_HEADROOM_FACTOR` are new shared helpers;
+  `cmd_chunk` takes `chat`, `key_status` and `env`.
+- Fix: `operate.cmd_chunk` reused `why` for the requires, checkpoint and Modal checks, so an
+  `--ack-requires` run journaled the checkpoint's message as the reason it overrode the requirement.
 - Labeling batches reach the review portal in one format. `labeling review` (so every `run` and `chunk`)
   now writes `<chunk_dir>/<chunk_dir.name>-review-data.json` through the new `review_export.py`
   (also `labeling export-review DIR` and `python -m mailroom_eda.labeling.review_export`): one

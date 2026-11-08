@@ -55,6 +55,9 @@ TYPICAL_OUTPUT = {"cuad": 2500, "intent": 120, "contract_entities": 1200, "merge
                   "merger_consideration": 200,
                   "correspondence": 450, "claim_checklist": 400, "corporate": 800}
 RETRY_FACTOR = 1.25
+#: A cap below this multiple of a chunk's projected cost stops it before its last calls (the cap
+#: check reserves each call's worst case); ``test_every_cap_covers_its_projection_with_headroom``.
+CAP_HEADROOM_FACTOR = 1.4
 #: Extra output tokens for a call with reasoning on: reasoning tokens count against
 #: ``max_tokens``, and without this a short answer budget (intent: 400) is cut off.
 # DeepSeek v4.1 Flash at low spent 336 to over 2,300 reasoning tokens on the same real email
@@ -949,6 +952,23 @@ def projected_output(model: str, task: str, reasoning: str, est: Mapping[str, An
     return int(est["output_tokens"]) + round(reasoning_tokens(model, task, reasoning) * est["calls"] * RETRY_FACTOR)
 
 
+def projected_cost(est: Mapping[str, Any], models: Sequence[str], task: str, reasoning: str) -> float | None:
+    """USD to run ``est``'s chunk on every model: tokens at registry prices, reasoning included
+    (:func:`projected_output`), and Modal GPU time for a Modal model. ``None`` when a model has no price."""
+    total = 0.0
+    for m in models:
+        if spend.gpu_spec(m):
+            if est["cost_usd"].get(m) is None:
+                return None
+            total += float(est["cost_usd"][m])
+            continue
+        try:
+            total += spend.token_cost(m, est["prompt_tokens"], projected_output(m, task, reasoning, est))
+        except spend.SpendError:
+            return None
+    return total
+
+
 def campaign_costs(rows: Sequence[Mapping[str, Any]], name: str = "v10") -> dict[str, Any]:
     """Per-chunk projections and single-model whole-campaign totals."""
     camp = campaign(name)
@@ -1153,6 +1173,31 @@ def provider_label(prov: Mapping[str, str]) -> str:
     return kinds.pop() if len(kinds) == 1 else "mixed"
 
 
+def model_problem(task: str, set_name: str, models: Sequence[str], prov: Mapping[str, str]) -> str:
+    """Why this model set may not run this task and set, or ``""``.
+
+    The approval and model-count rules :func:`execute` enforces before it spends: every
+    model approved in ``models.yaml`` on the provider it is sent to, two different models for
+    a two-model task (pilots and calibration sets measure, so one is enough there), one
+    model otherwise, and a second model for the intent relabel."""
+    approved = models_registry()["models"]
+    for m in models:
+        if m not in approved or approved[m]["provider"] != prov.get(m):
+            return f"{m} is not an approved {prov.get(m)} model in models.yaml"
+    if len(set(models)) != len(models):
+        return "the two models must differ"
+    # pilots and calibration sets are measured (by reading, or against expert gold), never
+    # ingested as labels, so one model is enough there; everywhere else two must agree
+    if task in tasks.TWO_MODEL_TASKS and len(models) != 2 and set_name not in ("pilot", "calibration"):
+        return f"{task} needs --second-model outside pilots and calibration (two-model agreement)"
+    if task == "intent" and set_name == "relabel":
+        if len(models) != 2:  # rewriting existing labels needs a second opinion that agrees
+            return "the intent relabel needs --second-model (two-model agreement)"
+    elif task not in tasks.TWO_MODEL_TASKS and len(models) != 1:
+        return f"{task} runs one model"
+    return ""
+
+
 def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any]], *, task: str,
             set_name: str, chunk_spec: str | None, models: Sequence[str], provider: str | Mapping[str, str],
             reasoning: str,
@@ -1160,7 +1205,7 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
             dry_run: bool = False, workers: int = 4, chunk_id: str | None = None,
             chat=providers.chat, key_status=providers.key_status,
             reuse_from: Sequence[Path] | None = None, require_checkpoint: bool = False,
-            ack_requires: str | None = None) -> int:
+            ack_requires: str | None = None, env: Mapping[str, str] | None = None) -> int:
     """Validate, project, gate the spend, run and review one chunk. Returns an exit code
     (0 done, 2 stopped at the cap or wall, 3 finished with failed calls to re-run).
 
@@ -1168,23 +1213,14 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
     parent, which holds every chunk and smoke run) are reused instead of bought again.
 
     ``provider`` is one provider for every model, or a ``{model: provider}`` map for a mixed
-    chunk (each model must be approved on its provider in ``models.yaml``)."""
-    approved = models_registry()["models"]
+    chunk (each model must be approved on its provider in ``models.yaml``).
+
+    ``env`` is where API keys are read from (default: the process environment); the review
+    portal's launcher passes a mapping so a key it was handed never enters ``os.environ``."""
     prov = dict(provider) if isinstance(provider, Mapping) else {m: provider for m in models}
-    for m in models:
-        if m not in approved or approved[m]["provider"] != prov.get(m):
-            raise SystemExit(f"{m} is not an approved {prov.get(m)} model in models.yaml")
-    if len(set(models)) != len(models):
-        raise SystemExit("the two models must differ")
-    # pilots and calibration sets are measured (by reading, or against expert gold), never
-    # ingested as labels, so one model is enough there; everywhere else two must agree
-    if task in tasks.TWO_MODEL_TASKS and len(models) != 2 and set_name not in ("pilot", "calibration"):
-        raise SystemExit(f"{task} needs --second-model outside pilots and calibration (two-model agreement)")
-    if task == "intent" and set_name == "relabel":
-        if len(models) != 2:  # rewriting existing labels needs a second opinion that agrees
-            raise SystemExit("the intent relabel needs --second-model (two-model agreement)")
-    elif task not in tasks.TWO_MODEL_TASKS and len(models) != 1:
-        raise SystemExit(f"{task} runs one model")
+    problem = model_problem(task, set_name, models, prov)
+    if problem:
+        raise SystemExit(problem)
     proj = estimate(picked, task, models, set_name)
     print(json.dumps({"chunk": chunk_id, "out": str(out_dir), "reasoning": reasoning, **proj}, indent=1))
     if dry_run:
@@ -1201,7 +1237,7 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
         if not checkpoint.token_ready():  # paid answers need somewhere to survive a lost checkout
             raise SystemExit(f"no HF token: paid answers checkpoint to the private {checkpoint.STAGING_REPO}; "
                              "set HF_TOKEN, or pass --no-checkpoint")
-    backends = {p: providers.Backend.from_env(p) for p in sorted(set(prov.values()))}
+    backends = {p: providers.Backend.from_env(p, env) for p in sorted(set(prov.values()))}
     if "openrouter" in backends:
         headroom = spend.check_key_headroom(key_status(backends["openrouter"]), cap_usd)
         print(f"key headroom after reserve: {'unlimited' if headroom == float('inf') else f'${headroom:.2f}'}",

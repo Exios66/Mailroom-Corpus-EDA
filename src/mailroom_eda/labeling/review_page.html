@@ -37,6 +37,12 @@ textarea, input { width: 100%; box-sizing: border-box; }
 .empty { color: #888; font-style: italic; }
 tr.current td { background: #fff7d6; }
 details { margin: 6px 0; } summary { cursor: pointer; font-weight: 600; }
+label.inline { display: flex; gap: 6px; align-items: center; font-weight: 400; }
+label.inline input { width: auto; }
+.check { border-left: 4px solid #ccc; padding: 2px 8px; margin: 6px 0; }
+.check.fail { border-color: #c62828; background: #fff5f5; } .check.warn { border-color: #e0a100; }
+.check.pass { border-color: #2e7d32; } .check .fix { margin: 2px 0; font-weight: 600; }
+pre#launch-log { max-height: 220px; overflow: auto; background: #f6f6f6; padding: 6px; font-size: 12px; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -50,6 +56,33 @@ details { margin: 6px 0; } summary { cursor: pointer; font-weight: 600; }
 </div>
 <div id="message" role="status" aria-live="polite" class="notice">Loading review packet…</div>
 <small id="binding" class="muted"></small>
+
+<section class="panel" id="launch-panel" hidden aria-labelledby="launch-title">
+<h2 id="launch-title">Launch a labeling batch</h2>
+<p class="muted">This spends real money on OpenRouter. Choose a target, run the preflight, fix every red item, then launch.
+The API key field is optional, is never stored (not even in this browser) and is cleared after every call.</p>
+<div class="columns">
+<div style="flex:1 1 380px">
+<label for="launch-target">Target</label><select id="launch-target"></select>
+<div id="launch-info"></div>
+<label for="launch-initials">Your initials (2–6 capital letters)</label><input id="launch-initials" maxlength="6" autocomplete="off">
+<label for="launch-cap">Spend cap (USD)</label><input id="launch-cap" inputmode="decimal" autocomplete="off">
+<div id="launch-trial-opts" hidden><label for="launch-docs">Trial documents (1–5)</label><input id="launch-docs" type="number" min="1" max="5" value="2" autocomplete="off"></div>
+<label for="launch-key">OpenRouter API key (optional; empty uses OPENROUTER_API_KEY from the portal's environment)</label>
+<input id="launch-key" type="password" autocomplete="off" spellcheck="false">
+<label class="inline"><input type="checkbox" id="launch-ack"> I acknowledge the external requirement (only if the target has one)</label>
+<div class="toolbar"><button id="launch-preflight">Run preflight</button><button id="launch-start" class="primary" disabled>Launch</button></div>
+</div>
+<div style="flex:2 1 480px">
+<div id="launch-message" role="status" aria-live="polite" class="notice">Run the preflight to see what a launch needs.</div>
+<p id="launch-projection"></p>
+<div id="launch-checklist"></div>
+<h3>Run status</h3>
+<div id="launch-status" class="muted">idle</div>
+<pre id="launch-log" aria-label="Run log"></pre>
+</div>
+</div>
+</section>
 
 <section class="panel" aria-labelledby="tracker-title">
 <h2 id="tracker-title">Campaign tracker</h2>
@@ -145,7 +178,8 @@ function humanize(key){
 const LABELS={populated:'Populated', pending_annotation:'Pending annotation', not_applicable:'Not applicable',
   schema_documented_absence:'Absent (documented)', absent_ok:'May be absent', never_absent:'Always present',
   source_checks_passed:'Source check passed', needs_source_review:'Needs source review', pinned_registry:'Registry field',
-  schema_pending:'Schema pending', production_manual:'Published dataset', array:'List of text', string:'Text', number:'Number'};
+  schema_pending:'Schema pending', production_manual:'Published dataset', labeling_batch:'Labeling batch',
+  present:'Present', not_found:'Not found', array:'List of text', string:'Text', number:'Number'};
 function label(code){ return code==null||code===''?'':(LABELS[code]||humanize(code)); }
 function parseMaybe(v){
   if (typeof v!=='string') return v;
@@ -229,6 +263,25 @@ function renderSource(record){
       marks.forEach((m)=>{ if(m.textContent===e.quote){ m.scrollIntoView({block:'center'}); } }); });
     ev.append(row); });
 }
+function modelAnswers(record){
+  // One row per model (and per pass): the exporter's model_outputs, so a reviewer can compare the models.
+  const outs=Array.isArray(record.model_outputs)?record.model_outputs.filter((o)=>o&&typeof o==='object'):[];
+  if (!outs.length) return null;
+  const box=node('details'); box.id='model-answers'; box.open=true;
+  box.append(node('summary','Model answers ('+outs.length+')'));
+  const t=node('table'), head=node('tr');
+  ['Model','Value','Status','Evidence'].forEach((h)=>head.append(node('th',h))); t.append(head);
+  outs.forEach((o)=>{
+    const tr=node('tr'), value=node('td'), status=node('td'), ev=node('td');
+    value.append(show(o.value, record.dojo_type));
+    status.append(chip(label(o.status)||'—', o.status==='present'?'good':''));
+    if (o.confidence!=null) status.append(node('span',' confidence '+o.confidence,'muted'));
+    const quote=typeof o.evidence==='string'&&o.evidence?o.evidence:(Array.isArray(o.evidence_spans)?o.evidence_spans.map((s)=>s.quote).filter(Boolean).join(' … '):'');
+    ev.append(quote?node('span',quote):node('span','No evidence quote','empty'));
+    tr.append(node('td',String(o.model||'?')+(o.pass?' (pass '+o.pass+')':''),'k'), value, status, ev); t.append(tr);
+  });
+  box.append(t); return box;
+}
 function renderTarget(){
   const record=records[current]; $('target').value=String(current);
   renderSource(record);
@@ -243,6 +296,7 @@ function renderTarget(){
   else if (record.eligible_for_gold===false) chips.append(chip('Not gold-eligible','bad'));
   if (record.split) chips.append(chip('Split: '+record.split));
   values.append(chips);
+  const answers=modelAnswers(record); if (answers) values.append(answers);
   if (!isEmpty(record.raw_glm_labels)){ const raw=node('details'); raw.append(node('summary','Raw model output')); raw.append(show(record.raw_glm_labels)); values.append(raw); }
   const gt=groundTruth(record); if (gt) values.append(gt);
   const tech=node('details'); tech.append(node('summary','Technical details'));
@@ -408,6 +462,129 @@ $('next').addEventListener('click', ()=>{ current=Math.min(records.length-1,curr
   if (id==='decision') $('decision-help').textContent=packet.decision_key?packet.decision_key[decision().decision]||'':'';
   logChange(before, decision());
 }));
+
+// ---- Launch panel (only when the server runs with --enable-launch) ----
+let launchOpts=null, launchPre=null, launchPoll=null, launchKeyUsed=false, launchWatching=false;
+function launchTarget(){ return ((launchOpts||{}).targets||[]).find((t)=>t.id===$('launch-target').value)||null; }
+function launchMessage(text, ok=false){ $('launch-message').textContent=text; $('launch-message').className='notice'+(ok?' ok':''); }
+function launchFields(){
+  // Everything except the key: the preflight is only valid for exactly these inputs.
+  const t=launchTarget()||{};
+  const body={target:$('launch-target').value, initials:$('launch-initials').value.trim(),
+    cap_usd:$('launch-cap').value.trim(), ack_requires:$('launch-ack').checked};
+  if (t.group==='Public trial') body.documents=Number($('launch-docs').value)||0;
+  return body;
+}
+function launchInvalidate(){
+  launchPre=null; $('launch-start').disabled=true;
+  if ($('launch-checklist').childNodes.length) launchMessage('Inputs changed: run the preflight again.');
+}
+function renderLaunchInfo(){
+  const t=launchTarget(), box=$('launch-info'); box.textContent='';
+  $('launch-trial-opts').hidden=!(t&&t.group==='Public trial');
+  if (!t) return;
+  const chips=node('div','','chips');
+  chips.append(chip(t.kind_label, t.kind==='qualification'?'warn':'good'));
+  chips.append(chip('Status: '+t.status, t.status==='blocked'?'bad':t.status==='approved'?'':'good'));
+  box.append(chips);
+  box.append(keyvals({'Task / set': t.task+' / '+t.set, 'Models': (t.models||[]).join(', ')+(t.models_resolved===false?' (winner not approved yet)':''),
+    'Reasoning': t.reasoning, 'Cap ceiling': '$'+Number(t.cap_usd).toFixed(2), 'Needs approved': (t.needs||[]).join(', '),
+    'Why blocked': t.blocker}));
+}
+function renderChecklist(result){
+  const box=$('launch-checklist'); box.textContent='';
+  const items=result.items||[];
+  const failing=items.filter((i)=>i.status==='fail').length;
+  items.forEach((i)=>{
+    const row=node('div','','check '+i.status), head=node('div');
+    head.append(chip(i.status.toUpperCase(), i.status==='pass'?'good':i.status==='fail'?'bad':i.status==='warn'?'warn':''), node('strong',' '+i.title));
+    row.append(head);
+    if (i.detail) row.append(node('div',i.detail,'muted'));
+    if (i.fix) row.append(node('div','Fix: '+i.fix,'fix'));
+    box.append(row);
+  });
+  const p=result.projection;
+  $('launch-projection').textContent=p?'Projection: '+p.documents+' documents, '+p.calls+' calls, '
+    +(p.cost_usd==null?'cost unknown':'about $'+Number(p.cost_usd).toFixed(4)):'Projection: not available until the checks above pass.';
+  launchMessage(failing?failing+' check'+(failing===1?'':'s')+' failed — nothing can start until they pass.'
+    :'All checks passed'+(items.some((i)=>i.status==='warn')?' (read the warnings)':'')+'. Launch is available.', !failing);
+}
+async function launchRequest(url, body){
+  const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  return {ok:res.ok, status:res.status, value:await res.json().catch(()=>({}))};
+}
+function takeKey(body){
+  // The key travels in this one request body and is wiped from the field at once.
+  const key=$('launch-key').value.trim(); $('launch-key').value='';
+  launchKeyUsed=!!key; if (key) body.api_key=key; return body;
+}
+async function runPreflight(){
+  const fields=launchFields(); launchPre=null; $('launch-start').disabled=true;
+  launchMessage('Running preflight…');
+  try {
+    const r=await launchRequest('/api/launch/preflight', takeKey({...fields}));
+    if (!r.ok){ launchMessage('Preflight failed: '+r.status+' — '+(r.value.error||'no detail')); return; }
+    renderChecklist(r.value);
+    launchPre={fields:JSON.stringify(fields), can:r.value.can_launch===true};
+    $('launch-start').disabled=!launchPre.can;
+  } catch (exc) { launchMessage('Preflight request failed: '+exc.message); }
+}
+async function startLaunch(){
+  if (!launchPre||!launchPre.can||launchPre.fields!==JSON.stringify(launchFields())){ launchInvalidate(); return; }
+  if (launchKeyUsed&&!$('launch-key').value.trim()){ launchMessage('You provided a key for the preflight; enter it again to launch (the page and server keep nothing).'); return; }
+  const fields=launchFields();
+  const typed=window.prompt('This spends up to $'+fields.cap_usd+' of real money. Type the cap ('+fields.cap_usd+') to confirm:','');
+  if (typed==null) return;
+  $('launch-start').disabled=true; launchMessage('Starting… the server re-checks everything first.');
+  try {
+    const r=await launchRequest('/api/launch/start', takeKey({...fields, confirm:typed.trim()}));
+    if (!r.ok){
+      if (Array.isArray(r.value.items)) renderChecklist({items:r.value.items, projection:null});
+      launchMessage('Not started ('+r.status+'): '+(r.value.error||'no detail')); launchPre=null; return; }
+    launchWatching=true; launchPre=null; launchMessage('Started. Watching the run…', true);
+    renderLaunchStatus(r.value.status||{}); pollLaunch();
+  } catch (exc) { launchMessage('Start request failed: '+exc.message); }
+}
+function renderLaunchStatus(s){
+  const parts=[s.state||'idle'];
+  if (s.target) parts.push((s.target.id||'')+' · cap $'+s.target.cap_usd);
+  if (s.started_utc) parts.push('started '+s.started_utc);
+  if (s.finished_utc) parts.push('finished '+s.finished_utc);
+  if (s.result) parts.push('spent '+(s.result.spent_usd==null?'?':'$'+s.result.spent_usd)+(s.result.packet?' · packet '+s.result.packet:''));
+  if (s.error) parts.push('error: '+s.error);
+  $('launch-status').textContent=parts.join(' — ');
+  $('launch-log').textContent=(s.log_tail||[]).join('\n');
+}
+async function pollLaunch(){
+  clearTimeout(launchPoll);
+  try {
+    const s=await request('/api/launch/status'); renderLaunchStatus(s);
+    if (s.state==='running'){ launchWatching=true; launchPoll=setTimeout(pollLaunch, 2000); return; }
+    if (launchWatching){
+      launchWatching=false;
+      launchMessage(s.state==='succeeded'?'Run finished. Reloading batches so the new packet appears.':'Run failed: '+(s.error||'see the log'), s.state==='succeeded');
+      if (s.state==='succeeded') $('reload').click();
+    }
+  } catch (exc) { launchMessage('Status unavailable: '+exc.message); }
+}
+async function launchInit(){
+  if (!packet.launch_enabled) return;
+  try { launchOpts=await request('/api/launch/options'); } catch (exc) { return; }
+  const sel=$('launch-target'); sel.textContent='';
+  const groups={};
+  (launchOpts.targets||[]).forEach((t)=>{
+    if (!groups[t.group]){ groups[t.group]=node('optgroup'); groups[t.group].label=t.group; sel.append(groups[t.group]); }
+    const o=node('option', t.title+' — '+(t.kind==='qualification'?'Qualification':'Labeling')+(t.status==='blocked'?' (blocked)':'')); o.value=t.id; groups[t.group].append(o);
+  });
+  const setCap=()=>{ const t=launchTarget(); if (t) $('launch-cap').value=Number(t.cap_usd).toFixed(2); };
+  sel.addEventListener('change', ()=>{ setCap(); renderLaunchInfo(); launchInvalidate(); });
+  ['launch-initials','launch-cap','launch-docs','launch-ack'].forEach((id)=>$(id).addEventListener('input', launchInvalidate));
+  $('launch-preflight').addEventListener('click', runPreflight);
+  $('launch-start').addEventListener('click', startLaunch);
+  setCap(); renderLaunchInfo();
+  $('launch-panel').hidden=false;
+  pollLaunch();
+}
 window.onbeforeunload=(event)=>{ if (dirty||staleDraft){ event.preventDefault(); return 'Unsaved review decisions.'; } };
 (async function init(){
   // Seed targets first: restoring a draft into an empty map silently dropped it, and the
@@ -426,6 +603,7 @@ window.onbeforeunload=(event)=>{ if (dirty||staleDraft){ event.preventDefault();
   render();
   message('Loaded embedded packet'+(localDraft()?' and restored your local draft. Check Reload batches if you manage packets in files.':'')+'.', true);
   await refresh();
+  await launchInit();
 })();
 </script>
 </body>

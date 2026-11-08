@@ -844,7 +844,7 @@ def test_every_cap_covers_its_projection_with_headroom():
         pytest.skip("v9.4 stage not built (data/ is gitignored)")
     costs = runner.campaign_costs(runner.load_stage(runner.DEFAULT_STAGE), "v10")
     low = [(c["id"], c["projected_usd"], c["cap_usd"]) for c in costs["chunks"]
-           if c["cap_usd"] < 1.4 * c["projected_usd"] - 1e-9]
+           if c["cap_usd"] < runner.CAP_HEADROOM_FACTOR * c["projected_usd"] - 1e-9]
     assert not low, low
 
 

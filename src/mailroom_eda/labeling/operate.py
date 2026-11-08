@@ -399,8 +399,13 @@ def pick(rows: Sequence[Mapping[str, Any]], entry: Mapping[str, Any]) -> list:
                         entry.get("chunk"))
 
 
-def cmd_chunk(args: argparse.Namespace) -> int:
-    """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit."""
+def cmd_chunk(args: argparse.Namespace, *, chat=providers.chat, key_status=providers.key_status,
+              env: Mapping[str, str] | None = None) -> int:
+    """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit.
+
+    ``chat``, ``key_status`` and ``env`` (where API keys are read from; default: the process
+    environment) pass through to :func:`runner.execute`, so the review portal's launcher can
+    hand a run a key without touching ``os.environ`` and tests can drive it with a fake chat."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
     if entry.get("skip"):
         raise SystemExit(f"chunk {entry['id']} arm {arm} is skipped: {entry['skip']}")
@@ -409,12 +414,12 @@ def cmd_chunk(args: argparse.Namespace) -> int:
     for need in entry.get("needs") or []:
         if not any(str(a["chunk"]) == str(need) for a in load_approvals(args.campaign)):
             raise SystemExit(f"chunk {entry['id']} starts after chunk {need} is approved")
-    met, why = requires_met(entry.get("requires"))
+    met, requires_why = requires_met(entry.get("requires"))
     if not met and not args.dry_run:
         if not args.ack_requires:
-            raise SystemExit(f"chunk {entry['id']} requires {entry['requires']} ({why}); bump the Dojo pin "
+            raise SystemExit(f"chunk {entry['id']} requires {entry['requires']} ({requires_why}); bump the Dojo pin "
                              f"once it has landed, or re-run with --ack-requires")
-        print(f"WARNING: --ack-requires overrides: {why}", file=sys.stderr)
+        print(f"WARNING: --ack-requires overrides: {requires_why}", file=sys.stderr)
     models, provider = chunk_models(args, models)
     prov = provider if isinstance(provider, dict) else {m: provider for m in models}
     routed = [m for m in models if prov[m] == "openrouter"]
@@ -426,14 +431,14 @@ def cmd_chunk(args: argparse.Namespace) -> int:
             raise SystemExit("route not verified; run `labeling ping --initials XX` first:\n  "
                              + "\n  ".join(probs))
     if not args.dry_run and not getattr(args, "no_checkpoint", False):
-        ok, why = checkpoint.write_access()
-        if not ok:
-            raise SystemExit(f"checkpoint not writable ({why}); paid answers must survive a lost checkout. "
+        writable, checkpoint_why = checkpoint.write_access()
+        if not writable:
+            raise SystemExit(f"checkpoint not writable ({checkpoint_why}); paid answers must survive a lost checkout. "
                              "Fix the token, or pass --no-checkpoint")
     if "modal" in prov.values() and not args.dry_run:
-        ok, why = modal_check()
-        if not ok:
-            raise SystemExit(f"Modal endpoint not ready: {why}")
+        ready, modal_why = modal_check(env)
+        if not ready:
+            raise SystemExit(f"Modal endpoint not ready: {modal_why}")
     rows = runner.load_stage(args.stage)
     picked = pick(rows, entry)
     stale = stale_winner(args.campaign, entry, picked)
@@ -447,8 +452,8 @@ def cmd_chunk(args: argparse.Namespace) -> int:
         max_wall_seconds=float(entry.get("max_wall_seconds") or camp["max_wall_seconds"]),
         out_dir=chunk_dir(args.out, entry, arm), dry_run=args.dry_run, workers=args.workers,
         chunk_id=f"{entry['id']}{f'.{arm}' if arm else ''}",
-        require_checkpoint=not getattr(args, "no_checkpoint", False),
-        **({"ack_requires": why} if not met and args.ack_requires and not args.dry_run else {}))
+        require_checkpoint=not getattr(args, "no_checkpoint", False), chat=chat, key_status=key_status, env=env,
+        **({"ack_requires": requires_why} if not met and args.ack_requires and not args.dry_run else {}))
     return rc if args.dry_run else auto_checkpoint(args, f"chunk {entry['id']}{f'.{arm}' if arm else ''} run", rc)
 
 

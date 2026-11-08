@@ -189,12 +189,14 @@ class ReviewPortal:
     """One operator, multiple tabs; file locks also serialize cooperating CLI writers."""
 
     def __init__(self, labels_root: Path, out: Path, *, campaign: str = "v10",
-                 stage: Path | None = None, hf_checkpoint: bool = False):
+                 stage: Path | None = None, hf_checkpoint: bool = False, launch_enabled: bool = False,
+                 launch_options: Mapping[str, Any] | None = None):
         """Create local portal and receipt directories and initialize review state caches.
 
         ``out`` must be a strict subfolder of labels_root, and campaign must be a safe
         name; invalid values raise ValueError. ``hf_checkpoint`` enables explicit
-        backup requests. Filesystem errors propagate."""
+        backup requests. ``launch_enabled`` turns on the paid-run launcher (``launch.py``;
+        ``launch_options`` are its test seams). Filesystem errors propagate."""
         self.labels_root, self.out = Path(labels_root).resolve(), Path(out).resolve()
         if not self.out.is_relative_to(self.labels_root) or self.out == self.labels_root:
             raise ValueError("portal output must be a subfolder of labels-root for private checkpoints")
@@ -212,6 +214,9 @@ class ReviewPortal:
         self._tracker = None
         self._stage_key = None
         self._stage_rows = None
+        from . import launch  # noqa: PLC0415 - launch imports the runner; keep the portal import light
+
+        self.launcher = launch.Launcher(self, enabled=launch_enabled, **(launch_options or {}))
 
     @contextmanager
     def _locked(self):
@@ -429,7 +434,8 @@ class ReviewPortal:
                                "loaded_targets_complete": all(s["status"] in ("human_confirmed", "checkpointed") for s in ss),
                                "scope": "all loaded applicable targets only; not whole-corpus completeness"}
                               for doc, ss in docs.items()],
-                "tracker": self._campaign_tracker(packet, states), "checkpoint_enabled": self.hf_checkpoint}
+                "tracker": self._campaign_tracker(packet, states), "checkpoint_enabled": self.hf_checkpoint,
+                "launch_enabled": self.launcher.enabled}
 
     def data(self) -> dict:
         """Return the current packet and review state while holding the portal locks."""
@@ -552,6 +558,8 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
 
     ``port=0`` requests an available port. Fixed routes validate Host and
     same-origin JSON writes. Binding failures propagate as OSError."""
+    from .launch import LaunchConflict  # noqa: PLC0415
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             """Suppress HTTP access logging."""
@@ -603,6 +611,10 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
                     self._reply(200, portal.render(), "text/html; charset=utf-8")
                 elif self.path == "/review-data.json":
                     self._reply(200, portal.data())
+                elif self.path == "/api/launch/options":
+                    self._reply(200, portal.launcher.options())
+                elif self.path == "/api/launch/status":
+                    self._reply(200, portal.launcher.status())
                 elif self.path == "/revision-queue.json":
                     data = portal.data()
                     self._reply(200, {"schema": "mailroom-v10-manual-revisions/v1",
@@ -616,12 +628,14 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
                 self._unexpected(exc)
 
         def do_POST(self):
-            """Validate JSON writes up to 10 MiB, then save reviews or explicitly checkpoint them."""
+            """Validate JSON writes up to 10 MiB, then save reviews, checkpoint them, or run the launch checklist."""
             try:
                 self._security(post=True)
-                if self.path not in ("/api/reviews", "/api/checkpoint"):
+                if self.path not in ("/api/reviews", "/api/checkpoint", "/api/launch/preflight", "/api/launch/start"):
                     self._reply(404, {"error": "unknown API route"})
                     return
+                if self.path.startswith("/api/launch/"):
+                    portal.launcher.require_enabled()  # 403 naming --enable-launch, before the body is read
                 if self.headers.get("Content-Type", "").split(";", 1)[0].strip() != "application/json":
                     self._reply(415, {"error": "Content-Type must be application/json"})
                     return
@@ -639,11 +653,17 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
                     raise ValueError("JSON body must be an object")
                 if self.path == "/api/reviews":
                     self._reply(200, portal.save(value))
+                elif self.path == "/api/launch/preflight":
+                    self._reply(200, portal.launcher.preflight(value))
+                elif self.path == "/api/launch/start":
+                    self._reply(200, portal.launcher.start(value))
                 elif set(value) != {"packet_id", "confirm"} or value["confirm"] is not True:
                     raise ValueError("checkpoint requires packet_id and explicit confirm=true")
                 else:
                     result = portal.checkpoint(value["packet_id"])
                     self._reply(200 if result["verified"] else 503, result)
+            except LaunchConflict as exc:
+                self._reply(409, {"error": str(exc), "items": exc.items})
             except (ValueError, KeyError, OSError, PermissionError) as exc:
                 self._error(exc)
             except Exception as exc:  # noqa: BLE001 - always answer; never drop the connection
@@ -663,6 +683,9 @@ def main(argv=None) -> int:
     parser.add_argument("--stage", type=Path, default=DEFAULT_STAGE)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--hf-checkpoint", action="store_true", help="enable explicit private-checkpoint POSTs only")
+    parser.add_argument("--enable-launch", action="store_true",
+                        help="let the page launch PAID labeling batches (campaign arms and small public trials) "
+                             "after a preflight checklist passes; off by default, see docs/labeler-review-viewer.md")
     parser.add_argument("--restore-revision", help="restore private HF labels at this immutable commit before serving; existing conflicts fail closed")
     parser.add_argument("--no-public-fallback", action="store_true",
                         help="do not fall back to public insurance claims when no packets exist")
@@ -685,9 +708,11 @@ def main(argv=None) -> int:
         if fallback is not None:
             print(f"No labeling packets yet; reviewing public insurance claims from {fallback}")
     portal = ReviewPortal(args.labels_root, out,
-                          campaign=args.campaign, stage=args.stage, hf_checkpoint=args.hf_checkpoint)
+                          campaign=args.campaign, stage=args.stage, hf_checkpoint=args.hf_checkpoint,
+                          launch_enabled=args.enable_launch)
     server = make_server(portal, args.port)
-    print(f"Private review portal: http://127.0.0.1:{server.server_port}/ (no automatic uploads)")
+    print(f"Private review portal: http://127.0.0.1:{server.server_port}/ (no automatic uploads)"
+          + ("; LAUNCHING PAID LABELING BATCHES IS ENABLED" if args.enable_launch else ""))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
