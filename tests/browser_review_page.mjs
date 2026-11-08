@@ -393,6 +393,7 @@ try {
   const uxScore=Object.values(uxTasks).filter(Boolean).length;
   fs.writeFileSync(path.join(out,'ux-tasks.json'),JSON.stringify({score:uxScore,total:4,tasks:uxTasks},null,2));
   console.log('UX_TASK_SCORE '+uxScore+'/4');
+  await evaluate(`showTab('review')`);
   await screenshot('09-review-ux-final');
   // A11y pass: when AXE_PATH is set, the served /axe.js (vendored axe-core) scans the live
   // document; the committed run stays offline and only the a11y invariants below execute.

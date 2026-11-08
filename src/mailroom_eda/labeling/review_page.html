@@ -26,6 +26,10 @@ th { background: #eef3ff; }
 td.k { font-weight: 600; white-space: nowrap; }
 label { display: block; margin: 8px 0 2px; font-weight: 600; }
 textarea, input { width: 100%; box-sizing: border-box; }
+input[type="checkbox"] { width: auto; }
+.review-search { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+.review-search label { flex: 1 1 280px; }
+#target { width: 100%; }
 .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .columns { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
 .field-title { font-size: 1.15em; font-weight: 700; margin: 2px 0; }
@@ -34,7 +38,7 @@ textarea, input { width: 100%; box-sizing: border-box; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
 .chip { font-size: .85em; padding: 1px 8px; border-radius: 10px; background: #eee; }
 .chip.good { background: #d3f4d3; } .chip.warn { background: #ffe9a8; } .chip.bad { background: #ffd6d6; }
-.empty { color: #888; font-style: italic; }
+.empty { color: #666; font-style: italic; }
 tr.current td { background: #fff7d6; }
 details { margin: 6px 0; } summary { cursor: pointer; font-weight: 600; }
 label.inline { display: flex; gap: 6px; align-items: center; font-weight: 400; }
@@ -117,6 +121,10 @@ The API key field is optional, is never stored (not even in this browser) and is
 
 <div id="review-view" role="tabpanel" aria-labelledby="tab-review">
 <section class="panel">
+<div class="review-search"><label for="target-search">Find a review target
+<input id="target-search" type="search" placeholder="Document ID, filename, field or class" aria-describedby="target-search-status"></label>
+<button id="clear-target-search" type="button">Clear search</button></div>
+<p id="target-search-status" role="status" class="muted"></p>
 <label for="target">Review target</label><select id="target"></select>
 <div class="toolbar"><button id="previous">Previous target</button><button id="next">Next target</button><button id="next-pending" title="Jump to the next undecided target (keyboard: N)">Next pending</button><button id="next-pending-batch" title="Jump to the next undecided target inside the current batch, else the next pending anywhere (keyboard: Shift+N)">Next pending in batch</button><button id="bulk-accept" title="Set ACCEPT (with the remembered initials) for every undecided target in the current record's batch whose candidate passed the automated source checks; review then Save as usual">Accept verified in batch</button></div>
 <label for="batch-jump">Jump to batch</label><select id="batch-jump" aria-label="Jump to a batch's first pending target"></select>
@@ -570,25 +578,33 @@ function renderJournal(){
   el.append(t);
 }
 /** Refresh the review views and packet binding, rebuilding target options when their count changes. */
-function render(){
+function renderTargetOptions(){
   const target=$('target');
-  if (target.options.length!==records.length){
-    target.textContent='';
-    // Group the review list by batch (one option group per labeling batch), so the
-    // interface reads like the generation that produced it.
-    let group=null, lastGid='';
-    records.forEach((r,i)=>{
+  const terms=$('target-search').value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  target.textContent='';
+  const groups=new Map();
+  records.forEach((r,i)=>{
+      const text=[r.document_id,r.filename,r.field,r.doc_class,r.subclass,r.batch,r.chunk].filter(Boolean).join(' ').toLowerCase();
+      if (!terms.every((term)=>text.includes(term))) return;
       const gid=String(r.batch||r.chunk||'');
-      if (gid && (group===null || gid!==lastGid)){
-        group=node('optgroup');
+      let group=groups.get(gid);
+      if (gid && !group){
+        group=node('optgroup'); groups.set(gid,group);
         group.dataset.gid=gid;
         group.label=humanize(gid)+((r.task||r.set)?' · '+[humanize(r.task||''),r.set||''].filter(Boolean).join(' / '):'');
-        target.append(group); lastGid=gid;
+        target.append(group);
       }
       const o=node('option',(i+1)+' · '+r.document_id+' · '+r.field); o.value=String(i);
       (group&&gid?group:target).append(o);
-    });
-  }
+  });
+  target.value=String(current);
+  $('target-search-status').textContent=target.options.length
+    ?target.options.length+' of '+records.length+' targets. Search narrows this list; your current review stays open.'
+    :'No matching targets. Clear the search to see all labels; your current review is unchanged.';
+  batchProgress();
+}
+function render(){
+  renderTargetOptions();
   tracker(); renderTarget(); renderJournal(); controls();
   $('binding').textContent='packet '+(packet.packet_id||'?')+' · state '+(packet.state_revision||'?')
     +' · '+records.length+' targets'+((packet.saved_decisions||[]).length?' · '+(packet.saved_decisions||[]).length+' decisions restored from receipts':'');
@@ -749,6 +765,8 @@ $('discard').addEventListener('click', ()=>operation(async()=>{
   seed(packet); await refresh(true);
 }));
 $('task-filter').addEventListener('change', tracker);
+$('target-search').addEventListener('input', renderTargetOptions);
+$('clear-target-search').addEventListener('click', ()=>{ $('target-search').value=''; renderTargetOptions(); $('target-search').focus(); });
 $('target').addEventListener('change', ()=>{ current=Number($('target').value)||0; renderTarget(); });
 $('previous').addEventListener('click', ()=>{ current=Math.max(0,current-1); renderTarget(); controls(); });
 $('next').addEventListener('click', ()=>{ current=Math.min(records.length-1,current+1); renderTarget(); controls(); });
