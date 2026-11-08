@@ -1,0 +1,102 @@
+{
+ "calls": {
+  "answered": 5,
+  "errors": 0,
+  "reasoning_runaways": 0,
+  "repairs": 1
+ },
+ "cap_usd": {
+  "this_type": 0.4,
+  "total_requested": 1.0
+ },
+ "dataset": {
+  "file": "ground_truth_hardened.jsonl",
+  "file_sha256": "ed0ae5cd471f28db4d55e438aded34dde2a198ad40e60b5e4c7cdb90624361cb",
+  "repo": "Lucius-Morningstar/mailroom-dataset",
+  "revision": "ccd040f6a1b6b414bdefd161cdc622b68f6dacf8",
+  "tag": "v9.3"
+ },
+ "doc_type": "contract",
+ "documents": [
+  {
+   "chars": 22857,
+   "document_id": "public-v9.3:DOC-0c5144a5b68c5ee4",
+   "published_document_id": "DOC-0c5144a5b68c5ee4",
+   "split": "train",
+   "subclass": "Consulting Agreements",
+   "text_sha256": "a0988ede40c12025a7e1bfcda8e7d01e965c869b9fb0e8c1fd46c26bf09e82c1"
+  },
+  {
+   "chars": 5873,
+   "document_id": "public-v9.3:DOC-0efbd6c505e1d339",
+   "published_document_id": "DOC-0efbd6c505e1d339",
+   "split": "train",
+   "subclass": "Consulting Agreements",
+   "text_sha256": "3ee302dc33b49be9e0ceedbb84a8a264880435619d3c1338ac4a4fd436005d5a"
+  }
+ ],
+ "exit_code": 0,
+ "initials": "LM",
+ "max_tokens": {
+  "deepseek/deepseek-v4.1-flash": 8192,
+  "z-ai/glm-5.3-flashx-legal": 9392
+ },
+ "models": [
+  "z-ai/glm-5.3-flashx-legal",
+  "deepseek/deepseek-v4.1-flash"
+ ],
+ "prompts": [
+  {
+   "document_id": "public-v9.3:DOC-0c5144a5b68c5ee4",
+   "input_sha256": "cf9a6058eb1b3cac027551363321f96b5ab2162731bafcfca80b0e7f3360e21b",
+   "model": "z-ai/glm-5.3-flashx-legal",
+   "prompt_sha256": "eb3044088c837a98b4a0a61dfbdc56a14c16541310954eee05eefe7bd658bde7",
+   "published_document_id": "DOC-0c5144a5b68c5ee4",
+   "schema_sha256": "c7e45be5d35ef57c5ebe63d839318c915bd6abbcb487dd4687d79aa83f230b75",
+   "variant": ""
+  },
+  {
+   "document_id": "public-v9.3:DOC-0c5144a5b68c5ee4",
+   "input_sha256": "cf9a6058eb1b3cac027551363321f96b5ab2162731bafcfca80b0e7f3360e21b",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "prompt_sha256": "eb3044088c837a98b4a0a61dfbdc56a14c16541310954eee05eefe7bd658bde7",
+   "published_document_id": "DOC-0c5144a5b68c5ee4",
+   "schema_sha256": "c7e45be5d35ef57c5ebe63d839318c915bd6abbcb487dd4687d79aa83f230b75",
+   "variant": ""
+  },
+  {
+   "document_id": "public-v9.3:DOC-0efbd6c505e1d339",
+   "input_sha256": "e420da8678df447ac284b19d5b3d3504ab8a5e165009a6a90b9b3cdea4014db2",
+   "model": "z-ai/glm-5.3-flashx-legal",
+   "prompt_sha256": "eb3044088c837a98b4a0a61dfbdc56a14c16541310954eee05eefe7bd658bde7",
+   "published_document_id": "DOC-0efbd6c505e1d339",
+   "schema_sha256": "c7e45be5d35ef57c5ebe63d839318c915bd6abbcb487dd4687d79aa83f230b75",
+   "variant": ""
+  },
+  {
+   "document_id": "public-v9.3:DOC-0efbd6c505e1d339",
+   "input_sha256": "e420da8678df447ac284b19d5b3d3504ab8a5e165009a6a90b9b3cdea4014db2",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "prompt_sha256": "eb3044088c837a98b4a0a61dfbdc56a14c16541310954eee05eefe7bd658bde7",
+   "published_document_id": "DOC-0efbd6c505e1d339",
+   "schema_sha256": "c7e45be5d35ef57c5ebe63d839318c915bd6abbcb487dd4687d79aa83f230b75",
+   "variant": ""
+  }
+ ],
+ "reasoning": {
+  "deepseek/deepseek-v4.1-flash": "off",
+  "z-ai/glm-5.3-flashx-legal": "low"
+ },
+ "recorded_utc": "2026-11-08T06:47:40Z",
+ "recorder_commit": "b86e7956b8d66e2a4e805469316faad6e18d0963",
+ "recorder_tree_dirty": false,
+ "response_schema_sha256": "c7e45be5d35ef57c5ebe63d839318c915bd6abbcb487dd4687d79aa83f230b75",
+ "schema_version": 1,
+ "set": "pending",
+ "spent_by_model": {
+  "deepseek/deepseek-v4.1-flash": 0.002101,
+  "z-ai/glm-5.3-flashx-legal": 0.004754
+ },
+ "spent_usd": 0.006855,
+ "task": "cuad"
+}

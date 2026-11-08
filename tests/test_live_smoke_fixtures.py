@@ -104,7 +104,9 @@ def test_recorded_fixture_bills_no_gold(doc_type):
         assert launch.gold_reason(row) == "", row["document_id"]
         if doc_type == "contract":
             assert row["source_corpus"] == "sec_edgar"
-            assert not (row["gt_fields"] or {}).get("cuad_clause_labels")
+            labels = (row["gt_fields"] or {}).get("cuad_clause_labels")
+            labels = json.loads(labels or "{}") if isinstance(labels, str) else labels
+            assert isinstance(labels, dict) and not labels, row["document_id"]
         if doc_type == "merger_agreement":
             assert not launch.derive.maud_consideration_answer(row)
 
