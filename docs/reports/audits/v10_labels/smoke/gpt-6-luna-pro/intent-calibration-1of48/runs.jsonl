@@ -1,0 +1,2 @@
+{"api_cost_cap_usd": 0.03, "chunk": null, "documents": 2, "initials": "JJB", "max_wall_seconds": 600.0, "models": ["openai/gpt-6-luna-pro"], "projection": {"calls": 4, "cost_usd": {"openai/gpt-6-luna-pro": 0.0006}, "documents": 2, "output_tokens": 600, "prompt_tokens": 2617, "task": "intent"}, "provider": "openrouter", "reasoning": "off", "set": "calibration", "slice": "1/48", "started_utc": "2026-11-06T07:51:41Z", "task": "intent", "workers": 4}
+{"chunk": null, "finished_utc": "2026-11-06T07:51:45Z", "result": {"calls": 4, "review": {"records": 2}, "spent_usd": 0.0009}}
