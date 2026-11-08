@@ -384,3 +384,28 @@ def test_symlink_output_state_rejected_and_output_must_stay_private_root(env, tm
     env.app.journal.symlink_to(outside)
     with pytest.raises(ValueError, match="symlinks"):
         env.app.data()
+
+
+def test_unexpected_handler_error_still_answers_json_500(env, monkeypatch):
+    def boom(_value):
+        raise TypeError("synthetic malformed decision")
+    monkeypatch.setattr(env.app, "save", boom)
+    with http_server(env.app) as server:
+        status, body, _ = request(server, "POST", "/api/reviews", {"decisions": [1]})
+        assert status == 500 and json.loads(body) == {"error": "internal error; see the portal log"}
+
+
+def test_tracker_subclass_chunks_count_by_expected_subclass(env, tmp_path):
+    campaign = {"name": "test", "chunks": [
+        {"id": "9b", "task": "corporate", "set": "all", "subclass": ["bylaws"]},
+        {"id": "9c", "task": "corporate", "set": "all", "subclass": "articles_of_incorporation"}], "steps": []}
+    (env.campaigns / "campaign.yaml").write_text(json.dumps(campaign))
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    subs = ["bylaws", "bylaws", "articles_of_incorporation"]
+    inventory = [{"document_id": f"C{i}", "filename": f"{i}.txt", "expected": "corporate_record",
+                  "expected_subclass": s, "doc_text": TEXT, "gt_fields": {}} for i, s in enumerate(subs)]
+    (stage / "ground_truth_hardened.jsonl").write_text("\n".join(json.dumps(r) for r in inventory))
+    env.app.stage = stage
+    totals = [t["documents_total"] for t in env.app.data()["tracker"]["tasks"]]
+    assert totals == [2, 1]  # a list filter matches expected_subclass, not a missing "subclass" key

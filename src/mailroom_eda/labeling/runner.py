@@ -110,12 +110,17 @@ def select(rows: Sequence[Mapping[str, Any]], task: str, set_name: str,
     ``subclass`` restricts the class pool by expected_subclass, accepting one value
     or a list/tuple; false values disable the filter. Pilot and remainder sets
     sample within that pool. CUAD calibration/holdout, intent sets, and contract
-    entity calibration select from the original rows and bypass this filter.
+    entity calibration select fixed samples from the original rows, so a subclass
+    filter there raises SystemExit instead of being silently ignored.
     Unsupported sets raise SystemExit; unknown tasks raise KeyError."""
     from .. import v9_4_revision as v94  # noqa: PLC0415
 
     cls = tasks.TASK_CLASSES[task]
     pool = [r for r in rows if r["expected"] == cls]
+    fixed = (task == "intent" or (task == "cuad" and set_name in ("calibration", "holdout"))
+             or (task == "contract_entities" and set_name == "calibration"))
+    if subclass and fixed:
+        raise SystemExit(f"{task} {set_name} is a fixed sample; a subclass filter does not apply")
     if subclass:
         subs = {str(s) for s in (subclass if isinstance(subclass, (list, tuple)) else [subclass])}
         pool = [r for r in pool if str(r.get("expected_subclass") or "") in subs]
@@ -923,12 +928,11 @@ def campaign_costs(rows: Sequence[Mapping[str, Any]], name: str = "v10") -> dict
     out: list[dict[str, Any]] = []
     tokens: dict[str, list[int]] = {}
     for ch in camp["chunks"]:
+        from .operate import resolve, pick  # noqa: PLC0415
+        picked = pick(rows, ch)  # the subclass filter and slice apply whatever the models are
         try:  # an approved bake-off winner is priced as itself, otherwise as the costliest arm
-            from .operate import resolve, pick  # noqa: PLC0415
             models, reasoning = resolve(name, ch)
-            picked = pick(rows, ch)
         except SystemExit:
-            picked = chunk(select(rows, ch["task"], ch["set"]), ch.get("chunk"))
             models = [PLACEHOLDER_MODELS.get(m, m) for m in ch["models"]]
             reasoning = PLACEHOLDER_REASONING.get(str(ch["reasoning"]), str(ch["reasoning"]))
         est = estimate(picked, ch["task"], models, ch["set"])
@@ -938,7 +942,10 @@ def campaign_costs(rows: Sequence[Mapping[str, Any]], name: str = "v10") -> dict
                     "prompt_tokens": est["prompt_tokens"] * len(models),
                     "output_tokens": sum(outputs.values()),
                     "projected_usd": round(cost, 4), "priced_models": models, "priced_reasoning": reasoning})
-        key = f"{ch['task']}:{ch['set']}:{ch.get('chunk') or ''}"
+        sub = ch.get("subclass") or ""
+        sub = ",".join(sorted(map(str, sub))) if isinstance(sub, (list, tuple)) else str(sub)
+        # Arms of one chunk share rows and count once; subclass-split chunks each count.
+        key = f"{ch['task']}:{ch['set']}:{ch.get('chunk') or ''}:{sub}"
         if ch["set"] != "calibration" or ch["task"] in ("cuad", "intent", "contract_entities", "merger_consideration"):
             tokens.setdefault(key, [est["prompt_tokens"], est["output_tokens"]])
     p_tok = sum(v[0] for v in tokens.values())

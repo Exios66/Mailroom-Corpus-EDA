@@ -289,9 +289,8 @@ class ReviewPortal:
                 selected, why = None, ""
                 if entry in camp["chunks"] and self._stage_rows is not None:
                     try:
-                        rows = runner.select(self._stage_rows, entry["task"], entry["set"])
-                        if entry.get("subclass"):
-                            rows = [r for r in rows if r.get("subclass") == entry["subclass"]]
+                        # Same selection as operate.pick: expected_subclass filter (one value or a list).
+                        rows = runner.select(self._stage_rows, entry["task"], entry["set"], entry.get("subclass"))
                         selected = {str(r.get("document_id") or r.get("id") or r["filename"])
                                     for r in runner.chunk(rows, entry.get("chunk"))}
                     except (ValueError, KeyError, OSError, SystemExit) as exc:
@@ -546,6 +545,11 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
             status = 409 if isinstance(exc, Conflict) else 403 if isinstance(exc, PermissionError) else 400
             self._reply(status, {"error": str(exc)})
 
+        def _unexpected(self, exc):
+            """Log an unhandled error server-side and answer HTTP 500 without its details."""
+            self.log_error("unhandled %s: %s", type(exc).__name__, exc)
+            self._reply(500, {"error": "internal error; see the portal log"})
+
         def do_GET(self):
             """Serve fixed review routes; convert handled validation and I/O errors to HTTP responses."""
             try:
@@ -563,6 +567,8 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
                     self._reply(404, {"error": "unknown route"})
             except (ValueError, KeyError, OSError, PermissionError) as exc:
                 self._error(exc)
+            except Exception as exc:  # noqa: BLE001 - always answer; never drop the connection
+                self._unexpected(exc)
 
         def do_POST(self):
             """Validate JSON writes up to 10 MiB, then save reviews or explicitly checkpoint them."""
@@ -595,6 +601,8 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
                     self._reply(200 if result["verified"] else 503, result)
             except (ValueError, KeyError, OSError, PermissionError) as exc:
                 self._error(exc)
+            except Exception as exc:  # noqa: BLE001 - always answer; never drop the connection
+                self._unexpected(exc)
 
     return ThreadingHTTPServer(("127.0.0.1", port), Handler)
 

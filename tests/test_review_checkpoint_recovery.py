@@ -49,3 +49,17 @@ def test_central_download_passes_authentication_and_revision(tmp_path, monkeypat
     monkeypatch.setattr(hf_interface, "hf_hub_download", download)
     hf_interface.download_file(SimpleNamespace(token="test-only-token"), "private/staging",
                                "labels/source.txt", tmp_path / "source.txt", revision="c" * 40)
+
+
+def test_symlink_check_stops_at_the_checkpoint_root(tmp_path):
+    real = tmp_path / "real"
+    (real / "out" / "8b").mkdir(parents=True)
+    (real / "out" / "8b" / "fields.csv").write_text("x\n")
+    (tmp_path / "link").symlink_to(real, target_is_directory=True)
+    root = tmp_path / "link" / "out"  # a symlinked ancestor (macOS /tmp, a data mount) is outside the tree
+    assert [rel for rel, _ in checkpoint._sources(root, None)] == ["labels/8b/fields.csv"]
+    (real / "elsewhere").mkdir()
+    (real / "out" / "8c").symlink_to(real / "elsewhere", target_is_directory=True)
+    (real / "elsewhere" / "fields.csv").write_text("y\n")
+    with pytest.raises(SystemExit, match="refuses symlink"):
+        list(checkpoint._sources(root, None))  # a symlink inside the tree is still refused

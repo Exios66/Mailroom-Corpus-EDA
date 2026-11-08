@@ -53,10 +53,10 @@ def _sources(labels_root: Path, approvals: Path | None) -> Iterable[tuple[str, P
     """Yield repository paths and local files with supported checkpoint suffixes.
 
     Include an existing approvals file separately. Raise SystemExit for symlinks
-    in the scanned paths or their parents."""
+    in the scanned paths or their parents inside the checkpoint tree."""
     _reject_symlinks(labels_root)
     for p in sorted(labels_root.rglob("*")):
-        _reject_symlinks(p)
+        _reject_symlinks(p, labels_root)
         if p.is_file() and p.suffix in SUFFIXES and "__pycache__" not in p.parts:
             yield f"{LABELS_DIR}/{p.relative_to(labels_root).as_posix()}", p
     if approvals is not None and approvals.exists():
@@ -82,9 +82,16 @@ def git_blob_sha(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
-def _reject_symlinks(path: Path) -> None:
-    """Raise SystemExit if the path or any parent is a symlink."""
-    if any(p.is_symlink() for p in (path, *path.parents)):
+def _reject_symlinks(path: Path, root: Path | None = None) -> None:
+    """Raise SystemExit if ``path``, or any component between it and ``root``, is a symlink.
+
+    Only the checkpoint tree is the trust boundary: ancestors above ``root`` (a symlinked
+    home, data mount or macOS ``/tmp``) are not checked. Without ``root`` only ``path``
+    itself is checked."""
+    chain = [path]
+    if root is not None:
+        chain += [p for p in path.parents if p == root or root in p.parents]
+    if any(p.is_symlink() for p in chain):
         raise SystemExit(f"checkpoint refuses symlink: {path}")
 
 
@@ -187,7 +194,7 @@ def restore(labels_root: Path, *, api: Any = None, repo_id: str = STAGING_REPO,
         if str(getattr(f, "mode", "")) == "120000" or getattr(f, "type", "") == "symlink":
             raise SystemExit(f"checkpoint refuses symlink: {path}")
         target = labels_root / rel
-        _reject_symlinks(target)
+        _reject_symlinks(target, labels_root)
         if target.exists():
             if not target.is_file() or not _matches(f, target.read_bytes()):
                 raise SystemExit(f"checkpoint restore conflict: {target}")
@@ -198,12 +205,12 @@ def restore(labels_root: Path, *, api: Any = None, repo_id: str = STAGING_REPO,
         for f, target in missing:
             local = hf_interface.download_file(api, repo_id, f.path, Path(tmp).resolve() / f.path,
                                                revision=revision)
-            _reject_symlinks(local)
+            _reject_symlinks(local, Path(tmp).resolve())
             if not _matches(f, local.read_bytes()):
                 raise SystemExit(f"checkpoint download did not verify: {f.path}")
             downloads.append((local, target))
         for local, target in downloads:
-            _reject_symlinks(target)
+            _reject_symlinks(target, labels_root)
             target.parent.mkdir(parents=True, exist_ok=True)
             with target.open("xb") as stream:
                 stream.write(local.read_bytes())

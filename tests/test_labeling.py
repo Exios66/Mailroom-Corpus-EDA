@@ -3031,3 +3031,27 @@ def test_a_contract_read_in_part_records_no_absence(rows):
     by = {(f["document_id"], f["field"]): f["decision"] for f in field_rows}
     assert {by[("c1", n)] for n in absent_ok} == {"absent"}
     assert {by[("c2", n)] for n in absent_ok} == {"unlabeled"}
+
+
+def test_select_refuses_subclass_on_fixed_samples(rows):
+    """A subclass filter on a fixed sample (intent sets, CUAD calibration) is refused, not ignored."""
+    with pytest.raises(SystemExit, match="fixed sample"):
+        runner.select(rows, "intent", "calibration", ["financial"])
+    with pytest.raises(SystemExit, match="fixed sample"):
+        runner.select(rows, "cuad", "holdout", "license")
+
+
+def test_campaign_costs_counts_each_subclass_chunk(rows, monkeypatch):
+    """Subclass-split chunks of one task/set each enter the whole-campaign totals."""
+    claim = next(r for r in rows if r["expected"] == "insurance_claim")
+    rows = [*rows, {**claim, "expected_subclass": "carrier", "document_id": "i2", "filename": "i2.txt"}]
+    subs = ["carrier", "outpatient"]
+    base = {"task": "claim_checklist", "set": "all", "models": ["minimax/minimax-m3.1-flash"],
+            "reasoning": "off", "cap_usd": 1.0}
+    camp = {"chunks": [{**base, "id": "x1", "subclass": [subs[0]]},
+                       {**base, "id": "x2", "subclass": subs[1:]}]}
+    monkeypatch.setattr(runner, "campaign", lambda name: camp)
+    both = runner.campaign_costs(rows, "t")
+    camp["chunks"] = camp["chunks"][:1]
+    one = runner.campaign_costs(rows, "t")
+    assert both["campaign_prompt_tokens"] > one["campaign_prompt_tokens"]
