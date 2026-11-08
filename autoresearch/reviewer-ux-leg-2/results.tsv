@@ -1,3 +1,4 @@
 iteration	commit	score_of_4	guard	status	description
 0	5c9c578	0	pass	baseline	Fixed task battery: search and empty state unavailable; alternating batches duplicated; partial save wrongly clears dirty
 1	56806ce	3	pass	keep	Search by metadata tokens; empty-state cursor preserved; consolidated batch groups. Axe review-panel contrast failure fixed before acceptance. Evidence iteration-1.
+2	1ad0d97	4	pass	keep	Partial autosaves retain unsent work and history; manual save responses preserve newer edits. Journal names changed metadata instead of unexplained ACCEPT-to-ACCEPT. Evidence iteration-2; 48 Python tests; axe zero violations.
