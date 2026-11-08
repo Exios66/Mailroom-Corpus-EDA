@@ -37,7 +37,17 @@ the field registry, the prompts, the model list with prices, the campaign plan a
   models find nothing. `evidence_only` fields need a quoted absence statement.
   `never_absent` fields always need a value.
 - **Reasoning.** Off for extraction (it is copying, and reasoning tokens are billed);
-  `low` is tried for intent and kept only if calibration says so; never `high`.
+  `low` is tried for intent and kept only if calibration says so; never `high`. It is set per
+  model: `--reasoning` applies to `--model` (and to `--second-model` unless `--second-reasoning`
+  differs), and a `campaign.yaml` entry may give `reasoning: {model: level}` (a bare level still
+  works). A mixed pair's directory is named `...-reasoning-low+off` (levels in model order), its
+  `runs.jsonl` start record stores the mapping, and resume, reuse and `review` match each model at
+  its own level. A call at `low` gets `max_tokens` plus `runner.reasoning_allowance(model, task,
+  "low")`: 4 x the model's measured p75 reasoning tokens (`reasoning_tokens` in `models.yaml`),
+  floor 1,024, ceiling 6,144; a model with no measurement gets the ceiling. Unused room costs
+  nothing, but every reserved token is cap headroom the spend gate cannot give another call. A
+  truncated answer whose reasoning is 80% or more of its output tokens is journaled as a failed,
+  billed call (`reasoning_runaway`) and shown on the review record.
 
 ## Files
 

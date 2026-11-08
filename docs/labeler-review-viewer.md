@@ -90,8 +90,16 @@ The **Launch a labeling batch** panel offers two kinds of target:
   re-label CUAD, MAUD and manual-intent gold on purpose, to score models, and the preflight warns).
 * **Public trial**: 1 to 5 documents (default 2) of one type from the public dataset
   (`config.REPO_ID` at `config.REPO_REVISION`; the file's sha256 is recorded in `trial.json`), labeled
-  with the task, models and reasoning of that type's labeling campaign entry, capped at **$0.25**.
-  Contracts use `cuad` / `pending` (the SEC EDGAR contracts without CUAD labels), mergers
+  with the task and models of that type's labeling campaign entry, capped at **$0.25**. Reasoning is
+  per model: **DeepSeek v4.1 Flash always runs at `off`** in a trial (at `low` it spirals, 336 to over 2,300
+  reasoning tokens on one email, and 96% of its output was reasoning in the claim_checklist pilot), every
+  other model keeps the campaign's level. **Contracts** run `z-ai/glm-5.3-flashx-legal` at `low` beside
+  `deepseek/deepseek-v4.1-flash` at `off` whatever chunk 1's winner is (the campaign's own cuad labeling arms
+  say `winner_of_1`, which has no approval yet, so they stay blocked; the trial does not wait). Both models
+  answer, side by side, as proposals for review. The target's *Notes* say this too. Trial document ids are
+  namespaced `public-v9.3:<id>` (the tag of `config.REPO_REVISION`), with the dataset's own id kept as
+  `published_document_id`, so a trial packet never collides with a stage packet of the same document (the
+  portal refuses one document id with two source texts). Contracts use `cuad` / `pending` (the SEC EDGAR contracts without CUAD labels), mergers
   `merger_consideration` / `pending` (consideration MAUD does not answer), correspondence
   `correspondence` / `remainder`, insurance claims `claim_checklist` / `remainder`, corporate records
   `corporate` / `remainder`. Documents come from `runner.select`, then the lowest `document_id`s (or one per
@@ -134,6 +142,7 @@ Every failure names what is wrong, quotes the underlying error and says what to 
 | `already_approved` (warn) | re-running an approved arm buys labels twice | launch the next chunk |
 | `requires` | external release landed (`requires:`) | bump the Dojo pin, or tick the acknowledge box (becomes a warning) |
 | `models` | `winner_of_<id>` resolved, models approved in `models.yaml` on OpenRouter, model-count rules | approve the winner's chunk; use the CLI for Modal or mixed arms |
+| `reasoning` | each model's level and `max_tokens` (answer budget plus its measured reasoning allowance); informational | none (it explains the cap and the projection) |
 | `stage` | `data/v9_4/stage` present and equal to `stage_sha256` | `scripts/build/build_v9_3_corporate_presence.py` then `scripts/build/build_v9_4_dedup_labels.py --no-cuad-journal` (or `labeling stage`) |
 | `public_source` (trial) | public dataset downloaded | check network to huggingface.co |
 | `documents` (trial) | 1 to 5 | choose a size in range |
@@ -190,7 +199,12 @@ The exporter (`review_export.py`) handles every task: one record per document an
 field tasks, one `cuad_clauses` record per contract (schema-pending, never gold-eligible) and one
 `intent` record per correspondence. Records carry the run (`task`, `chunk`, `models`,
 `reasoning`, `prompt_sha256`), the registry policy, the candidate and each model's own answer
-(`model_outputs`), so reviewers can compare models. A disagreement has no candidate and an issue
+(`model_outputs`), so reviewers can compare models. `reasoning` is one level, or `{model: level}` when
+the two models ran at different levels. A call that was cut off at the token limit with 80% or more of
+its output spent on reasoning is a **reasoning runaway**: it is billed, journaled as a failed call
+(`reasoning_runaway: true`, retried by the next run), and the record says "Reasoning ran away on
+`<model>`: N of M output tokens were reasoning ..." in `issues` and in that model's `model_outputs` entry.
+A disagreement has no candidate and an issue
 sentence says who answered what. Evidence is `{start, end, quote}` into the full text, located
 in the source; a quote that cannot be found is reported in `issues`, never highlighted.
 A re-export overwrites the packet (atomically); the portal reopens only the fields whose

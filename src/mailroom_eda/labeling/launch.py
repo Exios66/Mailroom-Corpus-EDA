@@ -6,8 +6,11 @@ route answers 403 with the flag to set. Two kinds of target:
 * **campaign arm**: one chunk arm of ``campaign.yaml``, run through ``operate.cmd_chunk``
   exactly as ``labeling chunk <id>`` does (approvals, ping, HF checkpoint, stage sha, ...).
 * **public trial**: 1-5 documents of one type from the public dataset (``config.REPO_ID`` at
-  ``config.REPO_REVISION``), labeled with the task, models and reasoning of that type's
-  labeling campaign entry, capped at ``TRIAL_CAP_CEILING`` dollars. Trial documents are chosen
+  ``config.REPO_REVISION``), labeled with the task and models of that type's labeling campaign
+  entry, capped at ``TRIAL_CAP_CEILING`` dollars. A trial's reasoning is per model
+  (``TRIAL_PAIRS``, ``trial_reasoning``): DeepSeek runs at ``off`` because at ``low`` it spirals
+  (see ``TRIAL_DEEPSEEK_NOTE``). Trial documents get namespaced ids (``trial_row``) so a trial
+  packet never collides with a stage packet of the same document in the review portal. Trial documents are chosen
   by ``runner.select`` on the set that holds only documents that need labels (``pending`` or
   ``remainder``), then refused again if any is CUAD or MAUD gold: nothing here ever bills a
   document that already has expert labels. Campaign *qualification* arms (calibration and
@@ -35,6 +38,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from .. import config
 from . import checkpoint, derive, export, operate, providers, registry, runner, spend, tasks
 
 TRIAL_CAP_CEILING = 0.25
@@ -57,6 +61,26 @@ TRIAL_TYPES = {"contract": ("cuad", "pending"),
                "correspondence": ("correspondence", "remainder"),
                "insurance_claim": ("claim_checklist", "remainder"),
                "corporate_record": ("corporate", "remainder")}
+GLM = "z-ai/glm-5.3-flashx-legal"
+DEEPSEEK = "deepseek/deepseek-v4.1-flash"
+#: Why a trial runs DeepSeek at ``off`` (shown as the target's description and in the preflight).
+TRIAL_DEEPSEEK_NOTE = (
+    "DeepSeek v4.1 Flash runs at reasoning off in trials: at low it spirals (336 to over 2,300 reasoning "
+    "tokens on the same email, 2026-11-06; 96% of its output was reasoning in the claim_checklist pilot, "
+    "truncating even at an 11k budget), and the campaign's own CUAD arms 3 and holdout 3 run it at off. "
+    "A model at low gets max_tokens plus 4 x its measured p75 reasoning tokens (floor 1,024, ceiling "
+    "6,144); a call cut off with 80% or more of its output spent reasoning is journaled as a failed "
+    "call (reasoning_runaway) and shown on the review record.")
+#: Trial types whose models and reasoning are fixed here rather than read from the campaign entry.
+#: Contracts: the campaign's labeling arms (2a-2c) say ``winner_of_1``, which has no approval yet, so a
+#: trial would be blocked for the whole bake-off; the owner chose GLM-5.3 Flash Legal and DeepSeek
+#: for contracts, with the reasoning each is known to handle.
+TRIAL_PAIRS = {"contract": {
+    "models": [GLM, DEEPSEEK], "reasoning": {GLM: "low", DEEPSEEK: "off"},
+    "note": ("Contract trials label with GLM-5.3 FlashX Legal at reasoning low beside DeepSeek v4.1 Flash at "
+             "off (the owner's pick). The campaign's cuad labeling arms (2a-2c) say winner_of_1, which has no "
+             "approval yet, so this trial does not wait for it and its labels are proposals for review only. "
+             + TRIAL_DEEPSEEK_NOTE)}}
 EXIT_MEANING = {2: "stopped at the cap or wall limit; launch the same target again to continue "
                    "(answered calls are not bought twice)",
                 3: "finished with failed calls; launch the same target again to retry only those",
@@ -123,6 +147,34 @@ def gold_reason(row: Mapping[str, Any]) -> str:
     if cls == "merger_agreement" and derive.maud_consideration_answer(row):
         return "MAUD already answers its consideration"
     return ""
+
+
+def trial_prefix() -> str:
+    """``public-v9.3:``: the namespace of trial document ids (the tag of ``config.REPO_REVISION``)."""
+    return f"public-{config.REPO_TAG}:"
+
+
+def trial_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """A public row as a trial reads it: ``document_id`` namespaced (``public-v9.3:<id>``) so its
+    packet cannot collide with a stage packet of the same document (the portal refuses one
+    document id with two source texts); ``published_document_id`` keeps the dataset's own id."""
+    published = str(row.get("document_id") or row.get("id") or row["filename"])
+    return {**row, "document_id": trial_prefix() + published, "published_document_id": published}
+
+
+#: Models whose providers refuse reasoning off with HTTP 400 (runbook.md, "ping" step).
+NEEDS_REASONING = ("z-ai/glm-", "minimax/")
+
+
+def trial_reasoning(models: list[str], reasoning: "str | Mapping[str, str]") -> "str | dict[str, str]":
+    """A trial's reasoning for ``models``: the campaign's level for each model, except DeepSeek,
+    which always runs at ``off`` (:data:`TRIAL_DEEPSEEK_NOTE`), and GLM-legal and MiniMax, which
+    refuse ``off`` (HTTP 400) and so run at ``low`` even where a deferred campaign entry still
+    lists them at off (chunks 5, 6 and 9). One level when the models share it."""
+    levels = runner.reasoning_levels(reasoning, models)
+    return runner.reasoning_spec({m: "off" if m.startswith("deepseek/")
+                                  else "low" if m.startswith(NEEDS_REASONING) else lvl
+                                  for m, lvl in levels.items()})
 
 
 def pick_trial(rows: list[Mapping[str, Any]], count: int, per_subclass: bool = False) -> list[Mapping[str, Any]]:
@@ -220,7 +272,7 @@ class Plan:
     task: str = ""
     set_name: str = ""
     models: list[str] = field(default_factory=list)
-    reasoning: str = "off"
+    reasoning: "str | dict[str, str]" = "off"
     rows: list[Any] = field(default_factory=list)
     picked: list[Any] = field(default_factory=list)
     max_wall: float = 0.0
@@ -339,17 +391,32 @@ class Launcher:
 
     def _winner_gap(self, entry: Mapping[str, Any]) -> str:
         """The unapproved ``winner_of_<id>`` references of an entry, or ``""``."""
-        refs = {str(m) for m in [*entry["models"], entry["reasoning"]] if str(m).startswith("winner_of_")}
+        refs = operate.winner_refs(entry)
         approved = {str(a["chunk"]) for a in operate.load_approvals(self._campaign_name)}
         return ", ".join(sorted(r.removeprefix("winner_of_") for r in refs if r.removeprefix("winner_of_") not in approved))
 
-    def _resolved(self, entry: Mapping[str, Any]) -> tuple[list[str], str, bool]:
+    def _resolved(self, entry: Mapping[str, Any]) -> tuple[list[str], "str | dict[str, str]", bool]:
         """``(models, reasoning, resolved)``: the approved winner replaces ``winner_of_<id>``."""
         try:
             models, reasoning = operate.resolve(self._campaign_name, entry)
             return models, reasoning, True
         except SystemExit:
-            return [str(m) for m in entry["models"]], str(entry["reasoning"]), False
+            return [str(m) for m in entry["models"]], entry["reasoning"], False
+
+    def _trial_config(self, doc_class: str, entry: Mapping[str, Any] | None
+                      ) -> tuple[list[str], "str | dict[str, str]", bool, str]:
+        """``(models, reasoning, resolved, note)`` of a trial: ``TRIAL_PAIRS`` where the type has one,
+        else the campaign entry's models with every DeepSeek at off (:func:`trial_reasoning`)."""
+        if doc_class in TRIAL_PAIRS:
+            pair = TRIAL_PAIRS[doc_class]
+            return list(pair["models"]), runner.reasoning_spec(dict(pair["reasoning"])), True, pair["note"]
+        if entry is None:
+            return [], "", False, ""
+        models, reasoning, resolved = self._resolved(entry)
+        if not resolved:
+            return models, reasoning, False, ""
+        return (models, trial_reasoning(models, reasoning), True,
+                TRIAL_DEEPSEEK_NOTE if any(m.startswith("deepseek/") for m in models) else "")
 
     def options(self) -> dict[str, Any]:
         """Every target the launcher offers, with the kind label, models, reasoning and cap."""
@@ -375,9 +442,9 @@ class Launcher:
                 "status": "blocked" if blocker else "approved" if approved else "ready", "blocker": blocker})
         for cls, (task, set_name) in TRIAL_TYPES.items():
             entry = self._trial_entry(cls)
-            models, reasoning, resolved = self._resolved(entry) if entry else ([], "", False)
+            models, reasoning, resolved, note = self._trial_config(cls, entry)
             targets.append({
-                "id": f"trial:{cls}", "group": "Public trial", "doc_class": cls,
+                "id": f"trial:{cls}", "group": "Public trial", "doc_class": cls, "description": note,
                 "title": f"{cls} · {task} / {set_name} (public dataset)", "task": task, "set": set_name,
                 "chunk": str(entry["id"]) if entry else None, "arm": None,
                 "models": models, "reasoning": reasoning, "models_resolved": resolved,
@@ -526,7 +593,7 @@ class Launcher:
         else:
             self._stage_rows(plan, items)
         # --- stale winner (cmd_chunk, and a trial that uses a winner)
-        uses_winner = any(str(m).startswith("winner_of_") for m in [*entry["models"], entry["reasoning"]])
+        uses_winner = bool(operate.winner_refs(entry)) and not (trial and req.target[6:] in TRIAL_PAIRS)
         if uses_winner and plan.picked and plan.models:
             stale = operate.stale_winner(self._campaign_name, entry, plan.picked)
             add(item("stale_winner", "Approved winner was scored on the prompt this run sends",
@@ -583,8 +650,15 @@ class Launcher:
 
     def _models(self, req: Request, plan: Plan, items: list[dict[str, str]]) -> None:
         add, entry = items.append, plan.entry
+        trial = plan.kind == "trial"
         try:
-            plan.models, plan.reasoning = operate.resolve(self._campaign_name, entry)
+            if trial:
+                models, reasoning, resolved, _ = self._trial_config(req.target[6:], entry)
+                if not resolved:
+                    operate.resolve(self._campaign_name, entry)  # raises SystemExit naming the missing approval
+                plan.models, plan.reasoning = models, reasoning
+            else:
+                plan.models, plan.reasoning = operate.resolve(self._campaign_name, entry)
         except SystemExit as exc:
             gap = self._winner_gap(entry)
             add(item("models", "Models are resolved", FAIL, str(exc),
@@ -592,7 +666,7 @@ class Launcher:
                      f"`{RUN_CMD} gate {gap or '<id>'} --arm N --approve --initials XX`"))
             return
         prov = {m: "openrouter" for m in plan.models}
-        problem = runner.model_problem(plan.task, plan.set_name, plan.models, prov)
+        problem = runner.model_problem(plan.task, plan.set_name, plan.models, prov, compare=trial)
         if problem:
             add(item("models", "Models are approved for this task", FAIL, problem,
                      "this launcher runs OpenRouter models; use the command line for Modal or mixed arms: "
@@ -600,7 +674,15 @@ class Launcher:
             plan.models = []
             return
         add(item("models", "Models are approved for this task", PASS,
-                 f"{', '.join(plan.models)} at reasoning {plan.reasoning}"))
+                 f"{', '.join(plan.models)} at reasoning {runner.reasoning_text(plan.reasoning)}"))
+        levels = runner.reasoning_levels(plan.reasoning, plan.models)
+        add(item("reasoning", "Reasoning level and token allowance per model", PASS,
+                 "; ".join(f"{m.split('/')[-1]}: {lvl}, max_tokens {runner.max_tokens(plan.task, lvl, m)}"
+                           + (f" ({runner.max_tokens(plan.task, 'off')} answer + "
+                              f"{runner.reasoning_allowance(m, plan.task, lvl)} reasoning)" if lvl != "off" else "")
+                           for m, lvl in levels.items())
+                 + ("; " + TRIAL_DEEPSEEK_NOTE if trial and any(m.startswith("deepseek/") for m in plan.models)
+                    else "")))
 
     def _stage_rows(self, plan: Plan, items: list[dict[str, str]]) -> None:
         add = items.append
@@ -649,7 +731,7 @@ class Launcher:
         add(item("public_source", "Public dataset downloaded", PASS,
                  f"{_repo()} @ {str(hub['revision'])[:12]}, ground_truth_hardened.jsonl sha256 "
                  f"{str(hub['source_sha256'])[:12]}, {len(hub['rows'])} rows"))
-        plan.rows = hub["rows"]
+        plan.rows = [trial_row(r) for r in hub["rows"]]  # ids namespaced: public-<tag>:<id>
         plan.source = {"dataset": _repo(), "revision": hub["revision"], "file": "ground_truth_hardened.jsonl",
                        "sha256": hub["source_sha256"]}
         docs_ok = 1 <= req.documents <= TRIAL_MAX_DOCUMENTS
@@ -770,7 +852,7 @@ class Launcher:
         if plan.models:
             log = root / "ping.jsonl"
             probs = operate.ping_problems(export.read_journal(log) if log.exists() else [],
-                                          [(m, plan.reasoning) for m in plan.models])
+                                          list(runner.reasoning_levels(plan.reasoning, plan.models).items()))
             fix = (f"send the exact request this run sends once (under $0.01 per model): `{RUN_CMD} ping --initials XX`"
                    " (needs OPENROUTER_API_KEY)")
             if probs and trial:
@@ -907,7 +989,8 @@ class Launcher:
         (out_dir / "trial.json").write_text(json.dumps({
             "target": req.target, "source": plan.source, "task": plan.task, "set": plan.set_name,
             "models": plan.models, "reasoning": plan.reasoning, "initials": req.initials, "cap_usd": req.cap_usd,
-            "documents": [tasks._ids(r)[0] for r in plan.picked], "started_utc": _now(),
+            "documents": [tasks._ids(r)[0] for r in plan.picked],
+            "published_document_ids": [r["published_document_id"] for r in plan.picked], "started_utc": _now(),
             "note": "public trial: only documents that need labels; no campaign approval, no HF checkpoint"},
             indent=1, sort_keys=True), encoding="utf-8")
         rc = runner.execute(
@@ -915,7 +998,7 @@ class Launcher:
             provider="openrouter", reasoning=plan.reasoning, initials=req.initials, cap_usd=req.cap_usd,
             max_wall_seconds=plan.max_wall, out_dir=out_dir, dry_run=False, workers=4,
             chunk_id=f"trial-{plan.task}", chat=self.chat, key_status=self.key_status,
-            require_checkpoint=False, env=plan.env)
+            require_checkpoint=False, env=plan.env, compare=True)
         if not (out_dir / f"{out_dir.name}-review-data.json").exists():
             runner.review(plan.rows, plan.task, out_dir, reasoning=plan.reasoning)
         return rc

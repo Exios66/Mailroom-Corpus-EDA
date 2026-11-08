@@ -25,7 +25,7 @@ const launch={preflights:[], starts:[], statusReads:0, state:'idle', reloads:0};
 const launchTargets=[
   {id:'campaign:1.1',group:'Campaign',title:'1.1 · cuad / calibration',task:'cuad',set:'calibration',models:['synthetic/model-a'],reasoning:'low',cap_usd:0.3,needs:[],kind:'qualification',kind_label:'Qualification \u2014 re-labels gold documents to score models',status:'ready',blocker:'',models_resolved:true},
   {id:'campaign:7a',group:'Campaign',title:'7a · correspondence / pilot',task:'correspondence',set:'pilot',models:['synthetic/model-a'],reasoning:'off',cap_usd:0.15,needs:[],kind:'labeling',kind_label:'Labeling \u2014 documents that need labels',status:'ready',blocker:'',models_resolved:true},
-  {id:'trial:correspondence',group:'Public trial',title:'correspondence · correspondence / remainder (public dataset)',task:'correspondence',set:'remainder',models:['synthetic/model-a'],reasoning:'low',cap_usd:0.25,needs:[],kind:'labeling',kind_label:'Labeling \u2014 documents that need labels',status:'ready',blocker:'',models_resolved:true}];
+  {id:'trial:correspondence',group:'Public trial',title:'correspondence · correspondence / remainder (public dataset)',task:'correspondence',set:'remainder',models:['synthetic/model-a','synthetic/model-b'],reasoning:{'synthetic/model-a':'off','synthetic/model-b':'low'},description:'DeepSeek runs at reasoning off in trials.',cap_usd:0.25,needs:[],kind:'labeling',kind_label:'Labeling \u2014 documents that need labels',status:'ready',blocker:'',models_resolved:true}];
 function launchItems(body){
   const items=[{id:'launch_enabled',title:'Launching is enabled',status:'pass',detail:'enabled',fix:''}];
   if(!/^[A-Z]{2,6}$/.test(body.initials||'')) items.push({id:'initials',title:'Operator initials',status:'fail',detail:'bad initials',fix:'enter 2-6 capital letters, e.g. JB'});
@@ -152,6 +152,8 @@ try {
   await evaluate(`$('launch-target').value='trial:correspondence';$('launch-target').dispatchEvent(new Event('change'));`);
   assert.match(await evaluate(`$('launch-info').textContent`),/Labeling \u2014 documents that need labels/);
   assert.equal(await evaluate(`$('launch-trial-opts').hidden`),false);
+  const mixedInfo=await evaluate(`$('launch-info').textContent`);
+  assert.match(mixedInfo,/model-a off, model-b low/);assert.match(mixedInfo,/DeepSeek runs at reasoning off/);assert.doesNotMatch(mixedInfo,/\[object Object\]/);
   assert.equal(await evaluate(`$('launch-start').disabled`),true);
   // A failing preflight is loud, and the key is sent once, then wiped and never stored.
   await input('launch-initials','x');await input('launch-key',SECRET);

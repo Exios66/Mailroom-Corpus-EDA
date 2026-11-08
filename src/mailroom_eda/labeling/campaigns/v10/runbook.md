@@ -63,7 +63,9 @@ L="env PYTHONPATH=src python -m mailroom_eda.labeling"
    ```
 
    A paid chunk refuses to start unless every (model, reasoning) route it uses has a passing
-   ping from the last 24 hours. Add `--per-provider` to also ping each pinned provider alone
+   ping from the last 24 hours; a chunk whose `reasoning` is a `{model: level}` mapping (for
+   example GLM-legal at `low` beside DeepSeek at `off`) is pinged, and later checked, per model
+   at that model's own level. Add `--per-provider` to also ping each pinned provider alone
    and log its reasoning tokens, and `--real-doc` to send one real intent-calibration document
    instead of the tiny prompt (only the real-document probe shows whether a provider reasons:
    DeepSeek spent about 30 tokens on the tiny prompt and 336 to over 2,300 on a real email); a provider that reports 0 reasoning tokens at `low` belongs

@@ -8,6 +8,28 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 
 ## Unreleased
 
+- Reasoning is per model, and its token allowance is measured. `reasoning` in `runner`, `operate` and
+  `launch` is a level (`off`/`low`, unchanged) or `{model: level}` (`runner.reasoning_levels` normalizes
+  and raises `ValueError` for an unknown model or level); `campaign.yaml` entries may give
+  `reasoning: {model: level}`, and `labeling run` takes `--second-reasoning` for `--second-model`
+  (default: `--reasoning`; `review` takes it too, to find a mixed pair's directory). Every per-call
+  decision uses the model's own level: window check, budget reservation, `max_tokens`, the request, the
+  journaled `reasoning`, resume and reuse, the `review()` filter, projections, the `runs.jsonl` start
+  record (the mapping, only when the levels differ), the packet's `reasoning`, approved-configuration
+  matching in `ingest`, and the ping. A mixed pair's directory is `...-reasoning-low+off`; single levels
+  keep their names. `runner.reasoning_allowance(model, task, level)` replaces the flat 6,144 added to every
+  reasoning call: 0 at off, else `clamp(4 x measured p75, 1,024, 6,144)` (no measurement: 6,144), so the spend
+  gate reserves what a call can plausibly use (`max_tokens(task, level, model)`; the old two-argument form
+  still returns the ceiling). A call cut off at the token limit with at least 80% of its output spent
+  reasoning is journaled as a failed, billed call with `reasoning_runaway: true` ("reasoning ran away: N of
+  M output tokens were reasoning; answer truncated"), retried by the next run, and shown on the review
+  record as an issue and in `model_outputs`. Launch trials: contracts run GLM-5.3 FlashX Legal at `low` beside
+  DeepSeek v4.1 Flash at `off` (not waiting for chunk 1's winner; both answer, as proposals), and any DeepSeek
+  in a trial pair runs at `off`; trial document ids are namespaced `public-v9.3:<id>` with
+  `published_document_id` kept, so a trial packet and a stage packet of the same document load together in the
+  portal. `test_reasoning_calls_get_a_reasoning_allowance_on_top_of_the_answer_budget` now asserts DeepSeek's
+  measured intent allowance (4,000) instead of the flat ceiling; the launch tests for the contract trial no
+  longer expect it to wait for the chunk-1 winner.
 - Review portal can launch labeling batches from the page, off unless started with `--enable-launch`
   (`labeling/launch.py`; `GET /api/launch/options`, `POST /api/launch/preflight`, `POST /api/launch/start`,
   `GET /api/launch/status`). Targets are campaign arms (run through `operate.cmd_chunk`, labeled Labeling or

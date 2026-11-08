@@ -1410,7 +1410,8 @@ def test_reasoning_calls_get_a_reasoning_allowance_on_top_of_the_answer_budget(t
     runner.run_chunk([rows[2]], task="intent", models=["deepseek/deepseek-v4.1-flash"],
                      backend=providers.Backend("openrouter", "u", "k"), reasoning="low",
                      budget=spend.Budget(1.0, 3600), out_dir=tmp_path, chat=chat)
-    assert seen and set(seen) == {runner.MAX_TOKENS["intent"] + runner.REASONING_ALLOWANCE}
+    # the model's own allowance (4 x its measured intent p75 of 900), not the flat ceiling
+    assert seen and set(seen) == {runner.MAX_TOKENS["intent"] + 4 * 900} == {4000}
 
 
 def test_identical_answers_from_other_journals_are_reused_not_bought_again(tmp_path, rows):

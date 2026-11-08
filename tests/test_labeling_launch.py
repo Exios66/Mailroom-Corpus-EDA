@@ -93,8 +93,10 @@ class Fakes:
         self.gate = None  # a threading.Event the chat waits on, to keep a run in flight
         self.chat_error = None
         self.leak = False
+        self.sent = []  # (model, reasoning, max_tokens) of every request
 
     def chat(self, backend, model, messages, schema, *, reasoning, max_tokens):
+        self.sent.append((model, reasoning, max_tokens))
         self.chat_keys.append(backend.api_key)
         if self.gate is not None:
             self.gate.wait(20)
@@ -305,7 +307,7 @@ def test_a_clean_trial_preflight_passes_every_check(env):
     ({"cap_usd": float("nan")}, "cap_value"),
     ({"cap_usd": None}, "cap_value"),
     ({"cap_usd": 5.0}, "cap_ceiling"),
-    ({"cap_usd": 0.004}, "cap_projection"),
+    ({"cap_usd": 0.001}, "cap_projection"),  # DeepSeek runs at off in trials, so the projection is small
     ({"documents": 0}, "documents"),
     ({"documents": 6}, "documents"),
     ({"target": "campaign:nope"}, "target"),
@@ -370,14 +372,17 @@ def test_campaign_arm_cap_may_not_exceed_the_campaign_cap(env):
     assert "campaign.yaml cap_usd" in failed(res)["cap_ceiling"]["detail"]
 
 
-def test_unapproved_winner_models_fail_for_arm_and_trial(env):
+def test_unapproved_winner_models_fail_for_an_arm_but_not_for_the_contract_trial(env):
+    """The cuad labeling arms wait for the chunk-1 winner; the contract trial runs the owner's pair instead."""
     with serving(env.app) as server:
         trial = pre(server, good("trial:contract"))
         arm = pre(server, good("campaign:2a", cap_usd=0.45))
-    for res in (trial, arm):
-        item = failed(res)["models"]
-        assert "no approved arm" in item["detail"] and "gate 1" in item["fix"]
+    item = failed(arm)["models"]
+    assert "no approved arm" in item["detail"] and "gate 1" in item["fix"]
     assert "needs_approved" in failed(arm) and "gate 1" in failed(arm)["needs_approved"]["fix"]
+    assert "models" not in failed(trial) and "stale_winner" not in failed(trial)
+    models = next(i for i in trial["items"] if i["id"] == "models")
+    assert GLM in models["detail"] and DEEPSEEK in models["detail"]
 
 
 def test_a_skipped_arm_and_an_unmet_requirement_fail_with_fixes(env):
@@ -566,9 +571,11 @@ def test_public_trial_runs_end_to_end_and_the_portal_loads_the_packet(env, targe
     assert meta["source"]["dataset"] == "Lucius-Morningstar/mailroom-dataset"
     docs = meta["documents"]
     assert len(docs) == 2 and docs == sorted(docs)
+    assert all(d.startswith("public-v9.3:") for d in docs)  # namespaced: never the stage's own id
+    assert meta["published_document_ids"] == [d.removeprefix("public-v9.3:") for d in docs]
     if expect:
-        assert set(docs) == expect
-    assert "cont-04" not in docs and "merg-03" not in docs  # CUAD and MAUD gold are never bought
+        assert set(meta["published_document_ids"]) == expect
+    assert "cont-04" not in meta["published_document_ids"] and "merg-03" not in meta["published_document_ids"]  # gold is never bought
     packet = env.root / done["result"]["packet"]
     assert packet.name == f"{trial_dir.name}-review-data.json" and packet.exists()
     assert done["result"]["spent_usd"] is not None and 0 < done["result"]["spent_usd"] <= 0.25
@@ -579,6 +586,125 @@ def test_public_trial_runs_end_to_end_and_the_portal_loads_the_packet(env, targe
     assert receipt["cap_usd"] == 0.25 and receipt["projection"]["documents"] == 2
     assert receipt["packet"] == done["result"]["packet"] and receipt["spent_usd"] == done["result"]["spent_usd"]
     assert len(env.fakes.hub_calls) == 1  # downloaded once, then cached for the start's own re-check
+
+
+def test_trial_targets_carry_each_models_reasoning_and_say_why_deepseek_is_off(env):
+    """Contracts run GLM at low beside DeepSeek at off whatever chunk 1's winner is; any DeepSeek in a
+    trial pair runs at off; GLM-legal and MiniMax never run at off; otherwise the campaign's level."""
+    with serving(env.app) as server:
+        status, res = call(server, "GET", "/api/launch/options")
+    assert status == 200
+    by = {t["id"]: t for t in res["targets"]}
+    contract = by["trial:contract"]
+    assert contract["models"] == [GLM, DEEPSEEK] and contract["reasoning"] == {GLM: "low", DEEPSEEK: "off"}
+    assert contract["status"] == "ready" and contract["models_resolved"] and not contract["blocker"]
+    assert "winner_of_1" in contract["description"] and "reasoning off" in contract["description"]
+    assert by["campaign:2a"]["status"] == "blocked"  # the campaign arm still waits for the winner
+    mixed = by["trial:correspondence"]  # the campaign pair is DeepSeek at low beside MiniMax at low
+    assert mixed["models"] == [DEEPSEEK, MINIMAX] and mixed["reasoning"] == {DEEPSEEK: "off", MINIMAX: "low"}
+    assert "spirals" in mixed["description"]
+    # The campaign lists GLM at off for mergers and corporate (deferred chunks 6 and 9), but GLM-legal
+    # refuses reasoning off (HTTP 400), so trials run it at low beside DeepSeek at off.
+    for t in ("trial:merger_agreement", "trial:corporate_record"):
+        assert by[t]["reasoning"] == {GLM: "low", DEEPSEEK: "off"}, t
+    claim = by["trial:insurance_claim"]  # no DeepSeek: the campaign's level stands
+    assert claim["models"] == [GLM, MINIMAX] and claim["reasoning"] == "low" and claim["description"] == ""
+    # the campaign's own arms are listed as the campaign has them
+    assert by["campaign:7b"]["reasoning"] == "low"
+
+
+def test_the_preflight_shows_each_models_level_and_token_allowance(env):
+    with serving(env.app) as server:
+        res = pre(server, good("trial:contract"))
+    assert res["can_launch"], failed(res)
+    models = next(i for i in res["items"] if i["id"] == "models")
+    assert "glm-5.3-flashx-legal low" in models["detail"] and "deepseek-v4.1-flash off" in models["detail"]
+    detail = next(i for i in res["items"] if i["id"] == "reasoning")["detail"]
+    assert "glm-5.3-flashx-legal: low, max_tokens 9392 (8192 answer + 1200 reasoning)" in detail
+    assert "deepseek-v4.1-flash: off, max_tokens 8192" in detail and "spirals" in detail
+
+
+def test_the_contract_trial_sends_each_model_its_own_level_and_namespaces_the_ids(env):
+    with serving(env.app) as server:
+        assert pre(server, good("trial:contract"))["can_launch"]
+        status, started = call(server, "POST", "/api/launch/start", {**good("trial:contract"), "confirm": "0.25"})
+        assert status == 200, started
+        done = finish(env, server)
+    assert done["state"] == "succeeded", done
+    assert sorted({(m, r) for m, r, _ in env.fakes.sent}) == sorted([(GLM, "low"), (DEEPSEEK, "off")])
+    budget = {m: t for m, _, t in env.fakes.sent}
+    assert budget[GLM] == runner.max_tokens("cuad", "low", GLM) == 8192 + 1200
+    assert budget[DEEPSEEK] == runner.max_tokens("cuad", "off", DEEPSEEK) == 8192
+    trial_dir = next((env.root / "trials").glob("*_cuad-public"))
+    meta = json.loads((trial_dir / "trial.json").read_text())
+    assert meta["models"] == [GLM, DEEPSEEK] and meta["reasoning"] == {GLM: "low", DEEPSEEK: "off"}
+    assert meta["documents"] == ["public-v9.3:cont-01", "public-v9.3:cont-02"]
+    assert meta["published_document_ids"] == ["cont-01", "cont-02"]
+    start = next(r for r in export.read_journal(trial_dir / "runs.jsonl") if r.get("started_utc"))
+    assert start["reasoning"] == {GLM: "low", DEEPSEEK: "off"}
+    calls = export.read_journal(trial_dir / "calls.jsonl")
+    assert {c["document_id"] for c in calls} == set(meta["documents"])
+    assert {(c["model"], c["reasoning"]) for c in calls} == {(GLM, "low"), (DEEPSEEK, "off")}
+    packet = json.loads((env.root / done["result"]["packet"]).read_text())
+    assert {r["document_id"] for r in packet["records"]} == set(meta["documents"])
+    assert {r["published_document_id"] for r in packet["records"]} == {"cont-01", "cont-02"}
+    assert all(r["reasoning"] == {GLM: "low", DEEPSEEK: "off"} for r in packet["records"])
+    receipt = [json.loads(line) for line in (env.out / "launches.jsonl").read_text().splitlines()][-1]
+    assert receipt["reasoning"] == {GLM: "low", DEEPSEEK: "off"}
+
+
+def test_a_trial_packet_and_a_stage_packet_of_the_same_document_load_together(env):
+    """The portal refuses one document id with two source texts; trial ids are namespaced so it never sees that."""
+    stage_text = "STAGE TEXT of the same document, which differs from the public text.\n"
+    write_packet(env.root / "review_bundle" / "stage" / "1_cuad-review-data.json",
+                 [record("cuad_clauses", ["Parties: Acme"], doc="cont-01", text=stage_text)])
+    with serving(env.app) as server:
+        assert pre(server, good("trial:contract"))["can_launch"]
+        call(server, "POST", "/api/launch/start", {**good("trial:contract"), "confirm": "0.25"})
+        done = finish(env, server)
+    assert done["state"] == "succeeded", done
+    data = env.app.data()  # no "mixed source text/class/split" refusal
+    ids = {r["document_id"] for r in data["records"]}
+    assert {"cont-01", "public-v9.3:cont-01", "public-v9.3:cont-02"} <= ids
+    trial_key = ("public-v9.3:cont-01", "cuad_clauses")
+    trial_record = next(r for r in data["records"] if (r["document_id"], r["field"]) == trial_key)
+    stage_record = next(r for r in data["records"] if r["document_id"] == "cont-01")
+    assert trial_record["document_sha256"] != stage_record["document_sha256"]
+    assert trial_record["published_document_id"] == "cont-01"
+    # saving a decision on the namespaced id, the revision queue and the tracker all still work
+    decision = {"document_id": trial_key[0], "field": trial_key[1], "document_sha256": trial_record["document_sha256"],
+                "decision": "REJECT", "corrected_labels_json": "", "reviewer_initials": "AB",
+                "reviewer_notes": "Synthetic test decision", "updated_at": "2026-11-08T12:00:00+00:00"}
+    env.app.save({"schema": portal.review_page.RETURN_SCHEMA, "packet_id": data["packet_id"],
+                  "state_revision": data["state_revision"], "exported_at": decision["updated_at"],
+                  "decisions": [decision],
+                  "history": [{"document_id": trial_key[0], "field": trial_key[1], "at": decision["updated_at"],
+                               "before": {}, "after": dict(decision)}]})
+    after = env.app.data()
+    states = {(s["document_id"], s["field"]): s["status"] for s in after["review_states"]}
+    assert states[trial_key] == "changes_requested"  # the REJECT landed on the namespaced target only
+    assert states[("cont-01", "cuad_clauses")] == "awaiting_review"
+    assert isinstance(after["revision_queue"], list) and after["tracker"]["loaded_target_fields"] == len(after["records"])
+
+
+def test_the_same_document_id_with_two_source_texts_is_still_refused(env):
+    """The collision the namespace avoids: the portal's refusal itself is unchanged."""
+    write_packet(env.root / "review_bundle" / "a" / "1-review-data.json", [record(doc="cont-01", text="stage text\n")])
+    write_packet(env.root / "review_bundle" / "b" / "2-review-data.json", [record("jurisdiction", "Delaware", doc="cont-01",
+                                                                                   text="public text\n")])
+    with pytest.raises(ValueError, match="mixed source text/class/split"):
+        env.app.data()
+
+
+def test_trial_row_namespaces_from_the_pinned_tag():
+    row = launch.trial_row({"document_id": "cont-01", "filename": "a.txt", "expected": "contract"})
+    assert row["document_id"] == "public-v9.3:cont-01" and row["published_document_id"] == "cont-01"
+    assert launch.trial_prefix() == "public-v9.3:"
+    assert launch.trial_row({"id": "x", "filename": "f"})["published_document_id"] == "x"
+    assert launch.trial_reasoning([DEEPSEEK, MINIMAX], "low") == {DEEPSEEK: "off", MINIMAX: "low"}
+    assert launch.trial_reasoning([GLM, DEEPSEEK], "low") == {GLM: "low", DEEPSEEK: "off"}
+    assert launch.trial_reasoning([GLM, MINIMAX], "low") == "low"
+    assert launch.trial_reasoning([DEEPSEEK], {DEEPSEEK: "low"}) == "off"
 
 
 def test_trials_never_pick_a_cuad_gold_contract_or_a_non_edgar_contract(env):
@@ -733,3 +859,12 @@ def test_page_has_the_launch_panel_without_ever_persisting_the_key():
     assert storage and not any("launch" in line.lower() for line in storage)
     assert "/api/launch/preflight" in script and "/api/launch/start" in script and "/api/launch/status" in script
     assert "model_outputs" in script
+
+
+def test_trial_reasoning_never_sends_glm_or_minimax_at_off():
+    """GLM-legal and MiniMax refuse reasoning off (HTTP 400); DeepSeek never runs at low in a trial."""
+    from mailroom_eda.labeling import launch
+    glm, ds, mm = launch.GLM, launch.DEEPSEEK, "minimax/minimax-m3.1-flash"
+    assert launch.trial_reasoning([glm, ds], "off") == {glm: "low", ds: "off"}
+    assert launch.trial_reasoning([ds, mm], "low") == {ds: "off", mm: "low"}
+    assert launch.trial_reasoning([glm, mm], "low") == "low"

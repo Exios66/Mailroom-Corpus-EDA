@@ -39,8 +39,10 @@ class ProviderError(RuntimeError):
     """A request failed after its retries, or returned an unusable body.
 
     ``usage`` is set when the provider billed the failed call (a truncated or non-JSON
-    answer still costs its tokens): ``{"prompt_tokens", "completion_tokens", "cost_usd"}``.
-    The runner books it against the budget instead of releasing the reservation.
+    answer still costs its tokens): ``{"prompt_tokens", "completion_tokens", "cost_usd"}``, plus
+    ``reasoning_tokens`` and ``finish_reason`` when the response reported them (the runner
+    uses those two to spot a reasoning runaway). The runner books it against the budget
+    instead of releasing the reservation.
     """
 
     def __init__(self, message: str, usage: Mapping[str, Any] | None = None) -> None:
@@ -248,7 +250,8 @@ def parse_completion(payload: Mapping[str, Any], *, used_schema: bool) -> Comple
     cost = usage.get("cost")
     billed = {"prompt_tokens": int(usage.get("prompt_tokens") or 0),
               "completion_tokens": int(usage.get("completion_tokens") or 0),
-              "cost_usd": float(cost) if isinstance(cost, (int, float)) else None}
+              "cost_usd": float(cost) if isinstance(cost, (int, float)) else None,
+              "reasoning_tokens": int(details.get("reasoning_tokens") or 0), "finish_reason": finish}
     billed = billed if (billed["prompt_tokens"] or billed["completion_tokens"] or billed["cost_usd"]) else None
     if finish == "length":
         raise ProviderError("response truncated (finish_reason=length); raise max_tokens or shorten the window",

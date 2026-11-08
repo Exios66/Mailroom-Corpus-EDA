@@ -479,6 +479,10 @@ function launchInvalidate(){
   launchPre=null; $('launch-start').disabled=true;
   if ($('launch-checklist').childNodes.length) launchMessage('Inputs changed: run the preflight again.');
 }
+function reasoningText(r){
+  // one level for every model, or {model: level} for a mixed pair
+  return r&&typeof r==='object'?Object.keys(r).map((m)=>m.split('/').pop()+' '+r[m]).join(', '):r;
+}
 function renderLaunchInfo(){
   const t=launchTarget(), box=$('launch-info'); box.textContent='';
   $('launch-trial-opts').hidden=!(t&&t.group==='Public trial');
@@ -488,8 +492,8 @@ function renderLaunchInfo(){
   chips.append(chip('Status: '+t.status, t.status==='blocked'?'bad':t.status==='approved'?'':'good'));
   box.append(chips);
   box.append(keyvals({'Task / set': t.task+' / '+t.set, 'Models': (t.models||[]).join(', ')+(t.models_resolved===false?' (winner not approved yet)':''),
-    'Reasoning': t.reasoning, 'Cap ceiling': '$'+Number(t.cap_usd).toFixed(2), 'Needs approved': (t.needs||[]).join(', '),
-    'Why blocked': t.blocker}));
+    'Reasoning': reasoningText(t.reasoning), 'Cap ceiling': '$'+Number(t.cap_usd).toFixed(2), 'Needs approved': (t.needs||[]).join(', '),
+    'Why blocked': t.blocker, 'Notes': t.description}));
 }
 function renderChecklist(result){
   const box=$('launch-checklist'); box.textContent='';

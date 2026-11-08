@@ -60,7 +60,11 @@ def _run_config(chunk_dir: Path) -> tuple[str, str]:
     if not starts:
         return MODEL, "low"
     models = [str(m) for m in starts[-1]["models"]]
-    return (MODEL if MODEL in models else models[0]), str(starts[-1].get("reasoning") or "low")
+    model = MODEL if MODEL in models else models[0]
+    reasoning = starts[-1].get("reasoning")
+    if isinstance(reasoning, dict):  # a mixed pair: the level this packet's model ran at
+        reasoning = reasoning.get(model)
+    return model, str(reasoning or "low")
 
 
 def _journal(path: Path) -> list[dict[str, Any]]:

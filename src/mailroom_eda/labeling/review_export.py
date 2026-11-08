@@ -16,7 +16,8 @@ reviewers in one format:
   every model agreed on.
 
 Every record also carries the run (``task``, ``chunk``, ``models``, ``reasoning``,
-``prompt_sha256``), the registry policy (``correction_type``, ``dojo_type``, ``nullable``,
+``prompt_sha256``; ``reasoning`` is the one level, or ``{model: level}`` for a mixed pair),
+the registry policy (``correction_type``, ``dojo_type``, ``nullable``,
 ``absence_policy``, ``eligible_for_gold``, ``schema_status``) and ``model_outputs``, each
 model's own value, status and evidence, so a reviewer can compare the models. Evidence is
 always ``{start, end, quote}`` into ``full_document_text`` (Unicode code points, exclusive
@@ -33,7 +34,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from . import export, scoring, tasks, verify
+from . import export, runner, scoring, tasks, verify
 from .registry import class_fields
 from .review_packet import DECISION_KEY, _json, correction_type
 from .review_page import PACKET_SCHEMA, packet_id, validate_packet
@@ -74,7 +75,9 @@ class _Batch:
         self.batch = chunk_dir.name
         self.chunk = str(start.get("chunk") or chunk_dir.name.split("_")[0])
         self.models = [str(m) for m in start["models"]]
-        self.reasoning = str(start.get("reasoning") or "off")
+        # one level for every model, or {model: level}; a start record that cannot be placed raises ValueError
+        self.levels = runner.reasoning_levels(start.get("reasoning") or "off", self.models)
+        self.reasoning = runner.reasoning_spec(self.levels)
         self.set_name = str(start.get("set") or "")
         self.slice = start.get("slice")
 
@@ -84,8 +87,44 @@ class _Batch:
         if self.slice:
             where += f", slice {self.slice}"
         who = " and ".join(self.models)
-        return (f"Batch {self.chunk} ({where}), labeled by {who} at reasoning {self.reasoning}. "
+        return (f"Batch {self.chunk} ({where}), labeled by {who} at reasoning {runner.reasoning_text(self.reasoning)}. "
                 f"The candidate is {how}. It is a proposal for human review, not a gold label.")
+
+
+def _runaways(chunk_dir: Path, batch: _Batch) -> dict[str, list[dict[str, Any]]]:
+    """Calls whose latest attempt ran away, by document id.
+
+    A call that was cut off at the token limit with most of its output spent reasoning is
+    journaled with ``reasoning_runaway`` (``runner.run_chunk``) and left unanswered. Only the
+    latest attempt per (document, model, variant) at the model's batch level counts, so a
+    retry that succeeded clears it."""
+    path = chunk_dir / "calls.jsonl"
+    if not path.exists():
+        return {}
+    latest: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for c in export.read_journal(path):
+        if c.get("reasoning") == batch.levels.get(str(c.get("model"))):
+            latest[str(c.get("document_id")), str(c.get("model")), str(c.get("variant") or "")] = c
+    out: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for (doc_id, _, _), c in sorted(latest.items()):
+        if c.get("reasoning_runaway") and c.get("error"):
+            out[doc_id].append(c)
+    return out
+
+
+def _note_runaways(doc_id: str, runaways: Mapping[str, Sequence[Mapping[str, Any]]], issues: list[str],
+                   outputs: list[dict[str, Any]]) -> None:
+    """Add an issue sentence and a ``model_outputs`` entry for each runaway call of this document."""
+    for c in runaways.get(doc_id, ()):
+        model, variant = str(c["model"]), str(c.get("variant") or "")
+        where = f"{model}" + (f" (pass {variant})" if variant in ("a", "b") else "")
+        issues.append(f"Reasoning ran away on {where}: {int(c.get('reasoning_tokens') or 0)} of "
+                      f"{int(c.get('completion_tokens') or 0)} output tokens were reasoning, so the answer "
+                      f"was cut off and {model} has no answer for this document. Run the batch again to "
+                      "retry it, or decide from the other reading.")
+        outputs.append({"model": model, **({"pass": variant} if variant in ("a", "b") else {}),
+                        "status": "not_found", "value": None, "evidence": "", "evidence_spans": [],
+                        "reasoning_runaway": True, "error": str(c["error"])})
 
 
 def _decode(text: Any, kind: str) -> Any:
@@ -172,6 +211,8 @@ def _record(batch: _Batch, row: Mapping[str, Any], field: str, spec: Mapping[str
         "existing_gt_fields": gt if gt is not None else {}, "human_approval": "pending",
         "review_provenance": batch.provenance(how),
     }
+    if row.get("published_document_id"):  # a namespaced trial record keeps the id the dataset publishes
+        record["published_document_id"] = str(row["published_document_id"])
     if status == "source_checks_passed" and (blocker := accept_blocker(record)):
         record["candidate_status"] = "needs_source_review"
         issues.append(f"Source checks failed for this candidate, so it cannot be accepted as is: {blocker}.")
@@ -206,7 +247,8 @@ def _registry_spec(row: Mapping[str, Any], field: str) -> Mapping[str, Any]:
 
 # ------------------------------------------------------------------ field tasks
 
-def _field_records(batch: _Batch, chunk_dir: Path, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _field_records(batch: _Batch, chunk_dir: Path, rows: Sequence[Mapping[str, Any]],
+                   runaways: Mapping[str, Sequence[Mapping[str, Any]]] = {}) -> list[dict[str, Any]]:
     """One record per ``fields.csv`` row, with both models' answers side by side."""
     path = chunk_dir / "fields.csv"
     if not path.exists():
@@ -272,6 +314,7 @@ def _field_records(batch: _Batch, chunk_dir: Path, rows: Sequence[Mapping[str, A
             note = f" ({_short(f['reviewer_note'])})" if f.get("reviewer_note") else ""
             issues.append(f"An earlier review recorded the verdict '{f['reviewer_verdict']}'{note}; "
                           "it is not a human approval.")
+        _note_runaways(f["document_id"], runaways, issues, outputs)
         if name == "claim_checklist" and isinstance(candidate, list):
             score = scoring.score_checklist(candidate, index)
             spans = [{"start": e.start, "end": e.end, "quote": index.text[e.start:e.end],
@@ -294,7 +337,8 @@ def _clauses(rec: Mapping[str, Any]) -> list[tuple[int, str, str]]:
                   for cat, spans in (rec.get("cuad_clause_labels") or {}).items() for s in spans)
 
 
-def _cuad_records(batch: _Batch, chunk_dir: Path, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _cuad_records(batch: _Batch, chunk_dir: Path, rows: Sequence[Mapping[str, Any]],
+                  runaways: Mapping[str, Sequence[Mapping[str, Any]]] = {}) -> list[dict[str, Any]]:
     """One record per document from ``cuad-labels.jsonl``; clauses are proposals, never gold."""
     path = chunk_dir / "cuad-labels.jsonl"
     if not path.exists():
@@ -343,6 +387,7 @@ def _cuad_records(batch: _Batch, chunk_dir: Path, rows: Sequence[Mapping[str, An
             status = "needs_source_review"
             issues.append("The models disagree on the clauses: " + "; ".join(
                 f"{p[0]['model']} found {len(p[2])}" for p in per_model) + ".")
+        _note_runaways(doc_id, runaways, issues, outputs)
         out.append(_record(batch, row, CUAD_FIELD, spec, candidate=items or None,
                            presence="populated" if items else "pending_annotation", status=status,
                            issues=issues, evidence=spans, outputs=outputs,
@@ -353,7 +398,8 @@ def _cuad_records(batch: _Batch, chunk_dir: Path, rows: Sequence[Mapping[str, An
 
 # ------------------------------------------------------------------ intent
 
-def _intent_records(batch: _Batch, chunk_dir: Path, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _intent_records(batch: _Batch, chunk_dir: Path, rows: Sequence[Mapping[str, Any]],
+                    runaways: Mapping[str, Sequence[Mapping[str, Any]]] = {}) -> list[dict[str, Any]]:
     """One record per document from ``intent-labels.jsonl``; both passes of every model are shown."""
     path = chunk_dir / "intent-labels.jsonl"
     if not path.exists():
@@ -386,6 +432,7 @@ def _intent_records(batch: _Batch, chunk_dir: Path, rows: Sequence[Mapping[str, 
         if agreed is None:
             issues.append("The intent readings disagree or are missing: " + "; ".join(
                 f"{m} pass {v}: {l or 'none'}" for m, v, l in votes) + ".")
+        _note_runaways(doc_id, runaways, issues, outputs)
         prompt = next((r.get("prompt_sha256") for r in per_doc[doc_id] if r.get("prompt_sha256")), "")
         out.append(_record(batch, row, INTENT_FIELD, spec, candidate=agreed,
                            presence="populated" if agreed else "pending_annotation",
@@ -413,12 +460,13 @@ def build_packet(chunk_dir: Path, rows: Sequence[Mapping[str, Any]]) -> dict[str
     Registry KeyError and read errors propagate."""
     chunk_dir = Path(chunk_dir)
     batch = _Batch(chunk_dir)
+    runaways = _runaways(chunk_dir, batch)
     if batch.task == "cuad":
-        records = _cuad_records(batch, chunk_dir, rows)
+        records = _cuad_records(batch, chunk_dir, rows, runaways)
     elif batch.task == "intent":
-        records = _intent_records(batch, chunk_dir, rows)
+        records = _intent_records(batch, chunk_dir, rows, runaways)
     else:
-        records = _field_records(batch, chunk_dir, rows)
+        records = _field_records(batch, chunk_dir, rows, runaways)
     if not records:
         raise ValueError(f"{chunk_dir.name}: no answered documents to review")
     records.sort(key=lambda r: (r["document_id"], r["field"]))

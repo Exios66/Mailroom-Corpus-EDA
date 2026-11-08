@@ -58,18 +58,124 @@ RETRY_FACTOR = 1.25
 #: A cap below this multiple of a chunk's projected cost stops it before its last calls (the cap
 #: check reserves each call's worst case); ``test_every_cap_covers_its_projection_with_headroom``.
 CAP_HEADROOM_FACTOR = 1.4
-#: Extra output tokens for a call with reasoning on: reasoning tokens count against
-#: ``max_tokens``, and without this a short answer budget (intent: 400) is cut off.
+#: Ceiling of the extra output tokens a call with reasoning on may spend: reasoning tokens count
+#: against ``max_tokens``, and without room a short answer budget (intent: 400) is cut off.
 # DeepSeek v4.1 Flash at low spent 336 to over 2,300 reasoning tokens on the same real email
 # (2026-11-06 probes); a truncated answer is billed and discarded, unused room costs nothing
+# in tokens but every reserved token is cap headroom the spend gate cannot hand to another call.
+# What a call actually gets is ``reasoning_allowance``: a multiple of the measured p75, up to this.
 REASONING_ALLOWANCE = 6144
+#: ``reasoning_allowance`` never goes below this (a measured p75 of 134 still leaves room to think)
+REASONING_ALLOWANCE_FLOOR = 1024
+#: ``reasoning_allowance`` is this many times the measured p75 reasoning tokens
+REASONING_ALLOWANCE_MULTIPLE = 4
+#: A truncated answer whose reasoning is at least this share of its output tokens "ran away"
+RUNAWAY_SHARE = 0.8
+#: finish reasons that mean "stopped at the token limit" (OpenAI/OpenRouter ``length``, Anthropic ``max_tokens``)
+TRUNCATED_FINISH = frozenset({"length", "max_tokens"})
+
+def reasoning_levels(reasoning: "str | Mapping[str, str]", models: Sequence[str]) -> dict[str, str]:
+    """The reasoning level of each model, in ``models`` order.
+
+    ``reasoning`` is one level (``off`` / ``low``) for every model, or a ``{model: level}``
+    mapping that names every model of the run and no other. Raises ``ValueError`` for a level
+    that is not in ``providers.REASONING``, a model without a level, or a level for a model
+    that is not part of the run."""
+    models = list(models)
+    if isinstance(reasoning, Mapping):
+        unknown = [m for m in reasoning if m not in models]
+        if unknown:
+            raise ValueError(f"reasoning names model(s) outside this run: {unknown}; models are {models}")
+        missing = [m for m in models if m not in reasoning]
+        if missing:
+            raise ValueError(f"reasoning has no level for model(s) {missing}")
+        levels = {m: reasoning[m] for m in models}
+    else:
+        levels = {m: reasoning for m in models}
+    bad = sorted({str(v) for v in levels.values() if v not in providers.REASONING})
+    if bad:
+        raise ValueError(f"reasoning must be one of {providers.REASONING}, got {bad}")
+    return levels
 
 
-def max_tokens(task: str, reasoning: str = "off") -> int:
-    """Output-token budget for a task (``fields.yaml`` tasks set ``max_tokens``), plus
-    :data:`REASONING_ALLOWANCE` when reasoning is on."""
+def reasoning_spec(levels: Mapping[str, str]) -> "str | dict[str, str]":
+    """The compact form to store: the one level when every model shares it (existing journals,
+    approvals and directory names keep their shape), else the ``{model: level}`` mapping."""
+    values = list(levels.values())
+    return values[0] if values and len(set(values)) == 1 else dict(levels)
+
+
+def reasoning_of(reasoning: "str | Mapping[str, str] | None", model: str) -> str | None:
+    """``model``'s level in a stored or requested ``reasoning`` (a level, a mapping, or ``None``)."""
+    return reasoning.get(model) if isinstance(reasoning, Mapping) else reasoning
+
+
+def reasoning_text(reasoning: "str | Mapping[str, str]") -> str:
+    """``low``, or ``glm-5.3-flashx-legal low, deepseek-v4.1-flash off`` for a mixed pair."""
+    if isinstance(reasoning, Mapping):
+        return ", ".join(f"{m.split('/')[-1]} {lvl}" for m, lvl in reasoning.items())
+    return str(reasoning)
+
+
+def call_matches(c: Mapping[str, Any], reasoning: "str | Mapping[str, str] | None") -> bool:
+    """Whether journal call ``c`` ran at the requested reasoning (``None`` accepts any).
+
+    With a mapping the call's own model decides which level it must have run at; a model the
+    mapping does not name never matches."""
+    if reasoning is None:
+        return True
+    want = reasoning_of(reasoning, str(c.get("model")))
+    return want is not None and c.get("reasoning") == want
+
+
+def _measured_reasoning(model: str, task: str, level: str) -> int | None:
+    """``models.yaml`` ``reasoning_tokens`` for (model, level, task), else its ``default``, else ``None``."""
+    spec = ((models_registry()["models"].get(model) or {}).get("reasoning_tokens") or {}).get(level) or {}
+    if task in spec:
+        return int(spec[task])
+    return int(spec["default"]) if "default" in spec else None
+
+
+def reasoning_allowance(model: str, task: str, level: str = "low") -> int:
+    """Extra ``max_tokens`` a call gets for reasoning: 0 when off, else
+    ``clamp(4 x measured p75, 1024, REASONING_ALLOWANCE)``; a model with no measurement gets the ceiling.
+
+    The measured p75 is ``reasoning_tokens(model, task, level)`` from ``models.yaml``. Four
+    times it covers the observed runaway (over 2,300 tokens on one email) against a p75 of
+    1,200. Unused room costs nothing, but every reserved token shrinks the cap headroom
+    ``spend.Budget.reserve`` books for the call, so the flat 6,144 on every call refused calls
+    a measured allowance fits. The floor keeps a tiny p75 (GLM, 134 on checklists) from
+    starving the model; the ceiling keeps a noisy measurement from reserving more than the
+    old flat allowance."""
+    if level == "off":
+        return 0
+    measured = _measured_reasoning(model, task, level)
+    if measured is None:
+        return REASONING_ALLOWANCE
+    return min(REASONING_ALLOWANCE, max(REASONING_ALLOWANCE_FLOOR, REASONING_ALLOWANCE_MULTIPLE * measured))
+
+
+def max_tokens(task: str, reasoning: str = "off", model: str | None = None) -> int:
+    """Output-token budget for a task (``fields.yaml`` tasks set ``max_tokens``), plus the
+    reasoning allowance when reasoning is on: :func:`reasoning_allowance` for ``model``, or
+    the :data:`REASONING_ALLOWANCE` ceiling for a caller that names no model."""
     base = MAX_TOKENS.get(task) or int(tasks.generic_tasks()[task].get("max_tokens", 3000))
-    return base + (REASONING_ALLOWANCE if reasoning != "off" else 0)
+    if reasoning == "off":
+        return base
+    return base + (REASONING_ALLOWANCE if model is None else reasoning_allowance(model, task, reasoning))
+
+
+def reasoning_runaway(finish_reason: Any, reasoning_tokens: Any, completion_tokens: Any) -> bool:
+    """Whether a call was cut off at the token limit with most of its output spent reasoning."""
+    completion = int(completion_tokens or 0)
+    return (str(finish_reason or "") in TRUNCATED_FINISH and completion > 0
+            and int(reasoning_tokens or 0) >= RUNAWAY_SHARE * completion)
+
+
+def runaway_message(reasoning_tokens: Any, completion_tokens: Any) -> str:
+    """The journal's error text for a reasoning runaway."""
+    return (f"reasoning ran away: {int(reasoning_tokens or 0)} of {int(completion_tokens or 0)} output "
+            "tokens were reasoning; answer truncated")
 
 
 def typical_output(task: str) -> int:
@@ -269,26 +375,41 @@ def _probe_hint(problem: str) -> str:
             f"operative sentence that answers this YES, or drop {name} if the document has none.")
 
 
-def chunk_name(task: str, set_name: str, spec: str | None, reasoning: str = "off", *,
-               full_text: bool = False) -> str:
-    """Directory name for an ad-hoc ``run`` (campaign chunks use ``operate.chunk_dir``)."""
+def chunk_name(task: str, set_name: str, spec: str | None,
+               reasoning: "str | Mapping[str, str] | Sequence[str]" = "off", *,
+               full_text: bool = False, models: Sequence[str] | None = None) -> str:
+    """Directory name for an ad-hoc ``run`` (campaign chunks use ``operate.chunk_dir``).
+
+    One level for every model keeps the name it always had (``-reasoning-low``, nothing for
+    off). A mixed ``{model: level}`` pair joins the levels in model order (``models``, else the
+    mapping's own order): ``-reasoning-low+off``. A tuple of levels is read in model order."""
     base = f"{task}-{set_name}"
     if spec:
         i, n = spec.split("/")
         base += f"-{i}of{n}"
-    base = base if reasoning == "off" else f"{base}-reasoning-{reasoning}"
+    if isinstance(reasoning, Mapping):
+        order = [m for m in (models or reasoning) if m in reasoning]
+        levels = [str(reasoning[m]) for m in order]
+        label = levels[0] if len(set(levels)) == 1 else "+".join(levels)
+    elif isinstance(reasoning, (tuple, list)):
+        label = str(reasoning[0]) if len(set(reasoning)) == 1 else "+".join(map(str, reasoning))
+    else:
+        label = str(reasoning)
+    base = base if label == "off" else f"{base}-reasoning-{label}"
     return f"{base}-fulltext" if full_text else base
 
 
-def _done(calls_path: Path, reasoning: str | None = None) -> set[tuple[str, str, str, str]]:
+def _done(calls_path: Path,
+          reasoning: "str | Mapping[str, str] | None" = None) -> set[tuple[str, str, str, str]]:
     """(document_id, model, variant, prompt_sha256) already answered without error (at ``reasoning``).
 
     The prompt sha is part of the key, so after a prompt or registry edit a re-run sends
-    the new prompt instead of reusing answers to the old one.
+    the new prompt instead of reusing answers to the old one. With a ``{model: level}``
+    mapping each answer must have run at its own model's level.
     """
     return {(c["document_id"], c["model"], c.get("variant", ""), c.get("prompt_sha256", ""))
             for c in export.read_journal(calls_path)
-            if not c.get("error") and (reasoning is None or c.get("reasoning") == reasoning)}
+            if not c.get("error") and call_matches(c, reasoning)}
 
 
 class _Stop(Exception):
@@ -296,13 +417,14 @@ class _Stop(Exception):
 
 
 def import_reusable(calls_path: Path, roots: Sequence[Path], rows: Sequence[Mapping[str, Any]], *,
-                    task: str, models: Sequence[str], reasoning: str, provider: str | Mapping[str, str],
+                    task: str, models: Sequence[str], reasoning: "str | Mapping[str, str]",
+                    provider: str | Mapping[str, str],
                     set_name: str = "") -> int:
     """Copy answers this chunk would otherwise buy again from other journals under ``roots``.
 
     An answer is reused only when its configuration is identical: document, model,
-    variant, prompt sha (the exact prompt bundle), reasoning, provider and temperature 0,
-    and it has no error. Each copy keeps ``reused_from`` (the source journal), so the
+    variant, prompt sha (the exact prompt bundle), the model's own reasoning level, provider
+    and temperature 0, and it has no error. Each copy keeps ``reused_from`` (the source journal), so the
     chunk's own journal stays self-contained. Returns the number of records copied.
     """
     prov = dict(provider) if isinstance(provider, Mapping) else {m: provider for m in models}
@@ -345,12 +467,16 @@ def import_reusable(calls_path: Path, roots: Sequence[Path], rows: Sequence[Mapp
     return copied
 
 
-def _reusable(c: Mapping[str, Any], reasoning: str, provider: str) -> bool:
-    """Same configuration, no error, and served inside the model's current route pin."""
+def _reusable(c: Mapping[str, Any], reasoning: "str | Mapping[str, str]", provider: str) -> bool:
+    """Same configuration, no error, and served inside the model's current route pin.
+
+    ``reasoning`` is one level or a ``{model: level}`` mapping; the call's own model picks."""
     model = str(c.get("model"))
-    return (not c.get("error") and c.get("reasoning") == reasoning and c.get("provider") == provider
+    level = reasoning_of(reasoning, model)
+    return (not c.get("error") and level is not None and c.get("reasoning") == level
+            and c.get("provider") == provider
             and c.get("temperature", 0) == providers.temperature(model)
-            and not providers.served_outside_route(providers.model_route(model), reasoning,
+            and not providers.served_outside_route(providers.model_route(model), level,
                                                    {c.get("served_provider")}))
 
 
@@ -374,7 +500,7 @@ def over_context(backend: providers.Backend, model: str, messages: Sequence[Mapp
 
 
 def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[str],
-              reasoning: str, budget: spend.Budget, out_dir: Path,
+              reasoning: "str | Mapping[str, str]", budget: spend.Budget, out_dir: Path,
               backend: providers.Backend | None = None,
               backends: Mapping[str, providers.Backend] | None = None,
               vocab: Sequence[str] = (), chat=providers.chat, workers: int = 1,
@@ -395,12 +521,23 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
     prompt plus its answer budget is checked against the model's window (exactly, through
     vLLM's ``/tokenize``, on Modal; by estimate against ``models.yaml`` ``context``
     elsewhere): one that cannot fit is journaled as ``over_context`` and never sent.
+
+    ``reasoning`` is one level for every model or a ``{model: level}`` mapping (a mixed pair,
+    e.g. GLM at ``low`` beside DeepSeek at ``off``). Every per-call decision uses the model's
+    own level: the window check, the budget reservation, ``max_tokens`` (with that model's
+    :func:`reasoning_allowance`), the request, the journal's ``reasoning`` field, and which
+    earlier answers count as done or reusable.
+
+    A call cut off at the token limit with most of its output spent reasoning is journaled as
+    a failed call with ``"reasoning_runaway": true`` (it is billed, so its cost is kept) and
+    is sent again on the next run.
     """
     import threading  # noqa: PLC0415
     from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: PLC0415
 
     if task == "cuad" and not vocab:
         raise ValueError("cuad runs need the CUAD vocabulary")
+    levels = reasoning_levels(reasoning, models)
     bk = dict(backends) if backends else {m: backend for m in models}
     if any(bk.get(m) is None for m in models):
         raise ValueError("every model needs a backend")
@@ -409,11 +546,11 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
     stats: Counter = Counter()
     if reuse_from:
         reused = import_reusable(calls_path, reuse_from, rows, task=task, models=models,
-                                 reasoning=reasoning, provider={m: bk[m].provider for m in models},
+                                 reasoning=levels, provider={m: bk[m].provider for m in models},
                                  set_name=set_name)
         if reused:
             stats["reused"] = reused
-    done = _done(calls_path, reasoning)
+    done = _done(calls_path, levels)
     lock = threading.Lock()
     stop = threading.Event()
     stop_reason: list[str] = []
@@ -428,9 +565,10 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
         rec = {**rec, "input_sha256": tasks.input_sha256(req.messages)}
         if stop.is_set():
             raise _Stop()
+        level = levels[model]
+        budget_tokens = max_tokens(task, level, model)
         try:
-            over = over_context(bk[model], model, req.messages, max_tokens(task, reasoning), reasoning,
-                                count_tokens)
+            over = over_context(bk[model], model, req.messages, budget_tokens, level, count_tokens)
         except providers.ProviderError as err:
             journal({**rec, "error": str(err)})
             with lock:
@@ -443,21 +581,32 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
             return None
         ptoks = sum(spend.estimate_tokens(m["content"]) for m in req.messages)
         try:
-            reserved = budget.reserve(model, ptoks, max_tokens(task, reasoning))
+            reserved = budget.reserve(model, ptoks, budget_tokens)
         except spend.SpendError as err:
             stop.set()
             stop_reason.append(str(err))
             raise _Stop() from err
         try:
-            comp = chat(bk[model], model, req.messages, req.schema, reasoning=reasoning,
-                        max_tokens=max_tokens(task, reasoning))
+            comp = chat(bk[model], model, req.messages, req.schema, reasoning=level,
+                        max_tokens=budget_tokens)
         except providers.ProviderError as err:
             billed = getattr(err, "usage", None)
             if billed:  # a truncated or unparseable answer is still billed: book it
                 cost = budget.settle(model, billed["prompt_tokens"], billed["completion_tokens"],
                                      billed["cost_usd"], reserved)
-                journal({**rec, "error": str(err), "prompt_tokens": billed["prompt_tokens"],
-                         "completion_tokens": billed["completion_tokens"], "cost_usd": round(cost, 6)})
+                failed = {**rec, "error": str(err), "prompt_tokens": billed["prompt_tokens"],
+                          "completion_tokens": billed["completion_tokens"], "cost_usd": round(cost, 6)}
+                if billed.get("finish_reason"):
+                    failed["finish_reason"] = billed["finish_reason"]
+                if billed.get("reasoning_tokens"):
+                    failed["reasoning_tokens"] = billed["reasoning_tokens"]
+                if reasoning_runaway(billed.get("finish_reason"), billed.get("reasoning_tokens"),
+                                     billed["completion_tokens"]):
+                    failed.update(error=runaway_message(billed["reasoning_tokens"], billed["completion_tokens"]),
+                                  reasoning_runaway=True)
+                    with lock:
+                        stats["reasoning_runaways"] += 1
+                journal(failed)
             else:
                 budget.release(reserved)
                 journal({**rec, "error": str(err)})
@@ -465,11 +614,20 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
                 stats["errors"] += 1
             return None
         cost = budget.settle(model, comp.prompt_tokens, comp.completion_tokens, comp.cost_usd, reserved)
-        journal({**rec, "response": comp.parsed, "content": comp.content, "served_model": comp.served_model,
-                 "served_provider": comp.served_provider, "used_schema": comp.used_schema,
-                 "finish_reason": comp.finish_reason, "prompt_tokens": comp.prompt_tokens,
-                 "completion_tokens": comp.completion_tokens, "reasoning_tokens": comp.reasoning_tokens,
-                 "cached_tokens": comp.cached_tokens, "cost_usd": round(cost, 6)})
+        answer = {**rec, "response": comp.parsed, "content": comp.content, "served_model": comp.served_model,
+                  "served_provider": comp.served_provider, "used_schema": comp.used_schema,
+                  "finish_reason": comp.finish_reason, "prompt_tokens": comp.prompt_tokens,
+                  "completion_tokens": comp.completion_tokens, "reasoning_tokens": comp.reasoning_tokens,
+                  "cached_tokens": comp.cached_tokens, "cost_usd": round(cost, 6)}
+        if reasoning_runaway(comp.finish_reason, comp.reasoning_tokens, comp.completion_tokens):
+            # billed, but the answer was cut off mid-thought: a failed call, retried on the next run
+            journal({**answer, "error": runaway_message(comp.reasoning_tokens, comp.completion_tokens),
+                     "reasoning_runaway": True})
+            with lock:
+                stats["errors"] += 1
+                stats["reasoning_runaways"] += 1
+            return None
+        journal(answer)
         return comp
 
     def repair(r: Mapping[str, Any], model: str, first: providers.Completion | Mapping[str, Any],
@@ -492,7 +650,7 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
     def job(r: Mapping[str, Any], v: str, model: str, req: tasks.Request, first: Mapping[str, Any] | None) -> None:
         """One planned call: a first answer (and its repair), or only a missing repair."""
         rec = {"task": task, "document_id": req.document_id, "filename": r["filename"], "variant": v,
-               "model": model, "provider": bk[model].provider, "reasoning": reasoning,
+               "model": model, "provider": bk[model].provider, "reasoning": levels[model],
                "temperature": providers.temperature(model),
                "prompt_sha256": req.prompt_sha256, "labeled_utc": _now()}
         if first is not None:  # answered on an earlier run; only its CUAD repair may be missing
@@ -510,7 +668,7 @@ def run_chunk(rows: Sequence[Mapping[str, Any]], *, task: str, models: Sequence[
     answered = {}  # first answers already in the journal, for CUAD repairs still missing
     if task == "cuad":
         for c in export.read_journal(calls_path):
-            if not c.get("error") and c.get("reasoning") == reasoning and not c.get("variant"):
+            if not c.get("error") and call_matches(c, levels) and not c.get("variant"):
                 answered[(c["document_id"], c["model"], c.get("prompt_sha256", ""))] = c
     for r in rows:
         for v in _variants(task):
@@ -683,7 +841,9 @@ def field_decisions(rows: Sequence[Mapping[str, Any]], calls: Sequence[Mapping[s
             "fields_present": counts["accept"], "fields_absent": counts["absent"],
             "fields_not_found": counts["unlabeled"], "problems": counts["adjudicate"],
             "model": ",".join(m for m, c in zip(models, got) if c), "provider": first["provider"],
-            "served_model": first.get("served_model"), "reasoning": first["reasoning"],
+            "served_model": first.get("served_model"),
+            # models at different levels: the levels in model order, as the directory name has them
+            "reasoning": "+".join(dict.fromkeys(str(c["reasoning"]) for c in got if c)),
             "prompt_sha256": first["prompt_sha256"],
             "document_tokens": spend.estimate_tokens(str(r.get("doc_text") or "")),
             "prompt_tokens": sum((c or {}).get("prompt_tokens") or 0 for c in got),
@@ -762,7 +922,7 @@ def _run_set(out_dir: Path) -> str:
 
 
 def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
-           reasoning: str | None = None, interim: Any = None) -> dict[str, Any]:
+           reasoning: "str | Mapping[str, str] | None" = None, interim: Any = None) -> dict[str, Any]:
     """Rebuild the derived journals and CSVs for one chunk directory, then its portal packet.
 
     :func:`_review` does the rebuild. A chunk that ran through ``run``/``chunk`` (its
@@ -786,8 +946,12 @@ def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
 
 
 def _review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
-            reasoning: str | None = None, interim: Any = None) -> dict[str, Any]:
+            reasoning: "str | Mapping[str, str] | None" = None, interim: Any = None) -> dict[str, Any]:
     """Rebuild the derived journals and CSVs for one chunk directory (calls at ``reasoning``).
+
+    ``reasoning`` filters the journal: one level keeps the calls that ran at it, a
+    ``{model: level}`` mapping keeps each model's calls at that model's level (so a mixed
+    pair keeps both models), ``None`` keeps every call.
 
     With ``interim`` (an ``interim.Overlay``), field rows gain the flag-only ``interim_*``
     columns and an intent chunk writes ``interim-intent.csv``.
@@ -796,8 +960,7 @@ def _review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
     retained, but checklist confirmations may reopen when source checks fail.
     Checklist chunks also write labeling-scores.json. Catalog validation and
     filesystem errors propagate."""
-    calls = [c for c in export.read_journal(out_dir / "calls.jsonl")
-             if reasoning is None or c.get("reasoning") == reasoning]
+    calls = [c for c in export.read_journal(out_dir / "calls.jsonl") if call_matches(c, reasoning)]
     calls = current_prompt_calls(rows, task, calls, _run_set(out_dir))
     usage = _usage_by_document(calls)
     doc_tokens = _document_tokens(rows)
@@ -940,21 +1103,29 @@ DEFAULT_LOW_REASONING_TOKENS = 1200
 
 def reasoning_tokens(model: str, task: str, reasoning: str) -> int:
     """Reasoning tokens one call is projected to spend: 0 at off, else the model's measured
-    ``reasoning_tokens.low`` entry for the task (or its ``default``)."""
+    ``reasoning_tokens.low`` entry for the task (or its ``default``, else
+    :data:`DEFAULT_LOW_REASONING_TOKENS`)."""
     if reasoning == "off":
         return 0
-    low = ((models_registry()["models"].get(model) or {}).get("reasoning_tokens") or {}).get(reasoning) or {}
-    return int(low.get(task, low.get("default", DEFAULT_LOW_REASONING_TOKENS)))
+    measured = _measured_reasoning(model, task, reasoning)
+    return DEFAULT_LOW_REASONING_TOKENS if measured is None else measured
 
 
-def projected_output(model: str, task: str, reasoning: str, est: Mapping[str, Any]) -> int:
-    """Output tokens for one model over a chunk: the answers plus the reasoning they cost."""
-    return int(est["output_tokens"]) + round(reasoning_tokens(model, task, reasoning) * est["calls"] * RETRY_FACTOR)
+def projected_output(model: str, task: str, reasoning: "str | Mapping[str, str]", est: Mapping[str, Any]) -> int:
+    """Output tokens for one model over a chunk: the answers plus the reasoning they cost
+    at that model's own level (``reasoning`` may be a ``{model: level}`` mapping)."""
+    level = reasoning_of(reasoning, model)
+    if level is None:
+        raise ValueError(f"reasoning has no level for {model}")
+    return int(est["output_tokens"]) + round(reasoning_tokens(model, task, level) * est["calls"] * RETRY_FACTOR)
 
 
-def projected_cost(est: Mapping[str, Any], models: Sequence[str], task: str, reasoning: str) -> float | None:
+def projected_cost(est: Mapping[str, Any], models: Sequence[str], task: str,
+                   reasoning: "str | Mapping[str, str]") -> float | None:
     """USD to run ``est``'s chunk on every model: tokens at registry prices, reasoning included
-    (:func:`projected_output`), and Modal GPU time for a Modal model. ``None`` when a model has no price."""
+    (:func:`projected_output`, per model), and Modal GPU time for a Modal model. ``None`` when a
+    model has no price."""
+    reasoning = reasoning_levels(reasoning, models)
     total = 0.0
     for m in models:
         if spend.gpu_spec(m):
@@ -981,14 +1152,20 @@ def campaign_costs(rows: Sequence[Mapping[str, Any]], name: str = "v10") -> dict
             models, reasoning = resolve(name, ch)
         except SystemExit:
             models = [PLACEHOLDER_MODELS.get(m, m) for m in ch["models"]]
-            reasoning = PLACEHOLDER_REASONING.get(str(ch["reasoning"]), str(ch["reasoning"]))
+            if isinstance(ch["reasoning"], Mapping):
+                reasoning = {PLACEHOLDER_MODELS.get(m, m): PLACEHOLDER_REASONING.get(str(v), str(v))
+                             for m, v in ch["reasoning"].items()}
+            else:
+                reasoning = PLACEHOLDER_REASONING.get(str(ch["reasoning"]), str(ch["reasoning"]))
+        reasoning = reasoning_levels(reasoning, models)
         est = estimate(picked, ch["task"], models, ch["set"])
         outputs = {m: projected_output(m, ch["task"], reasoning, est) for m in models}
         cost = 0.0 if ch.get("skip") else sum(spend.token_cost(m, est["prompt_tokens"], outputs[m]) for m in models)
         out.append({**ch, "documents": est["documents"], "calls": est["calls"] * len(models),
                     "prompt_tokens": est["prompt_tokens"] * len(models),
                     "output_tokens": sum(outputs.values()),
-                    "projected_usd": round(cost, 4), "priced_models": models, "priced_reasoning": reasoning})
+                    "projected_usd": round(cost, 4), "priced_models": models,
+                    "priced_reasoning": reasoning_spec(reasoning)})
         sub = ch.get("subclass") or ""
         sub = ",".join(sorted(map(str, sub))) if isinstance(sub, (list, tuple)) else str(sub)
         # Arms of one chunk share rows and count once; subclass-split chunks each count.
@@ -1039,7 +1216,7 @@ def render_costs(c: Mapping[str, Any]) -> str:
     for ch in c["chunks"]:
         models = " + ".join(f"`{m.split('/')[-1]}`" for m in ch["models"])
         lines.append(f"| {ch['id']} | {ch['task']} | {ch['set']} | {ch.get('chunk') or 'all'} | "
-                     f"{ch['documents']} | {ch['calls']} | {models} | {ch['reasoning']} | "
+                     f"{ch['documents']} | {ch['calls']} | {models} | {reasoning_text(ch['reasoning'])} | "
                      f"{ch['projected_usd']:.2f} | {ch['cap_usd']:.2f} |")
     lines += ["", "An approved `winner_of_<id>` is priced as the approved arm; until then `winner_of_1` "
               "is priced as `glm-5.3-flashx-legal` at low and `winner_of_3` as `deepseek-v4.1-flash-1017` "
@@ -1071,6 +1248,9 @@ def _parser() -> argparse.ArgumentParser:
             p.add_argument("--model", required=True)
             p.add_argument("--second-model")
             p.add_argument("--reasoning", default="off", choices=providers.REASONING)
+            p.add_argument("--second-reasoning", choices=providers.REASONING,
+                           help="reasoning for --second-model (default: --reasoning), e.g. a GLM first model "
+                                "at low beside a DeepSeek second model at off")
             p.add_argument("--initials")
             p.add_argument("--api-cost-cap-usd", type=float)
             p.add_argument("--max-wall-seconds", type=float)
@@ -1078,6 +1258,8 @@ def _parser() -> argparse.ArgumentParser:
             p.add_argument("--workers", type=int, default=4)
         if name == "review":
             p.add_argument("--reasoning", default="off", choices=providers.REASONING)
+            p.add_argument("--second-reasoning", choices=providers.REASONING,
+                           help="the run's --second-reasoning (names the directory of a mixed pair)")
             p.add_argument("--no-restore", action="store_true")
             p.add_argument("--sandbox", type=Path, default=DEFAULT_SANDBOX,
                            help="local-mailroom-sandbox checkout for the interim cross-check (absent: skipped)")
@@ -1146,14 +1328,29 @@ def _run(args: argparse.Namespace, full_text: bool) -> int:
         from . import operate  # noqa: PLC0415
 
         operate.auto_restore(args)
-        out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, args.reasoning, full_text=full_text)
+        second = getattr(args, "second_reasoning", None)
+        pair = (args.reasoning, second) if second and second != args.reasoning else None
+        out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, pair or args.reasoning,
+                                        full_text=full_text)
+        reasoning: "str | Mapping[str, str]" = args.reasoning
+        if pair:  # a mixed pair: the run's start record names its models, in the order of the levels
+            from . import review_export  # noqa: PLC0415
+
+            reasoning = dict(zip(review_export._start_record(out_dir)["models"], pair))
         overlay = operate.load_interim(args, rows)
-        print(json.dumps(review(rows, args.task, out_dir, reasoning=args.reasoning, interim=overlay), indent=1))
+        print(json.dumps(review(rows, args.task, out_dir, reasoning=reasoning, interim=overlay), indent=1))
         return _checkpoint(args, f"review {out_dir.name}", 0)
     models = [args.model] + ([args.second_model] if args.second_model else [])
-    out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, args.reasoning, full_text=full_text)
+    second = getattr(args, "second_reasoning", None)
+    if second and not args.second_model:
+        raise SystemExit("--second-reasoning applies to --second-model; pass that too")
+    reasoning: "str | dict[str, str]" = args.reasoning
+    if second and second != args.reasoning:
+        reasoning = {args.model: args.reasoning, args.second_model: second}
+    out_dir = args.out / chunk_name(args.task, args.set_name, args.chunk, reasoning, full_text=full_text,
+                                    models=models)
     rc = execute(rows, picked, task=args.task, set_name=args.set_name, chunk_spec=args.chunk, models=models,
-                 provider=args.provider, reasoning=args.reasoning, initials=args.initials,
+                 provider=args.provider, reasoning=reasoning, initials=args.initials,
                  cap_usd=args.api_cost_cap_usd, max_wall_seconds=args.max_wall_seconds, out_dir=out_dir,
                  dry_run=args.dry_run, workers=args.workers, require_checkpoint=not args.no_checkpoint)
     return rc if args.dry_run else _checkpoint(args, f"run {out_dir.name}", rc)
@@ -1173,13 +1370,15 @@ def provider_label(prov: Mapping[str, str]) -> str:
     return kinds.pop() if len(kinds) == 1 else "mixed"
 
 
-def model_problem(task: str, set_name: str, models: Sequence[str], prov: Mapping[str, str]) -> str:
+def model_problem(task: str, set_name: str, models: Sequence[str], prov: Mapping[str, str], *,
+                  compare: bool = False) -> str:
     """Why this model set may not run this task and set, or ``""``.
 
     The approval and model-count rules :func:`execute` enforces before it spends: every
     model approved in ``models.yaml`` on the provider it is sent to, two different models for
     a two-model task (pilots and calibration sets measure, so one is enough there), one
-    model otherwise, and a second model for the intent relabel."""
+    model otherwise, and a second model for the intent relabel. ``compare`` (a review-portal
+    trial, whose output is proposals and never ingested) lets a one-model task send two."""
     approved = models_registry()["models"]
     for m in models:
         if m not in approved or approved[m]["provider"] != prov.get(m):
@@ -1193,19 +1392,20 @@ def model_problem(task: str, set_name: str, models: Sequence[str], prov: Mapping
     if task == "intent" and set_name == "relabel":
         if len(models) != 2:  # rewriting existing labels needs a second opinion that agrees
             return "the intent relabel needs --second-model (two-model agreement)"
-    elif task not in tasks.TWO_MODEL_TASKS and len(models) != 1:
+    elif task not in tasks.TWO_MODEL_TASKS and len(models) != 1 and not (compare and len(models) == 2):
         return f"{task} runs one model"
     return ""
 
 
 def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any]], *, task: str,
             set_name: str, chunk_spec: str | None, models: Sequence[str], provider: str | Mapping[str, str],
-            reasoning: str,
+            reasoning: "str | Mapping[str, str]",
             initials: str | None, cap_usd: float | None, max_wall_seconds: float | None, out_dir: Path,
             dry_run: bool = False, workers: int = 4, chunk_id: str | None = None,
             chat=providers.chat, key_status=providers.key_status,
             reuse_from: Sequence[Path] | None = None, require_checkpoint: bool = False,
-            ack_requires: str | None = None, env: Mapping[str, str] | None = None) -> int:
+            ack_requires: str | None = None, env: Mapping[str, str] | None = None,
+            compare: bool = False) -> int:
     """Validate, project, gate the spend, run and review one chunk. Returns an exit code
     (0 done, 2 stopped at the cap or wall, 3 finished with failed calls to re-run).
 
@@ -1216,11 +1416,17 @@ def execute(rows: Sequence[Mapping[str, Any]], picked: Sequence[Mapping[str, Any
     chunk (each model must be approved on its provider in ``models.yaml``).
 
     ``env`` is where API keys are read from (default: the process environment); the review
-    portal's launcher passes a mapping so a key it was handed never enters ``os.environ``."""
+    portal's launcher passes a mapping so a key it was handed never enters ``os.environ``.
+
+    ``reasoning`` is one level for every model or a ``{model: level}`` mapping (see
+    :func:`run_chunk`); ``ValueError`` for a level or model it cannot place. The start record
+    in ``runs.jsonl`` stores the level, or the mapping for a mixed pair."""
     prov = dict(provider) if isinstance(provider, Mapping) else {m: provider for m in models}
-    problem = model_problem(task, set_name, models, prov)
+    problem = model_problem(task, set_name, models, prov, compare=compare)
     if problem:
         raise SystemExit(problem)
+    levels = reasoning_levels(reasoning, models)
+    reasoning = reasoning_spec(levels)
     proj = estimate(picked, task, models, set_name)
     print(json.dumps({"chunk": chunk_id, "out": str(out_dir), "reasoning": reasoning, **proj}, indent=1))
     if dry_run:
