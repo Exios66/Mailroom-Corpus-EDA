@@ -171,7 +171,8 @@ class ReviewPortal:
         if self._packet_key == fingerprint and self._packet is not None:
             return self._packet
         winners, origins = {}, {}
-        for path in sorted(paths, key=lambda p: (p.stat().st_mtime_ns, str(p))):
+        # Restore changes mtimes; path order makes the same backup choose the same packet.
+        for path in sorted(paths):
             before = _stat(path)
             packet = _read(path)
             targets = review_page.validate_packet(packet)
@@ -191,7 +192,7 @@ class ReviewPortal:
                 raise ValueError(f"mixed source text/class/split across fields of document: {key[0]}")
             documents[key[0]] = identity
             record["portal_provenance"] = {"selected": origins[key][-1], "superseded": origins[key][:-1],
-                                           "selection": "latest mtime_ns; lexical path breaks ties"}
+                                           "selection": "lexically last packet path; use ordered batch directory names"}
         records = [winners[key] for key in sorted(winners)]
         combined = {"schema": review_page.PACKET_SCHEMA, "packet_id": review_page.packet_id(records),
                     "decision_key": DECISION_KEY, "records": records}
@@ -257,8 +258,11 @@ class ReviewPortal:
                 selected, why = None, ""
                 if entry in camp["chunks"] and self._stage_rows is not None:
                     try:
+                        rows = runner.select(self._stage_rows, entry["task"], entry["set"])
+                        if entry.get("subclass"):
+                            rows = [r for r in rows if r.get("subclass") == entry["subclass"]]
                         selected = {str(r.get("document_id") or r.get("id") or r["filename"])
-                                    for r in operate.pick(self._stage_rows, entry)}
+                                    for r in runner.chunk(rows, entry.get("chunk"))}
                     except (ValueError, KeyError, OSError, SystemExit) as exc:
                         why = "inventory unavailable: " + type(exc).__name__
                 dependencies = [str(n) for n in entry.get("needs", [])
@@ -297,7 +301,13 @@ class ReviewPortal:
                        reviewed_needs_schema_fields=sum(s["status"] == "reviewed_needs_schema" for s in states),
                        remaining_loaded_fields=sum(s["status"] not in ("human_confirmed", "checkpointed") for s in states),
                        campaign_complete=all(t["status"] in ("approved", "skipped") for t in tracker["tasks"]),
-                       scope="loaded finished packets only; sample review is not campaign approval; unknown totals are null")
+                        scope="loaded finished packets only; sample review is not campaign approval; unknown totals are null")
+        origin = self.labels_root / "review-source.json"
+        tracker["private_source"] = _read(origin) if origin.exists() else {
+            "repo": checkpoint.STAGING_REPO, "revision": None,
+            "status": "local packets; private HF restore not verified in this checkout"}
+        tracker["campaign_file"] = str(campaign_path)
+        tracker["approval_file"] = str(approvals_path)
         return tracker
 
     def _data(self) -> dict:
@@ -306,7 +316,39 @@ class ReviewPortal:
         docs = {}
         for state in states:
             docs.setdefault(state["document_id"], []).append(state)
+        saved, history = [], []
+        for state in states:
+            if not state["receipt_id"]:
+                continue
+            path = self.returns / f"review-{state['receipt_id']}.json"
+            raw = path.read_bytes()
+            if hashlib.sha256(raw).hexdigest() != state["receipt_id"]:
+                raise ValueError("stored review receipt hash mismatch")
+            receipt = json.loads(raw)
+            key = state["document_id"], state["field"]
+            saved.extend(d for d in receipt["decisions"] if (d["document_id"], d["field"]) == key)
+            history.extend(h for h in receipt["history"] if (h["document_id"], h["field"]) == key)
+        records = {(r["document_id"], r["field"]): r for r in packet["records"]}
+        decisions = {(d["document_id"], d["field"]): d for d in saved}
+        revision_queue = []
+        for state in states:
+            key = state["document_id"], state["field"]
+            record = records[key]
+            if (record.get("source_dataset") != "Lucius-Morningstar/mailroom-dataset"
+                    or state["status"] not in ("human_confirmed", "checkpointed")):
+                continue
+            decision = decisions[key]
+            revision_queue.append({"document_id": key[0], "field": key[1],
+                                   "source_dataset": record["source_dataset"],
+                                   "source_revision": record.get("source_revision"),
+                                   "document_sha256": record["document_sha256"], "split": record["split"],
+                                   "status": state["status"], "receipt_id": state["receipt_id"],
+                                   "value": json.loads(decision["corrected_labels_json"]) if decision["decision"] == "CORRECT"
+                                   else record.get("candidate_value", record.get("candidate_labels")),
+                                   "deployment_status": "pending v10 gates; production unchanged"})
         return {**copy.deepcopy(packet), "review_states": states, "state_revision": self._state_revision(),
+                 "saved_decisions": saved, "saved_history": history,
+                 "revision_queue": revision_queue,
                 "documents": [{"document_id": doc, "loaded_target_fields": len(ss),
                                "loaded_targets_complete": all(s["status"] in ("human_confirmed", "checkpointed") for s in ss),
                                "scope": "all loaded applicable targets only; not whole-corpus completeness"}
@@ -457,6 +499,11 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
                     self._reply(200, portal.render(), "text/html; charset=utf-8")
                 elif self.path == "/review-data.json":
                     self._reply(200, portal.data())
+                elif self.path == "/revision-queue.json":
+                    data = portal.data()
+                    self._reply(200, {"schema": "mailroom-v10-manual-revisions/v1",
+                                      "packet_id": data["packet_id"], "state_revision": data["state_revision"],
+                                      "revisions": data["revision_queue"]})
                 else:
                     self._reply(404, {"error": "unknown route"})
             except (ValueError, KeyError, OSError, PermissionError) as exc:
@@ -506,7 +553,16 @@ def main(argv=None) -> int:
     parser.add_argument("--stage", type=Path, default=DEFAULT_STAGE)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--hf-checkpoint", action="store_true", help="enable explicit private-checkpoint POSTs only")
+    parser.add_argument("--restore-revision", help="restore private HF labels at this immutable commit before serving; existing conflicts fail closed")
     args = parser.parse_args(argv)
+    if args.restore_revision:
+        if not re.fullmatch(r"[0-9a-f]{40}", args.restore_revision):
+            parser.error("--restore-revision requires a full immutable HF commit SHA")
+        restored = checkpoint.restore(args.labels_root, revision=args.restore_revision)
+        args.labels_root.mkdir(parents=True, exist_ok=True)
+        (args.labels_root / "review-source.json").write_bytes(_json({
+            "repo": checkpoint.STAGING_REPO, "revision": args.restore_revision,
+            "status": "byte-verified private restore", "restored_files": len(restored)}))
     portal = ReviewPortal(args.labels_root, args.out or args.labels_root / "review_bundle" / "portal",
                           campaign=args.campaign, stage=args.stage, hf_checkpoint=args.hf_checkpoint)
     server = make_server(portal, args.port)

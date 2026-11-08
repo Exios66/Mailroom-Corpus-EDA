@@ -86,7 +86,15 @@ def test_blocked_accept_and_correction_shapes():
         with pytest.raises(ValueError, match="correction"):
             page.validate_return(p, r)
     r = returned(p, "CORRECT"); r["decisions"][0]["corrected_labels_json"] = '[]'
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
     page.validate_return(p, r)
+
+
+def test_changed_correction_cannot_reuse_old_history():
+    p = packet(); r = returned(p, "CORRECT")
+    r["decisions"][0]["corrected_labels_json"] = '[]'
+    with pytest.raises(ValueError, match="change log"):
+        page.validate_return(p, r)
 
 
 def test_blank_default_is_not_an_approval_and_receipts_are_idempotent(tmp_path):

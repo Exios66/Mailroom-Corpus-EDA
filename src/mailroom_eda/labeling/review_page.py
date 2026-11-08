@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -129,18 +130,26 @@ def validate_return(packet: Mapping[str, Any], returned: Mapping[str, Any]) -> N
                 corrected = json.loads(d["corrected_labels_json"])
             except ValueError as exc:
                 raise ValueError(f"correction must be valid JSON: {key}") from exc
-            expected = (list if source["field"] == "claim_checklist" else
-                        str if source["field"] == "subclass" else dict)
-            if not isinstance(corrected, expected) or (expected is list and not all(isinstance(x, str) for x in corrected)):
+            native = source.get("candidate_labels")
+            kind = source.get("correction_type") or (
+                "list" if source["field"] == "claim_checklist" or isinstance(native, list) else
+                "string" if isinstance(native, str) or source["field"] in ("subclass", "v10_subclass") else
+                "number" if type(native) in (int, float) else "object")
+            expected = {"list": list, "array": list, "string": str, "number": (int, float), "object": dict}.get(kind)
+            absent = corrected is None and source.get("candidate_presence") == "schema_documented_absence" and source.get("absence_policy") != "never_absent"
+            if not absent and (expected is None or not isinstance(corrected, expected)
+                               or isinstance(corrected, bool)
+                               or isinstance(corrected, float) and not math.isfinite(corrected)
+                               or expected is list and not all(isinstance(x, str) for x in corrected)):
                 raise ValueError(f"wrong correction shape: {key}")
-            if expected is str and corrected not in dojo_snapshot()["corporate_subclass_schemas"]:
+            if source["field"] == "subclass" and corrected not in dojo_snapshot()["corporate_subclass_schemas"]:
                 raise ValueError(f"subclass correction is outside the pinned Dojo vocabulary: {key}")
         elif d["corrected_labels_json"].strip():
             raise ValueError(f"choose CORRECT when supplying changed labels: {key}")
         matching = [h for h in history if isinstance(h, dict) and h.get("document_id") == key[0]
                     and h.get("field") == key[1] and isinstance(h.get("after"), dict)
-                    and h["after"].get("decision") == decision and _time(h.get("at"))]
-        if not matching:
+                    and _time(h.get("at"))]
+        if not matching or matching[-1]["after"] != d:
             raise ValueError(f"reviewed decision has no matching change log: {key}")
 
 

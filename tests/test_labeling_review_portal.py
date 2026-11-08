@@ -71,7 +71,7 @@ def returned(data, *decisions, at=TIME):
     return {"schema": review_page.RETURN_SCHEMA, "packet_id": data["packet_id"],
             "state_revision": data["state_revision"], "exported_at": at, "decisions": rows,
             "history": [{"document_id": d["document_id"], "field": d["field"],
-                         "at": at, "after": {"decision": d["decision"]}} for d in rows]}
+                          "at": at, "before": {}, "after": copy.deepcopy(d)} for d in rows]}
 
 
 def states(data):
@@ -95,7 +95,39 @@ def test_collector_finished_packets_only_cache_and_auto_refresh(env, monkeypatch
     assert updated["tracker"]["loaded_target_fields"] == 3
 
 
-def test_latest_packet_wins_ties_are_deterministic_with_explicit_provenance(env):
+def test_saved_decision_and_history_survive_server_restart(env):
+    submission = returned(env.app.data(), ("entity_name", "ACCEPT", None))
+    env.app.save(submission)
+    restored = portal.ReviewPortal(env.root, env.out, campaign="test").data()
+    assert restored["saved_decisions"] == submission["decisions"]
+    assert restored["saved_history"] == submission["history"]
+    assert restored["tracker"]["remaining_loaded_fields"] == 1
+    assert restored["tracker"]["campaign_complete"] is False
+    assert all(t["status"] != "approved" for t in restored["tracker"]["tasks"])
+
+
+def test_private_restore_origin_visible_in_tracker(env):
+    origin = {"repo": checkpoint.STAGING_REPO, "revision": "a" * 40,
+              "status": "byte-verified private restore"}
+    (env.root / "review-source.json").write_text(json.dumps(origin))
+    assert env.app.data()["tracker"]["private_source"] == origin
+
+
+def test_production_confirmation_enters_source_bound_v10_queue(env):
+    write_packet(env.source, [record(source_dataset="Lucius-Morningstar/mailroom-dataset",
+                                    source_revision="a" * 40)])
+    env.app.save(returned(env.app.data(), ("entity_name", "ACCEPT", None)))
+    queue = env.app.data()["revision_queue"]
+    assert len(queue) == 1
+    assert queue[0]["source_revision"] == "a" * 40
+    assert queue[0]["split"] == "train" and queue[0]["value"] == "Example LLC"
+    assert queue[0]["status"] == "human_confirmed"
+    assert queue[0]["deployment_status"] == "pending v10 gates; production unchanged"
+    env.app.save(returned(env.app.data(), ("entity_name", "REJECT", None)))
+    assert env.app.data()["revision_queue"] == []
+
+
+def test_packet_selection_survives_restored_mtimes_with_explicit_provenance(env):
     newer = env.root / "z" / "second-review-data.json"
     value = record("entity_name", "Example LLC", review_note="new batch")
     write_packet(newer, [value], source_revision="private-test-revision")
@@ -107,10 +139,12 @@ def test_latest_packet_wins_ties_are_deterministic_with_explicit_provenance(env)
     assert found["portal_provenance"]["selected"]["path"] == "z/second-review-data.json"
     assert len(found["portal_provenance"]["superseded"]) == 1
     assert data["tracker"]["source_revisions"] == ["private-test-revision"]
+    os.utime(env.source, ns=(99999, 99999))
+    assert env.app.data()["packet_id"] == data["packet_id"]
 
 
 def test_mixed_source_versions_across_fields_fail_closed(env):
-    write_packet(env.root / "new-review-data.json", [record("jurisdiction", "Delaware", text=TEXT + "changed")])
+    write_packet(env.root / "z-new-review-data.json", [record("jurisdiction", "Delaware", text=TEXT + "changed")])
     os.utime(env.source, ns=(100, 100))
     with pytest.raises(ValueError, match="mixed source text"):
         env.app.data()
