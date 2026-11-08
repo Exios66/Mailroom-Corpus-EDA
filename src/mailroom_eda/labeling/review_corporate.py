@@ -35,10 +35,12 @@ SCOPE = ("AI candidates; human approval pending. Source checks are not formal co
 
 
 def _sha(data: bytes) -> str:
+    """Return the SHA-256 hex digest of the supplied bytes."""
     return hashlib.sha256(data).hexdigest()
 
 
 def _inside(root: Path, relative: str | Path) -> Path:
+    """Resolve a path under root; raise ValueError if it escapes that root."""
     path = (root / relative).resolve()
     if not path.is_relative_to(root.resolve()):
         raise ValueError("source path escapes configured root")
@@ -46,6 +48,7 @@ def _inside(root: Path, relative: str | Path) -> Path:
 
 
 def _index(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Index rows by source identifier, raising ValueError for duplicates."""
     result = {}
     for row in rows:
         key = row["kl3m_identifier"]
@@ -56,12 +59,19 @@ def _index(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 
 def _table(path: Path) -> list[dict[str, str]]:
+    """Read UTF-8 CSV rows as dictionaries using the header names."""
     with path.open(encoding="utf-8", newline="") as stream:
         return list(csv.DictReader(stream))
 
 
 def build_packet(root: Path, *, source_ids: Sequence[str] = SAMPLE_IDS) -> dict[str, Any]:
-    """Read actual staged source, resolved labels and saved (possibly revised) drafts."""
+    """Read actual staged source, resolved labels and saved (possibly revised) drafts.
+
+    Return one review target per nonconstant field and classification for each
+    selected source ID. Verify source hashes, pinned leaf schemas, and exact
+    Unicode character evidence spans. Raise ValueError for duplicate identifiers,
+    ambiguous drafts, unsafe paths, or failed source/schema checks. Missing-data
+    KeyError, JSON parsing errors, and filesystem errors propagate."""
     root = Path(root).resolve()
     package, gold = _inside(root, PACKAGE), _inside(root, GOLD)
     labels = _index(_journal(package / "corporate-labels.jsonl"))
@@ -171,7 +181,10 @@ def build_packet(root: Path, *, source_ids: Sequence[str] = SAMPLE_IDS) -> dict[
 
 
 def _workbook(rows: list[dict[str, str]], decision_key: dict[str, str]) -> bytes:
-    """Native corporate values need their own instructions, not the checklist-only workbook."""
+    """Return a corporate review workbook with literal cells and decision choices.
+
+    Raise ValueError for cells exceeding 32,767 UTF-16 units or containing XML
+    control characters. Optional openpyxl ImportError propagates."""
     from openpyxl import Workbook
     from openpyxl.worksheet.datavalidation import DataValidation
     from openpyxl.utils import get_column_letter
@@ -217,6 +230,13 @@ def _workbook(rows: list[dict[str, str]], decision_key: dict[str, str]) -> bytes
 
 
 def export_packet(root: Path, dest: Path, *, source_ids: Sequence[str] = SAMPLE_IDS) -> dict[str, Any]:
+    """Write corporate review CSVs, workbook, Markdown, JSON, and source text files.
+
+    ``root`` contains staged corporate artifacts; ``source_ids`` selects sources.
+    Return the packet ID, document and target counts, source-check count, and file
+    paths. Validate source data and render all formats before writing; existing
+    outputs are overwritten. Validation ValueError, missing-data KeyError,
+    optional workbook ImportError, and filesystem errors propagate."""
     packet = build_packet(root, source_ids=source_ids)
     records = packet["records"]
     columns = list(dict.fromkeys(k for r in records for k in r))
@@ -253,6 +273,7 @@ def export_packet(root: Path, dest: Path, *, source_ids: Sequence[str] = SAMPLE_
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Export staged corporate sources to the requested folder and print the summary."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)

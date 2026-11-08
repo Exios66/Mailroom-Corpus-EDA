@@ -50,7 +50,10 @@ byte-for-byte, spend included: this is a private backup of the run logs, never p
 
 
 def _sources(labels_root: Path, approvals: Path | None) -> Iterable[tuple[str, Path]]:
-    """``(path_in_repo, local file)`` for everything a checkpoint carries."""
+    """Yield repository paths and local files with supported checkpoint suffixes.
+
+    Include an existing approvals file separately. Raise SystemExit for symlinks
+    in the scanned paths or their parents."""
     _reject_symlinks(labels_root)
     for p in sorted(labels_root.rglob("*")):
         _reject_symlinks(p)
@@ -80,11 +83,13 @@ def git_blob_sha(data: bytes) -> str:
 
 
 def _reject_symlinks(path: Path) -> None:
+    """Raise SystemExit if the path or any parent is a symlink."""
     if any(p.is_symlink() for p in (path, *path.parents)):
         raise SystemExit(f"checkpoint refuses symlink: {path}")
 
 
 def _matches(file: Any, data: bytes) -> bool:
+    """Compare bytes with Hub metadata using LFS SHA-256 or the Git blob ID."""
     lfs = getattr(file, "lfs", None)
     sha = lfs.get("sha256") if isinstance(lfs, dict) else getattr(lfs, "sha256", None)
     return (sha == hashlib.sha256(data).hexdigest() if lfs is not None
@@ -92,6 +97,10 @@ def _matches(file: Any, data: bytes) -> bool:
 
 
 def _snapshot(api: Any, repo_id: str, revision: str | None = None) -> str:
+    """Resolve a private checkpoint ref to a full commit SHA.
+
+    None selects the default revision. Raise SystemExit for the published
+    repository, a public repository, or an invalid SHA; Hub errors propagate."""
     if repo_id == hf_interface.REPO_ID:
         raise SystemExit("checkpoints never use the published dataset repo")
     info = api.repo_info(repo_id=repo_id, repo_type="dataset", **({"revision": revision} if revision else {}))
@@ -104,7 +113,10 @@ def _snapshot(api: Any, repo_id: str, revision: str | None = None) -> str:
 
 
 def verify(api: Any, repo_id: str, staged: dict[str, Path], *, revision: str | None = None) -> list[str]:
-    """Paths whose Hub copy is missing or differs (LFS sha256, else git blob sha1)."""
+    """Return sorted staged paths whose Hub copy is missing or differs.
+
+    Resolve ``revision`` once, then compare LFS SHA-256 or Git blob SHA-1.
+    SystemExit from private-snapshot checks and Hub or local read errors propagate."""
     revision = _snapshot(api, repo_id, revision)
     hub = {f.path: f for f in api.list_repo_tree(repo_id=repo_id, repo_type="dataset", recursive=True,
                                                revision=revision)}
@@ -127,7 +139,11 @@ def ensure_private(api: Any, repo_id: str) -> None:
 
 def checkpoint(labels_root: Path, approvals: Path | None, message: str, *, api: Any = None,
                repo_id: str = STAGING_REPO) -> dict[str, Any]:
-    """Upload the labels root to the private staging repo and verify every file."""
+    """Upload the labels root and optional approvals to a private checkpoint.
+
+    Return the repository, file count, verified flag, and uploaded commit SHA.
+    Raise SystemExit for unsafe paths, a forbidden repository, an unavailable
+    commit SHA, or mismatched uploaded bytes. Hub and filesystem errors propagate."""
     if repo_id == hf_interface.REPO_ID:
         raise SystemExit("checkpoints never go to the published dataset repo")
     api = api or hf_interface.get_hf_api()
@@ -147,7 +163,13 @@ def checkpoint(labels_root: Path, approvals: Path | None, message: str, *, api: 
 
 def restore(labels_root: Path, *, api: Any = None, repo_id: str = STAGING_REPO,
             revision: str | None = None) -> list[Path]:
-    """Download staged label files missing locally (never overwrites); returns what it wrote."""
+    """Restore missing label files from one private Hub snapshot; return written paths.
+
+    ``revision`` selects a ref, or the default when None. Existing identical files
+    are skipped. Raise SystemExit for conflicting files, unsafe paths, symlinks,
+    or failed snapshot or hash checks. Download and verify all missing files before
+    writing any targets; filesystem and Hub errors propagate. Write failures can
+    leave a partial restore. Campaign approvals outside labels/ are not restored."""
     api = api or hf_interface.get_hf_api()
     revision = _snapshot(api, repo_id, revision)
     labels_root = Path(labels_root)

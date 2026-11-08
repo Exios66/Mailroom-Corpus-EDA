@@ -29,7 +29,12 @@ def packet_id(records: Sequence[Mapping[str, Any]]) -> str:
 
 
 def validate_packet(packet: Mapping[str, Any]) -> dict[tuple[str, str], Mapping[str, Any]]:
-    """Refuse stale text, duplicate review targets, and a changed packet payload."""
+    """Validate packet integrity and return targets keyed by (document_id, field).
+
+    Raise ValueError for invalid schema, payload or source hashes, duplicate
+    targets, decision keys, or source highlights. Evidence offsets are zero-based
+    Unicode character positions with exclusive ends; whitespace is normalized
+    when comparing quotes. Missing required record keys propagate as KeyError."""
     if packet.get("schema") != PACKET_SCHEMA or not isinstance(packet.get("records"), list):
         raise ValueError("unknown review packet schema")
     records = packet["records"]
@@ -55,7 +60,11 @@ def validate_packet(packet: Mapping[str, Any]) -> dict[tuple[str, str], Mapping[
 
 
 def render_page(packet: Mapping[str, Any], out: Path) -> Path:
-    """Embed the full packet safely in a standalone page with no external resources."""
+    """Embed the full packet safely in a standalone page with no external resources.
+
+    Write ``out`` and a returns/README.md beside it, creating parent directories;
+    return the page path. Packet validation errors propagate. Raise ValueError
+    for an invalid template placeholder count; filesystem errors propagate."""
     validate_packet(packet)
     template = Path(__file__).with_suffix(".html").read_text(encoding="utf-8")
     marker = "__REVIEW_PACKET_JSON__"
@@ -82,6 +91,7 @@ def render_page(packet: Mapping[str, Any], out: Path) -> Path:
 
 
 def _time(value: Any) -> bool:
+    """Return whether a string parses as an ISO timestamp with a timezone."""
     if not isinstance(value, str):
         return False
     try:
@@ -91,7 +101,13 @@ def _time(value: Any) -> bool:
 
 
 def validate_return(packet: Mapping[str, Any], returned: Mapping[str, Any]) -> None:
-    """Validate human decisions without treating them as automatic ingest authority."""
+    """Validate human decisions without treating them as automatic ingest authority.
+
+    Partial target sets are allowed. Reviewed decisions require initials, zoned
+    timestamps, and a matching latest history entry. ACCEPT requires a candidate
+    that passed source checks; CORRECT validates JSON shape and subclass vocabulary,
+    not general source grounding. Raise ValueError for contract violations;
+    packet errors and missing required packet keys propagate."""
     targets = validate_packet(packet)
     if returned.get("schema") != RETURN_SCHEMA or returned.get("packet_id") != packet["packet_id"]:
         raise ValueError("decision file belongs to another packet or schema")
@@ -154,7 +170,11 @@ def validate_return(packet: Mapping[str, Any], returned: Mapping[str, Any]) -> N
 
 
 def receive(packet_path: Path, input_path: Path) -> Path:
-    """Store a content-addressed, validated receipt under the packet's returns folder."""
+    """Store a validated receipt under returns/ beside the packet and return its path.
+
+    Name receipts by SHA-256 of the original input bytes; identical receipts are
+    reused. Raise ValueError for invalid returns, a symlinked returns folder, or
+    conflicting existing bytes. JSON parsing and filesystem errors propagate."""
     packet = json.loads(Path(packet_path).read_text(encoding="utf-8"))
     raw = Path(input_path).read_bytes()
     returned = json.loads(raw)

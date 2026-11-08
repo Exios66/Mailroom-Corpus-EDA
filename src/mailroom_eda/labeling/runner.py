@@ -107,10 +107,11 @@ def select(rows: Sequence[Mapping[str, Any]], task: str, set_name: str,
            subclass: Any = "") -> list[Mapping[str, Any]]:
     """Rows for one task and set, sorted by filename.
 
-    ``subclass`` (campaign key) optionally restricts the pool to those subclasses, so per
-    claim-type chunks slice only their own strata; the pilot exclusion still applies per
-    subclass inside ``pilot_rows``.
-    """
+    ``subclass`` restricts the class pool by expected_subclass, accepting one value
+    or a list/tuple; false values disable the filter. Pilot and remainder sets
+    sample within that pool. CUAD calibration/holdout, intent sets, and contract
+    entity calibration select from the original rows and bypass this filter.
+    Unsupported sets raise SystemExit; unknown tasks raise KeyError."""
     from .. import v9_4_revision as v94  # noqa: PLC0415
 
     cls = tasks.TASK_CLASSES[task]
@@ -754,7 +755,12 @@ def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
     """Rebuild the derived journals and CSVs for one chunk directory (calls at ``reasoning``).
 
     With ``interim`` (an ``interim.Overlay``), field rows gain the flag-only ``interim_*``
-    columns and an intent chunk writes ``interim-intent.csv``."""
+    columns and an intent chunk writes ``interim-intent.csv``.
+
+    Return task-specific record or decision counts. Existing reviewer columns are
+    retained, but checklist confirmations may reopen when source checks fail.
+    Checklist chunks also write labeling-scores.json. Catalog validation and
+    filesystem errors propagate."""
     calls = [c for c in export.read_journal(out_dir / "calls.jsonl")
              if reasoning is None or c.get("reasoning") == reasoning]
     calls = current_prompt_calls(rows, task, calls, _run_set(out_dir))

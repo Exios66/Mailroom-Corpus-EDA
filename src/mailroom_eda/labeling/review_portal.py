@@ -32,19 +32,25 @@ class Conflict(ValueError):
 
 
 def _json(value: Any) -> bytes:
+    """Encode compact, sorted UTF-8 JSON; raise ValueError for nonfinite numbers."""
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
                       allow_nan=False).encode("utf-8")
 
 
 def _now() -> str:
+    """Return the current UTC timestamp in ISO format."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _read(path: Path) -> Any:
+    """Read and decode a UTF-8 JSON file; parsing and filesystem errors propagate."""
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _lines(path: Path) -> list[dict]:
+    """Read nonblank JSONL entries, returning an empty list for a missing file.
+
+    Malformed records and read errors propagate instead of being skipped."""
     if not path.exists():
         return []
     # A damaged audit ledger must be repaired explicitly, never skipped as if reviewed.
@@ -52,6 +58,7 @@ def _lines(path: Path) -> list[dict]:
 
 
 def _append(path: Path, events: list[dict]) -> None:
+    """Append events as JSONL and flush them to disk; filesystem errors propagate."""
     if events:
         with path.open("ab") as fh:
             fh.write(b"".join(_json(event) + b"\n" for event in events))
@@ -60,15 +67,18 @@ def _append(path: Path, events: list[dict]) -> None:
 
 
 def _stat(path: Path) -> tuple:
+    """Return path, nanosecond modification time, size, and inode for cache invalidation."""
     stat = path.stat()
     return str(path), stat.st_mtime_ns, stat.st_size, stat.st_ino
 
 
 def _target_hash(record: Mapping[str, Any]) -> str:
+    """Hash a review target excluding portal collection provenance."""
     return review_page.packet_id([{k: v for k, v in record.items() if k != "portal_provenance"}])
 
 
 def _schema_blocker(record: Mapping[str, Any]) -> str:
+    """Return a schema-blocking reason, or an empty string for an applicable pinned target."""
     if record.get("eligible_for_gold") is False or str(record.get("schema_alignment", "")).startswith("proposal"):
         return "proposal_only_not_pinned; human review is not schema approval or gold"
     if record["field"] == "v10_subclass":
@@ -84,7 +94,11 @@ def _schema_blocker(record: Mapping[str, Any]) -> str:
 
 
 def _confirmed_value(record: Mapping[str, Any], decision: Mapping[str, Any]) -> Any:
-    """Type/vocabulary/grounding gates, in addition to the human-return contract."""
+    """Return the candidate or correction after type, vocabulary, and grounding checks.
+
+    Documented null absences are allowed only by the field policy. Raise
+    ValueError for invalid values or catalog drift; missing registry keys and
+    malformed correction JSON errors propagate."""
     field, cls = record["field"], record["doc_class"]
     value = (json.loads(decision["corrected_labels_json"]) if decision["decision"] == "CORRECT"
              else record.get("candidate_value", record.get("candidate_labels")))
@@ -131,6 +145,11 @@ class ReviewPortal:
 
     def __init__(self, labels_root: Path, out: Path, *, campaign: str = "v10",
                  stage: Path | None = None, hf_checkpoint: bool = False):
+        """Create local portal and receipt directories and initialize review state caches.
+
+        ``out`` must be a strict subfolder of labels_root, and campaign must be a safe
+        name; invalid values raise ValueError. ``hf_checkpoint`` enables explicit
+        backup requests. Filesystem errors propagate."""
         self.labels_root, self.out = Path(labels_root).resolve(), Path(out).resolve()
         if not self.out.is_relative_to(self.labels_root) or self.out == self.labels_root:
             raise ValueError("portal output must be a subfolder of labels-root for private checkpoints")
@@ -151,6 +170,7 @@ class ReviewPortal:
 
     @contextmanager
     def _locked(self):
+        """Yield while holding thread and file locks; reject symlinked state paths with ValueError."""
         with self._lock:
             for path in (self.returns, self.journal, self.checkpoints, self.out / ".portal.lock"):
                 if path.is_symlink():
@@ -163,6 +183,11 @@ class ReviewPortal:
                     fcntl.flock(fh, fcntl.LOCK_UN)
 
     def _collect(self) -> dict:
+        """Collect validated finished packets, choosing the lexically last path per target.
+
+        Exclude portal output and cache by file metadata. Raise ValueError for unsafe
+        paths, empty inventory, or inconsistent document identities; raise Conflict
+        if a packet changes during its read. Packet and read errors propagate."""
         paths = sorted(p for p in self.labels_root.rglob("*-review-data.json")
                        if not p.resolve().is_relative_to(self.out))
         if any(p.is_symlink() or not p.resolve().is_relative_to(self.labels_root) for p in paths):
@@ -201,6 +226,7 @@ class ReviewPortal:
         return combined
 
     def _states(self, packet: dict) -> list[dict]:
+        """Derive current field statuses from the latest matching events and verified backups."""
         latest = {}
         for event in _lines(self.journal):
             latest[event["document_id"], event["field"]] = event
@@ -222,10 +248,15 @@ class ReviewPortal:
         return states
 
     def _state_revision(self) -> str:
+        """Hash the current confirmation and checkpoint journals, treating missing files as empty."""
         return hashlib.sha256(b"\0".join(p.read_bytes() if p.exists() else b""
                                         for p in (self.journal, self.checkpoints))).hexdigest()
 
     def _campaign_tracker(self, packet: dict, states: list[dict]) -> dict:
+        """Return campaign gate, approval, inventory, and loaded review counts.
+
+        Unavailable selection inventories become unknown totals with a blocker;
+        other registry, parsing, and filesystem errors propagate."""
         from . import operate, runner
 
         folder = registry.CAMPAIGNS_DIR / self.campaign
@@ -311,6 +342,7 @@ class ReviewPortal:
         return tracker
 
     def _data(self) -> dict:
+        """Assemble packet, current review state, saved receipts, revision queue, and tracker."""
         packet = self._collect()
         states = self._states(packet)
         docs = {}
@@ -356,15 +388,23 @@ class ReviewPortal:
                 "tracker": self._campaign_tracker(packet, states), "checkpoint_enabled": self.hf_checkpoint}
 
     def data(self) -> dict:
+        """Return the current packet and review state while holding the portal locks."""
         with self._locked():
             return self._data()
 
     def render(self) -> bytes:
+        """Write the current standalone review page and return its HTML bytes under the portal locks."""
         with self._locked():
             path = review_page.render_page(self._data(), self.out / "review.html")
             return path.read_bytes()
 
     def save(self, returned: Mapping[str, Any]) -> dict:
+        """Validate returned decisions, persist a receipt and field events, and return state.
+
+        Return the receipt ID, changed-field count, and refreshed data. Repeated
+        identical decisions add no events; NOT_REVIEWED preserves prior decisions.
+        Raise Conflict for stale packets or new receipts based on stale state.
+        Return-contract, schema, grounding, and filesystem errors propagate."""
         with self._locked():
             packet = self._collect()
             if returned.get("packet_id") != packet["packet_id"]:
@@ -421,6 +461,13 @@ class ReviewPortal:
             return {"receipt_id": receipt_id, "changed_fields": len(changes), "data": self._data()}
 
     def checkpoint(self, packet_id: str, *, api: Any = None) -> dict:
+        """Back up pending confirmations and return a checkpoint receipt or failure status.
+
+        Raise PermissionError when backups are disabled and Conflict for an initially
+        stale packet. No pending fields returns verified=False without an upload.
+        Upload or verification failures, including SystemExit, are recorded and
+        converted to verified=False; local confirmations remain pending. Errors before
+        the backup attempt or while writing its journal can propagate."""
         with self._locked():
             if not self.hf_checkpoint:
                 raise PermissionError("private checkpoints are not enabled")
@@ -457,12 +504,17 @@ class ReviewPortal:
 
 
 def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
-    """Serve only fixed routes, validating Host and same-origin JSON writes."""
+    """Return a server bound to 127.0.0.1; the caller starts its serving loop.
+
+    ``port=0`` requests an available port. Fixed routes validate Host and
+    same-origin JSON writes. Binding failures propagate as OSError."""
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
+            """Suppress HTTP access logging."""
             pass  # Source IDs, reviewer notes and tokens never enter access logs.
 
         def _reply(self, status, value, content_type="application/json; charset=utf-8"):
+            """Send bytes or JSON with the supplied status and response security headers."""
             body = value if isinstance(value, bytes) else _json(value)
             self.send_response(status)
             self.send_header("Content-Type", content_type)
@@ -476,6 +528,7 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
             self.wfile.write(body)
 
         def _security(self, post=False):
+            """Raise PermissionError for non-loopback requests or invalid origins; writes require Origin."""
             port = self.server.server_address[1]
             hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
             if self.headers.get("Host") not in hosts or self.client_address[0] != "127.0.0.1":
@@ -489,10 +542,12 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
                 raise PermissionError("cross-site requests are forbidden")
 
         def _error(self, exc):
+            """Send Conflict as HTTP 409, PermissionError as 403, and other handled errors as 400."""
             status = 409 if isinstance(exc, Conflict) else 403 if isinstance(exc, PermissionError) else 400
             self._reply(status, {"error": str(exc)})
 
         def do_GET(self):
+            """Serve fixed review routes; convert handled validation and I/O errors to HTTP responses."""
             try:
                 self._security()
                 if self.path in ("/", "/review.html"):
@@ -510,6 +565,7 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
                 self._error(exc)
 
         def do_POST(self):
+            """Validate JSON writes up to 10 MiB, then save reviews or explicitly checkpoint them."""
             try:
                 self._security(post=True)
                 if self.path not in ("/api/reviews", "/api/checkpoint"):
@@ -544,6 +600,7 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
 
 
 def main(argv=None) -> int:
+    """Optionally restore a pinned private checkpoint, then serve the portal until interrupted."""
     from .runner import DEFAULT_OUT, DEFAULT_STAGE
 
     parser = argparse.ArgumentParser(description=__doc__)

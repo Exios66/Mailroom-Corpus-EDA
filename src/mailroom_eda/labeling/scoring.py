@@ -77,6 +77,7 @@ class ChecklistScore:
 
 
 def _line(text: str) -> str:
+    """Strip surrounding whitespace and collapse internal spaces and tabs."""
     return _SPACE.sub(" ", text.strip())
 
 
@@ -157,7 +158,11 @@ def score_checklist(value: Any, doc: verify.DocIndex, *, evidence: str | None = 
 
 
 def dojo_type(doc_class: str, field: str) -> str:
-    """Fail closed on catalog drift; this is type parity, not numeric scoring parity."""
+    """Return the field type after checking parity with the pinned Dojo catalog.
+
+    Raise ValueError for missing or mismatched catalog types or pins. Unknown
+    registry classes or fields propagate as KeyError. This is type parity, not
+    numeric scoring parity."""
     spec = fields_registry()["classes"][doc_class]["fields"][field]
     snapshot = dojo_snapshot()
     pinned = snapshot["default_field_types"].get(doc_class, {}).get(field)
@@ -173,7 +178,11 @@ def dojo_type(doc_class: str, field: str) -> str:
 
 def check_field(doc_class: str, field: str, raw: Mapping[str, Any] | None,
                 doc: verify.DocIndex) -> tuple[verify.FieldResult, ChecklistScore | None]:
-    """Existing evidence checks plus labeling additions; never call this a Dojo metric."""
+    """Return evidence validation and an optional checklist quality score.
+
+    Only present claim_checklist values receive a score; failed quality checks
+    clear grounded_ok. Catalog ValueError and unknown-field KeyError propagate.
+    No official Dojo metric is computed."""
     type_ = dojo_type(doc_class, field)
     spec = fields_registry()["classes"][doc_class]["fields"][field]
     base = verify.check_field(raw, type_, doc,
@@ -184,7 +193,11 @@ def check_field(doc_class: str, field: str, raw: Mapping[str, Any] | None,
 
 
 def audit_fields(rows: Sequence[Mapping[str, Any]], fields: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """Source-bound checklist report for accepted values; withheld rows stay withheld."""
+    """Report source checks for accepted checklists without changing field decisions.
+
+    Return policy/catalog metadata, checked and blocked counts, subclass counts,
+    and per-field scores. Invalid final-value JSON becomes a failed candidate;
+    catalog errors and missing document IDs propagate."""
     from .tasks import _ids
 
     by_id = {_ids(r)[0]: r for r in rows}

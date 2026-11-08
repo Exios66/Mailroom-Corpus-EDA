@@ -40,7 +40,10 @@ def upload_folder(
     path_in_repo: str | None = None,
     allow_patterns: list[str] | None = None,
 ) -> dict:
-    """Upload a local folder to HF dataset repo."""
+    """Upload a local folder to HF dataset repo.
+
+    Return the upload status, dataset URL, and commit revision (None when the
+    client does not expose an oid). Hub API errors propagate to the caller."""
     commit = api.upload_folder(
         folder_path=str(folder_path),
         repo_id=repo_id,
@@ -89,7 +92,11 @@ def list_repo_files(api: HfApi, repo_id: str) -> list[str]:
 
 def download_file(api: HfApi, repo_id: str, filename: str, local_path: Path,
                   *, revision: str | None = None) -> Path:
-    """Download a file from HF dataset repo."""
+    """Download a dataset file using the API client's token and return its path.
+
+    ``revision`` selects a Hub ref; None uses the Hub default. ``local_path``
+    selects the destination parent directory, not a renamed filename. Creates
+    that directory; download and filesystem errors propagate to the caller."""
     local_path.parent.mkdir(parents=True, exist_ok=True)
     return Path(hf_hub_download(repo_id=repo_id, filename=filename, repo_type="dataset",
                                 local_dir=local_path.parent, revision=revision, token=api.token))

@@ -29,6 +29,7 @@ SCOPE = ("Production documents; existing published values are candidates. ACCEPT
 
 
 def _sha(text: str) -> str:
+    """Return the SHA-256 hex digest of UTF-8 text."""
     return hashlib.sha256(text.encode()).hexdigest()
 
 
@@ -52,6 +53,10 @@ def _native(value: Any, kind: str) -> Any | None:
 
 
 def _evidence(value: Any, kind: str, text: str) -> list[dict[str, Any]]:
+    """Return first exact source spans for all short string values, or an empty list.
+
+    Money, missing matches, and strings over 240 characters yield no spans.
+    Offsets use zero-based Unicode characters and exclusive ends."""
     items = value if isinstance(value, list) else [value]
     if kind == "money" or not all(isinstance(v, str) and v.strip() and len(v) <= 240 for v in items):
         return []
@@ -66,6 +71,11 @@ def _evidence(value: Any, kind: str, text: str) -> list[dict[str, Any]]:
 
 
 def _checked(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Copy rows and decode gt_fields, preserving its original value separately.
+
+    Raise ValueError for duplicate IDs, invalid splits, subclass or text values,
+    malformed ground truth, or corporate subclasses outside the pinned schema.
+    Missing required row keys propagate as KeyError."""
     seen = set()
     out = []
     for row in rows:
@@ -99,7 +109,13 @@ def _checked(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def build_packet(rows: list[dict[str, Any]], *, source_revision: str, source_sha256: str,
                  document_ids: Sequence[str] = (), per_class: int = 2) -> dict[str, Any]:
-    """Deterministic packet. Input order never changes record order or source rows."""
+    """Build a deterministic packet of registry fields for selected production documents.
+
+    ``document_ids`` selects explicit IDs; otherwise choose up to ``per_class``
+    IDs per class in sorted order. Records are sorted by document ID, independent
+    of input order; source rows are not mutated. Source revision and sidecar hash
+    are recorded as supplied. Raise ValueError for nonpositive per_class, unknown
+    IDs, invalid rows, or an invalid resulting packet; registry KeyError propagates."""
     if per_class < 1:
         raise ValueError("per-class must be positive")
     checked = _checked(rows)
@@ -159,7 +175,11 @@ def build_packet(rows: list[dict[str, Any]], *, source_revision: str, source_sha
 
 
 def load_production(api: Any, revision: str | None) -> dict[str, Any]:
-    """Resolve a requested ref to the immutable public commit, then download that commit."""
+    """Download production rows at the resolved ref and return revision and byte hash.
+
+    None uses config.REPO_REVISION. If Hub metadata omits its SHA, the requested
+    ref is retained. Raise ValueError for a private source or invalid journal;
+    Hub, JSON parsing, and filesystem errors propagate."""
     requested = revision or config.REPO_REVISION
     info = api.repo_info(repo_id=config.REPO_ID, repo_type="dataset", revision=requested)
     if getattr(info, "private", False):
@@ -174,7 +194,13 @@ def load_production(api: Any, revision: str | None) -> dict[str, Any]:
 
 
 def export_production(root: Path, *, revision: str | None = None, per_class: int = 2) -> Path:
-    """Write one private packet. Identical bytes are idempotent; different bytes are refused."""
+    """Write one private packet. Identical bytes are idempotent; different bytes are refused.
+
+    Download at ``revision`` (the configured production revision when None),
+    select up to per_class documents per class, and return the packet path.
+    Create root with mode 0700 and new packet files with mode 0600. Raise
+    ValueError for a symlinked directory or conflicting packet; source validation,
+    Hub, and filesystem errors propagate."""
     api = hf_interface.get_hf_api(token=None)
     source = load_production(api, revision)
     packet = build_packet(source["rows"], source_revision=source["revision"],
@@ -196,6 +222,7 @@ def export_production(root: Path, *, revision: str | None = None, per_class: int
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Download production candidates, export a private packet, and print its path."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--revision")

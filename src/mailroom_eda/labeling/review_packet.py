@@ -31,11 +31,15 @@ DECISION_KEY = {
 
 
 def _json(value: Any) -> str:
+    """Serialize Unicode JSON with sorted object keys."""
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
 def _journal(path: Path) -> list[dict[str, Any]]:
     # A review packet must not silently skip a corrupt journal record.
+    """Read nonblank UTF-8 JSONL records, requiring each record to be an object.
+
+    Malformed JSON and non-object records raise ValueError; read errors propagate."""
     records = [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
     if any(not isinstance(record, dict) for record in records):
         raise ValueError(f"{path.name}: journal records must be objects")
@@ -43,11 +47,16 @@ def _journal(path: Path) -> list[dict[str, Any]]:
 
 
 def _fence(text: str, language: str = "") -> str:
+    """Wrap text in a Markdown code fence longer than any backtick run in the text."""
     fence = "`" * max(3, 1 + max((len(m[0]) for m in re.finditer(r"`+", text)), default=0))
     return f"{fence}{language}\n{text}\n{fence}\n"
 
 
 def _csv(rows: Sequence[Mapping[str, str]]) -> str:
+    """Render nonempty rows as quoted CSV with reversible formula protection.
+
+    ``escaped_columns`` lists cells prefixed with one protective apostrophe.
+    Raise ValueError when any escaped cell exceeds 50,000 UTF-16 code units."""
     out = io.StringIO(newline="")
     writer = csv.DictWriter(out, fieldnames=[*rows[0], "escaped_columns"],
                             quoting=csv.QUOTE_ALL, lineterminator="\n")
@@ -164,7 +173,14 @@ def export_packet(rows: Sequence[Mapping[str, Any]], chunk_dir: Path, dest: Path
     CSVs use real quoted newlines, not export.py's backslash encoding. To recover an
     original cell, remove exactly one leading apostrophe ONLY for columns named by
     that row's escaped_columns JSON. Neither file is an ingestion interface.
-    """
+
+    Also write a JSON packet and return its ID, counts, and output paths. A
+    review-candidates.json sidecar includes held examples without accepting them;
+    without it only accepted fields are exported. At least one accepted field is
+    required. Raise ValueError for invalid source/provenance or unrepresentable
+    spreadsheet cells before writing outputs. Missing-data KeyError, optional
+    workbook ImportError, and filesystem errors propagate; existing files are
+    overwritten, and an I/O failure can leave partial output."""
     chunk_dir, dest = Path(chunk_dir), Path(dest)
     fields = export.read_csv(chunk_dir / "fields.csv")
     calls = _journal(chunk_dir / "calls.jsonl")
@@ -387,6 +403,7 @@ def export_packet(rows: Sequence[Mapping[str, Any]], chunk_dir: Path, dest: Path
 
 
 def _document_markdown(md: list[str], i: int, record: Mapping[str, str]) -> None:
+    """Append one document section with metadata, legacy context, and full source to md."""
     metadata = {k: json.loads(v) if k.endswith("_json") and v else v
                 for k, v in record.items() if k not in (
                     "full_document_text", "existing_gt_fields_json", "dojo_field_types_json")}

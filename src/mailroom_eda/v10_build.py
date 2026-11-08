@@ -350,7 +350,11 @@ def _evidence_spans(text: str, quotes: Sequence[str]) -> list[dict[str, Any]]:
 
 
 def class_record(row: Mapping[str, Any]) -> dict[str, Any]:
-    """The typed ``gt_<class>`` record of one derived row (with ``row["labels"]`` when ingested)."""
+    """The typed ``gt_<class>`` record of one derived row (with ``row["labels"]`` when ingested).
+
+    Populated checklist labels are rechecked against source text before their
+    values and evidence spans are included. Raise ValueError for checklist quality
+    or catalog parity failures."""
     cls = row["expected"]
     fields = class_fields(cls)
     applicable = applicable_fields(cls, row["subclass"])
