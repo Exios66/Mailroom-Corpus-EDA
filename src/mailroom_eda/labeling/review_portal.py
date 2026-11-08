@@ -471,8 +471,11 @@ class ReviewPortal:
                     "human reviewer must carry that reviewer's own initials; the page's 'Accept "
                     "verified in batch' is the intended path — candidates that already passed "
                     "source checks get ACCEPT with the reviewer's remembered initials in one "
-                    "click, then one Save. The receipt, journal and staging checkpoint keep the "
-                    "human attribution.",
+                    "click, then one Save. Initials are unverified claims: this is a loopback "
+                    "service and the save route never authenticates humans, so receipts and "
+                    "journals record attribution, they are not proof of it (the same caveat "
+                    "the page's Change journal prints). Provenance discipline is enforced by "
+                    "the review process, not by the transport.",
                 ]}
 
 
