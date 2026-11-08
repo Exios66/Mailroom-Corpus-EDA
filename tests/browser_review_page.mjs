@@ -12,20 +12,46 @@ fs.mkdirSync(out,{recursive:true});
 const text='🧾 SYNTHETIC DOCUMENT ONLY\nProvide a signed claim form.\n<img src=x onerror="window.injected=true">\nEND OF COMPLETE SOURCE';
 const quote='signed claim form', start=Array.from(text.split(quote)[0]).length;
 const record={document_id:'SYNTH-001',field:'claim_checklist',document_sha256:createHash('sha256').update(text).digest('hex'),full_document_text:text,split:'train',candidate_status:'source_checks_passed',candidate_labels:['signed claim form'],existing_gt_fields:{claim_checklist:[]},evidence:[{start,end:start+quote.length,quote}],source_url:'javascript:alert(1)'};
-let packet={schema:'mailroom-review-packet/v1',packet_id:'synthetic-packet-1',state_revision:'r1',decision_key:{NOT_REVIEWED:'Not reviewed',ACCEPT:'Accept source-checked proposal',CORRECT:'Supply replacement JSON',REJECT:'Reject',NEEDS_SOURCE:'Needs source'},records:[record,{...record,document_id:'SYNTH-002',field:'entity_name',candidate_labels:'Example Corporation',dojo_type:'name',correction_type:'string',source_url:'https://example.invalid/source'}],review_states:[],saved_decisions:[],saved_history:[],checkpoint_enabled:true,tracker:{name:'Synthetic campaign',loaded_target_fields:2,human_confirmed_fields:0,remaining_loaded_fields:2,checkpointed_fields:0,scope:'Synthetic tracker only; review is not task approval.',tasks:[{id:'A',task:'claim_checklist',status:'pending',documents_total:2,ready:1,reviewed:0,remaining:2,loaded_target_fields:1},{id:'B',task:'corporate',status:'approved',documents_total:1,ready:1,reviewed:1,remaining:0,loaded_target_fields:1}]}};
+let packet={schema:'mailroom-review-packet/v1',packet_id:'synthetic-packet-1',state_revision:'r1',decision_key:{NOT_REVIEWED:'Not reviewed',ACCEPT:'Accept source-checked proposal',CORRECT:'Supply replacement JSON',REJECT:'Reject',NEEDS_SOURCE:'Needs source'},records:[record,{...record,document_id:'SYNTH-002',field:'entity_name',candidate_labels:'Example Corporation',dojo_type:'name',correction_type:'string',source_url:'https://example.invalid/source',model_outputs:[{model:'synthetic/model-a',value:'Example Corporation',status:'present',evidence:'Example Corporation',evidence_spans:[]},{model:'synthetic/model-b',value:null,status:'not_found',evidence:'',evidence_spans:[]}]}],launch_enabled:true,review_states:[],saved_decisions:[],saved_history:[],checkpoint_enabled:true,tracker:{name:'Synthetic campaign',loaded_target_fields:2,human_confirmed_fields:0,remaining_loaded_fields:2,checkpointed_fields:0,scope:'Synthetic tracker only; review is not task approval.',tasks:[{id:'A',task:'claim_checklist',status:'pending',documents_total:2,ready:1,reviewed:0,remaining:2,loaded_target_fields:1},{id:'B',task:'corporate',status:'approved',documents_total:1,ready:1,reviewed:1,remaining:0,loaded_target_fields:1}]}};
 const template=fs.readFileSync(new URL('../src/mailroom_eda/labeling/review_page.html',import.meta.url),'utf8');
 packet.revision_queue=[{document_id:'SYNTH-PRODUCTION',field:'entity_name',source_dataset:'synthetic/public',source_revision:'public-sha',split:'test',status:'human_confirmed',value:'Example Corporation'}];
 Object.assign(packet.tracker,{private_source:{repo:'synthetic/private',revision:'private-sha',status:'connected'},campaign_file:'synthetic/campaign.yaml',approval_file:'synthetic/approvals.yaml'});
 assert.equal(template.split('__REVIEW_PACKET_JSON__').length-1,1);
 assert(!template.includes('innerHTML'));
 let saves=0, checkpoints=0, failSave=false, posts=[];
+// Launch mock: the real checks live in tests/test_labeling_launch.py; this serves the shapes the page renders.
+const SECRET='sk-or-v1-BROWSER-SECRET-key-4411';
+const launch={preflights:[], starts:[], statusReads:0, state:'idle', reloads:0};
+const launchTargets=[
+  {id:'campaign:1.1',group:'Campaign',title:'1.1 · cuad / calibration',task:'cuad',set:'calibration',models:['synthetic/model-a'],reasoning:'low',cap_usd:0.3,needs:[],kind:'qualification',kind_label:'Qualification \u2014 re-labels gold documents to score models',status:'ready',blocker:'',models_resolved:true},
+  {id:'campaign:7a',group:'Campaign',title:'7a · correspondence / pilot',task:'correspondence',set:'pilot',models:['synthetic/model-a'],reasoning:'off',cap_usd:0.15,needs:[],kind:'labeling',kind_label:'Labeling \u2014 documents that need labels',status:'ready',blocker:'',models_resolved:true},
+  {id:'trial:correspondence',group:'Public trial',title:'correspondence · correspondence / remainder (public dataset)',task:'correspondence',set:'remainder',models:['synthetic/model-a','synthetic/model-b'],reasoning:{'synthetic/model-a':'off','synthetic/model-b':'low'},description:'DeepSeek runs at reasoning off in trials.',cap_usd:0.25,needs:[],kind:'labeling',kind_label:'Labeling \u2014 documents that need labels',status:'ready',blocker:'',models_resolved:true}];
+function launchItems(body){
+  const items=[{id:'launch_enabled',title:'Launching is enabled',status:'pass',detail:'enabled',fix:''}];
+  if(!/^[A-Z]{2,6}$/.test(body.initials||'')) items.push({id:'initials',title:'Operator initials',status:'fail',detail:'bad initials',fix:'enter 2-6 capital letters, e.g. JB'});
+  else items.push({id:'initials',title:'Operator initials',status:'pass',detail:body.initials,fix:''});
+  items.push({id:'ping',title:'Route not pinged',status:'warn',detail:'older than 24h',fix:'run ping'},{id:'hf_checkpoint',title:'HF checkpoint',status:'skip',detail:'trials are not checkpointed',fix:''});
+  return items;
+}
 const server=http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');
   if(req.url==='/review.html') {res.setHeader('Content-Type','text/html');res.end(template.replace('__REVIEW_PACKET_JSON__',JSON.stringify(packet).replaceAll('<','\\u003c')));return;}
   res.setHeader('Content-Type','application/json');
-  if(req.url==='/review-data.json') {res.end(JSON.stringify(packet));return;}
+  if(req.url==='/review-data.json') {launch.reloads++;res.end(JSON.stringify(packet));return;}
+  if(req.url==='/api/launch/options') {res.end(JSON.stringify({enabled:true,campaign:'synthetic',targets:launchTargets,trial:{default_documents:2,max_documents:5,cap_ceiling_usd:0.25}}));return;}
+  if(req.url==='/api/launch/status') {
+    launch.statusReads++;
+    if(launch.state==='running'&&launch.statusReads>launch.runningSince+1) launch.state='succeeded';
+    res.end(JSON.stringify({state:launch.state,target:launch.state==='idle'?null:{id:'campaign:7a',cap_usd:0.15},started_utc:null,finished_utc:null,log_tail:launch.state==='idle'?[]:['chunk 7a started','1 call done'],result:launch.state==='succeeded'?{spent_usd:0.0012,packet:'7a/7a-review-data.json'}:null,error:null}));return;}
   let raw=''; for await(const chunk of req) raw+=chunk;
   const body=JSON.parse(raw || '{}');
+  if(req.url==='/api/launch/preflight') {
+    launch.preflights.push(body);const items=launchItems(body);const can=items.every(i=>i.status!=='fail');
+    res.end(JSON.stringify({items,projection:can?{documents:2,calls:4,cost_usd:0.0123}:null,can_launch:can,target:body.target}));return;}
+  if(req.url==='/api/launch/start') {
+    launch.starts.push(body);
+    if(body.confirm!==String(body.cap_usd)){res.writeHead(409);res.end(JSON.stringify({error:'preflight failed: confirm',items:[{id:'confirm',title:'Typed confirmation matches the cap',status:'fail',detail:'mismatch',fix:'type the cap again'}]}));return;}
+    launch.state='running';launch.runningSince=launch.statusReads;res.end(JSON.stringify({started:true,status:{state:'running',target:{id:body.target,cap_usd:body.cap_usd},log_tail:['starting'],result:null,error:null}}));return;}
   if(req.url==='/api/reviews') {
     if(failSave) {res.writeHead(409);res.end(JSON.stringify({error:'synthetic revision conflict'}));return;}
     posts.push(body); saves++;
@@ -75,7 +101,9 @@ try {
   await input('decision','ACCEPT');await input('initials','AB');await input('notes','Synthetic source verified.');
   assert.equal(await evaluate(`$('checkpoint').disabled`),true);
   await evaluate(`$('save').click()`);await waitFor(`!busy && !dirty`);
-  assert.equal(saves,1);assert.equal(posts[0].state_revision,'r1');assert.equal(posts[0].decisions[0].decision,'ACCEPT');assert.equal(posts[0].history.length,3);
+  assert.equal(saves,1);assert.equal(posts[0].state_revision,'r1');assert.equal(posts[0].decisions[0].decision,'ACCEPT');
+  // The real server rejects a decision without a timestamp (review_page.validate_return).
+  assert.ok(!Number.isNaN(Date.parse(posts[0].decisions[0].updated_at)),'edited decision must carry updated_at');assert.equal(posts[0].history.length,3);
   await screenshot('02-saved-server-confirmed');
   await call('Page.reload');await waitFor(`document.getElementById('save') && !$('save').disabled`);
   assert.equal(await evaluate(`$('decision').value`),'ACCEPT');
@@ -108,8 +136,61 @@ try {
   assert.match(await evaluate(`$('values').textContent`),/Example Corporation/);
   assert.equal(await evaluate(`document.querySelector('#links a').protocol`),'https:');
   await screenshot('05-native-field');
+  // Model answers: one row per model with value, status and evidence quote.
+  assert.match(await evaluate(`$('model-answers').textContent`),/synthetic\/model-a.*Example Corporation.*Present.*Example Corporation/s);
+  assert.match(await evaluate(`$('model-answers').textContent`),/synthetic\/model-b.*No value.*Not found.*No evidence quote/s);
+  assert.equal(await evaluate(`document.querySelectorAll('#model-answers tr').length`),3);
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
+  assert.equal(await evaluate(`!!$('model-answers')`),false,'no model_outputs, no table');
+  // Launch panel: shown because the server says launch is enabled.
+  await waitFor(`!$('launch-panel').hidden && $('launch-target').options.length===3`);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('#launch-target optgroup')].map(g=>g.label)`),['Campaign','Public trial']);
+  assert.equal(await evaluate(`$('launch-key').type`),'password');assert.equal(await evaluate(`$('launch-key').autocomplete`),'off');
+  await evaluate(`$('launch-target').value='campaign:1.1';$('launch-target').dispatchEvent(new Event('change'));`);
+  assert.match(await evaluate(`$('launch-info').textContent`),/Qualification \u2014 re-labels gold documents to score models/);
+  assert.equal(await evaluate(`$('launch-cap').value`),'0.30');
+  await evaluate(`$('launch-target').value='trial:correspondence';$('launch-target').dispatchEvent(new Event('change'));`);
+  assert.match(await evaluate(`$('launch-info').textContent`),/Labeling \u2014 documents that need labels/);
+  assert.equal(await evaluate(`$('launch-trial-opts').hidden`),false);
+  const mixedInfo=await evaluate(`$('launch-info').textContent`);
+  assert.match(mixedInfo,/model-a off, model-b low/);assert.match(mixedInfo,/DeepSeek runs at reasoning off/);assert.doesNotMatch(mixedInfo,/\[object Object\]/);
+  assert.equal(await evaluate(`$('launch-start').disabled`),true);
+  // A failing preflight is loud, and the key is sent once, then wiped and never stored.
+  await input('launch-initials','x');await input('launch-key',SECRET);
+  await evaluate(`$('launch-preflight').click()`);await waitFor(`document.querySelector('#launch-checklist .check.fail')`);
+  assert.equal(launch.preflights[0].api_key,SECRET);assert.equal(launch.preflights[0].target,'trial:correspondence');
+  assert.equal(launch.preflights[0].documents,2);
+  assert.equal(await evaluate(`$('launch-key').value`),'','key field is cleared after the call');
+  assert.match(await evaluate(`$('launch-checklist').textContent`),/FAIL.*Operator initials.*bad initials.*Fix: enter 2-6 capital letters/s);
+  assert.match(await evaluate(`$('launch-checklist').textContent`),/WARN.*Route not pinged/s);assert.match(await evaluate(`$('launch-checklist').textContent`),/SKIP.*HF checkpoint/s);
+  assert.equal(await evaluate(`$('launch-start').disabled`),true);
+  assert.equal(await evaluate(`JSON.stringify([localStorage,sessionStorage]).includes('BROWSER-SECRET')`),false,'key never reaches web storage');
+  assert.equal(await evaluate(`document.documentElement.outerHTML.includes('BROWSER-SECRET')`),false);
+  await screenshot('06-launch-preflight-fail');
+  // Fix the initials: all checks pass, Launch opens, and changing an input closes it again.
+  await input('launch-initials','AB');
+  await evaluate(`$('launch-preflight').click()`);await waitFor(`$('launch-projection').textContent.includes('about $0.0123')`);
+  assert.equal(launch.preflights[1].api_key,undefined);
+  assert.equal(await evaluate(`$('launch-start').disabled`),false);
+  await input('launch-cap','0.20');assert.equal(await evaluate(`$('launch-start').disabled`),true);
+  await input('launch-cap','0.25');await evaluate(`$('launch-preflight').click()`);await waitFor(`!$('launch-start').disabled`);
+  await screenshot('07-launch-preflight-pass');
+  // Launch asks for the cap again; a wrong answer is refused by the server and shown loudly.
+  await evaluate(`window.prompt=()=>'0.20';$('launch-start').click()`);await waitFor(`$('launch-message').textContent.includes('Not started (409)')`);
+  assert.match(await evaluate(`$('launch-checklist').textContent`),/Typed confirmation matches the cap.*type the cap again/s);
+  await evaluate(`$('launch-preflight').click()`);await waitFor(`!$('launch-start').disabled`);
+  const readsBefore=launch.reloads;
+  await evaluate(`window.prompt=()=>'0.25';$('launch-start').click()`);await waitFor(`$('launch-status').textContent.startsWith('running')`);
+  assert.equal(launch.starts.at(-1).confirm,'0.25');assert.equal(launch.starts.at(-1).api_key,undefined);
+  await waitFor(`$('launch-status').textContent.startsWith('succeeded')`);
+  assert.match(await evaluate(`$('launch-status').textContent`),/spent \$0\.0012.*7a\/7a-review-data\.json/);
+  assert.match(await evaluate(`$('launch-log').textContent`),/1 call done/);
+  await waitFor(`!busy`);
+  assert.ok(launch.reloads>readsBefore,'a finished run reloads the batches');
+  assert.equal(await evaluate(`JSON.stringify([localStorage,sessionStorage]).includes('BROWSER-SECRET')`),false);
+  await screenshot('08-launch-finished');
   assert.deepEqual(errors,[]);
   fs.writeFileSync(path.join(out,'submitted-review.json'),JSON.stringify(posts[0],null,2));
-  fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({passed:true,saves,checkpoints,journal_events:posts[0].history.length,checks:['Unicode offsets','full source','no HTML injection','safe source URLs','native values','task filters','save contract','receipt/history hydration','localStorage resume','same-revision reload','409 retains draft','changed-revision explicit discard','checkpoint'],console_exceptions:errors},null,2));
+  fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({passed:true,saves,checkpoints,journal_events:posts[0].history.length,checks:['Unicode offsets','full source','no HTML injection','safe source URLs','native values','task filters','save contract','receipt/history hydration','localStorage resume','same-revision reload','409 retains draft','changed-revision explicit discard','checkpoint','model answers table','launch panel targets and kind labels','loud preflight checklist','api key cleared and never stored','typed-cap confirmation','status polling and reload'],console_exceptions:errors},null,2));
   console.log('PASS: integrated synthetic review browser smoke; evidence '+out);
 } finally {ws?.close();chrome.kill();server.close();}

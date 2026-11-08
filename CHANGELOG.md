@@ -8,6 +8,82 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 
 ## Unreleased
 
+- Gold smoke fixtures: `tests/fixtures/live_smoke/<doc_type>/` holds one real labeling run per document type
+  (contract, merger_agreement, corporate_record, insurance_claim, correspondence) as committed test data: the
+  public documents as downloaded (full text), every model call (`calls.jsonl`), the review packet
+  (`expected-review-data.json`) and a manifest of the dataset revision, plan and prompt / input / schema hashes.
+  New `mailroom_eda.labeling.smoke_fixtures` (`python -m mailroom_eda.labeling.smoke_fixtures`):
+  `record` builds each type's plan as the trial launcher does, runs its preflight, aborts before spending on any
+  failing item, splits `--cap-usd` per type (cuad 0.40, corporate 0.20, merger_consideration 0.15,
+  claim_checklist 0.15, correspondence 0.10 of $1.00), and needs the total cap typed again (`--plan-only` prints
+  the plan and spends nothing); only documents that need labels are recorded, never CUAD or MAUD gold; `check`
+  (offline) fails with a "Gold fixture <type> is stale" message and the exact re-record command when a prompt,
+  model, reasoning level, `max_tokens`, response schema, the dataset revision or a document's text changed;
+  `replay` (offline) feeds the recorded answers through the real `runner.execute`, review and export and diffs
+  the normalized packet; `verify-hub` re-checks each stored document against the Hub (test gated by
+  `MAILROOM_LIVE_HUB=1`). `tests/test_live_smoke_fixtures.py` runs `check`, `replay`, the portal and the
+  no-gold and no-credentials checks over every recorded fixture (skipped until they are recorded) and
+  exercises the recorder end to end with a fake hub and chat. Docs: `docs/labeler-review-viewer.md` "Gold
+  smoke fixtures".
+
+- Reasoning is per model, and its token allowance is measured. `reasoning` in `runner`, `operate` and
+  `launch` is a level (`off`/`low`, unchanged) or `{model: level}` (`runner.reasoning_levels` normalizes
+  and raises `ValueError` for an unknown model or level); `campaign.yaml` entries may give
+  `reasoning: {model: level}`, and `labeling run` takes `--second-reasoning` for `--second-model`
+  (default: `--reasoning`; `review` takes it too, to find a mixed pair's directory). Every per-call
+  decision uses the model's own level: window check, budget reservation, `max_tokens`, the request, the
+  journaled `reasoning`, resume and reuse, the `review()` filter, projections, the `runs.jsonl` start
+  record (the mapping, only when the levels differ), the packet's `reasoning`, approved-configuration
+  matching in `ingest`, and the ping. A mixed pair's directory is `...-reasoning-low+off`; single levels
+  keep their names. `runner.reasoning_allowance(model, task, level)` replaces the flat 6,144 added to every
+  reasoning call: 0 at off, else `clamp(4 x measured p75, 1,024, 6,144)` (no measurement: 6,144), so the spend
+  gate reserves what a call can plausibly use (`max_tokens(task, level, model)`; the old two-argument form
+  still returns the ceiling). A call cut off at the token limit with at least 80% of its output spent
+  reasoning is journaled as a failed, billed call with `reasoning_runaway: true` ("reasoning ran away: N of
+  M output tokens were reasoning; answer truncated"), retried by the next run, and shown on the review
+  record as an issue and in `model_outputs`. Launch trials: contracts run GLM-5.3 FlashX Legal at `low` beside
+  DeepSeek v4.1 Flash at `off` (not waiting for chunk 1's winner; both answer, as proposals), and any DeepSeek
+  in a trial pair runs at `off`; trial document ids are namespaced `public-v9.3:<id>` with
+  `published_document_id` kept, so a trial packet and a stage packet of the same document load together in the
+  portal. `test_reasoning_calls_get_a_reasoning_allowance_on_top_of_the_answer_budget` now asserts DeepSeek's
+  measured intent budget (400 answer + 3,600 allowance = 4,000) instead of the flat ceiling; the launch tests for the contract trial no
+  longer expect it to wait for the chunk-1 winner.
+- Review portal can launch labeling batches from the page, off unless started with `--enable-launch`
+  (`labeling/launch.py`; `GET /api/launch/options`, `POST /api/launch/preflight`, `POST /api/launch/start`,
+  `GET /api/launch/status`). Targets are campaign arms (run through `operate.cmd_chunk`, labeled Labeling or
+  Qualification) and public trials of 1 to 5 documents per type, capped at $0.25, drawn only from documents
+  that need labels and refused if any is CUAD or MAUD gold. A loud preflight checklist (key and credit, models,
+  stage sha, ping, HF checkpoint, cap headroom, approvals, ...) with a fix for every failure gates a
+  server-rechecked start that needs the cap typed again; one run at a time, bounded log, receipts in
+  `launches.jsonl`. A pasted API key stays in memory and reaches the run through `execute(env=...)`, never
+  `os.environ`, disk or a response. The page also shows a Model answers table from `model_outputs`.
+  `runner.model_problem`, `runner.projected_cost` and `runner.CAP_HEADROOM_FACTOR` are new shared helpers;
+  `cmd_chunk` takes `chat`, `key_status` and `env`.
+- Fix: `operate.cmd_chunk` reused `why` for the requires, checkpoint and Modal checks, so an
+  `--ack-requires` run journaled the checkpoint's message as the reason it overrode the requirement.
+- Labeling batches reach the review portal in one format. `labeling review` (so every `run` and `chunk`)
+  now writes `<chunk_dir>/<chunk_dir.name>-review-data.json` through the new `review_export.py`
+  (also `labeling export-review DIR` and `python -m mailroom_eda.labeling.review_export`): one
+  record per (document, field) for the field tasks, `cuad_clauses` per contract and `intent` per
+  email, each with `task`, `chunk`, `models`, `reasoning`, `prompt_sha256`, registry policy, each
+  model's own answer in `model_outputs`, and located `{start, end, quote}` evidence. The claim
+  checklist bundle (`review_packet`) takes its model and reasoning from `runs.jsonl` instead of
+  requiring GLM at `low`, and its records follow the same contract (`correction_type: array`,
+  sentence issues). The portal tracker now sees `task` on exported records and reads a production
+  packet's nested `source.revision`.
+- Review portal: Save now works. The page never set `updated_at` on an edited decision, so the
+  server rejected every Accept/Correct/Reject with "reviewer initials and a timestamp are
+  required". The browser smoke test now checks the timestamp.
+- Review portal keeps unsaved drafts across a reload. On load the page restored the browser draft
+  before any targets existed, then wrote server state over it, so unsaved notes and decisions were
+  lost. The browser smoke test's draft-resume step now passes.
+- Review portal shows values for people: the published ground truth is a table (nested JSON
+  parsed, lists as bullets, presence in words, the reviewed field highlighted, empty fields folded
+  into one line, dataset bookkeeping collapsed); internal codes move under "Technical details".
+- Review portal defaults to public insurance claims when no labeling packet exists yet: two
+  claims per claim type from the pinned v9.3 dataset, every registry field
+  (`--public-per-subclass`, `--public-revision`, `--no-public-fallback`). `review_production`
+  gains `--doc-class` and `--per-subclass`.
 - Post-publication release verification (`mailroom_eda.release_verify`,
   `scripts/publish/verify_release.py`): downloads what the Hub serves at a tag and checks it
   against invariants every release must meet and a frozen per-tag spec

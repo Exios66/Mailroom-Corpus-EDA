@@ -506,12 +506,19 @@ def test_estimate_prices_every_model(rows):
     assert est["cost_usd"]["deepseek/deepseek-v4.1-flash"] > 0 and est["cost_usd"]["not/a-model"] is None
 
 
+def _pin_served(model: str, reasoning: str) -> str:
+    """A served-provider name inside ``model``'s route pin, so journal entries count as done."""
+    only = providers.effective_route(providers.model_route(model), reasoning).get("only") or []
+    return str(only[0]) if only else "synthetic"
+
+
 def _fake_chat(answers):
     """A chat stub that answers each model with a fixed JSON object."""
     def chat(backend, model, messages, schema, *, reasoning, max_tokens):
         """Fake chat call."""
         content = json.dumps(answers[model])
-        return providers.Completion(content, answers[model], model, "CoreWeave", 100, 50, 0, 0.0001, "stop", True)
+        return providers.Completion(content, answers[model], model, _pin_served(model, reasoning),
+                                    100, 50, 0, 0.0001, "stop", True)
     return chat
 
 
@@ -844,7 +851,7 @@ def test_every_cap_covers_its_projection_with_headroom():
         pytest.skip("v9.4 stage not built (data/ is gitignored)")
     costs = runner.campaign_costs(runner.load_stage(runner.DEFAULT_STAGE), "v10")
     low = [(c["id"], c["projected_usd"], c["cap_usd"]) for c in costs["chunks"]
-           if c["cap_usd"] < 1.4 * c["projected_usd"] - 1e-9]
+           if c["cap_usd"] < runner.CAP_HEADROOM_FACTOR * c["projected_usd"] - 1e-9]
     assert not low, low
 
 
@@ -1109,7 +1116,8 @@ def test_failed_cuad_repair_is_retried(tmp_path, rows):
         seen.append(len(messages))
         if len(messages) > 2:
             raise providers.ProviderError("down")
-        return providers.Completion(json.dumps(bad), bad, m, "P", 100, 50, 0, 0.0001, "stop", True)
+        return providers.Completion(json.dumps(bad), bad, m, _pin_served(m, reasoning), 100, 50, 0, 0.0001,
+                                    "stop", True)
 
     kw = dict(task="cuad", models=[model], backend=providers.Backend("openrouter", "u", "k"), reasoning="off",
               budget=spend.Budget(1.0, 3600), out_dir=tmp_path, vocab=vocab)
@@ -1120,7 +1128,8 @@ def test_failed_cuad_repair_is_retried(tmp_path, rows):
     def fixing(backend, m, messages, schema, *, reasoning, max_tokens):
         """Every call returns the fixed answer."""
         seen.append(len(messages))
-        return providers.Completion(json.dumps(good), good, m, "P", 100, 50, 0, 0.0001, "stop", True)
+        return providers.Completion(json.dumps(good), good, m, _pin_served(m, reasoning), 100, 50, 0, 0.0001,
+                                    "stop", True)
 
     runner.run_chunk([row], chat=fixing, **kw)
     assert seen == [4]  # only the repair is re-sent
@@ -1410,7 +1419,8 @@ def test_reasoning_calls_get_a_reasoning_allowance_on_top_of_the_answer_budget(t
     runner.run_chunk([rows[2]], task="intent", models=["deepseek/deepseek-v4.1-flash"],
                      backend=providers.Backend("openrouter", "u", "k"), reasoning="low",
                      budget=spend.Budget(1.0, 3600), out_dir=tmp_path, chat=chat)
-    assert seen and set(seen) == {runner.MAX_TOKENS["intent"] + runner.REASONING_ALLOWANCE}
+    # the model's own allowance (4 x its measured intent p75 of 900), not the flat ceiling
+    assert seen and set(seen) == {runner.MAX_TOKENS["intent"] + 4 * 900} == {4000}
 
 
 def test_identical_answers_from_other_journals_are_reused_not_bought_again(tmp_path, rows):

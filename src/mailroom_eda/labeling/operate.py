@@ -72,7 +72,7 @@ def chunk_entry(name: str, chunk_id: str, arm: int | None) -> tuple[dict[str, An
             raise SystemExit(f"chunk {chunk_id} has one arm")
         return entries[0], None
     if arm is None or not 1 <= arm <= len(entries):
-        arms = "; ".join(f"--arm {i}: {e['models'][0]} reasoning {e['reasoning']}"
+        arms = "; ".join(f"--arm {i}: {e['models'][0]} reasoning {runner.reasoning_text(e['reasoning'])}"
                          for i, e in enumerate(entries, 1))
         raise SystemExit(f"chunk {chunk_id} has {len(entries)} arms; pick one ({arms})")
     return entries[arm - 1], arm
@@ -205,8 +205,31 @@ def _write_approvals(name: str, approvals: Sequence[Mapping[str, Any]],
     return path
 
 
-def resolve(name: str, entry: Mapping[str, Any]) -> tuple[list[str], str]:
-    """Models and reasoning for a chunk, replacing ``winner_of_<id>`` with the approved arm."""
+def winner_refs(entry: Mapping[str, Any]) -> set[str]:
+    """The ``winner_of_<id>`` references an entry's models and reasoning name (reasoning may be
+    one level or a ``{model: level}`` mapping)."""
+    reasoning = entry["reasoning"]
+    parts = [*entry["models"], *([*reasoning, *reasoning.values()] if isinstance(reasoning, Mapping)
+                                 else [reasoning])]
+    return {str(m) for m in parts if str(m).startswith("winner_of_")}
+
+
+def remap_reasoning(reasoning: "str | Mapping[str, str]", old: Sequence[str],
+                    new: Sequence[str]) -> "str | dict[str, str]":
+    """``reasoning`` for the models that replaced ``old`` (position for position, as
+    ``chunk_models`` swaps them); a single level is unchanged."""
+    if not isinstance(reasoning, Mapping):
+        return reasoning
+    return runner.reasoning_spec({n: reasoning[o] for o, n in zip(old, new)})
+
+
+def resolve(name: str, entry: Mapping[str, Any]) -> tuple[list[str], "str | dict[str, str]"]:
+    """Models and reasoning for a chunk, replacing ``winner_of_<id>`` with the approved arm.
+
+    The entry's ``reasoning`` is one level for every model, or ``{model: level}`` (a mixed
+    pair such as GLM at ``low`` beside DeepSeek at ``off``). The result is the level when
+    every model shares it, else the mapping keyed by the resolved models. ``SystemExit`` for
+    a level or model the entry cannot place."""
     approvals = load_approvals(name)
 
     def winner(ref: str) -> dict[str, Any]:
@@ -218,11 +241,23 @@ def resolve(name: str, entry: Mapping[str, Any]) -> tuple[list[str], str]:
                              f"yet: run `labeling gate {cid} --arm N --approve --initials XX` first")
         return hits[-1]
 
+    def level(ref: Any) -> Any:
+        """A level, or the approved arm's level for a ``winner_of_<id>`` reference."""
+        if str(ref).startswith("winner_of_"):
+            won = winner(str(ref))  # the approved arm's level for its own model
+            return runner.reasoning_of(won["reasoning"], won["models"][0])
+        return str(ref)
+
     models = [winner(m)["models"][0] if str(m).startswith("winner_of_") else m for m in entry["models"]]
-    reasoning = str(entry["reasoning"])
-    if reasoning.startswith("winner_of_"):
-        reasoning = winner(reasoning)["reasoning"]
-    return models, reasoning
+    reasoning = entry["reasoning"]
+    if isinstance(reasoning, Mapping):
+        named = {(winner(k)["models"][0] if str(k).startswith("winner_of_") else str(k)): level(v)
+                 for k, v in reasoning.items()}
+        try:
+            return models, runner.reasoning_spec(runner.reasoning_levels(named, models))
+        except ValueError as err:
+            raise SystemExit(f"chunk {entry['id']}: {err}") from err
+    return models, level(reasoning)
 
 
 def provider_models(models: Sequence[str], provider: str, model_map: Sequence[str] = ()) -> list[str]:
@@ -377,7 +412,7 @@ def ping_problems(log: Sequence[Mapping[str, Any]], routes: Sequence[tuple[str, 
 def stale_winner(name: str, entry: Mapping[str, Any], picked: Sequence[Mapping[str, Any]]) -> str:
     """Why a ``winner_of_<id>`` chunk may not run, or ``""``: the approval it uses must have
     been scored on the prompt this chunk would send (a prompt edit needs a new calibration)."""
-    refs = {str(m) for m in [*entry["models"], entry["reasoning"]] if str(m).startswith("winner_of_")}
+    refs = winner_refs(entry)
     if not refs or not picked:
         return ""
     variant = "a" if entry["task"] == "intent" else ""
@@ -399,8 +434,13 @@ def pick(rows: Sequence[Mapping[str, Any]], entry: Mapping[str, Any]) -> list:
                         entry.get("chunk"))
 
 
-def cmd_chunk(args: argparse.Namespace) -> int:
-    """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit."""
+def cmd_chunk(args: argparse.Namespace, *, chat=providers.chat, key_status=providers.key_status,
+              env: Mapping[str, str] | None = None) -> int:
+    """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit.
+
+    ``chat``, ``key_status`` and ``env`` (where API keys are read from; default: the process
+    environment) pass through to :func:`runner.execute`, so the review portal's launcher can
+    hand a run a key without touching ``os.environ`` and tests can drive it with a fake chat."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
     if entry.get("skip"):
         raise SystemExit(f"chunk {entry['id']} arm {arm} is skipped: {entry['skip']}")
@@ -409,31 +449,34 @@ def cmd_chunk(args: argparse.Namespace) -> int:
     for need in entry.get("needs") or []:
         if not any(str(a["chunk"]) == str(need) for a in load_approvals(args.campaign)):
             raise SystemExit(f"chunk {entry['id']} starts after chunk {need} is approved")
-    met, why = requires_met(entry.get("requires"))
+    met, requires_why = requires_met(entry.get("requires"))
     if not met and not args.dry_run:
         if not args.ack_requires:
-            raise SystemExit(f"chunk {entry['id']} requires {entry['requires']} ({why}); bump the Dojo pin "
+            raise SystemExit(f"chunk {entry['id']} requires {entry['requires']} ({requires_why}); bump the Dojo pin "
                              f"once it has landed, or re-run with --ack-requires")
-        print(f"WARNING: --ack-requires overrides: {why}", file=sys.stderr)
+        print(f"WARNING: --ack-requires overrides: {requires_why}", file=sys.stderr)
+    campaign_models = models
     models, provider = chunk_models(args, models)
+    reasoning = remap_reasoning(reasoning, campaign_models, models)  # a swapped model keeps its level
+    levels = runner.reasoning_levels(reasoning, models)
     prov = provider if isinstance(provider, dict) else {m: provider for m in models}
     routed = [m for m in models if prov[m] == "openrouter"]
     if routed and not args.dry_run:
         log = args.out / "ping.jsonl"
         probs = ping_problems(export.read_journal(log) if log.exists() else [],
-                              [(m, reasoning) for m in routed])
+                              [(m, levels[m]) for m in routed])
         if probs:
             raise SystemExit("route not verified; run `labeling ping --initials XX` first:\n  "
                              + "\n  ".join(probs))
     if not args.dry_run and not getattr(args, "no_checkpoint", False):
-        ok, why = checkpoint.write_access()
-        if not ok:
-            raise SystemExit(f"checkpoint not writable ({why}); paid answers must survive a lost checkout. "
+        writable, checkpoint_why = checkpoint.write_access()
+        if not writable:
+            raise SystemExit(f"checkpoint not writable ({checkpoint_why}); paid answers must survive a lost checkout. "
                              "Fix the token, or pass --no-checkpoint")
     if "modal" in prov.values() and not args.dry_run:
-        ok, why = modal_check()
-        if not ok:
-            raise SystemExit(f"Modal endpoint not ready: {why}")
+        ready, modal_why = modal_check(env)
+        if not ready:
+            raise SystemExit(f"Modal endpoint not ready: {modal_why}")
     rows = runner.load_stage(args.stage)
     picked = pick(rows, entry)
     stale = stale_winner(args.campaign, entry, picked)
@@ -447,8 +490,8 @@ def cmd_chunk(args: argparse.Namespace) -> int:
         max_wall_seconds=float(entry.get("max_wall_seconds") or camp["max_wall_seconds"]),
         out_dir=chunk_dir(args.out, entry, arm), dry_run=args.dry_run, workers=args.workers,
         chunk_id=f"{entry['id']}{f'.{arm}' if arm else ''}",
-        require_checkpoint=not getattr(args, "no_checkpoint", False),
-        **({"ack_requires": why} if not met and args.ack_requires and not args.dry_run else {}))
+        require_checkpoint=not getattr(args, "no_checkpoint", False), chat=chat, key_status=key_status, env=env,
+        **({"ack_requires": requires_why} if not met and args.ack_requires and not args.dry_run else {}))
     return rc if args.dry_run else auto_checkpoint(args, f"chunk {entry['id']}{f'.{arm}' if arm else ''} run", rc)
 
 
@@ -511,7 +554,8 @@ def _sweep_projection(args: argparse.Namespace, plan: Sequence[tuple[Mapping[str
     out = []
     for entry, arm in plan:
         models, reasoning = resolve(args.campaign, entry)
-        models, _ = chunk_models(args, models)
+        swapped, _ = chunk_models(args, models)
+        reasoning, models = remap_reasoning(reasoning, models, swapped), swapped
         picked = pick(rows, entry)
         proj = runner.estimate(picked, entry["task"], models, entry["set"])
         out.append({"chunk": f"{entry['id']}{f'.{arm}' if arm else ''}", "task": entry["task"],
@@ -544,7 +588,7 @@ def cmd_sweep(args: argparse.Namespace, *, confirm: Callable[[str], str] = input
     for ln in lines:
         print(f"{ln['chunk']:<{width}}  {ln['task']:<20} {ln['set']:<12} docs={ln['documents']:<5} "
               f"calls={ln['calls']:<5} projected=${ln['projected_usd']:.2f} cap=${ln['cap_usd']:.2f} "
-              f"reasoning={ln['reasoning']}")
+              f"reasoning={runner.reasoning_text(ln['reasoning'])}")
     proj = sum(ln["projected_usd"] for ln in lines)
     caps = sum(ln["cap_usd"] for ln in lines)
     print(f"{len(lines)} arms: projected ${proj:.2f}, caps ${caps:.2f}; {why}")
@@ -895,6 +939,7 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
     provider, providers_of = "openrouter", None
     started = [r for r in export.read_journal(out_dir / "runs.jsonl") if r.get("started_utc") and r.get("models")]
     if started:  # score the models the chunk actually ran (e.g. the mapped Modal model)
+        reasoning = remap_reasoning(reasoning, models, started[-1]["models"])
         models, provider = list(started[-1]["models"]), str(started[-1].get("provider") or provider)
         providers_of = started[-1].get("providers") or None
     overlay = load_interim(argparse.Namespace(sandbox=sandbox, campaign=name), rows)
@@ -932,7 +977,7 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
                "how": "read documents.csv / spans.csv, then re-run with --signed-off"}
     else:
         raise SystemExit(f"unknown gate kind {kind!r}")
-    every = [c for c in export.read_journal(out_dir / "calls.jsonl") if c.get("reasoning") == reasoning]
+    every = [c for c in export.read_journal(out_dir / "calls.jsonl") if runner.call_matches(c, reasoning)]
     calls = [c for c in every if not c.get("error")]
     # what was scored: answers to today's prompt. Old-prompt answers stay in the journal (and
     # in spent_usd) but must not vouch for this prompt in an approval, nor price the arm.
@@ -1414,11 +1459,13 @@ def cmd_adjudicate(args: argparse.Namespace) -> int:
     return auto_checkpoint(args, f"adjudicate ({len(items)} open)")
 
 
-def pin_violations(calls: Sequence[Mapping[str, Any]], reasoning: str) -> list[str]:
-    """``"<model> via <provider>"`` for each answer served outside its model's route pin."""
+def pin_violations(calls: Sequence[Mapping[str, Any]], reasoning: "str | Mapping[str, str]") -> list[str]:
+    """``"<model> via <provider>"`` for each answer served outside its model's route pin
+    (at the reasoning level that model ran at)."""
     out: set[str] = set()
     for c in calls:
-        for p in providers.served_outside_route(providers.model_route(c["model"]), reasoning,
+        level = runner.reasoning_of(reasoning, c["model"]) or c.get("reasoning") or "off"
+        for p in providers.served_outside_route(providers.model_route(c["model"]), level,
                                                 {c.get("served_provider")}):
             out.add(f"{c['model']} via {p}")
     return sorted(out)
@@ -1429,17 +1476,18 @@ UNREASONED_MAX_SHARE = 0.5
 UNREASONED_MIN_ZEROS = 3
 
 
-def unreasoned_providers(calls: Sequence[Mapping[str, Any]], reasoning: str) -> dict[str, str]:
+def unreasoned_providers(calls: Sequence[Mapping[str, Any]], reasoning: "str | Mapping[str, str]") -> dict[str, str]:
     """``{"<model> via <provider>": "<zero>/<n>"}`` where most answers at a reasoning level
     other than off spent 0 reasoning tokens: that provider is not honouring the level.
 
     A tiny ping cannot show this; a model may skip reasoning on one easy prompt, so only a
-    majority of zero-token answers on real documents flags the provider.
+    majority of zero-token answers on real documents flags the provider. A model that ran at
+    off is skipped.
     """
-    if reasoning == "off":
-        return {}
     seen: dict[str, list[int]] = {}
     for c in calls:
+        if (runner.reasoning_of(reasoning, c["model"]) or "off") == "off":
+            continue
         key = f"{c['model']} via {c.get('served_provider') or '?'}"
         tally = seen.setdefault(key, [0, 0])
         tally[0] += not c.get("reasoning_tokens")
@@ -1776,9 +1824,19 @@ def cmd_ping(args: argparse.Namespace, chat=providers.chat, key_status=providers
     spend.check_key_headroom(key_status(backend), args.cap_usd)
     budget = spend.Budget(args.cap_usd, 300)
     picked = set(getattr(args, "chunks", None) or [])
-    used = {(m, str(c["reasoning"])) for c in campaign(args.campaign)["chunks"] for m in c["models"]
-            if not picked or str(c["id"]) in picked
-            if not str(m).startswith("winner_of_") and not str(c["reasoning"]).startswith("winner_of_")}
+    used: set[tuple[str, str]] = set()
+    for c in campaign(args.campaign)["chunks"]:
+        if picked and str(c["id"]) not in picked:
+            continue
+        try:
+            models, levels = resolve(args.campaign, c)  # a winner_of_<id> chunk pings its approved arm
+        except SystemExit as skip:  # winner not approved yet: nothing to ping
+            print(f"ping skips chunk {c['id']}: {skip}", file=sys.stderr)
+            continue
+        for m in models:
+            level = runner.reasoning_of(levels, m)
+            if level is not None:
+                used.add((m, str(level)))
     msgs = [{"role": "system", "content": "Reply with JSON only."},
             {"role": "user", "content": 'Return {"ok": true, "word": "mailroom"}.'}]
     schema: Mapping[str, Any] = PING_SCHEMA

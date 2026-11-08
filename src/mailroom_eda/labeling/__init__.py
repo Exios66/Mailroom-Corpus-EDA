@@ -10,6 +10,8 @@ Modules:
 * ``scoring`` adds labeling-quality checks to the pinned Dojo catalog, not its metrics.
 * ``export`` writes the JSONL journal and the review CSVs.
 * ``runner`` is the command line: ``python -m mailroom_eda.labeling --help``.
+* ``smoke_fixtures`` records, checks and replays the gold smoke fixtures under
+  ``tests/fixtures/live_smoke/``: ``python -m mailroom_eda.labeling.smoke_fixtures --help``.
 
 See ``README.md`` in this directory for the strategy.
 """
