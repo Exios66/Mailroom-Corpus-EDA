@@ -291,6 +291,9 @@ function persist(){
   catch (exc) { message('Local draft storage failed ('+exc.name+'); use Save or Export JSON to keep your work in files.'); }
 }
 function logChange(before, after){
+  // A changed timestamp alone is not a decision change: no history entry, no autosave.
+  const semantic=(d)=>{ const c={...d}; delete c.updated_at; return JSON.stringify(c); };
+  if (semantic(before)===semantic(after)){ after.updated_at=before.updated_at; return; }
   history.push({at:now(), document_id:after.document_id, field:after.field, before:clone(before), after:clone(after)});
   dirty=true; editSeq++; persist(); scheduleAutoSave(); renderJournal(); renderTargetStatus(); controls();
 }
@@ -632,7 +635,7 @@ async function refresh(reset, forceFull){
 // ---- Autosave: every complete decision reaches the server within ~1.2s, so a
 // browser crash, a server restart or a dropped connection cannot strand reviewed
 // work in this tab. Incomplete decisions stay local until they are valid.
-let autoTimer=null, syncPending=false, lastSavedAt='', autosaveEnabled=true, editSeq=0;
+let autoTimer=null, syncPending=false, lastSavedAt='', autosaveEnabled=true, editSeq=0, lastAutoSig='';
 function scheduleAutoSave(){
   if (!autosaveEnabled) return;
   if (autoTimer) clearTimeout(autoTimer);
@@ -678,11 +681,14 @@ async function runAutoSave(){
     if (localDraft()) message('Draft kept in this browser only: finish the decision (initials, valid CORRECT JSON, or the manual-verification tick for a blocked candidate) and it saves itself.');
     return;
   }
+  const signature=JSON.stringify([body.state_revision, body.decisions.map((d)=>{ const c={...d}; delete c.updated_at; return c; })]);
+  if (signature===lastAutoSig) return; // identical decisions in this server state: nothing to send
   const seq=editSeq;
   busy=true; controls();
   try{
     const result=await request('/api/reviews', body);
     applySave(result, seq===editSeq);
+    lastAutoSig=signature;
     syncPending=false; lastSavedAt=new Date().toLocaleTimeString();
     message('Auto-saved at '+lastSavedAt+' (receipt '+String(result.receipt_id||'').slice(0,12)+').', true);
   }catch(exc){
@@ -716,7 +722,8 @@ $('save').addEventListener('click', ()=>operation(async()=>{
     const result=await request('/api/reviews', body);
     applySave(result, true);
     syncPending=false; lastSavedAt=new Date().toLocaleTimeString();
-    message('Saved. Receipt '+(result.receipt_id||'')+' · fields changed '+(result.changed_fields==null?'?':result.changed_fields)+'.', true);
+    message(result.receipt_id?('Saved. Receipt '+(result.receipt_id||'')+' · fields changed '+(result.changed_fields==null?'?':result.changed_fields)+'.')
+      :'No change to store: this decision set is already saved.', true);
   } catch (exc) { message('Save failed: '+exc.message+' — Draft retained.'); }
 }));
 $('export').addEventListener('click', ()=>{

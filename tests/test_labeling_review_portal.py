@@ -243,6 +243,26 @@ def test_receipt_idempotency_and_defaults_do_not_erase_prior_confirmation(env):
     assert states(result["data"])["entity_name"] == "human_confirmed"
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+def test_timestamp_only_resave_creates_no_event_or_receipt(env, legacy):
+    first = env.app.save(returned(env.app.data(), ("entity_name", "ACCEPT", None)))
+    if legacy:
+        events = portal._lines(env.app.journal)
+        del events[0]["content_sha256"]
+        env.app.journal.write_text(json.dumps(events[0]) + "\n")
+    before = env.app.journal.read_bytes()
+    receipts = set(env.app.returns.glob("review-*.json"))
+    request = returned(env.app.data(), ("entity_name", "ACCEPT", None),
+                       at="2026-11-08T12:00:00+00:00")
+    assert env.app.save(request)["changed_fields"] == 0
+    assert env.app.journal.read_bytes() == before
+    assert set(env.app.returns.glob("review-*.json")) == receipts
+    request["decisions"][0]["reviewer_notes"] = "Rechecked source evidence."
+    request["history"][-1]["after"] = copy.deepcopy(request["decisions"][0])
+    assert env.app.save(request)["changed_fields"] == 1
+    assert len(portal._lines(env.app.journal)) == 2
+
+
 @pytest.mark.parametrize("code", ["REJECT", "NEEDS_SOURCE"])
 def test_explicit_rejection_supersedes_confirmation_without_losing_history(env, code):
     first = env.app.save(returned(env.app.data(), ("entity_name", "ACCEPT", None)))

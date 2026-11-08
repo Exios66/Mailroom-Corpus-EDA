@@ -111,6 +111,11 @@ try {
   assert.equal(saves,1);assert.equal(posts[0].state_revision,'r1');assert.equal(posts[0].decisions[0].decision,'ACCEPT');
   // The real server rejects a decision without a timestamp (review_page.validate_return).
   assert.ok(!Number.isNaN(Date.parse(posts[0].decisions[0].updated_at)),'edited decision must carry updated_at');assert.equal(posts[0].history.length,3);
+  const noOpBefore=await evaluate(`({history:history.length,updated_at:decision().updated_at,dirty})`);
+  await input('decision','ACCEPT');
+  assert.deepEqual(await evaluate(`({history:history.length,updated_at:decision().updated_at,dirty})`),noOpBefore,
+    'reselecting ACCEPT does not change history, timestamp or dirty state');
+  check('unchanged decision produces no journal entry');
   await screenshot('02-saved-server-confirmed');
   await call('Page.reload');await waitFor(`document.getElementById('save') && !$('save').disabled`);
   assert.equal(await evaluate(`$('decision').value`),'ACCEPT');

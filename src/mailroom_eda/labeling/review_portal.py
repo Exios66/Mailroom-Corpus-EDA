@@ -551,8 +551,22 @@ class ReviewPortal:
                 target_hash = _target_hash(source)
                 prior = latest.get(key)
                 signature = hashlib.sha256(_json(decision)).hexdigest()
+                # updated_at is provenance, not content: re-saving an unchanged decision
+                # (ACCEPT -> ACCEPT) must not append a journal entry.
+                content = hashlib.sha256(_json({k: v for k, v in decision.items()
+                                                if k != "updated_at"})).hexdigest()
                 event_id = hashlib.sha256(_json([receipt_id, *key])).hexdigest()
-                if event_id in previous_ids or (prior and prior["decision_sha256"] == signature
+                prior_content = prior.get("content_sha256") if prior else None
+                if prior and not prior_content:
+                    old_raw = (self.returns / f"review-{prior['receipt_id']}.json").read_bytes()
+                    if hashlib.sha256(old_raw).hexdigest() != prior["receipt_id"]:
+                        raise ValueError("stored review receipt hash mismatch")
+                    old_decision = next(d for d in json.loads(old_raw)["decisions"]
+                                        if (d["document_id"], d["field"]) == key)
+                    prior_content = hashlib.sha256(_json({k: v for k, v in old_decision.items()
+                                                          if k != "updated_at"})).hexdigest()
+                if event_id in previous_ids or (prior and (prior_content == content
+                                                         or prior["decision_sha256"] == signature)
                                                 and prior["target_sha256"] == target_hash):
                     continue
                 reviewed = decision["decision"] in ("ACCEPT", "CORRECT")
@@ -564,6 +578,7 @@ class ReviewPortal:
                 outputs = list(decision.get("verified_outputs") or [])
                 changes.append({"event_id": event_id, "receipt_id": receipt_id,
                                 "receipt_sha256": receipt_id, "packet_id": packet["packet_id"],
+                                "content_sha256": content,
                                 "document_id": key[0], "field": key[1], "document_sha256": source["document_sha256"],
                                 "target_sha256": target_hash, "split": source["split"],
                                 "decision": decision["decision"], "value": value, "human_confirmed": confirmed,
@@ -577,6 +592,9 @@ class ReviewPortal:
                                 "provenance": source["portal_provenance"]})
             if receipt.is_symlink():
                 raise ValueError("receipt must not be a symlink")
+            if not changes:  # nothing changed: no receipt, no journal entry, no growth
+                return {"receipt_id": "", "changed_fields": 0,
+                        "data": self._save_state() if slim else self._data()}
             try:
                 with receipt.open("xb") as fh:
                     fh.write(raw)
