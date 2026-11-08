@@ -405,6 +405,19 @@ function renderTargetStatus(){
   $('target-status').textContent='Server state: '+stateOf(records[current]).status
     +(dirty?' (unsaved local edits)':'')+(staleDraft?' (stale packet; discard or reload)':'')
     +' · Decided: '+d.decision+(d.updated_at?' at '+d.updated_at:'');
+  batchProgress();
+}
+function batchProgress(){
+  // Per-batch decided/total on the optgroup label, so agents and reviewers see
+  // progress without opening the tracker; rebuilt from the decisions map.
+  document.querySelectorAll('#target optgroup[data-gid]').forEach((og)=>{
+    const gid=og.dataset.gid;
+    const inBatch=records.filter((r)=>String(r.batch||r.chunk||'')===gid);
+    if (!inBatch.length) return;
+    const decided=inBatch.filter((r)=>(decisions.get(KEY(r))||{}).decision!=='NOT_REVIEWED').length;
+    const base=og.label.replace(/ — \d+\/\d+ decided$/, '');
+    og.label=base+' — '+decided+'/'+inBatch.length+' decided';
+  });
 }
 function controls(){
   $('save').disabled=busy||staleDraft;

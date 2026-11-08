@@ -169,7 +169,8 @@ try {
   // Batched generation alignment: the review list is grouped per labeling batch and the
   // record header shows the batch's task/set/slice line.
   const batches=await evaluate(`(()=>{const t=$('target');return {optgroups:[...t.children].filter(c=>c.tagName==='OPTGROUP').map(g=>g.label), seen:[...t.querySelectorAll('option')].map(o=>o.value)};})()`);
-  assert.deepEqual(batches.optgroups,['8a · Claim checklist / pilot','9a · Corporate / pilot']);
+  assert.equal(batches.optgroups[0],'8a · Claim checklist / pilot — 1/1 decided');
+  assert.equal(batches.optgroups[1],'9a · Corporate / pilot — 0/1 decided');
   assert.deepEqual(batches.seen,['0','1']);
   await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
   assert.match(await evaluate(`$('values').textContent`),/batch 8a .* pilot · Claim checklist/);
