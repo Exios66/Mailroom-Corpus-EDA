@@ -29,8 +29,15 @@
   `autoresearch/loop-261108-0116/quality_probe_report.json`. The report currently on disk is the
   STALE it7 claim report (task=claim_checklist) — it is overwritten on completion. This run
   predates the parsed-capture fix, so it carries violations only (quoting oracle).
-- OPENROUTER key: `/private/tmp/opencode/orkey` (0600). DELETE the moment the probe's report
-  lands (protocol); re-create ONLY on an explicit new key from the operator.
+- **PAUSED at operator request (pre-wifi-loss), 2026-11-08 ~13:0x local**: python PID **21512** +
+  wrapper **21509** are SIGSTOPped (`T` state). All completed rows (~24 min of work) live ONLY in
+  PID 21512's RAM — the machine must NOT reboot or quit OpenCode/terminal; sleep is fine.
+  - RESUME: `kill -CONT 21512 21509` (then the run continues; the one in-flight API row may
+    return an error entry — acceptable, single-row loss).
+  - Key: `/private/tmp/opencode/orkey` (0600) stays on disk while paused; delete only after the
+    run's report lands and passes grading (protocol).
+- OPENROUTER key protocol: delete the moment the probe's report lands. Re-create ONLY on an
+  explicit new key from the operator.
 
 ## On the probe's completion (exact steps, in order)
 1. `rm /private/tmp/opencode/orkey` (after any single re-verify pass you intend to run, not before).
