@@ -657,17 +657,19 @@ function batchJumpRebuild(){
     g.total++;
     if ((decisions.get(KEY(r))||{}).decision!=='NOT_REVIEWED') g.decided++;
   });
+  const chosen=sel.value; // rebuilding replaces options and would snap the selection back
   sel.textContent='';
   for (const [gid,g] of groups){
     const o=node('option', humanize(gid)+' — '+(g.total-g.decided)+' pending of '+g.total);
     o.value=gid; sel.append(o);
   }
+  if ([...sel.options].some((o)=>o.value===chosen)) sel.value=chosen;
 }
 $('batch-jump').addEventListener('change', ()=>{
   const gid=$('batch-jump').value;
   const idx=records.findIndex((r)=>String(r.batch||r.chunk||'')===gid && (decisions.get(KEY(r))||{}).decision==='NOT_REVIEWED');
   if (idx>=0){ current=idx; renderTarget(); controls(); }
-  renderTargetStatus(); batchProgress();
+  renderTargetStatus(); // batchProgress() runs inside renderTargetStatus
 });
 // Bulk "accept verified in batch": candidates the server already verified
 // (candidate_status 'source_checks_passed') get ACCEPT with the sticky initials.
