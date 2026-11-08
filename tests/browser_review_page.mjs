@@ -11,7 +11,7 @@ const out=process.argv[2] || '/private/tmp/opencode/review-integrated-evidence';
 fs.mkdirSync(out,{recursive:true});
 const text='🧾 SYNTHETIC DOCUMENT ONLY\nProvide a signed claim form.\n<img src=x onerror="window.injected=true">\nEND OF COMPLETE SOURCE';
 const quote='signed claim form', start=Array.from(text.split(quote)[0]).length;
-const record={document_id:'SYNTH-001',field:'claim_checklist',document_sha256:createHash('sha256').update(text).digest('hex'),full_document_text:text,split:'train',candidate_status:'source_checks_passed',candidate_labels:['signed claim form'],existing_gt_fields:{claim_checklist:[]},evidence:[{start,end:start+quote.length,quote}],source_url:'javascript:alert(1)'};
+const record={document_id:'SYNTH-001',field:'claim_checklist',document_sha256:createHash('sha256').update(text).digest('hex'),full_document_text:text,split:'train',candidate_status:'source_checks_passed',candidate_labels:['signed claim form','signed claim form - secondary'],correction_type:'array',existing_gt_fields:{claim_checklist:[]},evidence:[{start,end:start+quote.length,quote}],source_url:'javascript:alert(1)'};
 let packet={schema:'mailroom-review-packet/v1',packet_id:'synthetic-packet-1',state_revision:'r1',decision_key:{NOT_REVIEWED:'Not reviewed',ACCEPT:'Accept source-checked proposal',CORRECT:'Supply replacement JSON',REJECT:'Reject',NEEDS_SOURCE:'Needs source'},records:[record,{...record,document_id:'SYNTH-002',field:'entity_name',candidate_labels:'Example Corporation',dojo_type:'name',correction_type:'string',source_url:'https://example.invalid/source',model_outputs:[{model:'synthetic/model-a',value:'Example Corporation',status:'present',evidence:'Example Corporation',evidence_spans:[]},{model:'synthetic/model-b',value:null,status:'not_found',evidence:'',evidence_spans:[]}]}],launch_enabled:true,review_states:[],saved_decisions:[],saved_history:[],checkpoint_enabled:true,tracker:{name:'Synthetic campaign',loaded_target_fields:2,human_confirmed_fields:0,remaining_loaded_fields:2,checkpointed_fields:0,scope:'Synthetic tracker only; review is not task approval.',tasks:[{id:'A',task:'claim_checklist',status:'pending',documents_total:2,ready:1,reviewed:0,remaining:2,loaded_target_fields:1},{id:'B',task:'corporate',status:'approved',documents_total:1,ready:1,reviewed:1,remaining:0,loaded_target_fields:1}]}};
 const template=fs.readFileSync(new URL('../src/mailroom_eda/labeling/review_page.html',import.meta.url),'utf8');
 packet.revision_queue=[{document_id:'SYNTH-PRODUCTION',field:'entity_name',source_dataset:'synthetic/public',source_revision:'public-sha',split:'test',status:'human_confirmed',value:'Example Corporation'}];
@@ -37,6 +37,7 @@ const server=http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');
   if(req.url==='/review.html') {res.setHeader('Content-Type','text/html');res.end(template.replace('__REVIEW_PACKET_JSON__',JSON.stringify(packet).replaceAll('<','\\u003c')));return;}
   res.setHeader('Content-Type','application/json');
+  if(req.url==='/api/contract') {res.end(JSON.stringify({schema:'mailroom-review-agent-contract/v1',packet_schema:'mailroom-review-packet/v1',decision_key:packet.decision_key,rules:['per-label items ride correction_labels_json']}));return;}
   if(req.url==='/review-data.json') {launch.reloads++;res.end(JSON.stringify(packet));return;}
   if(req.url==='/api/launch/options') {res.end(JSON.stringify({enabled:true,campaign:'synthetic',targets:launchTargets,trial:{default_documents:2,max_documents:5,cap_ceiling_usd:0.25}}));return;}
   if(req.url==='/api/launch/status') {
@@ -142,6 +143,19 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('#model-answers tr').length`),3);
   await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
   assert.equal(await evaluate(`!!$('model-answers')`),false,'no model_outputs, no table');
+  // Per-label items: keep/drop single labels; the kept items build the CORRECT replacement.
+  assert.match(await evaluate(`document.querySelector('#item-picker summary').textContent`),/2 of 2 kept/);
+  await evaluate(`[...document.querySelectorAll('#item-picker .chips .chip')][0].click()`);
+  assert.match(await evaluate(`document.querySelector('#item-picker summary').textContent`),/1 of 2 kept/);
+  await evaluate(`[...document.querySelectorAll('#item-picker input')][1].value='signed claim form (edited)';[...document.querySelectorAll('#item-picker input')][1].dispatchEvent(new Event('input',{bubbles:true}));`);
+  await evaluate(`[...document.querySelectorAll('#item-picker button')].at(-1).click()`);
+  assert.equal(await evaluate(`$('decision').value`),'CORRECT');
+  assert.deepEqual(JSON.parse(await evaluate(`$('correction').value`)),['signed claim form (edited)']);
+  assert.match(await evaluate(`$('message').textContent`),/kept items/);
+  await screenshot('06-item-picker-perlabel');
+  // Next pending jumps the only undecided target (synthetic record 1).
+  await evaluate(`$('next-pending').click()`);
+  assert.equal(await evaluate(`$('target').value`),'1');
   // Launch panel: shown because the server says launch is enabled.
   await waitFor(`!$('launch-panel').hidden && $('launch-target').options.length===3`);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#launch-target optgroup')].map(g=>g.label)`),['Campaign','Public trial']);

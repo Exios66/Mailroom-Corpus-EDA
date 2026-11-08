@@ -218,6 +218,31 @@ in the source; a quote that cannot be found is reported in `issues`, never highl
 A re-export overwrites the packet (atomically); the portal reopens only the fields whose
 target changed. Within one labels root the lexically last packet wins per (document, field).
 
+## Agent interface (machine)
+
+The portal is built to be driven by review agents as well as by people. GET
+`/api/contract` returns the machine contract in one document: the packet and
+return schemas, the decision key, the routes an agent may call and the rules
+it must honor (`decision_key`, `corrected_labels_json` shape, initials and
+timestamp requirements, the per-label rule, the 409 state-revision guard).
+
+```bash
+curl -s http://127.0.0.1:8765/api/contract | python -m json.tool   # the one page an agent reads
+curl -s http://127.0.0.1:8765/review-data.json                      # packet + saved decisions
+curl -s -X POST http://127.0.0.1:8765/api/reviews -d '{"schema":"mailroom-human-review/v1", ...}'
+```
+
+Per-label decisions: a record whose `correction_type` is `array` (claim_checklist,
+entity lists) may keep or drop any individual label by posting `CORRECT` with
+`corrected_labels_json` set to exactly the JSON array of kept labels — edited items
+in place. The review page's per-item checkboxes build the same array and send the
+same one-decision-per-(document, field) contract; nothing else changes server-side.
+Annotated item text travels inside the kept array; notes carry the reviewer's
+justification in `reviewer_notes`.
+
+The page's toolbar adds **Next pending** (keyboard `N`): jump straight to the next
+target without a decision, which is the loop reviewers and agents repeat.
+
 ## Gold smoke fixtures
 
 `tests/fixtures/live_smoke/<doc_type>/` holds one small, real labeling run for each of the five document

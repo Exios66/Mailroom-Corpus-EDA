@@ -101,7 +101,7 @@ The API key field is optional, is never stored (not even in this browser) and is
 
 <section class="panel">
 <label for="target">Review target</label><select id="target"></select>
-<div class="toolbar"><button id="previous">Previous target</button><button id="next">Next target</button></div>
+<div class="toolbar"><button id="previous">Previous target</button><button id="next">Next target</button><button id="next-pending" title="Jump to the next undecided target (keyboard: N)">Next pending</button></div>
 <p id="target-status"></p>
 </section>
 
@@ -120,6 +120,7 @@ The API key field is optional, is never stored (not even in this browser) and is
 </div>
 
 <section class="panel"><h2>Change journal</h2><p class="muted">Actual browser edits and recovered receipt history. Initials and browser timestamps are claims, not signatures.</p><div id="journal"></div></section>
+<p class="muted">Agent interface: <code>GET /api/contract</code> — the machine-readable packet schema, decision key, per-label rules and routes. Nothing publishes automatically; every decision expects a reviewer's initials.</p>
 
 <script id="packet" type="application/json">__REVIEW_PACKET_JSON__</script>
 <script>
@@ -136,6 +137,7 @@ function localDraft(){ return [...decisions.values()].some((d)=>d.decision!=='NO
 function seed(data, keep){
   records=[...(data.records||[])];
   decisions=new Map();
+  itemState=new Map();
   records.forEach((r)=>decisions.set(KEY(r), blank(r)));
   (data.saved_decisions||[]).forEach((d)=>{ if(decisions.has(d.document_id+'\n'+d.field)) decisions.set(d.document_id+'\n'+d.field, clone(d)); });
   history=clone(data.saved_history||[]);
@@ -149,6 +151,85 @@ function overlay(kind){
   if (draft&&draft.history&&draft.history.length>=history.length) history=clone(draft.history);
 }
 function decision(){ return decisions.get(KEY(records[current])); }
+// Per-label items: keep / drop / edit individual labels of an array candidate. The choice
+// travels as the CORRECT replacement array (corrected_labels_json), so the server contract
+// stays one decision per (document, field); itemState is browser-side only.
+let itemState=new Map();
+function labelItems(record){
+  if (record.correction_type!=='array') return null;
+  const parsed=parseMaybe(record.candidate_labels);
+  return Array.isArray(parsed) ? parsed.map((x)=>String(x)) : null;
+}
+function itemsFor(record){
+  const key=KEY(record), items=labelItems(record);
+  if (items===null) return null;
+  if (!itemState.has(key)) itemState.set(key, {dropped:[], edits:{}});
+  const state=itemState.get(key);
+  const d=decisions.get(key);
+  const draft=parseMaybe(d.corrected_labels_json);
+  // If the draft correction is exactly a kept subset of the candidate items, adopt it.
+  if (Array.isArray(draft) && draft.length<=items.length && Object.keys(state.edits).length===0){
+    const chosen=draft.map((x)=>String(x)), used=[];
+    items.forEach((text,i)=>{ if (chosen.includes(text)) used.push(i); });
+    if (used.length) state.dropped=items.map((_,i)=>i).filter((i)=>!used.includes(i));
+  }
+  return {items, state};
+}
+function keptItems(record){
+  const ctx=itemsFor(record);
+  if (ctx===null) return null;
+  return ctx.items.map((text,i)=>{ const text2=String(ctx.state.edits[i]?ctx.state.edits[i]:text); return [i,{dropped:ctx.state.dropped.includes(i), text:text2}]; })
+    .filter(([,v])=>!v.dropped).map(([,v])=>v.text);
+}
+function itemPicker(record){
+  const ctx=itemsFor(record);
+  if (ctx===null) return null;
+  const box=node('details'); box.id='item-picker';
+  const summary=node('summary'); box.append(summary);
+  const refreshTitle=()=>{
+    const kept=keptItems(record);
+    summary.textContent='Label items · '+kept.length+' of '+ctx.items.length+' kept';
+  };
+  const list=node('div','Approve or drop each label; kept items become the CORRECT replacement list.','muted');
+  const keeper=(i, toggle)=>{
+    const keep=!ctx.state.dropped.includes(i);
+    toggle.textContent=keep?'Keep':'Dropped';
+    toggle.className='chip'+(keep?' good':'');
+    toggle.setAttribute('aria-pressed', String(keep));
+    refreshTitle();
+    return keep;
+  };
+  ctx.items.forEach((text,i)=>{
+    const row=node('div'); row.className='chips';
+    const toggle=node('button',''); toggle.type='button';
+    toggle.addEventListener('click', ()=>{
+      const idx=ctx.state.dropped.indexOf(i);
+      if (idx>=0) ctx.state.dropped.splice(idx,1); else ctx.state.dropped.push(i);
+      keeper(i, toggle);
+    });
+    keeper(i, toggle);
+    const editor=node('input'); editor.type='text';
+    editor.value=ctx.state.edits[i]||text;
+    editor.setAttribute('aria-label','Item '+(i+1)+' text');
+    editor.addEventListener('input', ()=>{ ctx.state.edits[i]=editor.value; });
+    row.append(toggle, editor); list.append(row);
+  });
+  box.append(list);
+  const apply=node('button','Apply kept items as the correction'); apply.type='button';
+  apply.addEventListener('click', ()=>{
+    const d=decision();
+    const before=clone(d);
+    d.corrected_labels_json=JSON.stringify(keptItems(record));
+    d.decision='CORRECT'; d.updated_at=now();
+    $('correction').value=d.corrected_labels_json; $('decision').value='CORRECT';
+    $('decision-help').textContent=packet.decision_key?packet.decision_key.CORRECT||'':'';
+    logChange(before, d);
+    message('Built the replacement list from '+keptItems(record).length+' kept items; review it in the CORRECT field.', true);
+  });
+  list.append(apply);
+  box.append(list);
+  return box;
+}
 function now(){ return new Date().toISOString(); }
 function payload(){ return {schema:'mailroom-human-review/v1',packet_id:packet.packet_id,state_revision:packet.state_revision,exported_at:now(),decisions:[...decisions.values()],history:clone(history)}; }
 function persist(){
@@ -288,6 +369,7 @@ function renderTarget(){
   const values=$('values'); values.textContent='';
   values.append(node('div', humanize(record.field)+' · '+humanize(record.doc_class)+(record.subclass?' / '+humanize(record.subclass):''), 'field-title'));
   const box=node('div','','value'); box.append(show(record.candidate_labels, record.dojo_type)); values.append(box);
+  const pick=itemPicker(record); if (pick) values.append(pick);
   const chips=node('div','','chips');
   const checked=record.candidate_status==='source_checks_passed';
   if (record.candidate_status) chips.append(chip(label(record.candidate_status), checked?'good':'warn'));
@@ -454,6 +536,22 @@ $('task-filter').addEventListener('change', tracker);
 $('target').addEventListener('change', ()=>{ current=Number($('target').value)||0; renderTarget(); });
 $('previous').addEventListener('click', ()=>{ current=Math.max(0,current-1); renderTarget(); controls(); });
 $('next').addEventListener('click', ()=>{ current=Math.min(records.length-1,current+1); renderTarget(); controls(); });
+function nextPending(from){
+  for (let step=1; step<=records.length; step++){
+    const i=(from+step)%records.length;
+    if (records.length && (decisions.get(KEY(records[i]))||{}).decision==='NOT_REVIEWED') return i;
+  }
+  return from;
+}
+$('next-pending').addEventListener('click', ()=>{ if (!records.length) return; current=nextPending(current); renderTarget(); controls(); });
+document.addEventListener('keydown', (e)=>{
+  if (e.defaultPrevented||e.altKey||e.ctrlKey||e.metaKey) return;
+  const t=e.target;
+  if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)||t.isContentEditable)) return;
+  if ((e.key==='n'||e.key==='N') && records.length){
+    current=nextPending(current); renderTarget(); controls(); e.preventDefault();
+  }
+});
 [['decision','decision'],['initials','reviewer_initials'],['notes','reviewer_notes'],['correction','corrected_labels_json']]
 .forEach(([id,prop])=>$(id).addEventListener('input', ()=>{
   const before=clone(decision());

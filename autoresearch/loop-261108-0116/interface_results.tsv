@@ -1,0 +1,4 @@
+# metric_direction: higher_is_better
+iteration	timestamp	commit	metric	delta	guard	guard-metric	status	description
+0	2026-11-08T01:16:00Z	9255691	3	0.0	pass	-	baseline	agent-drivable surface: /review-data.json GET, /api/reviews POST, /revision-queue.json GET (documented in the viewer doc); no per-label items, no machine contract, no quick-jump navigation
+1	2026-11-08T01:55:00Z	(this commit)	6	+3	see loop-interface-config.md	-	keep	per-label item picker (keep/drop/edit each label; Apply builds the CORRECT replacement array; one-decision contract unchanged), Next pending toolbar button + N keybind, GET /api/contract machine contract (schemas, decision key, routes, per-label + 409 rules), Agent interface docs section; browser smoke extended and PASS (06-item-picker-perlabel evidence); portal tests 28 passed incl. contract + per-label round trip

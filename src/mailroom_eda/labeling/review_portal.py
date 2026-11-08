@@ -442,6 +442,34 @@ class ReviewPortal:
         with self._locked():
             return self._data()
 
+    def agent_contract(self) -> dict:
+        """The machine-readable review contract: schemas, decision key, routes, per-label rules.
+
+        What an automated agent needs to read the packet and save decisions without
+        scraping the page (the page itself changes freely)."""
+        return {"schema": "mailroom-review-agent-contract/v1",
+                "packet_schema": review_page.PACKET_SCHEMA,
+                "return_schema": review_page.RETURN_SCHEMA,
+                "decision_key": dict(DECISION_KEY),
+                "read": {"packet": "/review-data.json", "revision_queue": "/revision-queue.json"},
+                "write": {"save_decisions": "/api/reviews",
+                          "checkpoint_confirmed": "/api/checkpoint"},
+                "launch_routes": ["(GET /api/launch/options)", "(GET /api/launch/status)",
+                                  "(POST /api/launch/preflight)", "(POST /api/launch/start)"],
+                "rules": [
+                    "Read /review-data.json first: records are keyed on (document_id, field); check each record's candidate_status before ACCEPT.",
+                    "Saved decisions carry initials (2-6 capital letters) and updated_at as a timestamp with a timezone.",
+                    "Per-label items: when a record's correction_type is 'array' and candidate_labels is a list of "
+                    "strings, preserve or drop individual labels by posting CORRECT whose corrected_labels_json "
+                    "is exactly the JSON array of kept labels (apply edits inline). The review page builds the "
+                    "same replacement list from its per-item checkboxes.",
+                    "POST /api/reviews the whole payload including the state_revision you read; a changed "
+                    "packet answers 409 and the client must re-read before saving again.",
+                    "The page never publishes: checkpointing is an explicit POST /api/checkpoint (needs "
+                    "--hf-checkpoint on the server) or the page's Checkpoint button; nothing else advances staging.",
+                ]}
+
+
     def render(self) -> bytes:
         """Write the current standalone review page and return its HTML bytes under the portal locks."""
         with self._locked():
@@ -620,6 +648,8 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
                     self._reply(200, {"schema": "mailroom-v10-manual-revisions/v1",
                                       "packet_id": data["packet_id"], "state_revision": data["state_revision"],
                                       "revisions": data["revision_queue"]})
+                elif self.path == "/api/contract":
+                    self._reply(200, portal.agent_contract())
                 else:
                     self._reply(404, {"error": "unknown route"})
             except (ValueError, KeyError, OSError, PermissionError) as exc:

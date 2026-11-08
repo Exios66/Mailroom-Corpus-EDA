@@ -78,6 +78,38 @@ def states(data):
     return {r["field"]: r["status"] for r in data["review_states"]}
 
 
+def test_agent_contract_lists_schema_routes_and_perlabel_rule(env):
+    """One machine-readable page tells an agent how to read the packet and save decisions."""
+    contract = env.app.agent_contract()
+    assert contract["schema"] == "mailroom-review-agent-contract/v1"
+    assert contract["packet_schema"] == review_page.PACKET_SCHEMA
+    assert contract["return_schema"] == review_page.RETURN_SCHEMA
+    assert contract["decision_key"] == DECISION_KEY
+    assert set(contract["read"]) == {"packet", "revision_queue"}
+    assert set(contract["write"]) == {"save_decisions", "checkpoint_confirmed"}
+    all_rules = " ".join(contract["rules"])
+    assert "CORRECT" in all_rules and "candidate_labels" in all_rules and "kept labels" in all_rules
+    assert "state_revision" in all_rules and "409" in all_rules
+    assert "never publishes" in all_rules
+
+
+def test_correct_can_drop_a_single_label_item(env):
+    """Per-label keep/drop rides the CORRECT contract as the array of kept labels."""
+    text = ("COVERAGE DETERMINATION: APPROVED - this claim has been adjudicated and paid.\n"
+            "Date of Report: 2026-02-25\n")
+    items = ["Coverage Determination: COVERAGE DETERMINATION: APPROVED - this claim has been adjudicated and paid.",
+             "Timely Notice: Date of Report: 2026-02-25",
+             "Deductible: invented wrong line"]
+    write_packet(env.source, [record("claim_checklist", items, text=text,
+                                     doc_class="insurance_claim", subclass="property")])
+    assert states(env.app.save(returned(env.app.data(),
+                                        ("claim_checklist", "CORRECT", [items[0], items[1]])))["data"])["claim_checklist"] == "human_confirmed"
+    receipt = next(iter(env.app.returns.glob("review-*.json"))).read_text()
+    row = json.loads(receipt)["decisions"][0]
+    assert row["decision"] == "CORRECT"
+    assert json.loads(row["corrected_labels_json"]) == [items[0], items[1]]
+
+
 def test_collector_finished_packets_only_cache_and_auto_refresh(env, monkeypatch):
     (env.root / "raw").mkdir()
     (env.root / "raw" / "fields.csv").write_text("torn,raw,not_ready")
