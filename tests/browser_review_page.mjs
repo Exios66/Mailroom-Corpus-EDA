@@ -19,6 +19,8 @@ Object.assign(packet.tracker,{private_source:{repo:'synthetic/private',revision:
 assert.equal(template.split('__REVIEW_PACKET_JSON__').length-1,1);
 assert(!template.includes('innerHTML'));
 let saves=0, checkpoints=0, failSave=false, posts=[];
+const checks=['Unicode offsets','full source','no HTML injection','safe source URLs','native values','task filters','save contract','receipt/history hydration','localStorage resume','same-revision reload','409 retains draft','changed-revision explicit discard','checkpoint','model answers table','launch panel targets and kind labels','loud preflight checklist','api key cleared and never stored','typed-cap confirmation','status polling and reload'];
+const check=(name)=>checks.push(name);
 // Launch mock: the real checks live in tests/test_labeling_launch.py; this serves the shapes the page renders.
 const SECRET='sk-or-v1-BROWSER-SECRET-key-4411';
 const launch={preflights:[], starts:[], statusReads:0, state:'idle', reloads:0};
@@ -152,10 +154,12 @@ try {
   assert.equal(await evaluate(`$('decision').value`),'CORRECT');
   assert.deepEqual(JSON.parse(await evaluate(`$('correction').value`)),['signed claim form (edited)']);
   assert.match(await evaluate(`$('message').textContent`),/kept items/);
+  check('per-label item picker and kept-array correction');
   await screenshot('06-item-picker-perlabel');
   // Next pending jumps the only undecided target (synthetic record 1).
   await evaluate(`$('next-pending').click()`);
   assert.equal(await evaluate(`$('target').value`),'1');
+  check('next-pending navigation');
   // Launch panel: shown because the server says launch is enabled.
   await waitFor(`!$('launch-panel').hidden && $('launch-target').options.length===3`);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#launch-target optgroup')].map(g=>g.label)`),['Campaign','Public trial']);
@@ -205,6 +209,6 @@ try {
   await screenshot('08-launch-finished');
   assert.deepEqual(errors,[]);
   fs.writeFileSync(path.join(out,'submitted-review.json'),JSON.stringify(posts[0],null,2));
-  fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({passed:true,saves,checkpoints,journal_events:posts[0].history.length,checks:['Unicode offsets','full source','no HTML injection','safe source URLs','native values','task filters','save contract','receipt/history hydration','localStorage resume','same-revision reload','409 retains draft','changed-revision explicit discard','checkpoint','model answers table','launch panel targets and kind labels','loud preflight checklist','api key cleared and never stored','typed-cap confirmation','status polling and reload'],console_exceptions:errors},null,2));
+  fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({passed:true,saves,checkpoints,journal_events:posts[0].history.length,checks,console_exceptions:errors},null,2));
   console.log('PASS: integrated synthetic review browser smoke; evidence '+out);
 } finally {ws?.close();chrome.kill();server.close();}
