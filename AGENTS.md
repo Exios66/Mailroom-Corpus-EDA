@@ -95,6 +95,30 @@ uv member (no build).
     figures can never be byte-identical. The committed files are the canonical
     upstream bytes; treat local regeneration as scratch output only.
 
+## Labeling results staging & private checkpoints (where the results live)
+
+- **Private Hub staging repo**: `Lucius-Morningstar/mailroom-dataset-v10-staging` —
+  the durable staging surface for v10 labeling results. `labeling checkpoint`
+  (and the review portal's explicit Checkpoint button, `POST /api/checkpoint` with
+  `--hf-checkpoint`) commits the labels root (packets, receipts, journals) into
+  that private repo with decisions history signed off by initials. Restore is the
+  mirrored direction of the same flow: `labeling review-portal --restore-revision <sha>`.
+- **Local backup staging repo**: `/Users/luciusjmorningstar/Downloads/labels-staging`
+  = `https://github.com/Exios66/labels-staging` (branch `main`). Autoresearch loop
+  state and experiment results are backed up per session under `YYYY-MM-DD-session-N/`
+  (`SUMMARY.md`, `spend-ledger.csv`, `manifest.sha256`, the loop TSVs, gate.json /
+  decisions.csv per chunk, pilot review packets, smoke-fixture manifests, and the
+  coverage oracle snapshot `coverage/docclass-coverage-*.json`). Read-only access is
+  public; the reviewer-facing notice is in that repo's README.
+- **Results bundled in this repo**: `docs/reports/audits/v10_labels/` holds the live
+  chunk journals (calls/runs/gates), the *-review-data.json review packets the
+  portal serves, and the coverage matrix output
+  (`coverage-2026-11-08.json` via `scripts/audit/coverage_matrix.py --check`). The
+  labeling interfaces to all three surfaces: `labeling doctor`, the review portal
+  (`labeling review-portal ... --labels-root docs/reports/audits/v10_labels`),
+  and `docs/labeler-review-viewer.md` "Agent interface (machine)" (`GET /api/contract`).
+
+
 ## Commands
 
 ```bash
