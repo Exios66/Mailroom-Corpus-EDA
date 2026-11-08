@@ -61,6 +61,7 @@ pre#launch-log { max-height: 220px; overflow: auto; background: #f6f6f6; padding
 </div>
 <div id="message" role="status" aria-live="polite" class="notice">Loading review packet…</div>
 <small id="binding" class="muted"></small>
+<p class="muted" id="kbd-legend">Shortcuts: <kbd>N</kbd> next pending · <kbd>Shift+N</kbd> next pending in batch</p>
 
 <nav id="tabs" role="tablist" aria-label="Page sections">
 <button id="tab-launch" role="tab" aria-controls="launch-view" aria-selected="false">Batch launcher</button>
@@ -117,7 +118,7 @@ The API key field is optional, is never stored (not even in this browser) and is
 <div id="review-view" role="tabpanel" aria-labelledby="tab-review">
 <section class="panel">
 <label for="target">Review target</label><select id="target"></select>
-<div class="toolbar"><button id="previous">Previous target</button><button id="next">Next target</button><button id="next-pending" title="Jump to the next undecided target (keyboard: N)">Next pending</button><button id="bulk-accept" title="Set ACCEPT (with the remembered initials) for every undecided target in the current record's batch whose candidate passed the automated source checks; review then Save as usual">Accept verified in batch</button></div>
+<div class="toolbar"><button id="previous">Previous target</button><button id="next">Next target</button><button id="next-pending" title="Jump to the next undecided target (keyboard: N)">Next pending</button><button id="next-pending-batch" title="Jump to the next undecided target inside the current batch, else the next pending anywhere (keyboard: Shift+N)">Next pending in batch</button><button id="bulk-accept" title="Set ACCEPT (with the remembered initials) for every undecided target in the current record's batch whose candidate passed the automated source checks; review then Save as usual">Accept verified in batch</button></div>
 <p id="target-status"></p>
 </section>
 
@@ -592,6 +593,18 @@ function nextPending(from){
   return from;
 }
 $('next-pending').addEventListener('click', ()=>{ if (!records.length) return; current=nextPending(current); renderTarget(); controls(); });
+// Batch-scoped next pending: same rule, restricted to the cursor's batch, falling back
+// to the global scan when that batch is fully decided (keyboard: Shift+N).
+function nextPendingInBatch(from){
+  if (!records.length) return from;
+  const gid=String(records[from].batch||records[from].chunk||'');
+  for (let step=1; step<=records.length; step++){
+    const i=(from+step)%records.length, inBatch=String(records[i].batch||records[i].chunk||'')===gid;
+    if (inBatch && (decisions.get(KEY(records[i]))||{}).decision==='NOT_REVIEWED') return i;
+  }
+  return nextPending(from);
+}
+$('next-pending-batch').addEventListener('click', ()=>{ if (!records.length) return; current=nextPendingInBatch(current); renderTarget(); controls(); });
 // Bulk "accept verified in batch": candidates the server already verified
 // (candidate_status 'source_checks_passed') get ACCEPT with the sticky initials.
 // Still one decision per (document, field): initials and Save remain
@@ -642,7 +655,9 @@ document.addEventListener('keydown', (e)=>{
   const t=e.target;
   if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)||t.isContentEditable)) return;
   if ((e.key==='n'||e.key==='N') && records.length){
-    current=nextPending(current); renderTarget(); controls(); e.preventDefault();
+    if (e.shiftKey) current=nextPendingInBatch(current); // Shift+N: next pending inside the batch
+    else current=nextPending(current);
+    renderTarget(); controls(); e.preventDefault();
   }
 });
 [['decision','decision'],['initials','reviewer_initials'],['notes','reviewer_notes'],['correction','corrected_labels_json']]

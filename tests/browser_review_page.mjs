@@ -219,6 +219,18 @@ try {
   assert.equal(a11y.mains,1);assert.ok(a11y.header);
   assert.equal(a11y.panels,3);assert.ok(a11y.labelled);assert.equal(a11y.selected,1);
   check('single main landmark, headered page, labelled tab panels');
+  // Batch-scoped next pending: with both targets undecided, Shift+N stays inside the
+  // cursor's batch (record 0 is batch 8a's only member) while N searches globally.
+  const saved0=await evaluate(`decisions.get('SYNTH-001\\nclaim_checklist')`), saved1=await evaluate(`decisions.get('SYNTH-002\\nentity_name')`);
+  await evaluate(`decisions.set('SYNTH-001\\nclaim_checklist',{decision:'NOT_REVIEWED'});decisions.set('SYNTH-002\\nentity_name',{decision:'NOT_REVIEWED'});`);
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
+  await evaluate(`document.activeElement.dispatchEvent(Object.assign(new KeyboardEvent('keydown',{key:'N',shiftKey:true,bubbles:true,cancelable:true})))`);
+  assert.equal(await evaluate(`$('target').value`),'0','Shift+N stays within the cursor batch');
+  await evaluate(`document.activeElement.dispatchEvent(Object.assign(new KeyboardEvent('keydown',{key:'N',bubbles:true,cancelable:true})))`);
+  assert.equal(await evaluate(`$('target').value`),'1','plain N searches the whole list');
+  await evaluate(`decisions.set('SYNTH-001\\nclaim_checklist',${JSON.stringify(saved0)});decisions.set('SYNTH-002\\nentity_name',${JSON.stringify(saved1)});`);
+  assert.match(await evaluate(`$('kbd-legend').textContent`),/Shift\+N next pending in batch/);
+  check('batch-scoped next pending and keyboard legend');
   // Launch panel: shown because the server says launch is enabled.
   await waitFor(`!$('launch-panel').hidden && $('launch-target').options.length===3`);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#launch-target optgroup')].map(g=>g.label)`),['Campaign','Public trial']);
