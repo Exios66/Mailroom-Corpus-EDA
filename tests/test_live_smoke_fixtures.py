@@ -101,7 +101,9 @@ def test_recorded_fixture_bills_no_gold(doc_type):
         assert launch.gold_reason(row) == "", row["document_id"]
         if doc_type == "contract":
             assert row["source_corpus"] == "sec_edgar"
-            assert not (row["gt_fields"] or {}).get("cuad_clause_labels")
+            labels = (row["gt_fields"] or {}).get("cuad_clause_labels")
+            # Published values are JSON text: '{}' means no CUAD labels.
+            assert not (json.loads(labels) if isinstance(labels, str) and labels.strip() else labels)
         if doc_type == "merger_agreement":
             assert not launch.derive.maud_consideration_answer(row)
 
@@ -585,3 +587,24 @@ def test_the_command_line_has_the_four_commands():
         assert parser.parse_args(argv).command == argv[0]
     assert parser.parse_args(["record", "--initials", "AB"]).cap_usd == 1.0
     assert parser.parse_args(["record", "--initials", "AB"]).documents == 2
+
+
+def test_rebuild_refreshes_the_packet_from_recorded_answers_without_billing(root, monkeypatch):
+    """Post-processing changed but the prompts did not: rebuild rewrites the expected packet offline."""
+    def change(packet):
+        packet["records"][0]["candidate_status"] = "something_else"
+    edit_json(root / "correspondence" / "expected-review-data.json", change)
+    assert sf.replay(["correspondence"], root=root, out=io.StringIO()) == 1
+    out = io.StringIO()
+    assert sf.rebuild(["correspondence"], root=root, out=out) == 0
+    assert "rebuilt correspondence" in out.getvalue()
+    assert sf.replay(["correspondence"], root=root, out=io.StringIO()) == 0
+
+
+def test_rebuild_refuses_a_stale_fixture_and_names_the_re_record_command(root):
+    def change(rows):
+        rows[0]["doc_text"] += " changed"
+    edit_jsonl(root / "correspondence" / "documents.jsonl", change)
+    out = io.StringIO()
+    assert sf.rebuild(["correspondence"], root=root, out=out) == 1
+    assert "record --types correspondence" in out.getvalue()

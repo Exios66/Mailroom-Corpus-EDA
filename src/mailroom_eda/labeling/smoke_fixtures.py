@@ -1001,6 +1001,17 @@ def replay_fixture(path: Path) -> list[str]:
     against ``expected-review-data.json``. Returns the difference lines (empty when identical).
     Raises :class:`StaleFixture` when the code asks for an answer the fixture does not hold."""
     fx = load_fixture(path)
+    got, rc = replay_packet(fx)
+    expected = normalize_packet(_read_json(fx.path / "expected-review-data.json"))
+    lines = diff_json(expected, got)
+    if rc != fx.manifest.get("exit_code", rc):
+        lines.append(f"  exit code: recorded {fx.manifest['exit_code']}, replay {rc}")
+    return lines
+
+
+def replay_packet(fx: "Fixture") -> tuple[Any, int]:
+    """The normalized review packet the current code builds from ``fx``'s recorded answers, and the
+    runner's exit code. Offline; raises :class:`StaleFixture` for an answer the fixture lacks."""
     m = fx.manifest
     chat = RecordedChat(fx)
     rows = fx.rows()
@@ -1023,11 +1034,34 @@ def replay_fixture(path: Path) -> list[str]:
             raise FixtureError(f"replay of {fx.doc_type} wrote no review packet: "
                                f"{note.get('review_packet_error', 'unknown reason')}")
         got = normalize_packet(json.loads(packet_path.read_text(encoding="utf-8")), [tmp])
-    expected = normalize_packet(_read_json(fx.path / "expected-review-data.json"))
-    lines = diff_json(expected, got)
-    if rc != m.get("exit_code", rc):
-        lines.append(f"  exit code: recorded {m['exit_code']}, replay {rc}")
-    return lines
+    return got, rc
+
+
+def rebuild(types: Sequence[str] | None = None, *, root: Path = FIXTURE_ROOT, out: TextIO | None = None) -> int:
+    """Rewrite each fixture's ``expected-review-data.json`` from its recorded answers. Offline, no spend.
+
+    For changes after the model call (evidence checks, agreement, export): the recorded answers are
+    still what the current code would ask for. A fixture that fails ``check`` is refused, because its
+    answers no longer match the requests; that needs ``record --replace``. Exit 1 on any refusal."""
+    out = out or sys.stdout
+    say = lambda text="": print(text, file=out)  # noqa: E731
+    bad = 0
+    for path in fixture_dirs(Path(root), list(types or DOC_TYPES)):
+        try:
+            mismatches, fx = check_fixture(path)
+            if mismatches:
+                bad += 1
+                say("\n".join(stale_message(fx, mm) for mm in mismatches))
+                say(f"not rebuilt: {path.name} is stale; re-record it instead")
+                continue
+            got, _rc = replay_packet(fx)
+        except FixtureError as exc:
+            bad += 1
+            say(str(exc))
+            continue
+        _write_json(path / "expected-review-data.json", got)
+        say(f"rebuilt {path.name}: expected-review-data.json now matches the current code")
+    return 1 if bad else 0
 
 
 def replay(types: Sequence[str] | None = None, *, root: Path = FIXTURE_ROOT, out: TextIO | None = None) -> int:
@@ -1096,6 +1130,8 @@ def _parser() -> argparse.ArgumentParser:
     for name, helptext in (("record", "record fixtures: the ONLY paid command (--plan-only spends nothing)"),
                            ("check", "offline: is each fixture still what the current code would send?"),
                            ("replay", "offline: replay recorded answers through the runner and diff the packet"),
+                           ("rebuild", "offline: rewrite expected packets from recorded answers after a "
+                                       "post-processing change (refuses stale fixtures)"),
                            ("verify-hub", "network: re-download the public file and confirm each document's hash")):
         cmd = sub.add_parser(name, help=helptext)
         cmd.add_argument("--types", nargs="+", choices=DOC_TYPES, default=None,
@@ -1127,6 +1163,8 @@ def main(argv: Sequence[str] | None = None, **seams: Any) -> int:
         return check(args.types, root=args.root, out=out)
     if args.command == "replay":
         return replay(args.types, root=args.root, out=out)
+    if args.command == "rebuild":
+        return rebuild(args.types, root=args.root, out=out)
     try:
         problems = verify_hub(args.types, root=args.root, hub=seams.get("hub"))
     except FixtureError as exc:

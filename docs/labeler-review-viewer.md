@@ -235,6 +235,7 @@ All offline, none spends anything:
 ```bash
 PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.smoke_fixtures check    # is each fixture still current?
 PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.smoke_fixtures replay   # replay the answers, diff the packet
+PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.smoke_fixtures rebuild  # rewrite expected packets after a post-processing change (no spend)
 ```
 
 * `check` recomputes with the current code the trial plan (task, set, models, reasoning, `max_tokens`), the

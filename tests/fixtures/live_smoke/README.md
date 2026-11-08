@@ -23,6 +23,7 @@ or private document belongs here.
 ```bash
 PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.smoke_fixtures check     # offline: still current?
 PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.smoke_fixtures replay    # offline: replay answers, diff the packet
+PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.smoke_fixtures rebuild   # offline: rewrite expected packets after a post-processing change
 PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.smoke_fixtures record --initials XX --plan-only   # downloads the public file, spends nothing
 PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.smoke_fixtures record --initials XX --cap-usd 1.00  # PAID
 MAILROOM_LIVE_HUB=1 .venv/bin/python -m pytest tests/test_live_smoke_fixtures.py   # also re-checks the text against the Hub
@@ -31,5 +32,12 @@ MAILROOM_LIVE_HUB=1 .venv/bin/python -m pytest tests/test_live_smoke_fixtures.py
 `record` is the only command that spends money. See `docs/labeler-review-viewer.md`, "Gold smoke
 fixtures", for when to re-record and what it costs. A fixture that `check` calls stale is never
 edited by hand: it is re-recorded with `--replace`.
+
+When `replay` fails but `check` passes, the code still sends the recorded requests and only the
+processing after the answers changed (evidence checks, agreement, export). Read the diff it
+prints, and if the new packet is the intended result, run `rebuild`: it rewrites
+`expected-review-data.json` from the recorded answers and spends nothing. `rebuild` refuses a
+fixture that `check` calls stale. A recorded call the code no longer makes (for example a repair
+that a verifier fix made unnecessary) stays in `calls.jsonl` as the record of what was billed.
 
 Nothing under this folder is a test module, so pytest collects nothing from it.

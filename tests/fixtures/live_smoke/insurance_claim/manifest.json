@@ -1,0 +1,102 @@
+{
+ "calls": {
+  "answered": 4,
+  "errors": 0,
+  "reasoning_runaways": 0,
+  "repairs": 0
+ },
+ "cap_usd": {
+  "this_type": 0.15,
+  "total_requested": 1.0
+ },
+ "dataset": {
+  "file": "ground_truth_hardened.jsonl",
+  "file_sha256": "ed0ae5cd471f28db4d55e438aded34dde2a198ad40e60b5e4c7cdb90624361cb",
+  "repo": "Lucius-Morningstar/mailroom-dataset",
+  "revision": "ccd040f6a1b6b414bdefd161cdc622b68f6dacf8",
+  "tag": "v9.3"
+ },
+ "doc_type": "insurance_claim",
+ "documents": [
+  {
+   "chars": 7559,
+   "document_id": "public-v9.3:DOC-000b010d6bbd9322",
+   "published_document_id": "DOC-000b010d6bbd9322",
+   "split": "train",
+   "subclass": "property",
+   "text_sha256": "5bc21b7a55ce5a81872d18f54511bb305db00f3f1b1862f989df63f4764470f2"
+  },
+  {
+   "chars": 646,
+   "document_id": "public-v9.3:DOC-005e731c079ea3c5",
+   "published_document_id": "DOC-005e731c079ea3c5",
+   "split": "train",
+   "subclass": "auto",
+   "text_sha256": "e38be042dc7850a24e5d8914f135c8d6939e25e92aa3c99ce174720f6aef8103"
+  }
+ ],
+ "exit_code": 0,
+ "initials": "JJB",
+ "max_tokens": {
+  "minimax/minimax-m3.1-flash": 7660,
+  "z-ai/glm-5.3-flashx-legal": 6024
+ },
+ "models": [
+  "z-ai/glm-5.3-flashx-legal",
+  "minimax/minimax-m3.1-flash"
+ ],
+ "prompts": [
+  {
+   "document_id": "public-v9.3:DOC-000b010d6bbd9322",
+   "input_sha256": "d9f4d46c45d07562aad329d5b6ac527697fb1bfa731f452bd53e79cb0cd92044",
+   "model": "z-ai/glm-5.3-flashx-legal",
+   "prompt_sha256": "ff429ff3eaca6b69798f701e41ed84c5004d9e003c458dc8d1a4f552ca54d2c2",
+   "published_document_id": "DOC-000b010d6bbd9322",
+   "schema_sha256": "19b61b118c9c7bc225b895d9a2497078b59e6853079e3594a8bc2e695d525280",
+   "variant": ""
+  },
+  {
+   "document_id": "public-v9.3:DOC-000b010d6bbd9322",
+   "input_sha256": "d9f4d46c45d07562aad329d5b6ac527697fb1bfa731f452bd53e79cb0cd92044",
+   "model": "minimax/minimax-m3.1-flash",
+   "prompt_sha256": "ff429ff3eaca6b69798f701e41ed84c5004d9e003c458dc8d1a4f552ca54d2c2",
+   "published_document_id": "DOC-000b010d6bbd9322",
+   "schema_sha256": "19b61b118c9c7bc225b895d9a2497078b59e6853079e3594a8bc2e695d525280",
+   "variant": ""
+  },
+  {
+   "document_id": "public-v9.3:DOC-005e731c079ea3c5",
+   "input_sha256": "71be35a688b86d48c5cf2f8a31c8b03b6d084ed7fa7801d46b9669b2016dc8f0",
+   "model": "z-ai/glm-5.3-flashx-legal",
+   "prompt_sha256": "ff429ff3eaca6b69798f701e41ed84c5004d9e003c458dc8d1a4f552ca54d2c2",
+   "published_document_id": "DOC-005e731c079ea3c5",
+   "schema_sha256": "19b61b118c9c7bc225b895d9a2497078b59e6853079e3594a8bc2e695d525280",
+   "variant": ""
+  },
+  {
+   "document_id": "public-v9.3:DOC-005e731c079ea3c5",
+   "input_sha256": "71be35a688b86d48c5cf2f8a31c8b03b6d084ed7fa7801d46b9669b2016dc8f0",
+   "model": "minimax/minimax-m3.1-flash",
+   "prompt_sha256": "ff429ff3eaca6b69798f701e41ed84c5004d9e003c458dc8d1a4f552ca54d2c2",
+   "published_document_id": "DOC-005e731c079ea3c5",
+   "schema_sha256": "19b61b118c9c7bc225b895d9a2497078b59e6853079e3594a8bc2e695d525280",
+   "variant": ""
+  }
+ ],
+ "reasoning": {
+  "minimax/minimax-m3.1-flash": "low",
+  "z-ai/glm-5.3-flashx-legal": "low"
+ },
+ "recorded_utc": "2026-11-08T05:54:59Z",
+ "recorder_commit": "f77cf1a0f9693e868dd7e81f7122c46c4fe857b3",
+ "recorder_tree_dirty": false,
+ "response_schema_sha256": "19b61b118c9c7bc225b895d9a2497078b59e6853079e3594a8bc2e695d525280",
+ "schema_version": 1,
+ "set": "remainder",
+ "spent_by_model": {
+  "minimax/minimax-m3.1-flash": 0.001444,
+  "z-ai/glm-5.3-flashx-legal": 0.002498
+ },
+ "spent_usd": 0.003942,
+ "task": "claim_checklist"
+}
