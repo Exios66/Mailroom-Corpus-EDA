@@ -60,25 +60,51 @@ def printed_run_ok(doc_text: str, item: str, labels):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--task", default="claim_checklist")
-    ap.add_argument("--doc-tsv", required=True)
+    ap.add_argument("--task", default="claim_checklist",
+                    help="label task; corporate grades scalar values, list tasks grade items")
+    ap.add_argument("--doc-tsv", required=False,
+                    help="adjudication-style CSV with a document_id column (list tasks)")
     ap.add_argument("--state", default=str(runner.DEFAULT_STAGE / "ground_truth_hardened.jsonl"))
+    ap.add_argument("--corporate-labels", required=False,
+                    help="10.1-style corporate-labels.jsonl: texts come from the recorded gold docs")
     ap.add_argument("--cap-usd", type=float, default=0.15)
     ap.add_argument("--provider", default="openrouter")
     args = ap.parse_args()
 
     doc_text: dict[str, str] = {}
-    with open(args.state, encoding="utf-8") as fh:
-        for line in fh:
-            d = json.loads(line)
-            doc_text[d["document_id"]] = d.get("doc_text") or d.get("text") or ""
-    import csv
-    doc_ids = []
-    with open(args.doc_tsv, encoding="utf-8") as fh:
-        for r in csv.DictReader(fh):
-            if r["document_id"] not in doc_ids:
-                doc_ids.append(r["document_id"])
-    rows = {d["document_id"]: d for d in (json.loads(l) for l in open(args.state, encoding="utf-8"))}
+    doc_ids: list[str] = []
+    rows: dict[str, dict] = {}
+    report: dict = {"task": args.task, "models": list(MODELS), "answers": []}
+    if args.corporate_labels:
+        if args.task != "corporate":
+            print("--corporate-labels requires --task corporate"); return 1
+        import hashlib
+        labels_path = Path(args.corporate_labels)
+        docs_dir = REPO / "data/v10/kl3m/gold/docs"
+        for line in open(labels_path, encoding="utf-8"):
+            rec = json.loads(line)
+            doc_id = rec["doc_file"].removeprefix("docs/")
+            text = (docs_dir / doc_id).read_text(encoding="utf-8")
+            digest = hashlib.sha256(text.encode()).hexdigest()
+            if rec.get("text_sha256") and digest != rec["text_sha256"]:
+                report.setdefault("sha_mismatches", []).append(doc_id)
+            doc_text[doc_id] = text
+            rows[doc_id] = {"document_id": doc_id, "doc_text": text,
+                            "expected_subclass": rec.get("v10_subclass") or "other"}
+            doc_ids.append(doc_id)
+    else:
+        if not args.doc_tsv:
+            print("one of --doc-tsv or --corporate-labels is required"); return 1
+        with open(args.state, encoding="utf-8") as fh:
+            for line in fh:
+                d = json.loads(line)
+                doc_text[d["document_id"]] = d.get("doc_text") or d.get("text") or ""
+        import csv
+        with open(args.doc_tsv, encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                if r["document_id"] not in doc_ids:
+                    doc_ids.append(r["document_id"])
+        rows = {d["document_id"]: d for d in (json.loads(l) for l in open(args.state, encoding="utf-8"))}
 
     backend = providers.Backend.from_env(args.provider)
     # max_tokens per model, from the recorded insurance-claim fixture (the probe grades
@@ -86,7 +112,7 @@ def main() -> int:
     fixture_manifest = REPO / "tests/fixtures/live_smoke/insurance_claim/manifest.json"
     per_model = json.loads(fixture_manifest.read_text()).get("max_tokens") if fixture_manifest.exists() else {}
     spent = 0.0
-    report = {"task": args.task, "documents": len(doc_ids), "models": list(MODELS), "answers": []}
+    report["documents"] = len(doc_ids)
     clean_calls = bad_calls = 0
     for doc_id in doc_ids:
         row = rows.get(doc_id)
@@ -120,9 +146,21 @@ def main() -> int:
                 continue
             items = parsed.get("items") if isinstance(parsed, dict) else parsed
             doc = doc_text[doc_id]
-            bad = [i for i in items or [] if isinstance(i, str) and not printed_run_ok(doc, i, labels=None)]
-            entry = {"document_id": doc_id, "model": model, "items": len(items or []),
-                     "violations": bad}
+            if args.task == "corporate":
+                # corporate answers a {field: scalar|list} dict: grade every value printed-run
+                bad = []
+                size = 0
+                for field, value in (parsed or {}).items():
+                    vals = value if isinstance(value, list) else [value]
+                    for v in vals:
+                        size += 1
+                        if isinstance(v, str) and v and not printed_run_ok(doc, v, None):
+                            bad.append(f"{field}: {v}")
+                entry = {"document_id": doc_id, "model": model, "items": size, "violations": bad}
+            else:
+                bad = [i for i in items or [] if isinstance(i, str) and not printed_run_ok(doc, i, labels=None)]
+                entry = {"document_id": doc_id, "model": model, "items": len(items or []),
+                         "violations": bad}
             report["answers"].append(entry)
             if bad:
                 bad_calls += 1
