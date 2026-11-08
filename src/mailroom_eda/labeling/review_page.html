@@ -129,6 +129,7 @@ The API key field is optional, is never stored (not even in this browser) and is
 <form id="review-form">
 <label>Decision <select id="decision"><option>NOT_REVIEWED</option><option>ACCEPT</option><option>CORRECT</option><option>REJECT</option><option>NEEDS_SOURCE</option></select></label>
 <p id="decision-help" class="muted"></p>
+<label id="manual-wrap" hidden><input type="checkbox" id="manual-verify"> I verified this value against the full source myself</label>
 <label>Reviewer initials (2–6 uppercase letters) <input id="initials" pattern="[A-Z]{2,6}" maxlength="6" autocomplete="off"></label>
 <label>Reviewer notes <textarea id="notes"></textarea></label>
 <label>Complete replacement JSON (CORRECT only) <textarea id="correction" spellcheck="false" placeholder='A JSON value, not a patch'></textarea></label>
@@ -153,7 +154,7 @@ let records=[], current=0, busy=false, dirty=false, staleDraft=false, pendingDat
 let decisions=new Map(), history=[];
 const KEY=(r)=>r.document_id+'\n'+r.field;
 const storageKey='mailroom-review-draft/'+packet.packet_id;
-function blank(r){ return {document_id:r.document_id, field:r.field, document_sha256:r.document_sha256, decision:'NOT_REVIEWED', corrected_labels_json:'', reviewer_initials:'', reviewer_notes:'', updated_at:''}; }
+function blank(r){ return {document_id:r.document_id, field:r.field, document_sha256:r.document_sha256, decision:'NOT_REVIEWED', corrected_labels_json:'', reviewer_initials:'', reviewer_notes:'', updated_at:'', verified_models:[], manual_source_verification:false}; }
 function localDraft(){ return [...decisions.values()].some((d)=>d.decision!=='NOT_REVIEWED'||d.reviewer_notes||d.reviewer_initials||d.corrected_labels_json); }
 /** Reset targets, item choices, decisions, and history from packet data.
  * A truthy keep marks the resulting state as unsaved.
@@ -392,21 +393,36 @@ function renderSource(record){
     ev.append(row); });
 }
 function modelAnswers(record){
-  // One row per model (and per pass): the exporter's model_outputs, so a reviewer can compare the models.
+  // One row per model (and per pass): the exporter's model_outputs, so a reviewer can compare
+  // the models and record which one(s) produced the verified output.
   const outs=Array.isArray(record.model_outputs)?record.model_outputs.filter((o)=>o&&typeof o==='object'):[];
   if (!outs.length) return null;
+  const state=decisions.get(KEY(record))||{};
   const box=node('details'); box.id='model-answers'; box.open=true;
   box.append(node('summary','Model answers ('+outs.length+')'));
   const t=node('table'), head=node('tr');
-  ['Model','Value','Status','Evidence'].forEach((h)=>head.append(node('th',h))); t.append(head);
+  ['Verified','Model','Value','Status','Evidence'].forEach((h)=>head.append(node('th',h))); t.append(head);
   outs.forEach((o)=>{
-    const tr=node('tr'), value=node('td'), status=node('td'), ev=node('td');
+    const tr=node('tr'), verified=node('td'), value=node('td'), status=node('td'), ev=node('td');
+    if (o.model){
+      const tick=node('input'); tick.type='checkbox'; tick.setAttribute('aria-label','Verified model '+o.model);
+      tick.checked=(state.verified_models||[]).includes(String(o.model));
+      tick.addEventListener('change', ()=>{
+        const before=clone(decisions.get(KEY(record))), d=decisions.get(KEY(record));
+        const names=new Set(d.verified_models||[]);
+        if (tick.checked) names.add(String(o.model)); else names.delete(String(o.model));
+        d.verified_models=[...names].sort(); d.updated_at=now();
+        logChange(before, d);
+      });
+      verified.append(tick);
+    }
+    tr.append(verified, node('td',String(o.model||'?')+(o.pass?' (pass '+o.pass+')':''),'k'), value, status, ev);
     value.append(show(o.value, record.dojo_type));
     status.append(chip(label(o.status)||'—', o.status==='present'?'good':''));
     if (o.confidence!=null) status.append(node('span',' confidence '+o.confidence,'muted'));
     const quote=typeof o.evidence==='string'&&o.evidence?o.evidence:(Array.isArray(o.evidence_spans)?o.evidence_spans.map((s)=>s.quote).filter(Boolean).join(' … '):'');
     ev.append(quote?node('span',quote):node('span','No evidence quote','empty'));
-    tr.append(node('td',String(o.model||'?')+(o.pass?' (pass '+o.pass+')':''),'k'), value, status, ev); t.append(tr);
+    t.append(tr);
   });
   box.append(t); return box;
 }
@@ -445,6 +461,9 @@ function renderTarget(){
   }
   $('decision').value=d.decision; $('initials').value=d.reviewer_initials;
   $('notes').value=d.reviewer_notes; $('correction').value=d.corrected_labels_json;
+  const blocked=record.candidate_status!=='source_checks_passed';
+  $('manual-wrap').hidden=!blocked;
+  $('manual-verify').checked=!!d.manual_source_verification;
   $('decision-help').textContent=packet.decision_key?packet.decision_key[d.decision]||'':'';
   $('correction-help').textContent='Required only for CORRECT. Native JSON type: '
     +(record.correction_type==='array'?'array of strings':record.correction_type==='number'?'number':record.correction_type||'string');
@@ -577,7 +596,10 @@ function validate(){
   const d=decision();
   if (d.decision==='NOT_REVIEWED') return true;
   if (!/^[A-Z]{2,6}$/.test(d.reviewer_initials)){ message('Reviewer initials (2–6 uppercase letters) are required for a decision.'); return false; }
-  if (d.decision==='ACCEPT'&&records[current].candidate_status!=='source_checks_passed'){ message('This candidate did not pass automated source checks; choose CORRECT with verified JSON, REJECT, or NEEDS_SOURCE.'); return false; }
+  if (d.decision==='ACCEPT'&&records[current].candidate_status!=='source_checks_passed'){
+    if (!$('manual-verify').checked){ message('This candidate did not pass automated source checks. Verify the value against the full source, tick "I verified this value against the full source myself", then ACCEPT — or choose CORRECT with verified JSON, REJECT, or NEEDS_SOURCE.'); return false; }
+    d.manual_source_verification=true; // logged with the decision; unverified ACCEPT stays impossible
+  }
   if (d.decision==='CORRECT'){ try { JSON.parse(d.corrected_labels_json||''); } catch (exc) { message('CORRECT needs valid JSON matching the native type.'); return false; } }
   return true;
 }
@@ -740,6 +762,12 @@ document.addEventListener('keydown', (e)=>{
   if (id==='decision') $('decision-help').textContent=packet.decision_key?packet.decision_key[decision().decision]||'':'';
   logChange(before, decision());
 }));
+$('manual-verify').addEventListener('change', ()=>{
+  const before=clone(decision());
+  decision().manual_source_verification=$('manual-verify').checked;
+  decision().updated_at=now();
+  logChange(before, decision());
+});
 
 // ---- Launch panel (only when the server runs with --enable-launch) ----
 let launchOpts=null, launchPre=null, launchPoll=null, launchKeyUsed=false, launchWatching=false;

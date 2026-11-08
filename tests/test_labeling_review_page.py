@@ -90,6 +90,34 @@ def test_blocked_accept_and_correction_shapes():
     page.validate_return(p, r)
 
 
+def test_blocked_accept_allowed_after_manual_verification_with_model_attribution():
+    p = packet(); p["records"][0]["candidate_status"] = "needs_source_review"
+    p["records"][0]["model_outputs"] = [
+        {"model": "synthetic/model-a", "value": ["x"], "status": "present", "evidence": ""},
+        {"model": "synthetic/model-b", "value": ["x"], "status": "present", "evidence": ""},
+    ]
+    p["packet_id"] = page.packet_id(p["records"])
+    r = returned(p)
+    r["decisions"][0].update(manual_source_verification=True,
+                             verified_models=["synthetic/model-a", "synthetic/model-b"])
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    page.validate_return(p, r)  # the reviewer verified the value against the full source
+
+    r["decisions"][0]["verified_models"] = ["synthetic/model-c"]
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    with pytest.raises(ValueError, match="did not run"):
+        page.validate_return(p, r)
+    r["decisions"][0]["verified_models"] = "synthetic/model-a"
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    with pytest.raises(ValueError, match="verified_models must be a list"):
+        page.validate_return(p, r)
+    r["decisions"][0]["verified_models"] = ["synthetic/model-a"]
+    r["decisions"][0]["manual_source_verification"] = "yes"
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    with pytest.raises(ValueError, match="manual_source_verification must be boolean"):
+        page.validate_return(p, r)
+
+
 def test_changed_correction_cannot_reuse_old_history():
     p = packet(); r = returned(p, "CORRECT")
     r["decisions"][0]["corrected_labels_json"] = '[]'

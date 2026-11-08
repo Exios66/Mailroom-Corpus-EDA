@@ -70,6 +70,8 @@ def reviewed_documents(packets: Sequence[Path], decisions: Sequence[dict]) -> li
                 "reviewer": event.get("reviewer", ""),
                 "server_received_at": event.get("server_received_at", ""),
                 "receipt_id": event.get("receipt_id", ""),
+                "verified_models": event.get("verified_models", []),
+                "manual_source_verification": event.get("manual_source_verification", False),
             })
     return sorted(documents.values(), key=lambda d: d["document_id"])
 

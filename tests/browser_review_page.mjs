@@ -268,6 +268,23 @@ try {
   assert.equal(await evaluate(`$('target').value`),'1','the jump lands on record 1 (the only pending target of batch 9a)');
   await evaluate(`decisions.set('SYNTH-001\\nclaim_checklist',${JSON.stringify(saved0)});decisions.set('SYNTH-002\\nentity_name',${JSON.stringify(saved1)});`);
   check('batch jump select navigates to a batch first pending');
+  // Manual source verification + model attribution: a candidate that failed the
+  // automated source checks can now be ACCEPTed after the reviewer verifies it against
+  // the full source, and the decision records which model(s) produced the verified value.
+  await evaluate(`$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  const ticked=await evaluate(`(()=>{[...document.querySelectorAll('#model-answers input')][0].click();return decisions.get('SYNTH-002\\nentity_name').verified_models;})()`);
+  assert.deepEqual(ticked,['synthetic/model-a'],'ticking a model row records the attribution');
+  await evaluate(`records[1].candidate_status='needs_source_review';renderTarget();`);
+  assert.equal(await evaluate(`$('manual-wrap').hidden`),false,'blocked candidates expose the manual-verification checkbox');
+  await evaluate(`$('decision').value='ACCEPT';$('decision').dispatchEvent(new Event('input'));`);
+  assert.equal(await evaluate(`validate()`),false,'blocked ACCEPT without manual verification is refused');
+  assert.match(await evaluate(`$('message').textContent`),/I verified this value against the full source myself/);
+  await evaluate(`$('manual-verify').click()`);
+  assert.equal(await evaluate(`validate()`),true,'manual verification unblocks the ACCEPT');
+  assert.equal(await evaluate(`decisions.get('SYNTH-002\\nentity_name').manual_source_verification`),true,
+    'the verification flag travels with the decision');
+  await evaluate(`records[1].candidate_status='source_checks_passed';decisions.set('SYNTH-002\\nentity_name',${JSON.stringify(saved1)});persist();$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  check('manual source verification and per-model attribution');
   // Launch panel: shown because the server says launch is enabled.
   await waitFor(`!$('launch-panel').hidden && $('launch-target').options.length===3`);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#launch-target optgroup')].map(g=>g.label)`),['Campaign','Public trial']);

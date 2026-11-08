@@ -118,7 +118,8 @@ def validate_return(packet: Mapping[str, Any], returned: Mapping[str, Any]) -> N
         raise ValueError("decisions and history arrays are required")
     seen = set()
     allowed = {"document_id", "field", "document_sha256", "decision", "corrected_labels_json",
-               "reviewer_initials", "reviewer_notes", "updated_at"}
+               "reviewer_initials", "reviewer_notes", "updated_at",
+               "verified_models", "manual_source_verification"}
     for d in decisions:
         if not isinstance(d, dict) or set(d) - allowed:
             raise ValueError("unknown decision fields")
@@ -135,12 +136,22 @@ def validate_return(packet: Mapping[str, Any], returned: Mapping[str, Any]) -> N
         for name in ("corrected_labels_json", "reviewer_initials", "reviewer_notes"):
             if not isinstance(d.get(name), str):
                 raise ValueError(f"{name} must be text")
+        verified_models = d.get("verified_models", [])
+        if not isinstance(verified_models, list) or not all(isinstance(m, str) for m in verified_models):
+            raise ValueError(f"verified_models must be a list of model names: {key}")
+        known_models = {str(o.get("model")) for o in source.get("model_outputs") or []
+                        if isinstance(o, dict) and o.get("model")}
+        if verified_models and known_models and not set(verified_models) <= known_models:
+            raise ValueError(f"verified_models names a model this target did not run: {key}")
+        if not isinstance(d.get("manual_source_verification", False), bool):
+            raise ValueError(f"manual_source_verification must be boolean: {key}")
         if decision == "NOT_REVIEWED":
             continue
         if not INITIALS_RE.fullmatch(d["reviewer_initials"]) or not _time(d.get("updated_at")):
             raise ValueError(f"reviewer initials and a timestamp are required: {key}")
-        if decision == "ACCEPT" and source["candidate_status"] != "source_checks_passed":
-            raise ValueError(f"blocked candidate cannot be accepted: {key}")
+        if decision == "ACCEPT" and source["candidate_status"] != "source_checks_passed" \
+                and d.get("manual_source_verification") is not True:
+            raise ValueError(f"blocked candidate cannot be accepted without manual source verification: {key}")
         if decision == "CORRECT":
             try:
                 corrected = json.loads(d["corrected_labels_json"])

@@ -463,6 +463,14 @@ class ReviewPortal:
                 "rules": [
                     "Read /review-data.json first: records are keyed on (document_id, field); check each record's candidate_status before ACCEPT.",
                     "Saved decisions carry initials (2-6 capital letters) and updated_at as a timestamp with a timezone.",
+                    "ACCEPT on a candidate that did not pass automated source checks (candidate_status "
+                    "'needs_source_review') is allowed only with manual_source_verification: true — the "
+                    "reviewer verified the value against the full source themselves. Without that flag the "
+                    "server refuses it (save 400). CORRECT with complete replacement JSON, REJECT and "
+                    "NEEDS_SOURCE never need the flag.",
+                    "Record which model(s) produced the verified output in verified_models (array of the "
+                    "record's model_outputs model names); the journal and every local backup keep that "
+                    "attribution alongside the decision.",
                     "Per-label items: when a record's correction_type is 'array' and candidate_labels is a list of "
                     "strings, preserve or drop individual labels by posting CORRECT whose corrected_labels_json "
                     "is exactly the JSON array of kept labels (apply edits inline). The review page builds the "
@@ -535,6 +543,8 @@ class ReviewPortal:
                                 "target_sha256": target_hash, "split": source["split"],
                                 "decision": decision["decision"], "value": value, "human_confirmed": confirmed,
                                 "schema_blocker": schema_blocker,
+                                "verified_models": list(decision.get("verified_models") or []),
+                                "manual_source_verification": bool(decision.get("manual_source_verification")),
                                 "reviewer": decision["reviewer_initials"], "reviewer_notes": decision["reviewer_notes"],
                                 "server_received_at": received_at, "decision_sha256": signature,
                                 "provenance": source["portal_provenance"]})

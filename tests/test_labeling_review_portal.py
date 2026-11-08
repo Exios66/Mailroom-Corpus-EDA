@@ -110,6 +110,21 @@ def test_correct_can_drop_a_single_label_item(env):
     assert json.loads(row["corrected_labels_json"]) == [items[0], items[1]]
 
 
+def test_save_logs_model_attribution_and_manual_verification(env):
+    """The decision journal keeps which model(s) the reviewer verified and whether the
+    human verified a source-check-blocked candidate themselves."""
+    data = env.app.data()
+    body = returned(data, ("entity_name", "ACCEPT", None))
+    body["decisions"][0].update(verified_models=["synthetic/model-a"],
+                                manual_source_verification=True)
+    body["history"][0]["after"] = copy.deepcopy(body["decisions"][0])
+    env.app.save(body)
+    event = json.loads((env.out / "confirmed-fields.jsonl").read_text().splitlines()[-1])
+    assert event["verified_models"] == ["synthetic/model-a"]
+    assert event["manual_source_verification"] is True
+    assert event["human_confirmed"] is True
+
+
 def test_collector_finished_packets_only_cache_and_auto_refresh(env, monkeypatch):
     (env.root / "raw").mkdir()
     (env.root / "raw" / "fields.csv").write_text("torn,raw,not_ready")

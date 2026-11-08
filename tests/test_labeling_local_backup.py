@@ -47,6 +47,7 @@ def test_backup_copies_work_and_refuses_a_duplicate_review(tmp_path: Path) -> No
     assert manifest["reviewed_documents"][0]["fields"][0] == {
         "field": "entity_name", "decision": "ACCEPT", "reviewer": "LM",
         "server_received_at": "2026-11-08T20:00:00+00:00", "receipt_id": "r" * 64,
+        "verified_models": [], "manual_source_verification": False,
     }
     assert (Path(first["path"]) / "packets" / "packets" / "corporate-A-review-data.json").is_file()
     assert (Path(first["path"]) / "portal" / "confirmed-fields.jsonl").is_file()
