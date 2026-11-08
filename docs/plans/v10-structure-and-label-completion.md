@@ -317,6 +317,8 @@ Output one JSON object, nothing else: {"clauses": [{"category": "<exact name>", 
 1. category is exactly one of the 41 names in the user message.
 2. text is copied character for character (same words, order, punctuation, capitalisation). Never
    paraphrase, summarise, fix typos or join text from two places. Markdown marks (* _ #) may be dropped.
+   Copy the bytes as printed: placeholder or deletion artifacts (digit-only lines, runs of `----`,
+   runs of blank lines) stay in the quote exactly where they appear; never smooth them away.
 3. Copy the operative sentence or clause, not a whole article and not a heading. A heading alone
    ("Governing Law.", "ARTICLE 3 CONFIDENTIALITY AND NON-COMPETITION") is never a span.
 4. Presence test. Each category in the user message is a question. Add the category only when the span
@@ -527,7 +529,7 @@ ${doc_text_window}
 Document: one business message (${subclass}). Many messages in this corpus carry no headers;
 label only what the text itself shows. Fields:
 - sender (name): the author as printed in a From: header, or the sign-off name; when the sign-off
-  lists several people ("X, title; Y"), take the first name only; not_found if neither.
+  lists several people ("X, title; Y"), take the first signatory's full printed name only; not_found if neither.
 - recipient (name): the main addressee as printed in a To: header, or the salutation name ("Dad,"
   -> "Dad"); a real To: header wins over any name the body addresses; not_found if neither.
 - additional_recipients (entity_list): other To: and Cc: addressees as printed; [] with not_found if none.
@@ -540,8 +542,10 @@ label only what the text itself shows. Fields:
   addressed to the reader most directly, earliest in the text; [] with not_found if none.
 - urgency (label, never not_found): ${urgencies}. time-sensitive = a stated deadline or date that
   is not the send date itself; urgent = explicit urgency words ("asap", "immediate", "urgent",
-  "first thing tomorrow") or an ask for the same day the message was sent; critical = an
-  emergency, legal deadline or outage; otherwise routine.
+  "first thing tomorrow") or an ask for the same day the newest message was sent — judge the day
+  from that message's own printed send date when it carries one; a forward with no printed date
+  is urgent only via the urgency words; critical = an emergency, legal deadline or outage;
+  otherwise routine.
 <email>
 ${doc_text_window}
 </email>

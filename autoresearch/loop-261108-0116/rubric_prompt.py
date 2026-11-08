@@ -79,6 +79,9 @@ BUNDLES: dict[str, tuple[int, list[str], list[tuple[str, str]]]] = {
         (r'never not_found', "label field must always answer"),
         (r'\$\{urgencies\}', "urgency enum inject"),
         (r'carry no headers', "header-absence guidance"),
+        # live-verified themes (correspondence fixture re-record 2026-11-08, Ro1+TCM):
+        (r"first signatory's full printed name", "multi-name sign-off keeps signatory #1 in full"),
+        (r'newest message was sent', "same-day rule anchored to the newest printed send date"),
     ]),
     "intent": (3, ["intent_system.md", "intent_user.md"], [
         (r'closed vocabulary', "closed enum statement"),
@@ -98,6 +101,8 @@ BUNDLES: dict[str, tuple[int, list[str], list[tuple[str, str]]]] = {
         (r'\$\{family_definition\}', "subclass family context"),
         (r'Add no new categories', "repair no-invention guard"),
         (r'Document Name', "document-name metadata field"),
+        # live-verified theme (contract fixture re-record 2026-11-08, it5):
+        (r"bytes as printed|never smooth them away", "scrub artifacts stay in the quote"),
     ]),
 }
 

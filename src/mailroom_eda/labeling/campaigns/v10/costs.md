@@ -7,25 +7,25 @@ exact windowed prompts, typical output per call, x1.25 for retries and repairs;
 
 ## Whole campaign on one model
 
-25.7M prompt and 3.7M output tokens: every task once, each extraction task on one model.
+25.8M prompt and 3.7M output tokens: every task once, each extraction task on one model.
 
 | model | USD |
 |---|---:|
-| `openai/gpt-6-luna-pro` | 4.40 |
-| `anthropic/claude-haiku-5.5` | 4.40 |
-| `openai/gpt-6-luna` | 4.40 |
-| `qwen/qwen3.8-flash` | 5.58 |
-| `z-ai/glm-5.3-flash` | 5.69 |
-| `minimax/minimax-m3.1-flash` | 6.06 |
-| `deepseek/deepseek-v4.1-flash` | 6.24 |
-| `deepseek/deepseek-v4.1-flash-1017` | 12.11 |
-| `z-ai/glm-5.3-flashx-legal` | 14.10 |
-| `google/gemini-3.5-flash-lite` | 16.88 |
-| `Qwen/Qwen3-32B-FP8` | 159.51 |
+| `openai/gpt-6-luna-pro` | 4.41 |
+| `anthropic/claude-haiku-5.5` | 4.41 |
+| `openai/gpt-6-luna` | 4.41 |
+| `qwen/qwen3.8-flash` | 5.59 |
+| `z-ai/glm-5.3-flash` | 5.70 |
+| `minimax/minimax-m3.1-flash` | 6.07 |
+| `deepseek/deepseek-v4.1-flash` | 6.25 |
+| `deepseek/deepseek-v4.1-flash-1017` | 12.13 |
+| `z-ai/glm-5.3-flashx-legal` | 14.12 |
+| `google/gemini-3.5-flash-lite` | 16.90 |
+| `Qwen/Qwen3-32B-FP8` | 159.77 |
 
 ## Recommended plan, chunk by chunk
 
-Projected total **$21.69**; the chunk caps add up to **$33.34**.
+Projected total **$21.71**; the chunk caps add up to **$33.34**.
 Two-model chunks are priced for both models.
 
 | chunk | task | set | slice | docs | calls | models | reasoning | projected USD | cap USD |
@@ -71,7 +71,7 @@ Two-model chunks are priced for both models.
 | 7b | correspondence | remainder | 1/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.62 | 0.90 |
 | 7c | correspondence | remainder | 2/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.62 | 0.88 |
 | 7d | correspondence | remainder | 3/4 | 241 | 482 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.61 | 0.88 |
-| 7e | correspondence | remainder | 4/4 | 239 | 478 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.61 | 0.88 |
+| 7e | correspondence | remainder | 4/4 | 239 | 478 | `deepseek-v4.1-flash` + `minimax-m3.1-flash` | low | 0.62 | 0.88 |
 | 8a | claim_checklist | pilot | all | 30 | 60 | `glm-5.3-flashx-legal` + `minimax-m3.1-flash` | low | 0.09 | 0.15 |
 | 8b | claim_checklist | remainder | all | 290 | 580 | `glm-5.3-flashx-legal` + `minimax-m3.1-flash` | low | 0.77 | 1.10 |
 | 8c | claim_checklist | remainder | all | 290 | 580 | `glm-5.3-flashx-legal` + `minimax-m3.1-flash` | low | 0.79 | 1.10 |
