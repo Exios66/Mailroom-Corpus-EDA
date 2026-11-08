@@ -66,7 +66,7 @@ chunks:
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 1: DeepSeek v4.1 Flash, off"}
   - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash], reasoning: "low", skip: "2026-11-06 run: no κ gain over off (0.680 vs 0.686) at 4x the cost, and one email ran its reasoning past the allowance", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 2: DeepSeek v4.1 Flash, low"}
-  - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash-1017], reasoning: "off", skip: "2026-11-06 run 3.3: complete, kappa 0.8233 passed its gate", cap_usd: 0.00,
+  - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash-1017], reasoning: "off", skip: "2026-11-06 run 3.3 complete (kappa 0.8233); 2026-11-08 it4 verify re-run 3.3r scored kappa 0.7356 and FAILED the 0.75 gate -> prompt reverted", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 3: DeepSeek v4.1 Flash 1017, off"}
   - {id: "3",  task: intent, set: calibration, models: [openai/gpt-6-luna-pro], reasoning: "off", skip: "2026-11-06 run: κ 0.543, clearly the weakest intent arm", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 4: GPT-6 Luna Pro"}

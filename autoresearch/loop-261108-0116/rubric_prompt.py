@@ -44,13 +44,9 @@ BUNDLES: dict[str, tuple[int, list[str], list[tuple[str, str]]]] = {
         (r'mixed_cash_stock_election', "distinct election rule"),
         (r'in lieu of fractional shares', "fractional-share exclusion"),
     ]),
-    "intent": (2, ["intent_system.md"], [
-        (r'an explicit ask beats an update', "ask-vs-update base rule"),
-        (r"sender's own delivery statement", "sender-statement is update (mined: 'I will fax it over to you today')"),
-        (r'even when it relates to a request', "reply-context guard (mined: 'here is the spreadsheet with my comments')"),
-        (r'imperative\s+addressed to the reader', "imperative is request (mined: 'please see the attached')"),
-        (r'never for uncertainty', "'other' only when nothing fits"),
-    ]),
+    # The 2026-11-08 "intent" bundle (sender-statement/imperative tie-break themes) was
+    # DISCARDED: its paid kappa re-run scored 0.7356 vs the 0.8233 baseline (gate 0.75 failed);
+    # the rubric only certifies themes that survived a live verification.
     "claim_checklist": (5, ["extract_rules.md", "claim_checklist.md"], [
         (r'\$\{checklist_categories\}', "registry vocabulary injects"),
         (r'"<Category>: <short verbatim evidence>"', "item shape contract"),
