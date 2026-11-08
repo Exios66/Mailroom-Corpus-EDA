@@ -313,6 +313,23 @@ try {
   assert.match(await evaluate(`$('target-status').textContent`),/auto-saved/);
   await evaluate(`autosaveEnabled=false`);
   check('autosave persists complete decisions without Save');
+  // A reviewer can type while a manual Save is in flight; the response must not erase it.
+  await evaluate(`showTab('review');window.originalRequest=request;window.releaseReviewSave=null;
+    request=async(url,body)=>{if(url==='/api/reviews') await new Promise(resolve=>window.releaseReviewSave=resolve);
+      return window.originalRequest(url,body);};`);
+  await input('notes','Submitted before response.');
+  await evaluate(`$('save').click()`);
+  await waitFor(`!!window.releaseReviewSave`);
+  await input('notes','Newer edit while saving.');
+  await evaluate(`window.releaseReviewSave()`);
+  await waitFor(`!busy`);
+  assert.equal(await evaluate(`$('notes').value`),'Newer edit while saving.');
+  assert.equal(await evaluate(`decision().reviewer_notes`),'Newer edit while saving.');
+  assert.equal(await evaluate(`dirty`),true,'newer work remains unsaved, never falsely durable');
+  assert.match(await evaluate(`$('journal').textContent`),/Updated Reviewer notes/,
+    'the journal describes the actual edit rather than an unexplained ACCEPT to ACCEPT');
+  await evaluate(`request=window.originalRequest`);
+  check('manual save response preserves newer edits');
   // Launch panel: shown because the server says launch is enabled.
   await waitFor(`!$('launch-panel').hidden && $('launch-target').options.length===3`);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#launch-target optgroup')].map(g=>g.label)`),['Campaign','Public trial']);
@@ -393,6 +410,23 @@ try {
   const uxScore=Object.values(uxTasks).filter(Boolean).length;
   fs.writeFileSync(path.join(out,'ux-tasks.json'),JSON.stringify({score:uxScore,total:4,tasks:uxTasks},null,2));
   console.log('UX_TASK_SCORE '+uxScore+'/4');
+  if (uxScore===4){
+    const preserved=await evaluate(`(()=>{
+      const oldPacket=packet,oldDecisions=decisions,oldHistory=history,oldDirty=dirty;
+      const a=records[0], b=records[1];
+      const done={...blank(a),decision:'ACCEPT',reviewer_initials:'AB',updated_at:now()};
+      const prior={...blank(b),decision:'ACCEPT',reviewer_initials:'AB',updated_at:now()};
+      const unfinished={...prior,decision:'CORRECT',corrected_labels_json:'not JSON yet'};
+      decisions=new Map(records.map(r=>[KEY(r),blank(r)]));
+      decisions.set(KEY(a),done);decisions.set(KEY(b),unfinished);
+      history=[{document_id:b.document_id,field:b.field,after:unfinished}];dirty=true;
+      applySave({data:{saved_decisions:[done,prior],saved_history:[]}},true,[done]);
+      const ok=dirty&&decisions.get(KEY(b)).corrected_labels_json==='not JSON yet'&&history.length===1;
+      packet=oldPacket;decisions=oldDecisions;history=oldHistory;dirty=oldDirty;persist();render();
+      return ok;
+    })()`);
+    assert.ok(preserved,'a partial autosave cannot overwrite an excluded draft with its older server decision or discard its history');
+  }
   await evaluate(`showTab('review')`);
   await screenshot('09-review-ux-final');
   // A11y pass: when AXE_PATH is set, the served /axe.js (vendored axe-core) scans the live

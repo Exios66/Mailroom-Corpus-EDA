@@ -571,10 +571,16 @@ function tracker(){
 function renderJournal(){
   const el=$('journal'); el.textContent='';
   if (!history.length){ el.append(node('p','No edits yet for this review session.')); return; }
-  const t=node('table'), head=node('tr'); ['at','target','field','before → after'].forEach((h)=>head.append(node('th',h)));
+  const t=node('table'), head=node('tr'); ['at','target','field','change'].forEach((h)=>head.append(node('th',h)));
   t.append(head);
-  history.forEach((h)=>{ const tr=node('tr'); tr.append(node('td',h.at), node('td',h.document_id), node('td',h.field),
-    node('td', (h.before||{}).decision+' → '+(h.after||{}).decision)); t.append(tr); });
+  history.forEach((h)=>{
+    const before=h.before||{},after=h.after||{};
+    const changed=[...new Set([...Object.keys(before),...Object.keys(after)])]
+      .filter((key)=>key!=='updated_at'&&JSON.stringify(before[key])!==JSON.stringify(after[key]));
+    const detail=before.decision!==after.decision?before.decision+' → '+after.decision
+      :changed.length?'Updated '+changed.map(humanize).join(', ')+' (decision remains '+after.decision+')':'No content change (historical entry)';
+    const tr=node('tr'); tr.append(node('td',h.at),node('td',h.document_id),node('td',h.field),node('td',detail));t.append(tr);
+  });
   el.append(t);
 }
 /** Refresh the review views and packet binding, rebuilding target options when their count changes. */
@@ -671,7 +677,7 @@ function autosavePayload(){
           exported_at:now(), decisions:ds, history:clone(history), slim:true};
 }
 /** Apply a save/slim response: state and tracker always; decisions only when no newer edit raced it. */
-function applySave(result, applyDecisions){
+function applySave(result, applyDecisions, submitted){
   const d=result.data||{};
   packet={...packet};
   if (d.state_revision) packet.state_revision=d.state_revision;
@@ -680,10 +686,17 @@ function applySave(result, applyDecisions){
   if (applyDecisions){
     if (Array.isArray(d.saved_decisions)){
       packet.saved_decisions=d.saved_decisions;
-      (d.saved_decisions||[]).forEach((x)=>{ if(decisions.has(x.document_id+'\n'+x.field)) decisions.set(x.document_id+'\n'+x.field, clone(x)); });
+      const byKey=new Map(records.map((r)=>[KEY(r),r]));
+      const sent=submitted?new Set(submitted.filter((x)=>x.decision!=='NOT_REVIEWED').map((x)=>x.document_id+'\n'+x.field)):null;
+      (d.saved_decisions||[]).forEach((x)=>{ const k=x.document_id+'\n'+x.field;
+        if(decisions.has(k)&&(!sent||sent.has(k))) decisions.set(k,{...blank(byKey.get(k)),...clone(x)}); });
     }
-    if (Array.isArray(d.saved_history)){ packet.saved_history=d.saved_history; history=clone(d.saved_history); }
-    dirty=false;
+    if (Array.isArray(d.saved_history)) packet.saved_history=d.saved_history;
+    const saved=new Map((packet.saved_decisions||[]).map((x)=>[x.document_id+'\n'+x.field,x]));
+    const content=(r,d)=>{ const normalized={...blank(r),...d}; delete normalized.updated_at; return JSON.stringify(normalized); };
+    dirty=records.some((r)=>content(r,decisions.get(KEY(r)))!==content(r,saved.get(KEY(r))||blank(r)));
+    // A partial autosave must not erase the history of unfinished decisions.
+    if (!dirty && Array.isArray(d.saved_history)) history=clone(d.saved_history);
   }
   persist();
   tracker(); renderTargetStatus(); controls(); renderJournal();
@@ -703,10 +716,11 @@ async function runAutoSave(){
   busy=true; controls();
   try{
     const result=await request('/api/reviews', body);
-    applySave(result, seq===editSeq);
+    applySave(result, seq===editSeq, body.decisions);
     lastAutoSig=signature;
     syncPending=false; lastSavedAt=new Date().toLocaleTimeString();
-    message('Auto-saved at '+lastSavedAt+' (receipt '+String(result.receipt_id||'').slice(0,12)+').', true);
+    message('Auto-saved at '+lastSavedAt+' (receipt '+String(result.receipt_id||'').slice(0,12)+').'
+      +(dirty?' Unfinished or newer edits remain in this browser; complete them to save.':''), true);
   }catch(exc){
     if (exc.status===409){ // another tab moved the audit state; only an explicit reload merges safely
       syncPending=true;
@@ -733,10 +747,11 @@ async function operation(fn){ if (busy) return; busy=true; controls(); try { awa
 $('save').addEventListener('click', ()=>operation(async()=>{
   if (!dirty){ message('Nothing unsaved.', true); return; }
   if (!validate()) return;
+  const seq=editSeq;
   const body={...payload(), slim:true};
   try {
     const result=await request('/api/reviews', body);
-    applySave(result, true);
+    applySave(result, seq===editSeq, body.decisions);
     syncPending=false; lastSavedAt=new Date().toLocaleTimeString();
     message(result.receipt_id?('Saved. Receipt '+(result.receipt_id||'')+' · fields changed '+(result.changed_fields==null?'?':result.changed_fields)+'.')
       :'No change to store: this decision set is already saved.', true);
