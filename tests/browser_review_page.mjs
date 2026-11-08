@@ -166,11 +166,20 @@ try {
   assert.equal(await evaluate(`$('initials').value`),'AB','remembered initials pre-fill the next target');
   await evaluate(`$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
   check('sticky reviewer initials across targets');
+  // Bulk accept: one click marks the verified undecided targets of the batch with the
+  // reviewer's own initials — the agent accelerates, the human still owns the decision.
+  await evaluate(`$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  await evaluate(`$('bulk-accept').click()`);
+  assert.match(await evaluate(`$('message').textContent`),/1 verified targets?/);
+  assert.equal(await evaluate(`$('decision').value`),'ACCEPT');
+  assert.equal(await evaluate(`decisions.get('SYNTH-002\\nentity_name').decision`),'ACCEPT',
+    'bulk accept marked the verified undecided target of the batch the review cursor sits in');
+  check('bulk accept verified batch with sticky initials');
   // Batched generation alignment: the review list is grouped per labeling batch and the
   // record header shows the batch's task/set/slice line.
   const batches=await evaluate(`(()=>{const t=$('target');return {optgroups:[...t.children].filter(c=>c.tagName==='OPTGROUP').map(g=>g.label), seen:[...t.querySelectorAll('option')].map(o=>o.value)};})()`);
   assert.equal(batches.optgroups[0],'8a · Claim checklist / pilot — 1/1 decided');
-  assert.equal(batches.optgroups[1],'9a · Corporate / pilot — 0/1 decided');
+  assert.equal(batches.optgroups[1],'9a · Corporate / pilot — 1/1 decided');
   assert.deepEqual(batches.seen,['0','1']);
   await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
   assert.match(await evaluate(`$('values').textContent`),/batch 8a .* pilot · Claim checklist/);

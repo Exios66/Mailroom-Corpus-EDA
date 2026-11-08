@@ -101,7 +101,7 @@ The API key field is optional, is never stored (not even in this browser) and is
 
 <section class="panel">
 <label for="target">Review target</label><select id="target"></select>
-<div class="toolbar"><button id="previous">Previous target</button><button id="next">Next target</button><button id="next-pending" title="Jump to the next undecided target (keyboard: N)">Next pending</button></div>
+<div class="toolbar"><button id="previous">Previous target</button><button id="next">Next target</button><button id="next-pending" title="Jump to the next undecided target (keyboard: N)">Next pending</button><button id="bulk-accept" title="Set ACCEPT (with the remembered initials) for every undecided target in the current record's batch whose candidate passed the automated source checks; review then Save as usual">Accept verified in batch</button></div>
 <p id="target-status"></p>
 </section>
 
@@ -573,6 +573,29 @@ function nextPending(from){
   return from;
 }
 $('next-pending').addEventListener('click', ()=>{ if (!records.length) return; current=nextPending(current); renderTarget(); controls(); });
+// Bulk "accept verified in batch": candidates the server already verified
+// (candidate_status 'source_checks_passed') get ACCEPT with the sticky initials.
+// Still one decision per (document, field): initials and Save remain
+// the human reviewer's act, so provenance stays a human attribution.
+$('bulk-accept').addEventListener('click', ()=>{
+  if (!records.length) return;
+  const record=records[current], gid=String(record.batch||record.chunk||'');
+  const initials=$('initials').value;
+  if (!/^[A-Z]{2,6}$/.test(initials)){ message('Enter your reviewer initials first (they apply to the whole batch).'); return; }
+  const picked=[];
+  records.forEach((r,i)=>{
+    if (String(r.batch||r.chunk||'')!==gid) return;
+    const d=decisions.get(KEY(r));
+    if (d.decision!=='NOT_REVIEWED'||stateOf(r).status==='human_confirmed') return;
+    if (r.candidate_status!=='source_checks_passed') return;
+    const before=clone(d);
+    d.decision='ACCEPT'; d.reviewer_initials=initials; d.updated_at=now();
+    logChange(before, d);
+    picked.push(r);
+  });
+  if (!picked.length) message('No verifiable undecided targets in batch "'+(gid||'-')+'".', true);
+  else { message(picked.length+' verified targets in the batch marked ACCEPT with your initials; review them and Save.', true); renderTarget(); }
+});
 document.addEventListener('keydown', (e)=>{
   if (e.defaultPrevented||e.altKey||e.ctrlKey||e.metaKey) return;
   const t=e.target;

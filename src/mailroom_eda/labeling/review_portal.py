@@ -467,6 +467,12 @@ class ReviewPortal:
                     "packet answers 409 and the client must re-read before saving again.",
                     "The page never publishes: checkpointing is an explicit POST /api/checkpoint (needs "
                     "--hf-checkpoint on the server) or the page's Checkpoint button; nothing else advances staging.",
+                    "Agents accelerate, humans countersign: any decision the agent composes for a "
+                    "human reviewer must carry that reviewer's own initials; the page's 'Accept "
+                    "verified in batch' is the intended path — candidates that already passed "
+                    "source checks get ACCEPT with the reviewer's remembered initials in one "
+                    "click, then one Save. The receipt, journal and staging checkpoint keep the "
+                    "human attribution.",
                 ]}
 
 
