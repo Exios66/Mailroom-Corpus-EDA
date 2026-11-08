@@ -65,7 +65,7 @@ res = {"timestamp_utc": ts, "axe": axe, "dimensions": [
 res["checks_executed"] = (len(iface["checks"]) + res["dimensions"][2][1] + res["dimensions"][3][1]
                           + res["dimensions"][4][1] + qp + lp + (39 if axe == "clean" else 0))
 (ev / "results-all.json").write_text(json.dumps(res, indent=1) + "\n")
-tsv = Path(root) / "autoresearch/loop-261108-0116/dimensions.tsv"
+tsv = Path(root) / "dimensions.tsv"
 if not tsv.exists():
     tsv.write_text("# timestamp\tinterface_checks\trubric\taxe\tfixtures\treplays\tcap_guard"
                    "\tportal+launch\tlabeling\tcoverage\ttotal_executed\n")
