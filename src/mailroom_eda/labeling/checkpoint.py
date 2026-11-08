@@ -1,9 +1,12 @@
 """Checkpoint labeling output to the private Hugging Face staging copy.
 
-Every paid answer is credit already spent, so each ``chunk``/``run``, ``review`` and
-``gate --approve`` uploads the labels root (``docs/reports/audits/v10_labels``) plus the
-campaign's ``approved.yaml`` to ``STAGING_REPO``, a **private** dataset repo, and
-sha-verifies every file it sent. ``restore`` pulls missing files back, so a lost
+Every paid answer is credit already spent, so each ``chunk``/``run``, ``adjudicate`` and
+``gate --approve`` and each route ping uploads the labels root
+(``docs/reports/audits/v10_labels``) plus the campaign's ``approved.yaml`` to
+``STAGING_REPO``, a **private** dataset repo, and sha-verifies every file it sent.
+The review portal's own saves store immutable local receipts only; specifically the
+explicit ``POST /api/checkpoint`` (server started with ``--hf-checkpoint``) is what
+advances staging from review decisions. ``restore`` pulls missing files back, so a lost
 checkout re-reads the staged answers (``runner.import_reusable``) instead of buying
 them again.
 
@@ -43,9 +46,10 @@ configs:
 # mailroom-dataset v10 labeling staging (private)
 
 Work-in-progress v10 label checkpoints for `Lucius-Morningstar/mailroom-dataset`, written by
-`mailroom_eda.labeling.checkpoint` after each run, review save, gate approval and ping
-(auto-checkpoint), plus explicit reviewer checkpoints from the review portal
-(`--hf-checkpoint` / Checkpoint button). **Not a release.**
+`mailroom_eda.labeling.checkpoint` after each paid CLI run (chunk/adjudicate/gate approval/
+route ping, auto-checkpoint), plus explicit reviewer checkpoints from the review portal
+(`POST /api/checkpoint`, server started with `--hf-checkpoint`; portal Saves stay local).
+**Not a release.**
 
 ## What lives here
 

@@ -9,7 +9,7 @@
 
 | task | system | user | notes |
 |---|---|---|---|
-| intent | `intent_system.md` | `intent_user.md` (subject line, email) | closed 8-class vocabulary; `+variant` letter in sha |
+| intent | `intent_system.md` | `intent_user.md` (subject line, email) | closed 8-class vocabulary; variants a/b ride as a separate Request field — the bundle sha is variant-invariant, so consumers key on `(prompt_sha256, variant)` (reuse also matches the exact input sha) |
 | contract_entities | `extract_rules.md` | `contract_entities.md` | family context + field list from registry |
 | merger_entities / merger_consideration / corporate / correspondence / claim_checklist | `extract_rules.md` | `<task>.md` | same shared contract |
 | cuad | `cuad_system.md` | `cuad_user.md` (+ `cuad_repair.md` on repair passes) | 41 categories, strict schema |

@@ -2170,6 +2170,20 @@ def test_skipped_arm_neither_runs_nor_costs_nor_ranks(tmp_path):
     assert operate._ineligible(arms[arm - 1]).startswith("skipped")
 
 
+def test_completed_skipped_arm_ranks_from_its_recorded_gate():
+    """A skip marker forbids NEW calls, not the recorded result: arms with a settled run
+    rank from their gate.json so the bake-off keeps its primary after the operations."""
+    root = Path("docs/reports/audits/v10_labels")
+    if not (root / "3.1_intent-calibration" / "gate.json").exists():
+        pytest.skip("recorded chunk-3 runs absent from this checkout")
+    arms, metric = operate.bakeoff_arms("v10", "3", root)
+    assert metric == "cohen_kappa"
+    eligible = [a for a in arms if not operate._ineligible(a)]
+    assert len(eligible) >= 2, [operate._ineligible(a) for a in arms]
+    rank = operate.bakeoff_ranking(arms, metric)
+    assert rank["primary"] is not None, "all-skipped stubs shadow the recorded gates"
+
+
 def test_full_text_lasts_one_invocation(monkeypatch):
     """`--full-text` must not leak into a later in-process run, even one that raised."""
     seen = []

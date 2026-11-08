@@ -201,11 +201,12 @@ function itemsFor(record){
   const draft=parseMaybe(d.corrected_labels_json);
   // If the draft correction is exactly a kept subset of the candidate items, adopt it —
   // only when the picker state is fresh, so a later keep/drop toggle is never re-stomped
-  // by the saved draft on every re-render.
+  // by the saved draft on every re-render. Draft text that no candidate matches (edited
+  // labels) cannot map back and is left to the CORRECT field, shown in the summary.
   if (fresh && Array.isArray(draft) && draft.length<=items.length && Object.keys(state.edits).length===0){
     const chosen=draft.map((x)=>String(x)), used=[];
     items.forEach((text,i)=>{ if (chosen.includes(text)) used.push(i); });
-    if (used.length) state.dropped=items.map((_,i)=>i).filter((i)=>!used.includes(i));
+    if (used.length && used.length===draft.length) state.dropped=items.map((_,i)=>i).filter((i)=>!used.includes(i));
   }
   return {items, state};
 }
@@ -215,7 +216,9 @@ function itemsFor(record){
 function keptItems(record){
   const ctx=itemsFor(record);
   if (ctx===null) return null;
-  return ctx.items.map((text,i)=>{ const text2=String(ctx.state.edits[i]?ctx.state.edits[i]:text); return [i,{dropped:ctx.state.dropped.includes(i), text:text2}]; })
+  // Object.hasOwn: an explicitly cleared edit ('') stays an edit, so Apply can refuse
+  // a blank label instead of silently restoring the original text.
+  return ctx.items.map((text,i)=>{ const text2=String(Object.hasOwn(ctx.state.edits,i)?ctx.state.edits[i]:text); return [i,{dropped:ctx.state.dropped.includes(i), text:text2}]; })
     .filter(([,v])=>!v.dropped).map(([,v])=>v.text);
 }
 /** Build the keep/drop/edit controls, or return null for non-array candidates.
@@ -250,7 +253,7 @@ function itemPicker(record){
     });
     keeper(i, toggle);
     const editor=node('input'); editor.type='text';
-    editor.value=ctx.state.edits[i]||text;
+    editor.value=String(Object.hasOwn(ctx.state.edits,i)?ctx.state.edits[i]:text);
     editor.setAttribute('aria-label','Item '+(i+1)+' text');
     editor.addEventListener('input', ()=>{ ctx.state.edits[i]=editor.value; });
     row.append(toggle, editor); list.append(row);
@@ -258,13 +261,16 @@ function itemPicker(record){
   const apply=node('button','Apply kept items as the correction'); apply.type='button';
   apply.addEventListener('click', ()=>{
     const d=decision();
+    const kept=keptItems(record);
+    if (!kept.length){ message('Every label is dropped; REJECT the candidate instead (the server refuses empty correction lists).', true); return; }
+    if (kept.some((t)=>!String(t).trim())){ message('Drop empty-edited items rather than keeping blank labels.', true); return; }
     const before=clone(d);
-    d.corrected_labels_json=JSON.stringify(keptItems(record));
+    d.corrected_labels_json=JSON.stringify(kept);
     d.decision='CORRECT'; d.updated_at=now();
     $('correction').value=d.corrected_labels_json; $('decision').value='CORRECT';
     $('decision-help').textContent=packet.decision_key?packet.decision_key.CORRECT||'':'';
     logChange(before, d);
-    message('Built the replacement list from '+keptItems(record).length+' kept items; review it in the CORRECT field.', true);
+    message('Built the replacement list from '+kept.length+' kept items; review it in the CORRECT field.', true);
   });
   list.append(apply);
   box.append(list);
@@ -644,6 +650,7 @@ $('next-pending-batch').addEventListener('click', ()=>{ if (!records.length) ret
 $('bulk-accept').addEventListener('click', ()=>{
   if (!records.length) return;
   const record=records[current], gid=String(record.batch||record.chunk||'');
+  if (!gid){ message('These records carry no batch header (production review run); accept each one separately.', true); return; }
   const initials=$('initials').value;
   if (!/^[A-Z]{2,6}$/.test(initials)){ message('Enter your reviewer initials first (they apply to the whole batch).'); return; }
   const picked=[];
@@ -654,6 +661,7 @@ $('bulk-accept').addEventListener('click', ()=>{
     if (r.candidate_status!=='source_checks_passed') return;
     const before=clone(d);
     d.decision='ACCEPT'; d.reviewer_initials=initials; d.updated_at=now();
+    d.corrected_labels_json=''; // an ACCEPT rides the candidate, never a stale picker draft
     logChange(before, d);
     picked.push(r);
   });

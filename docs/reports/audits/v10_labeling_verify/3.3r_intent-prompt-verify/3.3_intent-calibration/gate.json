@@ -1,0 +1,524 @@
+{
+ "kind": "intent_kappa",
+ "documents": 96,
+ "expected_documents": 96,
+ "models": [
+  "deepseek/deepseek-v4.1-flash-1017"
+ ],
+ "accuracy": 0.7812,
+ "cohen_kappa": 0.7356,
+ "gold_corrections": 0,
+ "floors": {
+  "kappa": 0.75
+ },
+ "passed": false,
+ "per_document": [
+  {
+   "document_id": "DOC-e8ad62717b3ae35d",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-b65d0428ce4fbd10",
+   "gold": "update",
+   "pred": "update"
+  },
+  {
+   "document_id": "DOC-da8030922b7baf43",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-a17660a5cab5de29",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-a21b03af9a6afc21",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-fd915422c7855966",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-feb8a708a4fc89a6",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-f0169de2494e03c0",
+   "gold": "request",
+   "pred": "other"
+  },
+  {
+   "document_id": "DOC-9d5ed2fbb205e989",
+   "gold": "update",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-d835602ca19b37cb",
+   "gold": "press_communication",
+   "pred": "press_communication"
+  },
+  {
+   "document_id": "DOC-8b661bf47bc0a4dc",
+   "gold": "request",
+   "pred": "other"
+  },
+  {
+   "document_id": "DOC-93afa20dfa469fec",
+   "gold": "press_communication",
+   "pred": "press_communication"
+  },
+  {
+   "document_id": "DOC-c819ca1230cad469",
+   "gold": "press_communication",
+   "pred": "update"
+  },
+  {
+   "document_id": "DOC-e624b1b9823e53f5",
+   "gold": "update",
+   "pred": "meeting_invite"
+  },
+  {
+   "document_id": "DOC-6781857ed0b1ced0",
+   "gold": "meeting_invite",
+   "pred": "meeting_invite"
+  },
+  {
+   "document_id": "DOC-0578dca6e6328d88",
+   "gold": "meeting_invite",
+   "pred": "meeting_invite"
+  },
+  {
+   "document_id": "DOC-dcdeee3860781459",
+   "gold": "meeting_invite",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-12832a72fb4b9a49",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-1540302bc036f714",
+   "gold": "update",
+   "pred": "press_communication"
+  },
+  {
+   "document_id": "DOC-f36da07536445232",
+   "gold": "update",
+   "pred": "update"
+  },
+  {
+   "document_id": "DOC-c663868954331cda",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-c9e157af67ee6ae9",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-678bb60bdb995fbf",
+   "gold": "meeting_invite",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-5c7f2446af0e7ecb",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-b54c30b2aa411b00",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-a17f7980e9fbf7b3",
+   "gold": "press_communication",
+   "pred": "press_communication"
+  },
+  {
+   "document_id": "DOC-05fe11fb4b646af3",
+   "gold": "press_communication",
+   "pred": "press_communication"
+  },
+  {
+   "document_id": "DOC-80513070265f4682",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-05df124a833e515c",
+   "gold": "update",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-8ca6802d3a0f5d1a",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-7970a84e969fef56",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-30dae9196e42658e",
+   "gold": "meeting_invite",
+   "pred": "meeting_invite"
+  },
+  {
+   "document_id": "DOC-6bdc0c7c153547b6",
+   "gold": "meeting_invite",
+   "pred": "meeting_invite"
+  },
+  {
+   "document_id": "DOC-bdf1d75db5874068",
+   "gold": "press_communication",
+   "pred": "press_communication"
+  },
+  {
+   "document_id": "DOC-b77fbb2846fce2d8",
+   "gold": "update",
+   "pred": "update"
+  },
+  {
+   "document_id": "DOC-f7951b2efec9b21b",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-64c182d7595e7073",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-66ba673167e7feb0",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-81dde8f2cd0e6c5b",
+   "gold": "update",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-38a7cb4be93dbecd",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-da5130bd836ddef0",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-9b7d340558489cca",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-18d9d7daed3ed535",
+   "gold": "other",
+   "pred": "other"
+  },
+  {
+   "document_id": "DOC-a46c124874d34a6e",
+   "gold": "other",
+   "pred": "other"
+  },
+  {
+   "document_id": "DOC-54a5578fcd37a72b",
+   "gold": "request",
+   "pred": "update"
+  },
+  {
+   "document_id": "DOC-41de32f2e9dd836e",
+   "gold": "update",
+   "pred": "update"
+  },
+  {
+   "document_id": "DOC-18a2e3589eb9ce21",
+   "gold": "meeting_invite",
+   "pred": "meeting_invite"
+  },
+  {
+   "document_id": "DOC-31ffa4f7f79eb5de",
+   "gold": "press_communication",
+   "pred": "press_communication"
+  },
+  {
+   "document_id": "DOC-2ccf94f14bd5f040",
+   "gold": "meeting_invite",
+   "pred": "meeting_invite"
+  },
+  {
+   "document_id": "DOC-1c1f846fecbb5e5a",
+   "gold": "update",
+   "pred": "update"
+  },
+  {
+   "document_id": "DOC-3fd5fb2e4b505b04",
+   "gold": "meeting_invite",
+   "pred": "meeting_invite"
+  },
+  {
+   "document_id": "DOC-d3e421962da61b35",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-acc7e95bd3b504c5",
+   "gold": "other",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-616cf38cbd9e228b",
+   "gold": "press_communication",
+   "pred": "press_communication"
+  },
+  {
+   "document_id": "DOC-192ea3aa38d315de",
+   "gold": "update",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-0ede4d1563483592",
+   "gold": "other",
+   "pred": "other"
+  },
+  {
+   "document_id": "DOC-5c4f0ef692482561",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-fc3ff24ee5a908e9",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-0a772cde9546b342",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-aabbac4e7e504456",
+   "gold": "analysis",
+   "pred": "analysis"
+  },
+  {
+   "document_id": "DOC-a0369feccbbe0368",
+   "gold": "update",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-1eef6b317ce48131",
+   "gold": "update",
+   "pred": "update"
+  },
+  {
+   "document_id": "DOC-d3d85dc1b1514bec",
+   "gold": "request",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-50d447dc3ab8616f",
+   "gold": "analysis",
+   "pred": "analysis"
+  },
+  {
+   "document_id": "DOC-21460a9f6d7e6348",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-f83052065b4976d5",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-b0e4ca65c1cd2f23",
+   "gold": "analysis",
+   "pred": "analysis"
+  },
+  {
+   "document_id": "DOC-aaad449f1aec99ab",
+   "gold": "update",
+   "pred": "update"
+  },
+  {
+   "document_id": "DOC-44dd971367dd458a",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-9501118a02fe39b9",
+   "gold": "analysis",
+   "pred": "analysis"
+  },
+  {
+   "document_id": "DOC-5a424efe5df6ba6f",
+   "gold": "update",
+   "pred": "other"
+  },
+  {
+   "document_id": "DOC-7e5808031144afae",
+   "gold": "other",
+   "pred": "other"
+  },
+  {
+   "document_id": "DOC-3a9d97e668c604df",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-144f0d1f1b1a6bbb",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-bf005e907e6cfea0",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-56a2f3a613f97dee",
+   "gold": "meeting_invite",
+   "pred": "meeting_invite"
+  },
+  {
+   "document_id": "DOC-ca477a8fd2b533ff",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-a8a7b8fb31549256",
+   "gold": "notice",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-d6e2bbd8c5e394a4",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-3c28a30ea1c2ef9b",
+   "gold": "analysis",
+   "pred": "meeting_invite"
+  },
+  {
+   "document_id": "DOC-840124508b4b702f",
+   "gold": "meeting_invite",
+   "pred": "meeting_invite"
+  },
+  {
+   "document_id": "DOC-6d55a6011ce3fc8e",
+   "gold": "update",
+   "pred": "update"
+  },
+  {
+   "document_id": "DOC-420b31878107dc17",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-a4838e9274ad38c7",
+   "gold": "update",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-59f834ec3e6a34c0",
+   "gold": "press_communication",
+   "pred": "press_communication"
+  },
+  {
+   "document_id": "DOC-37d29524bbcaf955",
+   "gold": "meeting_invite",
+   "pred": "meeting_invite"
+  },
+  {
+   "document_id": "DOC-1900c32d38d8bf08",
+   "gold": "meeting_invite",
+   "pred": "meeting_invite"
+  },
+  {
+   "document_id": "DOC-56c78384a9a00b8f",
+   "gold": "request",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-499c71bfc051253c",
+   "gold": "update",
+   "pred": "request"
+  },
+  {
+   "document_id": "DOC-19f8e92b0b64146f",
+   "gold": "request",
+   "pred": "notice"
+  },
+  {
+   "document_id": "DOC-eb1351387953745d",
+   "gold": "press_communication",
+   "pred": "press_communication"
+  },
+  {
+   "document_id": "DOC-213d9fde76f17985",
+   "gold": "update",
+   "pred": "update"
+  },
+  {
+   "document_id": "DOC-0a33b71f6c78cd48",
+   "gold": "press_communication",
+   "pred": "press_communication"
+  },
+  {
+   "document_id": "DOC-9422c8775b387935",
+   "gold": "press_communication",
+   "pred": "press_communication"
+  },
+  {
+   "document_id": "DOC-c01ab1c1c673f355",
+   "gold": "update",
+   "pred": "update"
+  },
+  {
+   "document_id": "DOC-851611e86c9e36d0",
+   "gold": "update",
+   "pred": "other"
+  }
+ ],
+ "chunk": "3",
+ "arm": 3,
+ "task": "intent",
+ "provider": "openrouter",
+ "reasoning": "off",
+ "prompt_sha256": [
+  "9899438817f320c086ed0defe6fa59a463840ccd5c9b3efffc805745ebbb6b32"
+ ],
+ "served_providers": [
+  "CoreWeave",
+  "DeepInfra",
+  "InferenceNet"
+ ],
+ "spent_usd": 0.0189,
+ "answer_cost_usd": 0.0189,
+ "scored_utc": "2026-11-08T09:24:25Z",
+ "interim": {
+  "rows": 8,
+  "by_status": {
+   "disputed": 8
+  },
+  "agree": {
+   "a+b": 2,
+   "none": 6
+  },
+  "manifest_sha256": "318045d37a6931507132cc34cfcd13fdb83cfeb0a02615d61d6c7abf24d41720"
+ }
+}

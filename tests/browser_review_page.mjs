@@ -161,6 +161,18 @@ try {
   assert.deepEqual(JSON.parse(await evaluate(`$('correction').value`)),['signed claim form (edited)']);
   assert.match(await evaluate(`$('message').textContent`),/kept items/);
   check('per-label item picker and kept-array correction');
+  // Apply guards: an all-dropped selection cannot save (use REJECT), and a blank-edit
+  // item cannot ride as an empty label — both reported loudly instead of silently.
+  // State here: item 0 dropped, item 1 kept with its edit — so one click zeroes it.
+  await evaluate(`[...document.querySelectorAll('#item-picker .chips .chip')][1].click()`);  // drop item 2 of 2
+  await evaluate(`[...document.querySelectorAll('#item-picker button')].at(-1).click()`);
+  assert.match(await evaluate(`$('message').textContent`),/Every label is dropped/);
+  await evaluate(`[...document.querySelectorAll('#item-picker .chips .chip')][1].click()`);   // un-drop one
+  await evaluate(`[...document.querySelectorAll('#item-picker input')][1].value='';[...document.querySelectorAll('#item-picker input')][1].dispatchEvent(new Event('input',{bubbles:true}));`);
+  await evaluate(`[...document.querySelectorAll('#item-picker button')].at(-1).click()`);
+  assert.match(await evaluate(`$('message').textContent`),/Drop empty-edited items/);
+  await evaluate(`[...document.querySelectorAll('#item-picker input')][1].value='signed claim form (edited)';[...document.querySelectorAll('#item-picker input')][1].dispatchEvent(new Event('input',{bubbles:true}));`);
+  await evaluate(`[...document.querySelectorAll('#item-picker button')].at(-1).click()`);
   await screenshot('06-item-picker-perlabel');
   // Next pending jumps the only undecided target (synthetic record 1).
   await evaluate(`$('next-pending').click()`);
@@ -178,9 +190,19 @@ try {
   await evaluate(`$('bulk-accept').click()`);
   assert.match(await evaluate(`$('message').textContent`),/1 verified targets?/);
   assert.equal(await evaluate(`$('decision').value`),'ACCEPT');
+  assert.equal(await evaluate(`decisions.get('SYNTH-002\\nentity_name').corrected_labels_json`),'',
+    'the ACCEPT clears any stale picker draft (it rides the candidate, never a correction)');
   assert.equal(await evaluate(`decisions.get('SYNTH-002\\nentity_name').decision`),'ACCEPT',
     'bulk accept marked the verified undecided target of the batch the review cursor sits in');
   check('bulk accept verified batch with sticky initials');
+  // Production records can carry no batch ids: bulk refuses and says so, no blanket accept.
+  await evaluate(`records[0].batch='';records[0].chunk='';`);
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
+  await evaluate(`$('bulk-accept').click()`);
+  assert.match(await evaluate(`$('message').textContent`),/no batch header/);
+  assert.equal(await evaluate(`[...decisions.values()].filter((d)=>d.decision==='ACCEPT').length`),1,
+    'without a batch ids the click refuses instead of accepting everything');
+  await evaluate(`records[0].batch='8a';`);
   // Batched generation alignment: the review list is grouped per labeling batch and the
   // record header shows the batch's task/set/slice line.
   const batches=await evaluate(`(()=>{const t=$('target');return {optgroups:[...t.children].filter(c=>c.tagName==='OPTGROUP').map(g=>g.label), seen:[...t.querySelectorAll('option')].map(o=>o.value)};})()`);

@@ -33,8 +33,10 @@ fi
 axe=skip
 if [ -n "${AXE_PATH:-}" ]; then
   CHROME="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}" \
-  node tests/browser_review_page.mjs "$evidence/axe" > "$evidence/axe.out" 2>&1 || true
-  grep -q 'AXE {"violations":\[\]' "$evidence/axe.out" && axe=clean || axe=violations
+  node tests/browser_review_page.mjs "$evidence/axe" > "$evidence/axe.out" 2>&1
+  # clean only when the whole smoke PASSED and axe printed zero violations
+  if grep -q 'PASS: integrated synthetic review browser smoke' "$evidence/axe.out" \
+     && grep -q 'AXE {"violations":\[\]' "$evidence/axe.out"; then axe=clean; else axe=violations; fi
 fi
 
 "$python" - "$evidence" "$ts" "$axe" "$root" "$cov" <<'PYEOF'
@@ -42,14 +44,19 @@ import json, re, sys
 from pathlib import Path
 ev = Path(sys.argv[1]); ts = sys.argv[2]; axe = sys.argv[3]; root = sys.argv[4]; cov = sys.argv[5]
 def suites(name):
+    """(passed, failed) from the pytest summary; a crashed run with no summary counts as failed."""
     text = (ev / name).read_text()
-    p = int(m.group(1)) if (m := re.search(r'(\d+) passed', text)) else 0
-    f = int(m.group(1)) if (m := re.search(r'(\d+) failed', text)) else 0
+    pm = re.search(r'(\d+) passed', text); fm = re.search(r'(\d+) failed', text)
+    if not pm and not fm and text.strip():
+        return 0, 1
+    p = int(pm.group(1)) if pm else 0
+    f = int(fm.group(1)) if fm else 0
     return p, f
 def okcount(name):
     return sum(1 for l in (ev / name).read_text().splitlines() if l.lower().startswith("ok"))
 qp, qf = suites("quick.txt"); lp, lf = suites("labeling.txt")
-capg = "pass" if suites("capguard.txt")[1] == 0 else "fail"
+capg_p, capg_f = suites("capguard.txt")
+capg = "pass" if capg_p == 1 and capg_f == 0 else "fail"
 iface = json.loads((ev / "interface" / "results.json").read_text())
 res = {"timestamp_utc": ts, "axe": axe, "dimensions": [
     ("interface_named_checks", len(iface["checks"]), "higher"),
@@ -62,8 +69,12 @@ res = {"timestamp_utc": ts, "axe": axe, "dimensions": [
     ("labeling_tests", f"{lp}/{lp+lf}", "all pass"),
     ("docclass_coverage_check", cov, "pass; honest skip when data/ absent"),
 ]}
+# axe passes are read from the scan's own axe.json (never a hardcoded count)
+axe_passes = 0
+if axe == "clean":
+    axe_passes = int(json.loads((ev / "axe" / "axe.json").read_text()).get("passes", 0))
 res["checks_executed"] = (len(iface["checks"]) + res["dimensions"][2][1] + res["dimensions"][3][1]
-                          + res["dimensions"][4][1] + qp + lp + (39 if axe == "clean" else 0))
+                          + res["dimensions"][4][1] + qp + lp + axe_passes)
 (ev / "results-all.json").write_text(json.dumps(res, indent=1) + "\n")
 tsv = Path(root) / "dimensions.tsv"
 if not tsv.exists():

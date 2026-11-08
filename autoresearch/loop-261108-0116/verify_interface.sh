@@ -4,7 +4,6 @@
 set -e
 evidence="${1:-/private/tmp/opencode/autoresearch-interface}"
 mkdir -p "$evidence"
-: > "$evidence/node.out" 2>/dev/null || node_out=/dev/null
 CHROME="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}" \
   node tests/browser_review_page.mjs "$evidence" >"$evidence/node.out" 2>&1 \
   || { echo "smoke FAILED (see $evidence/node.out):" >&2; tail -30 "$evidence/node.out" >&2; exit 1; }

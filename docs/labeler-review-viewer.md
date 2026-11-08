@@ -235,7 +235,9 @@ timestamp requirements, the per-label rule, the 409 state-revision guard).
 ```bash
 curl -s http://127.0.0.1:8765/api/contract | python -m json.tool   # the one page an agent reads
 curl -s http://127.0.0.1:8765/review-data.json                      # packet + saved decisions
-curl -s -X POST http://127.0.0.1:8765/api/reviews -d '{"schema":"mailroom-human-review/v1", ...}'
+curl -s -X POST http://127.0.0.1:8765/api/reviews \
+  -H 'Content-Type: application/json' -H 'Origin: http://127.0.0.1:8765' \
+  -d '{"schema":"mailroom-human-review/v1", "packet_id":"...", "state_revision":"...", "decisions":[...]}'
 ```
 
 Per-label decisions: a record whose `correction_type` is `array` (claim_checklist,

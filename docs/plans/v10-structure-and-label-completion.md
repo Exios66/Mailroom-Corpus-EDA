@@ -405,7 +405,6 @@ Tie-breaks: an explicit ask beats an update; a meeting ask is meeting_invite; a 
 update; use other only when no label fits, never for uncertainty.
 Output only {"intent": "<label>", "confidence": <0-1>, "evidence": "<verbatim quote, max 200 chars, from the text you classified>"}
 ```
-```
 
 ### `intent_user.md`
 
@@ -547,7 +546,6 @@ label only what the text itself shows. Fields:
 ${doc_text_window}
 </email>
 ```
-```
 
 ### `claim_checklist.md`
 
@@ -604,7 +602,6 @@ inference.>
 <document>
 ${doc_text_window}
 </document>
-```
 ```
 
 ### `corporate.md`

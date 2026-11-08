@@ -1144,7 +1144,8 @@ def bakeoff_arms(name: str, chunk_id: str, out: Path) -> tuple[list[dict[str, An
     arms = []
     for i, entry in enumerate(entries, 1):
         path = chunk_dir(out, entry, i) / "gate.json"
-        if entry.get("skip"):
+        if entry.get("skip") and not path.exists():
+            # The skip marker only forbids NEW calls; with no recorded run the arm ranks as empty.
             arms.append({"gate": {"models": entry["models"], "reasoning": entry["reasoning"], "arm": i,
                                   "skipped": entry["skip"], "passed": False}, "docs": []})
             continue
