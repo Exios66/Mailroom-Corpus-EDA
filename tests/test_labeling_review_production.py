@@ -177,3 +177,42 @@ def test_public_download_resolves_immutable_revision_and_writes_private_packet(t
     path.write_text("existing work")
     with pytest.raises(ValueError, match="refusing overwrite"):
         production.export_production(root)
+
+
+def insurance_rows():
+    subclasses = ("auto", "property", "carrier", "inpatient", "outpatient", "pde")
+    rows = [{"document_id": f"ins-{sub}-{i}", "filename": f"ins-{sub}-{i}.txt",
+             "expected": "insurance_claim", "expected_subclass": sub, "split": "train",
+             "doc_text": f"Claim Number: {sub.upper()}-{i}\nInsurer: Example Mutual\n",
+             "gt_fields": {"claim_number": f"{sub.upper()}-{i}", "insurer": "Example Mutual"}}
+            for sub in subclasses for i in range(3)]
+    return rows + [r for r in source_rows() if r["expected"] != "insurance_claim"]
+
+
+def test_insurance_only_covers_every_claim_type():
+    packet = build(insurance_rows(), doc_class="insurance_claim", per_subclass=2)
+    validate_packet(packet)
+    assert {r["doc_class"] for r in packet["records"]} == {"insurance_claim"}
+    docs = {(r["subclass"], r["document_id"]) for r in packet["records"]}
+    by_type = {}
+    for sub, doc in docs:
+        by_type.setdefault(sub, set()).add(doc)
+    assert {sub: len(ids) for sub, ids in by_type.items()} == {
+        sub: 2 for sub in ("auto", "property", "carrier", "inpatient", "outpatient", "pde")}
+    assert "claim_checklist" in {r["field"] for r in packet["records"]}
+
+
+def test_per_class_selection_is_unchanged_without_per_subclass():
+    assert build(insurance_rows(), doc_class="insurance_claim") == build(
+        insurance_rows(), doc_class="insurance_claim", per_class=2)
+    picked = {r["document_id"] for r in build(insurance_rows(), doc_class="insurance_claim")["records"]}
+    assert len(picked) == 2
+
+
+@pytest.mark.parametrize("kwargs, message", [
+    ({"doc_class": "no_such_class"}, "no production rows"),
+    ({"per_subclass": 0}, "must be positive"),
+])
+def test_class_and_subclass_selection_errors(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        build(insurance_rows(), **kwargs)

@@ -27,6 +27,35 @@ the campaign tracker. The tracker reads the tracked campaign definition at
 `approved.yaml`. Completed tasks remain in history; review alone does not grant
 campaign approval. Unknown inventory totals are shown as unknown, not zero.
 
+## Default: public insurance claims
+
+When no finished packet exists under `--labels-root` yet, the portal falls back to
+the published dataset instead of refusing to start. It downloads
+`ground_truth_hardened.jsonl` from `Lucius-Morningstar/mailroom-dataset` at the pinned
+v9.3 revision, picks two insurance claims per claim type (auto, property, carrier,
+inpatient, outpatient, pde), and writes them to
+`review_bundle/production-insurance/production-review-data.json`. Every registry field
+is a target; published values are candidates, and `claim_checklist` shows as
+`pending_annotation` until the v10 campaign labels it. Once real labeling packets
+exist, the fallback is skipped.
+
+```bash
+PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.review_portal \
+  --public-per-subclass 3            # more claims per type
+  # --public-revision v9.2           # another published revision
+  # --no-public-fallback             # old behavior: fail with no packets
+```
+
+The same packet can be built without the portal:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.review_production \
+  --out docs/reports/audits/v10_labels/review_bundle/production-insurance \
+  --doc-class insurance_claim --per-subclass 2
+```
+
+Nothing is uploaded and the public dataset is never edited.
+
 ## Save, export, and checkpoint
 
 - Save writes immutable receipts under `review_bundle/portal/returns/` and an

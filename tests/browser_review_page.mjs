@@ -75,7 +75,9 @@ try {
   await input('decision','ACCEPT');await input('initials','AB');await input('notes','Synthetic source verified.');
   assert.equal(await evaluate(`$('checkpoint').disabled`),true);
   await evaluate(`$('save').click()`);await waitFor(`!busy && !dirty`);
-  assert.equal(saves,1);assert.equal(posts[0].state_revision,'r1');assert.equal(posts[0].decisions[0].decision,'ACCEPT');assert.equal(posts[0].history.length,3);
+  assert.equal(saves,1);assert.equal(posts[0].state_revision,'r1');assert.equal(posts[0].decisions[0].decision,'ACCEPT');
+  // The real server rejects a decision without a timestamp (review_page.validate_return).
+  assert.ok(!Number.isNaN(Date.parse(posts[0].decisions[0].updated_at)),'edited decision must carry updated_at');assert.equal(posts[0].history.length,3);
   await screenshot('02-saved-server-confirmed');
   await call('Page.reload');await waitFor(`document.getElementById('save') && !$('save').disabled`);
   assert.equal(await evaluate(`$('decision').value`),'ACCEPT');

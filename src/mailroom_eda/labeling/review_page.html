@@ -318,6 +318,7 @@ $('next').addEventListener('click', ()=>{ current=Math.min(records.length-1,curr
 .forEach(([id,prop])=>$(id).addEventListener('input', ()=>{
   const before=clone(decision());
   decision()[prop]=$(id).value;
+  decision().updated_at=now();
   if (id==='decision') $('decision-help').textContent=packet.decision_key?packet.decision_key[decision().decision]||'':'';
   logChange(before, decision());
 }));

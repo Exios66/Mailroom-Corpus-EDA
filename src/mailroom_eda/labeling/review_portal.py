@@ -27,8 +27,37 @@ from .review_packet import DECISION_KEY
 MAX_BODY = 10 * 1024 * 1024
 
 
+PUBLIC_FALLBACK_DIR = Path("review_bundle") / "production-insurance"
+PUBLIC_FALLBACK_CLASS = "insurance_claim"
+
+
 class Conflict(ValueError):
     """A browser is attempting to save an obsolete packet."""
+
+
+def packet_paths(labels_root: Path, out: Path) -> list[Path]:
+    """Return finished ``*-review-data.json`` packets under labels_root, excluding portal output."""
+    out = Path(out).resolve()
+    return sorted(p for p in Path(labels_root).rglob("*-review-data.json")
+                  if not p.resolve().is_relative_to(out))
+
+
+def ensure_public_fallback(labels_root: Path, out: Path, *, revision: str | None = None,
+                           per_subclass: int = 2, export=None) -> Path | None:
+    """Export public insurance claims to review when no labeling packet exists yet.
+
+    While the v10 claim_checklist campaign is still producing packets, the
+    published dataset (pinned v9.3 unless ``revision`` says otherwise) is what the
+    reviewer falls back to: up to ``per_subclass`` insurance documents per claim
+    type, every registry field, published values as candidates. Return the
+    written packet path, or None when finished packets already exist. Hub and
+    validation errors propagate; nothing is uploaded."""
+    if packet_paths(labels_root, out):
+        return None
+    if export is None:
+        from .review_production import export_production as export
+    return export(Path(labels_root) / PUBLIC_FALLBACK_DIR, revision=revision,
+                  doc_class=PUBLIC_FALLBACK_CLASS, per_subclass=per_subclass)
 
 
 def _json(value: Any) -> bytes:
@@ -188,8 +217,7 @@ class ReviewPortal:
         Exclude portal output and cache by file metadata. Raise ValueError for unsafe
         paths, empty inventory, or inconsistent document identities; raise Conflict
         if a packet changes during its read. Packet and read errors propagate."""
-        paths = sorted(p for p in self.labels_root.rglob("*-review-data.json")
-                       if not p.resolve().is_relative_to(self.out))
+        paths = packet_paths(self.labels_root, self.out)
         if any(p.is_symlink() or not p.resolve().is_relative_to(self.labels_root) for p in paths):
             raise ValueError("source review packets must be local regular files, not symlinks")
         fingerprint = tuple(_stat(p) for p in paths)
@@ -619,6 +647,11 @@ def main(argv=None) -> int:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--hf-checkpoint", action="store_true", help="enable explicit private-checkpoint POSTs only")
     parser.add_argument("--restore-revision", help="restore private HF labels at this immutable commit before serving; existing conflicts fail closed")
+    parser.add_argument("--no-public-fallback", action="store_true",
+                        help="do not fall back to public insurance claims when no packets exist")
+    parser.add_argument("--public-revision", help="public dataset revision for the fallback (default: pinned v9.3)")
+    parser.add_argument("--public-per-subclass", type=int, default=2,
+                        help="fallback documents per insurance claim type (default 2)")
     args = parser.parse_args(argv)
     if args.restore_revision:
         if not re.fullmatch(r"[0-9a-f]{40}", args.restore_revision):
@@ -628,7 +661,13 @@ def main(argv=None) -> int:
         (args.labels_root / "review-source.json").write_bytes(_json({
             "repo": checkpoint.STAGING_REPO, "revision": args.restore_revision,
             "status": "byte-verified private restore", "restored_files": len(restored)}))
-    portal = ReviewPortal(args.labels_root, args.out or args.labels_root / "review_bundle" / "portal",
+    out = args.out or args.labels_root / "review_bundle" / "portal"
+    if not args.no_public_fallback:
+        fallback = ensure_public_fallback(args.labels_root, out, revision=args.public_revision,
+                                          per_subclass=args.public_per_subclass)
+        if fallback is not None:
+            print(f"No labeling packets yet; reviewing public insurance claims from {fallback}")
+    portal = ReviewPortal(args.labels_root, out,
                           campaign=args.campaign, stage=args.stage, hf_checkpoint=args.hf_checkpoint)
     server = make_server(portal, args.port)
     print(f"Private review portal: http://127.0.0.1:{server.server_port}/ (no automatic uploads)")

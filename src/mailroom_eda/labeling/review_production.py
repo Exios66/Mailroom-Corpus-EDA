@@ -108,17 +108,25 @@ def _checked(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def build_packet(rows: list[dict[str, Any]], *, source_revision: str, source_sha256: str,
-                 document_ids: Sequence[str] = (), per_class: int = 2) -> dict[str, Any]:
+                 document_ids: Sequence[str] = (), per_class: int = 2,
+                 doc_class: str | None = None, per_subclass: int | None = None) -> dict[str, Any]:
     """Build a deterministic packet of registry fields for selected production documents.
 
     ``document_ids`` selects explicit IDs; otherwise choose up to ``per_class``
-    IDs per class in sorted order. Records are sorted by document ID, independent
-    of input order; source rows are not mutated. Source revision and sidecar hash
-    are recorded as supplied. Raise ValueError for nonpositive per_class, unknown
-    IDs, invalid rows, or an invalid resulting packet; registry KeyError propagates."""
-    if per_class < 1:
-        raise ValueError("per-class must be positive")
+    IDs per class in sorted order, or up to ``per_subclass`` IDs per
+    (class, subclass) when it is given. ``doc_class`` restricts the candidates to
+    one class. Records are sorted by document ID, independent of input order;
+    source rows are not mutated. Source revision and sidecar hash are recorded as
+    supplied. Raise ValueError for nonpositive counts, a class with no rows,
+    unknown IDs, invalid rows, or an invalid resulting packet; registry KeyError
+    propagates."""
+    if per_class < 1 or (per_subclass is not None and per_subclass < 1):
+        raise ValueError("per-class and per-subclass must be positive")
     checked = _checked(rows)
+    if doc_class is not None:
+        checked = [row for row in checked if row["expected"] == doc_class]
+        if not checked:
+            raise ValueError(f"no production rows for class: {doc_class}")
     by_id = {row["document_id"]: row for row in checked}
     if document_ids:
         chosen = list(dict.fromkeys(document_ids))
@@ -126,10 +134,12 @@ def build_packet(rows: list[dict[str, Any]], *, source_revision: str, source_sha
         if unknown:
             raise ValueError(f"unknown document(s): {unknown}")
     else:
-        grouped: dict[str, list[str]] = defaultdict(list)
+        grouped: dict[tuple[str, ...], list[str]] = defaultdict(list)
         for row in checked:
-            grouped[row["expected"]].append(row["document_id"])
-        chosen = [doc_id for cls in sorted(grouped) for doc_id in sorted(grouped[cls])[:per_class]]
+            key = (row["expected"],) if per_subclass is None else (row["expected"], row["expected_subclass"])
+            grouped[key].append(row["document_id"])
+        limit = per_class if per_subclass is None else per_subclass
+        chosen = [doc_id for key in sorted(grouped) for doc_id in sorted(grouped[key])[:limit]]
     records = []
     for doc_id in sorted(set(chosen)):
         row, gt, raw_gt = by_id[doc_id], by_id[doc_id]["_gt"], by_id[doc_id]["_raw_gt"]
@@ -193,18 +203,20 @@ def load_production(api: Any, revision: str | None) -> dict[str, Any]:
     return {"rows": rows, "revision": resolved, "source_sha256": hashlib.sha256(raw).hexdigest()}
 
 
-def export_production(root: Path, *, revision: str | None = None, per_class: int = 2) -> Path:
+def export_production(root: Path, *, revision: str | None = None, per_class: int = 2,
+                      doc_class: str | None = None, per_subclass: int | None = None) -> Path:
     """Write one private packet. Identical bytes are idempotent; different bytes are refused.
 
     Download at ``revision`` (the configured production revision when None),
-    select up to per_class documents per class, and return the packet path.
+    select documents as ``build_packet`` does, and return the packet path.
     Create root with mode 0700 and new packet files with mode 0600. Raise
     ValueError for a symlinked directory or conflicting packet; source validation,
     Hub, and filesystem errors propagate."""
     api = hf_interface.get_hf_api(token=None)
     source = load_production(api, revision)
     packet = build_packet(source["rows"], source_revision=source["revision"],
-                          source_sha256=source["source_sha256"], per_class=per_class)
+                          source_sha256=source["source_sha256"], per_class=per_class,
+                          doc_class=doc_class, per_subclass=per_subclass)
     out = Path(root)
     if out.is_symlink():
         raise ValueError("production packet directory must not be a symlink")
@@ -227,8 +239,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--revision")
     parser.add_argument("--per-class", type=int, default=2)
+    parser.add_argument("--doc-class", help="only this class, e.g. insurance_claim")
+    parser.add_argument("--per-subclass", type=int, help="pick this many per (class, subclass) instead of per class")
     args = parser.parse_args(argv)
-    print(export_production(args.out, revision=args.revision, per_class=args.per_class))
+    print(export_production(args.out, revision=args.revision, per_class=args.per_class,
+                            doc_class=args.doc_class, per_subclass=args.per_subclass))
     return 0
 
 

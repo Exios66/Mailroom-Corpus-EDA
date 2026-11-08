@@ -409,3 +409,29 @@ def test_tracker_subclass_chunks_count_by_expected_subclass(env, tmp_path):
     env.app.stage = stage
     totals = [t["documents_total"] for t in env.app.data()["tracker"]["tasks"]]
     assert totals == [2, 1]  # a list filter matches expected_subclass, not a missing "subclass" key
+
+
+def test_public_insurance_fallback_only_when_no_packets(tmp_path):
+    calls = []
+
+    def export(root, **kwargs):
+        calls.append((root, kwargs))
+        return write_packet(root / "production-review-data.json", [record()]) and root / "production-review-data.json"
+
+    root, out = tmp_path / "labels", tmp_path / "labels" / "review_bundle" / "portal"
+    out.mkdir(parents=True)
+    # A packet inside the portal output is not a labeling packet.
+    write_packet(out / "cached-review-data.json", [record()])
+    written = portal.ensure_public_fallback(root, out, revision="v9.3", per_subclass=3, export=export)
+    assert written == root / portal.PUBLIC_FALLBACK_DIR / "production-review-data.json"
+    assert calls == [(root / portal.PUBLIC_FALLBACK_DIR,
+                      {"revision": "v9.3", "doc_class": "insurance_claim", "per_subclass": 3})]
+    assert portal.ensure_public_fallback(root, out, export=export) is None
+    assert len(calls) == 1
+    assert portal.ReviewPortal(root, out, campaign="test")._collect()["records"]
+
+
+def test_existing_labeling_packets_suppress_the_fallback(env):
+    def export(*args, **kwargs):
+        raise AssertionError("must not download when labeling packets exist")
+    assert portal.ensure_public_fallback(env.root, env.out, export=export) is None

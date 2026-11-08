@@ -8,6 +8,13 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 
 ## Unreleased
 
+- Review portal: Save now works. The page never set `updated_at` on an edited decision, so the
+  server rejected every Accept/Correct/Reject with "reviewer initials and a timestamp are
+  required". The browser smoke test now checks the timestamp.
+- Review portal defaults to public insurance claims when no labeling packet exists yet: two
+  claims per claim type from the pinned v9.3 dataset, every registry field
+  (`--public-per-subclass`, `--public-revision`, `--no-public-fallback`). `review_production`
+  gains `--doc-class` and `--per-subclass`.
 - Post-publication release verification (`mailroom_eda.release_verify`,
   `scripts/publish/verify_release.py`): downloads what the Hub serves at a tag and checks it
   against invariants every release must meet and a frozen per-tag spec
