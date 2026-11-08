@@ -188,7 +188,8 @@ function labelItems(record){
 }
 /** Return candidate items and their mutable picker state, or null for non-array candidates.
  * With no item edits, a nonempty match in a draft correction no longer than the
- * candidate list resets dropped indices to the candidates absent from that draft.
+ * candidate list resets dropped indices to the candidates absent from that draft —
+ * adopted only into a freshly created picker state, so later manual toggles persist.
  */
 function itemsFor(record){
   const key=KEY(record), items=labelItems(record);
