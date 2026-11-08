@@ -1774,9 +1774,10 @@ class _FakeHub:
     def create_repo(self, repo_id, repo_type, private, exist_ok):
         self.created.append((repo_id, private))
 
-    def repo_info(self, repo_id, repo_type):
+    def repo_info(self, repo_id, repo_type, revision=None):
         import types
-        return types.SimpleNamespace(private=self.private)
+        assert revision in (None, "a" * 40)
+        return types.SimpleNamespace(private=self.private, sha="a" * 40)
 
     def upload_folder(self, folder_path, repo_id, repo_type, path_in_repo, commit_message, allow_patterns):
         root = Path(folder_path)
@@ -1784,10 +1785,13 @@ class _FakeHub:
             if p.is_file():
                 self.files[p.relative_to(root).as_posix()] = p.read_bytes()
         self.commits.append(commit_message)
+        from types import SimpleNamespace
+        return SimpleNamespace(oid="a" * 40)
 
-    def list_repo_tree(self, repo_id, repo_type, recursive):
+    def list_repo_tree(self, repo_id, repo_type, recursive, revision=None):
         import types
         from mailroom_eda.labeling import checkpoint
+        assert revision == "a" * 40
         return [types.SimpleNamespace(path=k, lfs=None, blob_id=checkpoint.git_blob_sha(v))
                 for k, v in self.files.items()]
 
@@ -1858,7 +1862,8 @@ def test_restore_fills_only_missing_files(tmp_path, monkeypatch):
     hub = _FakeHub()
     checkpoint.checkpoint(tmp_path / "labels", None, "x", api=hub)
 
-    def download(api, repo_id, filename, local_path):
+    def download(api, repo_id, filename, local_path, *, revision=None):
+        assert revision == "a" * 40
         local_path.parent.mkdir(parents=True, exist_ok=True)
         local_path.write_bytes(hub.files[filename])
         return local_path
@@ -1867,8 +1872,12 @@ def test_restore_fills_only_missing_files(tmp_path, monkeypatch):
     fresh = tmp_path / "fresh"
     (fresh / "1.3_cuad-calibration").mkdir(parents=True)
     (fresh / "1.3_cuad-calibration" / "documents.csv").write_text("local\n")
-    wrote = checkpoint.restore(fresh, api=hub)
+    with pytest.raises(SystemExit, match="restore conflict"):
+        checkpoint.restore(fresh, api=hub)
     assert (fresh / "1.3_cuad-calibration" / "documents.csv").read_text() == "local\n"
+    (fresh / "1.3_cuad-calibration" / "documents.csv").write_bytes(
+        hub.files["labels/1.3_cuad-calibration/documents.csv"])
+    wrote = checkpoint.restore(fresh, api=hub)
     assert fresh / "1.3_cuad-calibration" / "calls.jsonl" in wrote
     assert not (fresh / "README.md").exists()
 
@@ -2284,7 +2293,8 @@ def test_auto_restore_fills_missing_files_and_respects_opt_out(tmp_path, monkeyp
     hub = _FakeHub()
     checkpoint.checkpoint(tmp_path / "labels", None, "x", api=hub)
 
-    def download(api, repo_id, filename, local_path):
+    def download(api, repo_id, filename, local_path, *, revision=None):
+        assert revision == "a" * 40
         local_path.parent.mkdir(parents=True, exist_ok=True)
         local_path.write_bytes(hub.files[filename])
         return local_path
@@ -2295,9 +2305,14 @@ def test_auto_restore_fills_missing_files_and_respects_opt_out(tmp_path, monkeyp
     (fresh / "1.3_cuad-calibration" / "documents.csv").write_text("local\n")
     assert operate.auto_restore(argparse.Namespace(out=fresh), api=hub) == []  # hand-built: no flag, no restore
     assert operate.auto_restore(argparse.Namespace(out=fresh, no_restore=True), api=hub) == []
+    with pytest.raises(SystemExit, match="restore conflict"):
+        operate.auto_restore(argparse.Namespace(out=fresh, no_restore=False), api=hub)
+    (fresh / "1.3_cuad-calibration" / "documents.csv").write_bytes(
+        hub.files["labels/1.3_cuad-calibration/documents.csv"])
     wrote = operate.auto_restore(argparse.Namespace(out=fresh, no_restore=False), api=hub)
     assert fresh / "1.3_cuad-calibration" / "calls.jsonl" in wrote
-    assert (fresh / "1.3_cuad-calibration" / "documents.csv").read_text() == "local\n"
+    assert (fresh / "1.3_cuad-calibration" / "documents.csv").read_bytes() == hub.files[
+        "labels/1.3_cuad-calibration/documents.csv"]
 
     class Broken(_FakeHub):
         def list_repo_tree(self, **kw):

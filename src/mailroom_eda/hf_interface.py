@@ -41,7 +41,7 @@ def upload_folder(
     allow_patterns: list[str] | None = None,
 ) -> dict:
     """Upload a local folder to HF dataset repo."""
-    api.upload_folder(
+    commit = api.upload_folder(
         folder_path=str(folder_path),
         repo_id=repo_id,
         repo_type="dataset",
@@ -49,7 +49,8 @@ def upload_folder(
         commit_message=commit_message,
         allow_patterns=allow_patterns,
     )
-    return {"status": "uploaded", "repo": f"https://huggingface.co/datasets/{repo_id}"}
+    return {"status": "uploaded", "repo": f"https://huggingface.co/datasets/{repo_id}",
+            "revision": getattr(commit, "oid", None)}
 
 
 def verify_hub_sha256(api: HfApi, repo_id: str, filename: str, local_sha: str) -> dict:
@@ -86,7 +87,9 @@ def list_repo_files(api: HfApi, repo_id: str) -> list[str]:
     return [f.path for f in info]
 
 
-def download_file(api: HfApi, repo_id: str, filename: str, local_path: Path) -> Path:
+def download_file(api: HfApi, repo_id: str, filename: str, local_path: Path,
+                  *, revision: str | None = None) -> Path:
     """Download a file from HF dataset repo."""
     local_path.parent.mkdir(parents=True, exist_ok=True)
-    return Path(hf_hub_download(repo_id=repo_id, filename=filename, repo_type="dataset", local_dir=local_path.parent))
+    return Path(hf_hub_download(repo_id=repo_id, filename=filename, repo_type="dataset",
+                                local_dir=local_path.parent, revision=revision, token=api.token))

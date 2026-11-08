@@ -244,8 +244,14 @@ def test_verified_checkpoint_and_restore_into_clean_root_replay_per_field_state(
     # The verified receipt is appended AFTER upload, so a clean Hub-only restore
     # honestly recovers human_confirmed until that receipt is itself checkpointed.
     clean = tmp_path / "restored-labels"
-    fake_api = SimpleNamespace(list_repo_tree=lambda **kw: [SimpleNamespace(path=p, blob_id="fake") for p in snapshots])
-    monkeypatch.setattr(checkpoint.hf_interface, "download_file", lambda api, repo, path, dest: snapshots[path])
+    fake_api = SimpleNamespace(
+        repo_info=lambda **kw: SimpleNamespace(private=True, sha="a" * 40),
+        list_repo_tree=lambda **kw: [SimpleNamespace(path=p, blob_id=checkpoint.git_blob_sha(f.read_bytes()))
+                                    for p, f in snapshots.items()])
+    def download(api, repo, path, dest, *, revision):
+        assert revision == "a" * 40
+        return snapshots[path]
+    monkeypatch.setattr(checkpoint.hf_interface, "download_file", download)
     checkpoint.restore(clean, api=fake_api)
     restored = portal.ReviewPortal(clean, clean / "review_bundle" / "portal", campaign="test")
     assert states(restored.data()) == {"entity_name": "human_confirmed", "jurisdiction": "awaiting_review"}

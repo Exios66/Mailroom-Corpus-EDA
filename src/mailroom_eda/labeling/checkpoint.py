@@ -135,7 +135,10 @@ def checkpoint(labels_root: Path, approvals: Path | None, message: str, *, api: 
     with tempfile.TemporaryDirectory() as tmp:
         staged = stage(Path(labels_root), approvals, Path(tmp))
         result = hf_interface.upload_folder(api, tmp, repo_id, message)
-        revision = _snapshot(api, repo_id, result.get("revision") if isinstance(result, dict) else None)
+        revision = result.get("revision") if isinstance(result, dict) else None
+        if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
+            raise SystemExit("checkpoint upload returned no immutable commit revision")
+        revision = _snapshot(api, repo_id, revision)
         bad = verify(api, repo_id, staged, revision=revision)
     if bad:
         raise SystemExit(f"checkpoint upload did not verify: {', '.join(bad[:10])}")
@@ -171,9 +174,8 @@ def restore(labels_root: Path, *, api: Any = None, repo_id: str = STAGING_REPO,
     with tempfile.TemporaryDirectory() as tmp:
         downloads = []
         for f, target in missing:
-            # The central download_file wrapper has no revision argument; use the authenticated API.
-            local = Path(api.hf_hub_download(repo_id=repo_id, filename=f.path, repo_type="dataset",
-                                             revision=revision, local_dir=tmp))
+            local = hf_interface.download_file(api, repo_id, f.path, Path(tmp).resolve() / f.path,
+                                               revision=revision)
             _reject_symlinks(local)
             if not _matches(f, local.read_bytes()):
                 raise SystemExit(f"checkpoint download did not verify: {f.path}")
