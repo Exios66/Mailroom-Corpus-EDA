@@ -73,6 +73,12 @@ Nothing is uploaded and the public dataset is never edited.
   and start with `--hf-checkpoint`. Never paste tokens into the viewer or files.
 - Only a successful byte-verified private upload changes human-confirmed fields
   to checkpointed. Failed uploads leave local decisions intact.
+- The agent path accelerates review but does not stage on its own: per-label
+  approve/drop/edit, "Next pending", bulk "Accept verified in batch" (one click
+  marks source-check-verified undecided targets with *your* remembered initials),
+  then **your** Save; and the explicit Checkpoint is still what writes the signed
+  batch to the private staging repo. `GET /api/contract` documents the schemas,
+  decision key and the agent-accelerate / human-countersign rule.
 
 ## Launch a labeling batch from the page (off by default)
 

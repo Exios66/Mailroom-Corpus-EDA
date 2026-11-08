@@ -98,11 +98,23 @@ uv member (no build).
 ## Labeling results staging & private checkpoints (where the results live)
 
 - **Private Hub staging repo**: `Lucius-Morningstar/mailroom-dataset-v10-staging` —
-  the durable staging surface for v10 labeling results. `labeling checkpoint`
-  (and the review portal's explicit Checkpoint button, `POST /api/checkpoint` with
-  `--hf-checkpoint`) commits the labels root (packets, receipts, journals) into
-  that private repo with decisions history signed off by initials. Restore is the
-  mirrored direction of the same flow: `labeling review-portal --restore-revision <sha>`.
+  the durable staging surface for v10 labeling results. Every paid unit of work
+  auto-checkpoints (chunk run, review save, gate approval, route ping) and the review
+  portal's explicit Checkpoint button (`POST /api/checkpoint`, server started with
+  `--hf-checkpoint`) commits the labels root (packets, receipts, journals, decisions
+  signed off by initials) plus `campaign/approved.yaml` into that private repo;
+  every uploaded file is sha-verified and the commit is immutable. Provenance is
+  human: agents accelerate (per-label picker, bulk "Accept verified in batch",
+  next-pending) but never forge initials — a decision is staged with its reviewer's
+  own initials and one human Save. Restore is the mirrored flow:
+  `labeling review-portal --restore-revision <sha>`. The checklist the flow enforces:
+  `require HF_TOKEN to stage`, refuse a public staging repo, never touch `REPO_ID`,
+  never build a blind config from label files (code:
+  `src/mailroom_eda/labeling/checkpoint.py`, tests:
+  `tests/test_review_checkpoint_recovery.py`, card written on every checkpoint).
+  Prompt-verification re-runs (e.g. `3.3r`, κ gate vs a settled baseline) stage as
+  journal evidence with `--no-checkpoint` when their outcome is a discard: the run
+  artifacts stay in-repo but do not advance staging.
 - **Local backup staging repo**: `/Users/luciusjmorningstar/Downloads/labels-staging`
   = `https://github.com/Exios66/labels-staging` (branch `main`). Autoresearch loop
   state and experiment results are backed up per session under `YYYY-MM-DD-session-N/`

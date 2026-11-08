@@ -43,9 +43,37 @@ configs:
 # mailroom-dataset v10 labeling staging (private)
 
 Work-in-progress v10 label checkpoints for `Lucius-Morningstar/mailroom-dataset`, written by
-`mailroom_eda.labeling.checkpoint` after each run, review and gate approval. **Not a release.**
-Ground-truth side only: nothing here belongs in the blind `default` config. Journals are kept
-byte-for-byte, spend included: this is a private backup of the run logs, never published.
+`mailroom_eda.labeling.checkpoint` after each run, review save, gate approval and ping
+(auto-checkpoint), plus explicit reviewer checkpoints from the review portal
+(`--hf-checkpoint` / Checkpoint button). **Not a release.**
+
+## What lives here
+
+- `labels/<run>/**` — the labels root staged: chunk/run journals (calls, runs, gates),
+  `*-review-data.json` review packets, interim overlays, decisions and receipts, and the
+  run directories including verification re-runs (e.g. the 2026-11-08 `3.3r` kappa
+  verification whose result discarded an unverified prompt change).
+- `campaign/approved.yaml` — gate approvals signed off by reviewer initials.
+
+## Reviewer ethics & requirements
+
+- Provenance is human: provenance columns, initial and Save remain human acts, agents
+  accelerate (per-label picker, bulk "Accept verified in batch", next-pending) but never
+  forge initials; every staged decision carries its reviewer's initials.
+- Agent-access: `GET /api/contract` on the review portal; nothing publishes automatically.
+- Restore is the mirrored flow: `labeling review-portal --restore-revision <sha>` or
+  `labeling doctor` for readiness. Every file is uploaded and sha-verified, commits are
+  immutable; a lost checkout re-reads staged answers instead of re-paying them.
+- Method provenance: `labeling/` runbooks at
+  [Exios66/Mailroom-Corpus-EDA](https://github.com/Exios66/Mailroom-Corpus-EDA)
+  (`docs/labeler-review-viewer.md`), loop ledgers mirrored at
+  [Exios66/labels-staging](https://github.com/Exios66/labels-staging).
+
+## Not a release
+
+Ground-truth side only; nothing here belongs in the blind `default` config; journals stay
+byte-for-byte, spend included: a private backup of run logs, never published. The card
+declares the labels config only, so the Hub never auto-builds a blind config from them.
 """
 
 
