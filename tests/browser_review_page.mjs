@@ -160,6 +160,12 @@ try {
   await evaluate(`$('next-pending').click()`);
   assert.equal(await evaluate(`$('target').value`),'1');
   check('next-pending navigation');
+  // Sticky reviewer initials: typing them once pre-fills the next target's decision.
+  assert.equal(await evaluate(`$('target').value`),'1');
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
+  assert.equal(await evaluate(`$('initials').value`),'AB','remembered initials pre-fill the next target');
+  await evaluate(`$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  check('sticky reviewer initials across targets');
   // Batched generation alignment: the review list is grouped per labeling batch and the
   // record header shows the batch's task/set/slice line.
   const batches=await evaluate(`(()=>{const t=$('target');return {optgroups:[...t.children].filter(c=>c.tagName==='OPTGROUP').map(g=>g.label), seen:[...t.querySelectorAll('option')].map(o=>o.value)};})()`);

@@ -370,8 +370,7 @@ function renderTarget(){
   values.append(node('div', humanize(record.field)+' · '+humanize(record.doc_class)+(record.subclass?' / '+humanize(record.subclass):''), 'field-title'));
   if (record.batch||record.chunk) values.append(node('div','batch '+(record.batch||'')+(record.set?' · '+record.set:'')+(record.task?' · '+humanize(record.task):'')+(record.slice?' · '+record.slice:''),'muted'));
   const box=node('div','','value'); box.append(show(record.candidate_labels, record.dojo_type)); values.append(box);
-  const pick=itemPicker(record); if (pick) values.append(pick);
-  const chips=node('div','','chips');
+  const pick=itemPicker(record); if (pick) values.append(pick);  const chips=node('div','','chips');
   const checked=record.candidate_status==='source_checks_passed';
   if (record.candidate_status) chips.append(chip(label(record.candidate_status), checked?'good':'warn'));
   if (record.candidate_presence) chips.append(chip(label(record.candidate_presence), record.candidate_presence==='populated'?'good':''));
@@ -391,6 +390,9 @@ function renderTarget(){
   const issues=$('issues'); issues.textContent='';
   (record.issues||[]).forEach((i)=>issues.append(node('li', i)));
   const d=decision();
+  if (!d.reviewer_initials){ // sticky initials: remember the reviewer across targets of a session
+    try { d.reviewer_initials = localStorage.getItem(storageKey+'/initials') || ''; } catch (exc) {}
+  }
   $('decision').value=d.decision; $('initials').value=d.reviewer_initials;
   $('notes').value=d.reviewer_notes; $('correction').value=d.corrected_labels_json;
   $('decision-help').textContent=packet.decision_key?packet.decision_key[d.decision]||'':'';
@@ -571,6 +573,7 @@ document.addEventListener('keydown', (e)=>{
   const before=clone(decision());
   decision()[prop]=$(id).value;
   decision().updated_at=now();
+  if (id==='initials'){ try { localStorage.setItem(storageKey+'/initials', $(id).value); } catch (exc) {} } // sticky initials across targets
   if (id==='decision') $('decision-help').textContent=packet.decision_key?packet.decision_key[decision().decision]||'':'';
   logChange(before, decision());
 }));

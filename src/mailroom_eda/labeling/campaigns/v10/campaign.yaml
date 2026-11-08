@@ -114,9 +114,9 @@ chunks:
   - {id: "7a", task: correspondence, set: pilot, models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash],
      reasoning: "low", cap_usd: 0.15, gate: {kind: human_verdicts, precision: 0.90}}
   - {id: "7b", needs: ["7a"], task: correspondence, set: remainder, chunk: "1/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.90, gate: {kind: agreement}}
-  - {id: "7c", needs: ["7a"], task: correspondence, set: remainder, chunk: "2/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.85, gate: {kind: agreement}}
-  - {id: "7d", needs: ["7a"], task: correspondence, set: remainder, chunk: "3/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.85, gate: {kind: agreement}}
-  - {id: "7e", needs: ["7a"], task: correspondence, set: remainder, chunk: "4/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.85, gate: {kind: agreement}}
+  - {id: "7c", needs: ["7a"], task: correspondence, set: remainder, chunk: "2/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.88, gate: {kind: agreement}}
+  - {id: "7d", needs: ["7a"], task: correspondence, set: remainder, chunk: "3/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.88, gate: {kind: agreement}}
+  - {id: "7e", needs: ["7a"], task: correspondence, set: remainder, chunk: "4/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.88, gate: {kind: agreement}}
   - {id: "8a", task: claim_checklist, set: pilot, models: [z-ai/glm-5.3-flashx-legal, minimax/minimax-m3.1-flash],
      reasoning: "low", cap_usd: 0.15, gate: {kind: human_verdicts, precision: 0.90}}
   # 8b-8e split the claim_checklist remainder BY CLAIM TYPE (2026-11-08): the four CMS-family
