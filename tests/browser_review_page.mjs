@@ -1,0 +1,106 @@
+// Synthetic-only Chromium smoke test; no dependencies, corpus, or external requests.
+// CHROME=/path/to/chrome node tests/browser_review_page.mjs [evidence-directory]
+import fs from 'node:fs';
+import http from 'node:http';
+import path from 'node:path';
+import {spawn} from 'node:child_process';
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+
+const out=process.argv[2] || '/private/tmp/opencode/review-integrated-evidence';
+fs.mkdirSync(out,{recursive:true});
+const text='🧾 SYNTHETIC DOCUMENT ONLY\nProvide a signed claim form.\n<img src=x onerror="window.injected=true">\nEND OF COMPLETE SOURCE';
+const quote='signed claim form', start=Array.from(text.split(quote)[0]).length;
+const record={document_id:'SYNTH-001',field:'claim_checklist',document_sha256:createHash('sha256').update(text).digest('hex'),full_document_text:text,split:'train',candidate_status:'source_checks_passed',candidate_labels:['signed claim form'],existing_gt_fields:{claim_checklist:[]},evidence:[{start,end:start+quote.length,quote}],source_url:'javascript:alert(1)'};
+let packet={schema:'mailroom-review-packet/v1',packet_id:'synthetic-packet-1',state_revision:'r1',decision_key:{NOT_REVIEWED:'Not reviewed',ACCEPT:'Accept source-checked proposal',CORRECT:'Supply replacement JSON',REJECT:'Reject',NEEDS_SOURCE:'Needs source'},records:[record,{...record,document_id:'SYNTH-002',field:'entity_name',candidate_labels:'Example Corporation',dojo_type:'name',correction_type:'string',source_url:'https://example.invalid/source'}],review_states:[],saved_decisions:[],saved_history:[],checkpoint_enabled:true,tracker:{name:'Synthetic campaign',loaded_target_fields:2,human_confirmed_fields:0,remaining_loaded_fields:2,checkpointed_fields:0,scope:'Synthetic tracker only; review is not task approval.',tasks:[{id:'A',task:'claim_checklist',status:'pending',documents_total:2,ready:1,reviewed:0,remaining:2,loaded_target_fields:1},{id:'B',task:'corporate',status:'approved',documents_total:1,ready:1,reviewed:1,remaining:0,loaded_target_fields:1}]}};
+const template=fs.readFileSync(new URL('../src/mailroom_eda/labeling/review_page.html',import.meta.url),'utf8');
+packet.revision_queue=[{document_id:'SYNTH-PRODUCTION',field:'entity_name',source_dataset:'synthetic/public',source_revision:'public-sha',split:'test',status:'human_confirmed',value:'Example Corporation'}];
+Object.assign(packet.tracker,{private_source:{repo:'synthetic/private',revision:'private-sha',status:'connected'},campaign_file:'synthetic/campaign.yaml',approval_file:'synthetic/approvals.yaml'});
+assert.equal(template.split('__REVIEW_PACKET_JSON__').length-1,1);
+assert(!template.includes('innerHTML'));
+let saves=0, checkpoints=0, failSave=false, posts=[];
+const server=http.createServer(async(req,res)=>{
+  res.setHeader('Cache-Control','no-store');
+  if(req.url==='/review.html') {res.setHeader('Content-Type','text/html');res.end(template.replace('__REVIEW_PACKET_JSON__',JSON.stringify(packet).replaceAll('<','\\u003c')));return;}
+  res.setHeader('Content-Type','application/json');
+  if(req.url==='/review-data.json') {res.end(JSON.stringify(packet));return;}
+  let raw=''; for await(const chunk of req) raw+=chunk;
+  const body=JSON.parse(raw || '{}');
+  if(req.url==='/api/reviews') {
+    if(failSave) {res.writeHead(409);res.end(JSON.stringify({error:'synthetic revision conflict'}));return;}
+    posts.push(body); saves++;
+    packet={...packet,state_revision:'r'+(saves+1),saved_decisions:body.decisions,saved_history:body.history,review_states:[{document_id:record.document_id,field:record.field,status:'human_confirmed'}],tracker:{...packet.tracker,human_confirmed_fields:1,remaining_loaded_fields:1}};
+    res.end(JSON.stringify({saved:true}));return;
+  }
+  if(req.url==='/api/checkpoint') {assert.deepEqual(body,{packet_id:packet.packet_id,confirm:true});checkpoints++;packet={...packet,state_revision:'checkpoint-1',tracker:{...packet.tracker,checkpointed_fields:1}};res.end(JSON.stringify({checkpointed:true}));return;}
+  res.writeHead(404);res.end('{}');
+});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+const chrome=spawn(process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',['--headless=new','--remote-debugging-port=0','--user-data-dir='+path.join(out,'chrome-profile'),'--no-first-run','--no-default-browser-check','--disable-background-networking','--disable-component-update','--window-size=1440,1100','about:blank'],{stdio:['ignore','ignore','pipe']});
+let ws,session,sequence=0;const pending=new Map(),errors=[];
+try {
+  const address=await new Promise((resolve,reject)=>{let output='';chrome.stderr.on('data',d=>{output+=d;const m=output.match(/DevTools listening on (ws:\/\/[^\s]+)/);if(m)resolve(m[1]);});chrome.on('error',reject);chrome.on('exit',code=>reject(Error('Chrome exit '+code)));});
+  ws=new WebSocket(address);await new Promise(resolve=>ws.addEventListener('open',resolve,{once:true}));
+  ws.addEventListener('message',event=>{const m=JSON.parse(event.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result);}else if(m.method==='Runtime.exceptionThrown') errors.push(m.params);else if(m.method==='Page.javascriptDialogOpening') call('Page.handleJavaScriptDialog',{accept:true});});
+  function call(method,params={},sid=session){const id=++sequence;return new Promise((resolve,reject)=>{pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params,...(sid?{sessionId:sid}:{})}));});}
+  async function evaluate(expression){const r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;}
+  async function waitFor(expression){await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;function check(){if(${expression})resolve(true);else if(Date.now()>end)reject(Error('Condition timeout'));else requestAnimationFrame(check);}check();})`);}
+  async function screenshot(name){const r=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});fs.writeFileSync(path.join(out,name+'.png'),Buffer.from(r.data,'base64'));}
+  async function input(id,value){await evaluate(`$('${id}').value=${JSON.stringify(value)};$('${id}').dispatchEvent(new Event('input',{bubbles:true}));`);}
+  const target=await call('Target.createTarget',{url:'about:blank'},null);
+  session=(await call('Target.attachToTarget',{targetId:target.targetId,flatten:true},null)).sessionId;
+  await call('Page.enable');await call('Runtime.enable');
+  await call('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:out},null);
+  await call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/review.html`});
+  await waitFor(`document.getElementById('save') && !$('save').disabled`);
+  assert.equal(await evaluate(`$('source').textContent`),text);
+  assert.equal(await evaluate(`document.querySelector('#source mark').textContent`),quote);
+  assert.equal(await evaluate(`document.querySelectorAll('#source img, #links a').length`),0);
+  assert.match(await evaluate(`$('tasks').textContent`),/pending/);
+  assert.match(await evaluate(`$('revision-queue').textContent`),/SYNTH-PRODUCTION.*public-sha.*test.*human_confirmed/s);
+  assert.match(await evaluate(`$('tracker-source').textContent`),/private-sha.*connected.*synthetic\/campaign.yaml/s);
+  await evaluate(`$('task-filter').value='completed';$('task-filter').dispatchEvent(new Event('change'));`);
+  assert.match(await evaluate(`$('tasks').textContent`),/approved/);
+  assert.doesNotMatch(await evaluate(`$('tasks').textContent`),/pending/);
+  await screenshot('01-source-tracker-highlight');
+  await input('decision','ACCEPT');await input('initials','AB');await input('notes','Synthetic source verified.');
+  assert.equal(await evaluate(`$('checkpoint').disabled`),true);
+  await evaluate(`$('save').click()`);await waitFor(`!busy && !dirty`);
+  assert.equal(saves,1);assert.equal(posts[0].state_revision,'r1');assert.equal(posts[0].decisions[0].decision,'ACCEPT');assert.equal(posts[0].history.length,3);
+  await screenshot('02-saved-server-confirmed');
+  await call('Page.reload');await waitFor(`document.getElementById('save') && !$('save').disabled`);
+  assert.equal(await evaluate(`$('decision').value`),'ACCEPT');
+  assert.equal(await evaluate(`history.length`),3,'recovered history must not be fabricated');
+  await evaluate(`$('export').click()`);
+  await screenshot('03-reloaded-receipt');
+  await evaluate(`window.confirm=()=>true;$('checkpoint').click()`);await waitFor(`!busy && packet.state_revision==='checkpoint-1'`);
+  assert.equal(checkpoints,1);
+  await input('notes','Keep this local draft.');
+  await evaluate(`$('reload').click()`);await waitFor(`!busy`);
+  assert.equal(await evaluate(`$('notes').value`),'Keep this local draft.');
+  // A real reload exercises localStorage restoration rather than only an in-memory refresh.
+  await evaluate(`window.onbeforeunload=null`);
+  await call('Page.navigate',{url:'about:blank'});
+  // CDP bypasses the synthetic tab's beforeunload prompt without altering the production page.
+  await call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/review.html`});
+  await waitFor(`document.getElementById('save') && !$('save').disabled`);
+  assert.equal(await evaluate(`$('notes').value`),'Keep this local draft.');
+  failSave=true;
+  await evaluate(`$('save').click()`);await waitFor(`!busy`);
+  assert.match(await evaluate(`$('message').textContent`),/409.*Draft retained/s);
+  assert.equal(await evaluate(`$('notes').value`),'Keep this local draft.');
+  packet={...packet,state_revision:'other-reviewer'};
+  await evaluate(`$('reload').click()`);await waitFor(`!busy`);
+  assert.equal(await evaluate(`$('discard').hidden`),false);assert.equal(await evaluate(`$('save').disabled`),true);
+  await screenshot('04-stale-draft-preserved');
+  await evaluate(`window.confirm=()=>true;$('discard').click()`);await waitFor(`!busy && !pendingData`);
+  assert.equal(await evaluate(`$('notes').value`),'Synthetic source verified.');
+  await evaluate(`$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  assert.match(await evaluate(`$('values').textContent`),/Example Corporation/);
+  assert.equal(await evaluate(`document.querySelector('#links a').protocol`),'https:');
+  await screenshot('05-native-field');
+  assert.deepEqual(errors,[]);
+  fs.writeFileSync(path.join(out,'submitted-review.json'),JSON.stringify(posts[0],null,2));
+  fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({passed:true,saves,checkpoints,journal_events:posts[0].history.length,checks:['Unicode offsets','full source','no HTML injection','safe source URLs','native values','task filters','save contract','receipt/history hydration','localStorage resume','same-revision reload','409 retains draft','changed-revision explicit discard','checkpoint'],console_exceptions:errors},null,2));
+  console.log('PASS: integrated synthetic review browser smoke; evidence '+out);
+} finally {ws?.close();chrome.kill();server.close();}
