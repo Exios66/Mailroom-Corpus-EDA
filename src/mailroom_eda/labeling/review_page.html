@@ -154,6 +154,9 @@ const KEY=(r)=>r.document_id+'\n'+r.field;
 const storageKey='mailroom-review-draft/'+packet.packet_id;
 function blank(r){ return {document_id:r.document_id, field:r.field, document_sha256:r.document_sha256, decision:'NOT_REVIEWED', corrected_labels_json:'', reviewer_initials:'', reviewer_notes:'', updated_at:''}; }
 function localDraft(){ return [...decisions.values()].some((d)=>d.decision!=='NOT_REVIEWED'||d.reviewer_notes||d.reviewer_initials||d.corrected_labels_json); }
+/** Reset targets, item choices, decisions, and history from packet data.
+ * A truthy keep marks the resulting state as unsaved.
+ */
 function seed(data, keep){
   records=[...(data.records||[])];
   decisions=new Map();
@@ -175,11 +178,18 @@ function decision(){ return decisions.get(KEY(records[current])); }
 // travels as the CORRECT replacement array (corrected_labels_json), so the server contract
 // stays one decision per (document, field); itemState is browser-side only.
 let itemState=new Map();
+/** Return candidate items as strings, or null unless this is an array correction
+ * with an array candidate (including a candidate encoded as JSON text).
+ */
 function labelItems(record){
   if (record.correction_type!=='array') return null;
   const parsed=parseMaybe(record.candidate_labels);
   return Array.isArray(parsed) ? parsed.map((x)=>String(x)) : null;
 }
+/** Return candidate items and their mutable picker state, or null for non-array candidates.
+ * With no item edits, a nonempty match in a draft correction no longer than the
+ * candidate list resets dropped indices to the candidates absent from that draft.
+ */
 function itemsFor(record){
   const key=KEY(record), items=labelItems(record);
   if (items===null) return null;
@@ -195,12 +205,19 @@ function itemsFor(record){
   }
   return {items, state};
 }
+/** Return kept labels in candidate order, or null for non-array candidates.
+ * Truthy item edits replace the original text; empty edits retain it.
+ */
 function keptItems(record){
   const ctx=itemsFor(record);
   if (ctx===null) return null;
   return ctx.items.map((text,i)=>{ const text2=String(ctx.state.edits[i]?ctx.state.edits[i]:text); return [i,{dropped:ctx.state.dropped.includes(i), text:text2}]; })
     .filter(([,v])=>!v.dropped).map(([,v])=>v.text);
 }
+/** Build the keep/drop/edit controls, or return null for non-array candidates.
+ * Applying the selection sets the current decision to CORRECT and records a local
+ * draft change; saving it to the server still requires Save.
+ */
 function itemPicker(record){
   const ctx=itemsFor(record);
   if (ctx===null) return null;
@@ -383,6 +400,9 @@ function modelAnswers(record){
   });
   box.append(t); return box;
 }
+/** Render the current target and decision, filling missing initials from local storage.
+ * Storage access failures leave initials unchanged.
+ */
 function renderTarget(){
   const record=records[current]; $('target').value=String(current);
   renderSource(record);
@@ -420,6 +440,7 @@ function renderTarget(){
     +(record.correction_type==='array'?'array of strings':record.correction_type==='number'?'number':record.correction_type||'string');
   renderTargetStatus();
 }
+/** Refresh the current target's status and batch decision counts. */
 function renderTargetStatus(){
   const d=decision();
   $('target-status').textContent='Server state: '+stateOf(records[current]).status
@@ -427,6 +448,7 @@ function renderTargetStatus(){
     +' · Decided: '+d.decision+(d.updated_at?' at '+d.updated_at:'');
   batchProgress();
 }
+/** Update batch option labels with local decided/total counts, including unsaved decisions. */
 function batchProgress(){
   // Per-batch decided/total on the optgroup label, so agents and reviewers see
   // progress without opening the tracker; rebuilt from the decisions map.
@@ -488,6 +510,7 @@ function renderJournal(){
     node('td', (h.before||{}).decision+' → '+(h.after||{}).decision)); t.append(tr); });
   el.append(t);
 }
+/** Refresh the review views and packet binding, rebuilding target options when their count changes. */
 function render(){
   const target=$('target');
   if (target.options.length!==records.length){
@@ -585,6 +608,9 @@ $('task-filter').addEventListener('change', tracker);
 $('target').addEventListener('change', ()=>{ current=Number($('target').value)||0; renderTarget(); });
 $('previous').addEventListener('click', ()=>{ current=Math.max(0,current-1); renderTarget(); controls(); });
 $('next').addEventListener('click', ()=>{ current=Math.min(records.length-1,current+1); renderTarget(); controls(); });
+/** Return the next undecided record index after from, wrapping through from itself.
+ * Return from when no undecided record exists or the record list is empty.
+ */
 function nextPending(from){
   for (let step=1; step<=records.length; step++){
     const i=(from+step)%records.length;
@@ -595,6 +621,9 @@ function nextPending(from){
 $('next-pending').addEventListener('click', ()=>{ if (!records.length) return; current=nextPending(current); renderTarget(); controls(); });
 // Batch-scoped next pending: same rule, restricted to the cursor's batch, falling back
 // to the global scan when that batch is fully decided (keyboard: Shift+N).
+/** Scan after record index from with wraparound, preferring its batch (or chunk).
+ * Fall back to the global pending scan; an empty record list returns from.
+ */
 function nextPendingInBatch(from){
   if (!records.length) return from;
   const gid=String(records[from].batch||records[from].chunk||'');
@@ -632,6 +661,9 @@ $('bulk-accept').addEventListener('click', ()=>{
 // navigable; the choice is remembered like the sticky initials.
 const TABS=['launch','review','tracker'];
 const tabKey='mailroom-review-tabs';
+/** Select a launch, review, or tracker tab and remember it when storage is available.
+ * Update view visibility and tab accessibility state without moving focus.
+ */
 function showTab(name){
   TABS.forEach((n)=>{
     document.getElementById(n+'-view').hidden = n!==name;
@@ -778,6 +810,9 @@ async function pollLaunch(){
     }
   } catch (exc) { launchMessage('Status unavailable: '+exc.message); }
 }
+/** Initialize launch choices and handlers, then start status polling when launch is enabled.
+ * Disabled launch or a failed options request leaves the panel uninitialized.
+ */
 async function launchInit(){
   if (!packet.launch_enabled) return;
   try { launchOpts=await request('/api/launch/options'); } catch (exc) { return; }

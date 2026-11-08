@@ -103,6 +103,12 @@ BUNDLES: dict[str, tuple[int, list[str], list[tuple[str, str]]]] = {
 
 
 def score(prompts_dir: Path = PROMPTS) -> tuple[float, float, int, list[str]]:
+    """Measure weighted regex-theme coverage of the prompt files in ``prompts_dir``.
+
+    Missing files contribute no text; decoding errors are ignored. Return the
+    coverage percentage twice, the total possible theme weight, and missing
+    themes prefixed by bundle name. Other file read errors propagate.
+    """
     import re
 
     covered, total, missing = 0.0, 0, []
