@@ -194,6 +194,19 @@ try {
   assert.equal(await evaluate(`$('review-view').hidden`),false);
   await evaluate(`showTab('launch')`);
   check('launcher / review / tracker tab switching');
+  // Keyboard: ARIA tabs pattern — arrows cycle selection (focus follows it),
+  // Home/End jump, and only the active tab stays in the tab order.
+  assert.equal(await evaluate(`$('tab-review').tabIndex`),-1);
+  assert.equal(await evaluate(`$('tab-launch').tabIndex`),0);
+  await evaluate(`$('tab-launch').focus()`);
+  await evaluate(`$('tab-launch').dispatchEvent(Object.assign(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true})))`);
+  assert.equal(await evaluate(`$('tab-review').getAttribute('aria-selected')`),'true','ArrowRight moves to the next tab');
+  assert.equal(await evaluate(`document.activeElement.id`),'tab-review','focus follows the selection');
+  await evaluate(`document.activeElement.dispatchEvent(Object.assign(new KeyboardEvent('keydown',{key:'Home',bubbles:true,cancelable:true})))`);
+  assert.equal(await evaluate(`$('tab-launch').getAttribute('aria-selected')`),'true','Home jumps to the first tab');
+  await evaluate(`document.activeElement.dispatchEvent(Object.assign(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true})))`);
+  assert.equal(await evaluate(`$('tab-tracker').getAttribute('aria-selected')`),'true','selection wraps backwards');
+  check('tab keyboard: arrow/home/end with roving tabindex');
   // Launch panel: shown because the server says launch is enabled.
   await waitFor(`!$('launch-panel').hidden && $('launch-target').options.length===3`);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#launch-target optgroup')].map(g=>g.label)`),['Campaign','Public trial']);

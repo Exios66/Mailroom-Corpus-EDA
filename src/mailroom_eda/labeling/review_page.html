@@ -620,11 +620,21 @@ const tabKey='mailroom-review-tabs';
 function showTab(name){
   TABS.forEach((n)=>{
     document.getElementById(n+'-view').hidden = n!==name;
-    document.getElementById('tab-'+n).setAttribute('aria-selected', String(n===name));
+    const tab=document.getElementById('tab-'+n);
+    tab.setAttribute('aria-selected', String(n===name));
+    tab.tabIndex = n===name?0:-1; // roving tabindex: only the active tab is in the tab order
   });
   try { localStorage.setItem(tabKey, name); } catch (exc) {}
 }
 TABS.forEach((n)=>$('tab-'+n).addEventListener('click', ()=>showTab(n)));
+TABS.forEach((n)=>$('tab-'+n).addEventListener('keydown', (e)=>{ // ARIA tabs pattern
+  if (e.altKey||e.ctrlKey||e.metaKey) return;
+  const d={ArrowRight:1,ArrowLeft:-1}[e.key];
+  if (d===undefined && e.key!=='Home' && e.key!=='End') return;
+  const name=e.key==='Home'?TABS[0]:e.key==='End'?TABS[TABS.length-1]:TABS[(TABS.indexOf(n)+d+TABS.length)%TABS.length];
+  showTab(name); document.getElementById('tab-'+name).focus();
+  e.preventDefault(); // preempts the page-level 'N' shortcut with defaultPrevented
+}));
 document.addEventListener('keydown', (e)=>{
   if (e.defaultPrevented||e.altKey||e.ctrlKey||e.metaKey) return;
   const t=e.target;
