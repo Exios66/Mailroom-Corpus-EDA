@@ -393,6 +393,12 @@ def stale_winner(name: str, entry: Mapping[str, Any], picked: Sequence[Mapping[s
     return ""
 
 
+def pick(rows: Sequence[Mapping[str, Any]], entry: Mapping[str, Any]) -> list:
+    """A chunk's rows: the campaign ``subclass`` filter first, then the ``i/n`` slice."""
+    return runner.chunk(runner.select(rows, entry["task"], entry["set"], entry.get("subclass")),
+                        entry.get("chunk"))
+
+
 def cmd_chunk(args: argparse.Namespace) -> int:
     """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
@@ -429,7 +435,7 @@ def cmd_chunk(args: argparse.Namespace) -> int:
         if not ok:
             raise SystemExit(f"Modal endpoint not ready: {why}")
     rows = runner.load_stage(args.stage)
-    picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
+    picked = pick(rows, entry)
     stale = stale_winner(args.campaign, entry, picked)
     if stale:
         raise SystemExit(stale)
@@ -506,7 +512,7 @@ def _sweep_projection(args: argparse.Namespace, plan: Sequence[tuple[Mapping[str
     for entry, arm in plan:
         models, reasoning = resolve(args.campaign, entry)
         models, _ = chunk_models(args, models)
-        picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
+        picked = pick(rows, entry)
         proj = runner.estimate(picked, entry["task"], models, entry["set"])
         out.append({"chunk": f"{entry['id']}{f'.{arm}' if arm else ''}", "task": entry["task"],
                     "set": entry["set"], "documents": proj["documents"], "calls": proj["calls"],
@@ -884,7 +890,7 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
     if not (out_dir / "calls.jsonl").exists():
         raise SystemExit(f"{out_dir} has no calls.jsonl; run `labeling chunk {entry['id']}` first")
     rows = runner.load_stage(stage)
-    picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
+    picked = pick(rows, entry)
     models, reasoning = resolve(name, entry)
     provider, providers_of = "openrouter", None
     started = [r for r in export.read_journal(out_dir / "runs.jsonl") if r.get("started_utc") and r.get("models")]

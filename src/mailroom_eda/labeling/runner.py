@@ -46,11 +46,11 @@ PILOT_PER_STRATUM = {"contract_entities": 2, "merger_entities": 3, "merger_consi
 #: Output-token budget per call, by task (also the worst case the spend gate reserves).
 MAX_TOKENS = {"cuad": 8192, "intent": 400, "contract_entities": 3000, "merger_entities": 3500,
               "merger_consideration": 600,
-              "correspondence": 1200, "claim_checklist": 1500, "corporate": 2500}
+              "correspondence": 1200, "claim_checklist": 5000, "corporate": 2500}
 #: Typical output tokens per call, for estimates (measured from the field counts).
 TYPICAL_OUTPUT = {"cuad": 2500, "intent": 120, "contract_entities": 1200, "merger_entities": 1500,
                   "merger_consideration": 200,
-                  "correspondence": 450, "claim_checklist": 500, "corporate": 800}
+                  "correspondence": 450, "claim_checklist": 400, "corporate": 800}
 RETRY_FACTOR = 1.25
 #: Extra output tokens for a call with reasoning on: reasoning tokens count against
 #: ``max_tokens``, and without this a short answer budget (intent: 400) is cut off.
@@ -103,12 +103,21 @@ def pilot_rows(rows: Sequence[Mapping[str, Any]], task: str) -> list[Mapping[str
     return [r for sub in sorted(by_sub) for r in by_sub[sub][:per]]
 
 
-def select(rows: Sequence[Mapping[str, Any]], task: str, set_name: str) -> list[Mapping[str, Any]]:
-    """Rows for one task and set, sorted by filename."""
+def select(rows: Sequence[Mapping[str, Any]], task: str, set_name: str,
+           subclass: Any = "") -> list[Mapping[str, Any]]:
+    """Rows for one task and set, sorted by filename.
+
+    ``subclass`` (campaign key) optionally restricts the pool to those subclasses, so per
+    claim-type chunks slice only their own strata; the pilot exclusion still applies per
+    subclass inside ``pilot_rows``.
+    """
     from .. import v9_4_revision as v94  # noqa: PLC0415
 
     cls = tasks.TASK_CLASSES[task]
     pool = [r for r in rows if r["expected"] == cls]
+    if subclass:
+        subs = {str(s) for s in (subclass if isinstance(subclass, (list, tuple)) else [subclass])}
+        pool = [r for r in pool if str(r.get("expected_subclass") or "") in subs]
     if task == "cuad":
         if set_name == "calibration":
             out = v94.cuad_calibration_sample(rows)
@@ -881,11 +890,12 @@ def campaign_costs(rows: Sequence[Mapping[str, Any]], name: str = "v10") -> dict
     out: list[dict[str, Any]] = []
     tokens: dict[str, list[int]] = {}
     for ch in camp["chunks"]:
-        picked = chunk(select(rows, ch["task"], ch["set"]), ch.get("chunk"))
         try:  # an approved bake-off winner is priced as itself, otherwise as the costliest arm
-            from .operate import resolve  # noqa: PLC0415
+            from .operate import resolve, pick  # noqa: PLC0415
             models, reasoning = resolve(name, ch)
+            picked = pick(rows, ch)
         except SystemExit:
+            picked = chunk(select(rows, ch["task"], ch["set"]), ch.get("chunk"))
             models = [PLACEHOLDER_MODELS.get(m, m) for m in ch["models"]]
             reasoning = PLACEHOLDER_REASONING.get(str(ch["reasoning"]), str(ch["reasoning"]))
         est = estimate(picked, ch["task"], models, ch["set"])

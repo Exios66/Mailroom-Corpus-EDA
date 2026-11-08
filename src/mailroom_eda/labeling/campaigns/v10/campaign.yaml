@@ -117,12 +117,26 @@ chunks:
   - {id: "7c", needs: ["7a"], task: correspondence, set: remainder, chunk: "2/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.85, gate: {kind: agreement}}
   - {id: "7d", needs: ["7a"], task: correspondence, set: remainder, chunk: "3/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.85, gate: {kind: agreement}}
   - {id: "7e", needs: ["7a"], task: correspondence, set: remainder, chunk: "4/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.85, gate: {kind: agreement}}
-  - {id: "8a", task: claim_checklist, set: pilot, models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash],
+  - {id: "8a", task: claim_checklist, set: pilot, models: [z-ai/glm-5.3-flashx-legal, minimax/minimax-m3.1-flash],
      reasoning: "low", cap_usd: 0.15, gate: {kind: human_verdicts, precision: 0.90}}
-  - {id: "8b", needs: ["8a"], task: claim_checklist, set: remainder, chunk: "1/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.95, gate: {kind: agreement}}
-  - {id: "8c", needs: ["8a"], task: claim_checklist, set: remainder, chunk: "2/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.95, gate: {kind: agreement}}
-  - {id: "8d", needs: ["8a"], task: claim_checklist, set: remainder, chunk: "3/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.95, gate: {kind: agreement}}
-  - {id: "8e", needs: ["8a"], task: claim_checklist, set: remainder, chunk: "4/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 1.20, gate: {kind: agreement}}
+  # 8b-8e split the claim_checklist remainder BY CLAIM TYPE (2026-11-08): the four CMS-family
+  # strata are cheap, table-driven and agree easily; auto decision letters are short and
+  # structured; the long-property FNOL narratives run last (200 docs, 8-14k chars) so the
+  # CMS/auto results can inform whether the property stratum needs its own window or
+  # reasoning configuration. Measured per-doc costs (8a pilot): MiniMax $0.00057, DeepSeek
+  # $0.00217 (96% of its output is reasoning at 3,165 mean tokens) -> ~$0.00057-0.0022/answer.
+  - {id: "8b", needs: ["8a"], task: claim_checklist, set: remainder, models: [z-ai/glm-5.3-flashx-legal, minimax/minimax-m3.1-flash],
+     reasoning: "low", cap_usd: 1.10, gate: {kind: agreement},
+     subclass: [carrier, pde]}
+  - {id: "8c", needs: ["8a"], task: claim_checklist, set: remainder, models: [z-ai/glm-5.3-flashx-legal, minimax/minimax-m3.1-flash],
+     reasoning: "low", cap_usd: 1.10, gate: {kind: agreement},
+     subclass: [inpatient, outpatient]}
+  - {id: "8d", needs: ["8a"], task: claim_checklist, set: remainder, models: [z-ai/glm-5.3-flashx-legal, minimax/minimax-m3.1-flash],
+     reasoning: "low", cap_usd: 1.10, gate: {kind: agreement},
+     subclass: [auto]}
+  - {id: "8e", needs: ["8a"], task: claim_checklist, set: remainder, models: [z-ai/glm-5.3-flashx-legal, minimax/minimax-m3.1-flash],
+     reasoning: "low", cap_usd: 1.15, gate: {kind: agreement},
+     subclass: [property]}
   - {id: "9a", task: corporate, set: pilot, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 0.25, gate: {kind: human_verdicts, precision: 0.90}}
   - {id: "9b", needs: ["9a"], task: corporate, set: remainder, chunk: "1/4", models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 0.85, gate: {kind: agreement}}

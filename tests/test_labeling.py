@@ -831,8 +831,9 @@ def test_campaign_needs_order_and_output_dirs():
             d = operate.chunk_dir(Path("out"), entry, a)
             assert d not in seen_dirs, d
             seen_dirs.add(d)
-    # $30 plus the 904-email intent relabel the user added on 2026-11-06 (caps $1.95)
-    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 33.5  # +$1.85 of 5b-5e cap for whole-contract reading (approved 2026-11-06)
+    # $30 plus the 904-email intent relabel the user added on 2026-11-06 (caps $1.95); +$0.40
+    # on 2026-11-08: the claim_checklist per-type split (8b-8e) needs measured-p75 caps
+    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 34.0
 
 
 def test_every_cap_covers_its_projection_with_headroom():
