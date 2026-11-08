@@ -184,6 +184,16 @@ try {
   await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
   assert.match(await evaluate(`$('values').textContent`),/batch 8a .* pilot · Claim checklist/);
   check('batch-grouped target list and batch chip');
+  // Tabs: the launcher, the review interface and the campaign tracker are separate
+  // views — one visible at a time — so the page stays navigable.
+  await evaluate(`showTab('tracker')`);
+  assert.equal(await evaluate(`$('tracker-view').hidden`),false);
+  assert.equal(await evaluate(`$('review-view').hidden`),true);
+  assert.equal(await evaluate(`$('launch-view').hidden`),true);
+  await evaluate(`showTab('review')`);
+  assert.equal(await evaluate(`$('review-view').hidden`),false);
+  await evaluate(`showTab('launch')`);
+  check('launcher / review / tracker tab switching');
   // Launch panel: shown because the server says launch is enabled.
   await waitFor(`!$('launch-panel').hidden && $('launch-target').options.length===3`);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#launch-target optgroup')].map(g=>g.label)`),['Campaign','Public trial']);

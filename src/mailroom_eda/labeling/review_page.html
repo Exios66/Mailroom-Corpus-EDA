@@ -43,6 +43,10 @@ label.inline input { width: auto; }
 .check.fail { border-color: #c62828; background: #fff5f5; } .check.warn { border-color: #e0a100; }
 .check.pass { border-color: #2e7d32; } .check .fix { margin: 2px 0; font-weight: 600; }
 pre#launch-log { max-height: 220px; overflow: auto; background: #f6f6f6; padding: 6px; font-size: 12px; white-space: pre-wrap; }
+#tabs { display: flex; gap: 6px; margin: 12px 0 0; }
+#tabs [role="tab"] { border-radius: 6px 6px 0 0; }
+#tabs [aria-selected="true"] { background: #1652f0; border-color: #1652f0; color: #fff; font-weight: 600; }
+#tabs .avail::after { content: " ·"; color: #1652f0; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -57,6 +61,13 @@ pre#launch-log { max-height: 220px; overflow: auto; background: #f6f6f6; padding
 <div id="message" role="status" aria-live="polite" class="notice">Loading review packet…</div>
 <small id="binding" class="muted"></small>
 
+<nav id="tabs" role="tablist" aria-label="Page sections">
+<button id="tab-launch" role="tab" aria-controls="launch-view" aria-selected="false">Batch launcher</button>
+<button id="tab-review" role="tab" aria-controls="review-view" aria-selected="true">Label review</button>
+<button id="tab-tracker" role="tab" aria-controls="tracker-view" aria-selected="false">Campaign tracker</button>
+</nav>
+
+<div id="launch-view" role="tabpanel" aria-labelledby="tab-launch">
 <section class="panel" id="launch-panel" hidden aria-labelledby="launch-title">
 <h2 id="launch-title">Launch a labeling batch</h2>
 <p class="muted">This spends real money on OpenRouter. Choose a target, run the preflight, fix every red item, then launch.
@@ -83,7 +94,9 @@ The API key field is optional, is never stored (not even in this browser) and is
 </div>
 </div>
 </section>
+</div>
 
+<div id="tracker-view" role="tabpanel" aria-labelledby="tab-tracker" hidden>
 <section class="panel" aria-labelledby="tracker-title">
 <h2 id="tracker-title">Campaign tracker</h2>
 <p id="summary"></p>
@@ -98,7 +111,9 @@ The API key field is optional, is never stored (not even in this browser) and is
 <p class="muted">Confirmed production decisions queued privately for v10 staging. This is not a deployment command.</p>
 <div id="revision-queue" class="scroll"></div>
 </section>
+</div>
 
+<div id="review-view" role="tabpanel" aria-labelledby="tab-review">
 <section class="panel">
 <label for="target">Review target</label><select id="target"></select>
 <div class="toolbar"><button id="previous">Previous target</button><button id="next">Next target</button><button id="next-pending" title="Jump to the next undecided target (keyboard: N)">Next pending</button><button id="bulk-accept" title="Set ACCEPT (with the remembered initials) for every undecided target in the current record's batch whose candidate passed the automated source checks; review then Save as usual">Accept verified in batch</button></div>
@@ -120,6 +135,8 @@ The API key field is optional, is never stored (not even in this browser) and is
 </div>
 
 <section class="panel"><h2>Change journal</h2><p class="muted">Actual browser edits and recovered receipt history. Initials and browser timestamps are claims, not signatures.</p><div id="journal"></div></section>
+</div>
+
 <p class="muted">Agent interface: <code>GET /api/contract</code> — the machine-readable packet schema, decision key, per-label rules and routes. Nothing publishes automatically; every decision expects a reviewer's initials.</p>
 
 <script id="packet" type="application/json">__REVIEW_PACKET_JSON__</script>
@@ -596,6 +613,18 @@ $('bulk-accept').addEventListener('click', ()=>{
   if (!picked.length) message('No verifiable undecided targets in batch "'+(gid||'-')+'".', true);
   else { message(picked.length+' verified targets in the batch marked ACCEPT with your initials; review them and Save.', true); renderTarget(); }
 });
+// Tabs: launcher, review and tracker live in separate views so the page stays
+// navigable; the choice is remembered like the sticky initials.
+const TABS=['launch','review','tracker'];
+const tabKey='mailroom-review-tabs';
+function showTab(name){
+  TABS.forEach((n)=>{
+    document.getElementById(n+'-view').hidden = n!==name;
+    document.getElementById('tab-'+n).setAttribute('aria-selected', String(n===name));
+  });
+  try { localStorage.setItem(tabKey, name); } catch (exc) {}
+}
+TABS.forEach((n)=>$('tab-'+n).addEventListener('click', ()=>showTab(n)));
 document.addEventListener('keydown', (e)=>{
   if (e.defaultPrevented||e.altKey||e.ctrlKey||e.metaKey) return;
   const t=e.target;
@@ -738,6 +767,7 @@ async function launchInit(){
   $('launch-start').addEventListener('click', startLaunch);
   setCap(); renderLaunchInfo();
   $('launch-panel').hidden=false;
+  $('tab-launch').classList.add('avail');
   pollLaunch();
 }
 window.onbeforeunload=(event)=>{ if (dirty||staleDraft){ event.preventDefault(); return 'Unsaved review decisions.'; } };
@@ -759,6 +789,8 @@ window.onbeforeunload=(event)=>{ if (dirty||staleDraft){ event.preventDefault();
   message('Loaded embedded packet'+(localDraft()?' and restored your local draft. Check Reload batches if you manage packets in files.':'')+'.', true);
   await refresh();
   await launchInit();
+  let saved=null; try { saved=localStorage.getItem(tabKey); } catch (exc) {}
+  showTab(TABS.includes(saved)?saved:'review');
 })();
 </script>
 </body>
