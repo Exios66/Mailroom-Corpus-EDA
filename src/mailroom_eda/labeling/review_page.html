@@ -98,6 +98,15 @@ function seed(data, keep){
   history=clone(data.saved_history||[]);
   if (keep) dirty=true; else dirty=false;
 }
+function savedEqualsLocal(){
+  const saved=new Map(((packet.saved_decisions)||[]).map((d)=>[d.document_id+'\n'+d.field, d]));
+  for (const [key,d] of decisions){
+    const s=saved.get(key); if (!s) return false;
+    if (['decision','corrected_labels_json','reviewer_initials','reviewer_notes','updated_at']
+        .some((f)=>s[f]!==d[f])) return false; }
+  return true;
+}
+function reconcileDirty(){ dirty=localDraft()&&!savedEqualsLocal(); }
 function overlay(kind){
   // Local draft fields stay on top of server values unless explicitly reset.
   if (kind==='reset') return;
@@ -258,7 +267,7 @@ async function refresh(reset){
       packet=data; overlay(); tracker(); render(); controls();
       message('Server data changed (state revision '+(data.state_revision||'?')+'); your local draft is retained. Download JSON or use Discard to accept the new data.'); return;
     }
-    packet=data; seed(data); if (hadDirty) { overlay(); dirty=true; } else if (!reset) overlay();
+    packet=data; seed(data); overlay(); reconcileDirty();
     current=Math.min(current, records.length-1);
     staleDraft=false; pendingData=false;
     message('Loaded '+records.length+' review targets'+((data.saved_decisions||[]).length?' with '+(data.saved_decisions||[]).length+' saved decisions restored.':'')
@@ -323,14 +332,16 @@ $('next').addEventListener('click', ()=>{ current=Math.min(records.length-1,curr
 }));
 window.onbeforeunload=(event)=>{ if (dirty||staleDraft){ event.preventDefault(); return 'Unsaved review decisions.'; } };
 (async function init(){
+  if (!records.length) seed(packet);
   try {
     const saved=JSON.parse(localStorage.getItem(storageKey)||'null');
     if (saved&&saved.packet_id===packet.packet_id){
       saved.decisions.forEach((d)=>{ if(decisions.has(d.document_id+'\n'+d.field)) decisions.set(d.document_id+'\n'+d.field, clone(d)); });
       if (Array.isArray(saved.history)&&saved.history.length) history=clone(saved.history);
+      if (localDraft()) dirty=true;
     }
   } catch (exc) {}
-  if (!records.length) seed(packet);
+  reconcileDirty();
   persist();
   render();
   message('Loaded embedded packet'+(localDraft()?' and restored your local draft. Check Reload batches if you manage packets in files.':'')+'.', true);
