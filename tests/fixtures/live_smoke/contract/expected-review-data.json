@@ -6,24 +6,23 @@
   "NOT_REVIEWED": "No decision; does not approve anything. Blank has the same meaning.",
   "REJECT": "Leave this field unlabeled; do not promote the candidate."
  },
- "packet_id": "06821b2c281b28c041d6be3bbfbd8b65a3ebd42c17fb82b714e3de5946e79d5c",
+ "packet_id": "7fa9163a8801208c2047f83c712520f70ab17da640a61bc18d99acdd53b6e9e5",
  "producer": "labeling_batch_review/v1",
  "records": [
   {
    "absence_policy": "never_absent",
    "batch": "smoke-contract",
    "candidate_labels": [
-    "Document Name: EMPLOYMENT AGREEMENT",
+    "Document Name: EMPLOYMENT AGREEMENT BETWEEN RETICULATE MICRO, INC. AND PAUL SCARDINO, DATED JANUARY 1, 2024",
     "Agreement Date: dated as of 1 January, 2024",
-    "Parties: Reticulate Micro, Inc., a Nevada corporation (the “**Company**”), and Paul Scardino, an individual (the “**Executive**”).",
+    "Parties: Reticulate Micro, Inc., a Nevada corporation (the “**Company**”), and Paul Scardino, an individual (the “**Executive**”)",
     "Expiration Date: The term of this Employment Agreement (the “**Term**”) shall be for the initial period commencing on the date hereof and ending on the second anniversary of the date hereof",
     "Renewal Term: This Term of this Agreement shall automatically renew for additional one (1) year periods after the expiration of the initial Term and each renewal period",
-    "Notice Period To Terminate Renewal: unless either party gives written notice to the other at least thirty (30) days prior to the expiration of the initial term or any renewal period.",
+    "Notice Period To Terminate Renewal: unless either party gives written notice to the other at least thirty (30) days prior to the expiration of the initial term or any renewal period",
     "Termination For Convenience: The Company may terminate this Employment Agreement at any time, without cause, upon 30 days’ written notice by the Company to the Executive",
-    "Post-Termination Services: If during the Term the Company terminates this Employment Agreement pursuant to Section 4(d) hereof, all compensation payable to the Executive under Section 3 hereof shall cease as of the date of termination specified in the Company’s notice (the “**Termination Date**”), and the Company shall pay to the Executive, subject to Section 6 hereof, the following sums: (i) the Base Salary on the Termination Date for the shorter of (x) three months and (y) the remainder of the Term (the applicable period being referred to as the “**Severance Period**”), payable in monthly installments; (ii) benefits under group health and life insurance plans in which the Executive participated prior to termination through the Severance Period; and (iii) all previously earned, accrued, and unpaid benefits from the Company and its employee benefit plans, including any such benefits under the Company’s pension, disability, and life insurance plans, policies, and programs.",
-    "Non-Compete: During the Term and for the Severance Period (the “**Restricted Period**”), the Executive shall not, directly or indirectly, (i) in any manner whatsoever engage in any capacity with any business competitive with the Company’s Business for the Executive’s own benefit or for the benefit of any person or entity other than the Company or affiliate of the Company; or (ii) have any interest as owner, sole proprietor, shareholder, partner, lender, director, officer, manager, employee, consultant, agent or otherwise in any business competitive with the Company’s Business",
+    "Non-Compete: During the Term and for the Severance Period (the “**Restricted Period**”), the Executive shall not, directly or indirectly, (i) in any manner whatsoever engage in any capacity with any business competitive with the Company’s Business for the Executive’s own benefit or for the benefit of any person or entity other than the Company or affiliate of the Company",
     "Competitive Restriction Exception: provided, however, that the Executive may hold, directly or indirectly, solely as an investment, not more than two percent (2%) of the outstanding securities of any person or entity which are listed on any national securities exchange or regularly traded in the over-the-counter market notwithstanding the fact that such person or entity is engaged in a business competitive with the Company’s Business.",
-    "No-Solicit Of Employees: During the Restricted Period, the Executive shall not, directly or indirectly (other than in furtherance of the business of the Company), initiate communications with, solicit, persuade, entice, induce or encourage any individual who is then or who has been within the preceding 12- month period, an employee of or consultant to the Company or any of its affiliates to terminate employment with, or a consulting relationship with, the Company or such affiliate, as the case may be, or to become employed by or enter into a contract or other agreement with any other person",
+    "No-Solicit Of Employees: During the Restricted Period, the Executive shall not, directly or indirectly (other than in furtherance of the business of the Company), initiate communications with, solicit, persuade, entice, induce or encourage any individual who is then or who has been within the preceding 12- month period, an employee of or consultant to the Company or any of its affiliates to terminate employment with, or a consulting relationship with, the Company or such affiliate, as the case may be",
     "No-Solicit Of Customers: During the Restricted Period, the Executive shall not, directly or indirectly, initiate communications with, solicit, persuade, entice, induce, encourage (or assist in connection with any of the foregoing) any person who is then or has been within the preceding 12-month period a customer or account of the Company or its affiliates, or any actual customer leads whose identity the Executive learned during the course of his employment with the Company, to terminate or to adversely alter its contractual or other relationship with the Company or its affiliates.",
     "Governing Law: This Employment Agreement shall be governed by, and construed in accordance with and subject to, the laws of the State of Nevada applicable to agreements made and to be performed entirely within such state.",
     "Anti-Assignment: This Employment Agreement, and the Executive’s rights and obligations hereunder, may not be assigned by the Executive."
@@ -40,8 +39,8 @@
    "evidence": [
     {
      "category": "Document Name",
-     "end": 61,
-     "quote": "EMPLOYMENT AGREEMENT",
+     "end": 133,
+     "quote": "EMPLOYMENT AGREEMENT BETWEEN RETICULATE MICRO, INC. AND PAUL SCARDINO, DATED JANUARY 1, 2024",
      "start": 41
     },
     {
@@ -52,8 +51,8 @@
     },
     {
      "category": "Parties",
-     "end": 390,
-     "quote": "Reticulate Micro, Inc., a Nevada corporation (the “**Company**”), and Paul Scardino, an individual (the “**Executive**”).",
+     "end": 389,
+     "quote": "Reticulate Micro, Inc., a Nevada corporation (the “**Company**”), and Paul Scardino, an individual (the “**Executive**”)",
      "start": 269
     },
     {
@@ -70,8 +69,8 @@
     },
     {
      "category": "Notice Period To Terminate Renewal",
-     "end": 2814,
-     "quote": "unless either party gives written notice to the other at least thirty (30) days prior to the expiration of the initial term or any renewal period.",
+     "end": 2813,
+     "quote": "unless either party gives written notice to the other at least thirty (30) days prior to the expiration of the initial term or any renewal period",
      "start": 2668
     },
     {
@@ -81,15 +80,9 @@
      "start": 9693
     },
     {
-     "category": "Post-Termination Services",
-     "end": 11005,
-     "quote": "If during the Term the Company terminates this Employment Agreement pursuant to Section 4(d) hereof, all compensation payable to the Executive under Section 3 hereof shall cease as of the date of termination specified in the Company’s notice (the “**Termination Date**”), and the Company shall pay to the Executive, subject to Section 6 hereof, the following sums: (i) the Base Salary on the Termination Date for the shorter of (x) three months and (y) the remainder of the Term (the applicable period being referred to as the “**Severance Period**”), payable in monthly installments; (ii) benefits under group health and life insurance plans in which the Executive participated prior to termination through the Severance Period; and (iii) all previously earned, accrued, and unpaid benefits from the Company and its employee benefit plans, including any such benefits under the Company’s pension, disability, and life insurance plans, policies, and programs.",
-     "start": 10046
-    },
-    {
      "category": "Non-Compete",
-     "end": 13400,
-     "quote": "During the Term and for the Severance Period (the “**Restricted Period**”), the Executive shall not, directly or indirectly, (i) in any manner whatsoever engage in any capacity with any business competitive with the Company’s Business for the Executive’s own benefit or for the benefit of any person or entity other than the Company or affiliate of the Company; or (ii) have any interest as owner, sole proprietor, shareholder, partner, lender, director, officer, manager, employee, consultant, agent or otherwise in any business competitive with the Company’s Business",
+     "end": 13191,
+     "quote": "During the Term and for the Severance Period (the “**Restricted Period**”), the Executive shall not, directly or indirectly, (i) in any manner whatsoever engage in any capacity with any business competitive with the Company’s Business for the Executive’s own benefit or for the benefit of any person or entity other than the Company or affiliate of the Company",
      "start": 12831
     },
     {
@@ -100,8 +93,8 @@
     },
     {
      "category": "No-Solicit Of Employees",
-     "end": 16279,
-     "quote": "During the Restricted Period, the Executive shall not, directly or indirectly (other than in furtherance of the business of the Company), initiate communications with, solicit, persuade, entice, induce or encourage any individual who is then or who has been within the preceding 12- month period, an employee of or consultant to the Company or any of its affiliates to terminate employment with, or a consulting relationship with, the Company or such affiliate, as the case may be, or to become employed by or enter into a contract or other agreement with any other person",
+     "end": 16187,
+     "quote": "During the Restricted Period, the Executive shall not, directly or indirectly (other than in furtherance of the business of the Company), initiate communications with, solicit, persuade, entice, induce or encourage any individual who is then or who has been within the preceding 12- month period, an employee of or consultant to the Company or any of its affiliates to terminate employment with, or a consulting relationship with, the Company or such affiliate, as the case may be",
      "start": 15707
     },
     {
@@ -148,7 +141,7 @@
    "full_document_text": "\nEX-10.21 7 ea020144601ex10-21_retic.htm EMPLOYMENT AGREEMENT BETWEEN RETICULATE MICRO, INC. AND PAUL SCARDINO, DATED JANUARY 1, 2024 \n**Exhibit 10.21**\n\nEMPLOYMENT AGREEMENT\n\nEMPLOYMENT AGREEMENT (this “**Employment Agreement**”), dated as of 1 January, 2024, between Reticulate Micro, Inc., a Nevada corporation (the “**Company**”), and Paul Scardino, an individual (the “**Executive**”).\n\nRECITALS\n\nThe Company wishes to secure the services of the Executive as the Executive Vice President (EVP) of Sales and Reticulate Space business segment Chief Strategy Officer (CSO) of the Company (with such other duties and/or offices in the Company or its affiliates as may be assigned by the Company, its Board of Directors, or other senior executive officers and as agreed to by Executive) upon the terms and conditions hereinafter set forth, and the Executive wishes to render such services to the Company upon the terms and conditions hereinafter set forth.\n\nAGREEMENT\n\nNOW, THEREFORE, in consideration of the foregoing and the mutual covenants herein contained and for other good and valuable consideration, the receipt and adequacy of which are hereby acknowledged, the parties hereto, intending to be legally bound, agree as follows:\n\n1. Employment by the Company. The Company agrees to employ the Executive in the positions of Executive Vice President (EVP) of Sales and Reticulate Space business segment Chief Strategy Officer (CSO) of the Company and have such duties and responsibilities as are reasonably assigned, delegated and determined as are customarily assigned to individuals serving in such positions and such other duties consistent with Executive’s title (with such other duties and/or offices in the Company and its affiliates as may be assigned from time to time by the Company, its Board of Directors, or other senior executive officers and as agreed to by Executive) and the Executive accepts such employment and agrees to perform such duties. The Executive agrees to devote his full customary business time and energies to the business of the Company and/or its affiliates and to perform his duties hereunder on an exclusive basis commencing effective upon completion of the offering describe in Section 3(a) below.\n\n2. Term of Employment. The term of this Employment Agreement (the “**Term**”) shall be for the initial period commencing on the date hereof and ending on the second anniversary of the date hereof (unless the Executive is earlier terminated as provided in Section 4 hereof). This Term of this Agreement shall automatically renew for additional one (1) year periods after the expiration of the initial Term and each renewal period unless either party gives written notice to the other at least thirty (30) days prior to the expiration of the initial term or any renewal period.\n\n3. Compensation. As full compensation for all services to be rendered by the Executive to the Company and/or its affiliates in all capacities during the Term, the Executive shall receive the following compensation and benefits:\n\nSalary. A monthly base salary (the “**Base Salary**”) of $8,400. Base Salary shall increase by no less than five percent (5%) on each anniversary of this Agreement. Upon successful completion of an initial public offering of the Company, the Base Salary will be adjusted to a market-comparable value as determined by the Board of Directors. The Company intends to raise the Executive’s annual salary to a minimum of $200,000, subject to Reticulate Micro’s actual IPO capital raise outcomes.\n\n(a) Participation in Employee Benefit Plans; Other Benefits. The Executive shall be permitted during the Term, if and to the extent eligible, to participate in all employee benefit plans, policies and practices now or hereafter maintained by or on behalf of the Company commensurate with the Executive’s position with the Company. Nothing in this Employment Agreement shall preclude the Company from terminating or amending any such plans or coverage so as to eliminate, reduce or otherwise change any benefit payable thereunder, so long as such change similarly affects all Company employees. Notwithstanding anything herein to the contrary, the Executive and his family shall receive health insurance from the Company.\n\n(b) Expenses. The Company shall pay or reimburse the Executive for all reasonable and necessary expenses actually incurred or paid by the Executive during the Term in the performance of the Executive’s duties under this Employment Agreement, upon submission and approval of expense statements, vouchers or other supporting information in accordance with the then customary practices of the Company.\n\n(c) Vacation. The Executive shall be entitled to 2 weeks of paid vacation for the first year of the Term and 3 weeks of paid vacation for the second and third years of the Term, if applicable.\n\n(d) Withholding of Taxes. The Company may withhold from any benefits payable under this Employment Agreement all federal, state, city and other taxes as shall be required pursuant to any law or governmental regulation or ruling.\n\n(e) Bonus. In addition to the Base Salary, the Executive shall be entitled to an incentive bonus based on revenue growth as determined by the Board of Directors within thirty (30) days of filing of the Company’s annual reports, as well as the ability to participate in any future senior management incentive programs.\n\nAdditionally, as a sales leader, you will participate in our Strategic Sales Incentive Plan (SIP), which presents the potential to achieve upwards of 250% of your base salary in additional bonuses. **_N.B._**This includes your baseline quota and accelerators for sales beyond the quota.\n\nAdditionally, under this agreement, the Company agrees to pay you a one- time cash bonus equal to $100,000 (the “Signing Bonus”) and an additional 30,000 shares of common stock, in the form of restricted stock units (RSUs) upon closing an investment of $20,000,000 USD from a strategic business partner, to support Reticulate Space development efforts. This bonus will be payable within ten days after constructive receipt of funds from the strategic business partner.\n\n(f) Stock Options. The Company shall grant the Executive a stock option to purchase 120,000 shares of Class A Common Stock at $1.00 per share (the “**Stock Option**”), subject to the terms and conditions applicable to stock options granted under the Company’s 2022 Equity Incentive Plan (the “**Plan**”), as described in the Plan and the applicable Stock Option Agreement (the “**Option Agreement**”). 5,000 shares shall vest upon execution of this agreement and the balance of 115,000 shares subject to the Stock Option shall vest equally over two (2) years on each anniversary of the Option Agreement provided the Executive remains in continuous service with the Company, as described in the applicable Option Agreement.\n\n2\n\n4. Termination.\n\n(a) Termination upon Death. If the Executive dies during the Term, this Employment Agreement shall terminate as of the date of his death except in Section 5(b) hereof.\n\n(b) Termination upon Disability. If during the Term the Executive becomes physically or mentally disabled, whether totally or partially, so that the Executive is unable to perform his essential job functions hereunder for a period aggregating 180 days during any twelve- month period, and it is determined by a physician acceptable to both the Company and the Executive that, by reason of such physical or mental disability, the Executive shall be unable to perform the essential job functions required of him hereunder for such period or periods, the Company may, by written notice to the Executive, terminate this Employment Agreement, in which event the Term shall terminate 10 days after the date upon which the Company shall have given notice to the Executive of its intention to terminate this Employment Agreement because of the disability.\n\n(c) Termination for Cause. The Company may at any time by written notice to the Executive terminate this Employment Agreement immediately and, except as provided in Section 5(b) hereof, the Executive shall have no right to receive any compensation or benefit hereunder on and after the date of such notice, in the event that an event of “Cause” occurs. For purposes of this Employment Agreement “Cause” shall mean:\n\n(i) any willful breach by the Executive of any material term of this Employment Agreement, if the Executive fails to reasonably cure such breach within 30 days after the receipt of written notice from the Board of such breach, which notice shall state in reasonable detail the facts and circumstances claimed to be a failure or willful breach and of the intent of the Company to terminate the Executive’s employment upon the failure of the Executive to reasonably cure such failure or breach; or\n\n(ii) Executive has committed an intentional felonious act of fraud, misappropriation, embezzlement, or theft or an intentional breach of fiduciary duty involving personal profit; or\n\n(iii) the Executive is indicted for any criminal offense constituting a felony or a crime involving moral turpitude (except that Executive shall continue to be entitled to all compensation until a conviction of such offense); or\n\n(iv) the Executive intentionally breaches the provisions of Section 6 of this Agreement.\n\nFor purposes of this Employment Agreement, an act, or a failure to act, shall not be deemed willful or intentional, as those terms are used herein, unless it is done, or admitted to be done, by Executive in bad faith or without a reasonable belief that Executive’s action or omission was in the interest of the Company.\n\n3\n\n(d) Termination without Cause. The Company may terminate this Employment Agreement at any time, without cause, upon 30 days’ written notice by the Company to the Executive and, except as provided in Section 5(a) hereof, the Executive shall have no right to receive any compensation or benefit hereunder after such termination.\n\n5. Severance Payments.\n\n(a) Certain Severance Payments. If during the Term the Company terminates this Employment Agreement pursuant to Section 4(d) hereof, all compensation payable to the Executive under Section 3 hereof shall cease as of the date of termination specified in the Company’s notice (the “**Termination Date**”), and the Company shall pay to the Executive, subject to Section 6 hereof, the following sums: (i) the Base Salary on the Termination Date for the shorter of (x) three months and (y) the remainder of the Term (the applicable period being referred to as the “**Severance Period**”), payable in monthly installments; (ii) benefits under group health and life insurance plans in which the Executive participated prior to termination through the Severance Period; and (iii) all previously earned, accrued, and unpaid benefits from the Company and its employee benefit plans, including any such benefits under the Company’s pension, disability, and life insurance plans, policies, and programs. If, prior to the date on which the Company’s obligations under clause (i) of this Section 5(a) cease, the Executive violates Section 6 hereof, then the Company shall have no obligation to make any of the payments that remain payable by the Company under clauses (i) and (ii) of this Section 5(a) on or after the date of such violation. The payment of severance as required by this Section 5(a) may be conditioned by the Company on the delivery by the Executive of a release of any and all claims that the Executive may have against the Company which release shall be in form and substance satisfactory to the Company.\n\n(b) Severance Payments upon Termination for Cause, Death or Disability. If this Employment Agreement is terminated by the Company pursuant to Sections 4(a), 4(b) or 4(c) hereof, the Executive (or his estate or representative as applicable) shall receive only the amounts specified in clause (ii) and (iii) of Section 5(a) hereof.\n\n6. Certain Covenants of the Executive.\n\n(a) Covenants Against Competition. The Executive acknowledges that: (i) Executive is one of the limited number of persons who will assist with developing the Company’s business, which consists of software and chipset solutions based on the Company’s proprietary SUPR ISR (Intelligence, Surveillance, Reconnaissance) system that delivers real-time compression of video streams on a world-wide basis (the “**Company’s Business**”); (ii) Executive’s work for the Company will bring Executive into close contact with many confidential affairs not readily available to the public; and (iii) the covenants contained in this Section 6 will not involve a substantial hardship upon Executive’s future livelihood. In order to induce the Company to enter into this Employment Agreement, the Executive covenants and agrees that:\n\n(i) Non-Compete. During the Term and for the Severance Period (the “**Restricted Period**”), the Executive shall not, directly or indirectly, (i) in any manner whatsoever engage in any capacity with any business competitive with the Company’s Business for the Executive’s own benefit or for the benefit of any person or entity other than the Company or affiliate of the Company; or (ii) have any interest as owner, sole proprietor, shareholder, partner, lender, director, officer, manager, employee, consultant, agent or otherwise in any business competitive with the Company’s Business; provided, however, that the Executive may hold, directly or indirectly, solely as an investment, not more than two percent (2%) of the outstanding securities of any person or entity which are listed on any national securities exchange or regularly traded in the over-the-counter market notwithstanding the fact that such person or entity is engaged in a business competitive with the Company’s Business. In addition, during the Restricted Period, the Executive shall not develop any property for use in the Company’s Business on behalf of any person or entity other than the Company, its subsidiaries and affiliates.\n\n4\n\n(ii) Confidential Information. During the Restricted Period, the Executive shall not, directly or indirectly, disclose to any person or entity who is not authorized by the Company or any subsidiary or affiliate to receive such information, or use or appropriate for his own benefit or for the benefit of any person or entity other than the Company or any subsidiary or affiliate, any documents or other papers relating to the Company’s Business or the customers of the Company or any subsidiary or affiliate, including, without limitation, files, business relationships and accounts, pricing policies, customer lists, computer software and hardware, or any other materials relating to the Company’s Business or the customers of the Company or any affiliate of the Company or any trade secrets or confidential information, including, without limitation, any business or operational methods, drawings, sketches, designs or product concepts, know-how, marketing plans or strategies, product development techniques or plans, business acquisition plans, financial or other performance data, personnel and other policies of the Company or any affiliate of the Company, whether generated by the Executive or by any other person, except as required in the course of performing Executive’s duties hereunder or with the express written consent of the Company; provided, however, that the confidential information shall not include any information readily ascertainable from public or published information, or trade sources or independent third parties (other than as a direct or indirect result of unauthorized disclosure by the Executive).\n\n(iii) Employees of and Consultants to the Company. During the Restricted Period, the Executive shall not, directly or indirectly (other than in furtherance of the business of the Company), initiate communications with, solicit, persuade, entice, induce or encourage any individual who is then or who has been within the preceding 12- month period, an employee of or consultant to the Company or any of its affiliates to terminate employment with, or a consulting relationship with, the Company or such affiliate, as the case may be, or to become employed by or enter into a contract or other agreement with any other person, and the Executive shall not approach any such employee or consultant for any such purpose or authorize or knowingly approve the taking of any such actions by any other person.\n\n(iv) Solicitation of Customers. During the Restricted Period, the Executive shall not, directly or indirectly, initiate communications with, solicit, persuade, entice, induce, encourage (or assist in connection with any of the foregoing) any person who is then or has been within the preceding 12-month period a customer or account of the Company or its affiliates, or any actual customer leads whose identity the Executive learned during the course of his employment with the Company, to terminate or to adversely alter its contractual or other relationship with the Company or its affiliates.\n\n5\n\n(b) Rights and Remedies Upon Breach. If the Executive breaches any of the provisions of Section 6(a) hereof (collectively, the “**Restrictive Covenants**”), the Company and its affiliates shall, in addition to the rights set forth in Section 6(a) hereof, have the right and remedy to seek from any court of competent jurisdiction specific performance of the Restrictive Covenants or injunctive relief against any act which would violate any of the Restrictive Covenants, it being acknowledged and agreed that any such breach may cause irreparable injury to the Company and its affiliates and that money damages will not provide an adequate remedy to the Company and its affiliates.\n\n(c) Severability of Covenants. If any of the Restrictive Covenants, or any part thereof, is held by a court of competent jurisdiction or any foreign, federal, state, county or local government or other governmental, regulatory or administrative agency or authority to be invalid, void, unenforceable or against public policy for any reason, the remainder of the Restrictive Covenants shall remain in full force and effect and shall in no way be affected, impaired or invalidated, and such court, government, agency or authority shall be empowered to substitute, to the extent enforceable, provisions similar thereto or other provisions so as to provide to the Company and its affiliates, to the fullest extent permitted by applicable law, the benefits intended by such provisions.\n\n(d) Enforceability in Jurisdictions. The parties intend to and hereby confer jurisdiction to enforce the Restrictive Covenants upon the courts of any jurisdiction within the geographical scope of such Covenants and only in such jurisdiction where the Executive’s alleged violation of the Restrictive Covenants occurred. If the courts of any one or more of such jurisdictions hold the Restrictive Covenants wholly invalid or unenforceable by reason of the breadth of such scope or otherwise, it is the intention of the parties that such determination not bar or in any way affect the Company’s right to the relief provided above in the courts of any other jurisdiction within the geographical scope of such Restrictive Covenants, as to breaches of such Restrictive Covenants in such other respective jurisdictions, such Restrictive Covenants as they relate to each jurisdiction being, for this purpose, severable into diverse and independent covenants.\n\n7.Other Provisions.\n\n(a) Notices. Any notice or other communication required or which may be given hereunder shall be in writing and shall be delivered personally, telecopied, telegraphed or telexed, or sent by certified, registered or express mail, postage prepaid, to the parties at the addresses specified on the signature page hereto, or at such other addresses as shall be specified by the parties by like notice, and shall be deemed given so long as such provides a receipt of delivery, when so delivered personally, telecopied, telegraphed or telexed, or mailed.\n\n(b) Entire Agreement. This Employment Agreement contains the entire agreement between the parties with respect to the subject matter hereof and supersedes all prior contracts and other agreements, written or oral, with respect thereto.\n\n6\n\n(c) Waivers and Amendments. This Employment Agreement may be amended, modified, superseded, cancelled, renewed or extended, and the terms and conditions hereof may be waived, only by a written instrument signed by the parties or, in the case of a waiver, by the party waiving compliance. No delay on the part of any party in exercising any right, power or privilege hereunder shall operate as a waiver thereof, nor shall any waiver on the part of any party of any right, power or privilege hereunder, nor any single or partial exercise of any right, power or privilege hereunder preclude any other or further exercise thereof or the exercise of any other right, power or privilege hereunder.\n\n(d) Governing Law. This Employment Agreement shall be governed by, and construed in accordance with and subject to, the laws of the State of Nevada applicable to agreements made and to be performed entirely within such state.\n\n(e) Binding Effect; Benefit. This Employment Agreement shall inure to the benefit of and be binding upon the parties hereto and any successors and assigns permitted or required by Section 7(f) hereof. Nothing in this Employment Agreement, expressed or implied, is intended to confer on any person other than the parties hereto or such successors and assigns, any rights, remedies, obligations or liabilities under or by reason of this Employment Agreement.\n\n(f) Assignment. This Employment Agreement, and the Executive’s rights and obligations hereunder, may not be assigned by the Executive. The Company may assign this Employment Agreement and its rights, together with its obligations, hereunder in connection with any sale, transfer or other disposition of all or substantially all of its assets or business, whether by merger, consolidation or otherwise.\n\n(g) Counterparts. This Employment Agreement may be executed in two or more counterparts, each of which shall be deemed an original but all of which together shall constitute one and the same instrument.\n\n(h) Headings. The headings in this Employment Agreement are for reference purposes only and shall not in any way affect the meaning or interpretation of this Employment Agreement.\n\n[Signature page follows]\n\n7\n\nIN WITNESS WHEREOF, the parties have executed this Employment Agreement as of the date first above written.\n\nCOMPANY:\n\n**Reticulate Micro, Inc.**\n\nBy:/s/ Joshua Cryer\nName:Joshua Cryer\nTitle:President & CEO\n\nAddress:3255 Bayside Lakes Blvd, Ste. 106\nPalm Bay, FL 32909\n\nEXECUTIVE:\n\n**Paul Scardino**\n\n/s/ Paul Scardino\n\nAddress:170 Continental Avenue\nEast Northport, NY 11731\n",
    "human_approval": "pending",
    "issues": [
-    "The models disagree on the clauses: z-ai/glm-5.3-flashx-legal found 14; deepseek/deepseek-v4.1-flash found 20."
+    "The models disagree on the clauses: z-ai/glm-5.3-flashx-legal found 13; deepseek/deepseek-v4.1-flash found 21."
    ],
    "kind": "labeling_batch",
    "model_outputs": [
@@ -158,8 +151,8 @@
      "evidence_spans": [
       {
        "category": "Document Name",
-       "end": 61,
-       "quote": "EMPLOYMENT AGREEMENT",
+       "end": 133,
+       "quote": "EMPLOYMENT AGREEMENT BETWEEN RETICULATE MICRO, INC. AND PAUL SCARDINO, DATED JANUARY 1, 2024",
        "start": 41
       },
       {
@@ -170,8 +163,8 @@
       },
       {
        "category": "Parties",
-       "end": 390,
-       "quote": "Reticulate Micro, Inc., a Nevada corporation (the “**Company**”), and Paul Scardino, an individual (the “**Executive**”).",
+       "end": 389,
+       "quote": "Reticulate Micro, Inc., a Nevada corporation (the “**Company**”), and Paul Scardino, an individual (the “**Executive**”)",
        "start": 269
       },
       {
@@ -188,8 +181,8 @@
       },
       {
        "category": "Notice Period To Terminate Renewal",
-       "end": 2814,
-       "quote": "unless either party gives written notice to the other at least thirty (30) days prior to the expiration of the initial term or any renewal period.",
+       "end": 2813,
+       "quote": "unless either party gives written notice to the other at least thirty (30) days prior to the expiration of the initial term or any renewal period",
        "start": 2668
       },
       {
@@ -199,15 +192,9 @@
        "start": 9693
       },
       {
-       "category": "Post-Termination Services",
-       "end": 11005,
-       "quote": "If during the Term the Company terminates this Employment Agreement pursuant to Section 4(d) hereof, all compensation payable to the Executive under Section 3 hereof shall cease as of the date of termination specified in the Company’s notice (the “**Termination Date**”), and the Company shall pay to the Executive, subject to Section 6 hereof, the following sums: (i) the Base Salary on the Termination Date for the shorter of (x) three months and (y) the remainder of the Term (the applicable period being referred to as the “**Severance Period**”), payable in monthly installments; (ii) benefits under group health and life insurance plans in which the Executive participated prior to termination through the Severance Period; and (iii) all previously earned, accrued, and unpaid benefits from the Company and its employee benefit plans, including any such benefits under the Company’s pension, disability, and life insurance plans, policies, and programs.",
-       "start": 10046
-      },
-      {
        "category": "Non-Compete",
-       "end": 13400,
-       "quote": "During the Term and for the Severance Period (the “**Restricted Period**”), the Executive shall not, directly or indirectly, (i) in any manner whatsoever engage in any capacity with any business competitive with the Company’s Business for the Executive’s own benefit or for the benefit of any person or entity other than the Company or affiliate of the Company; or (ii) have any interest as owner, sole proprietor, shareholder, partner, lender, director, officer, manager, employee, consultant, agent or otherwise in any business competitive with the Company’s Business",
+       "end": 13191,
+       "quote": "During the Term and for the Severance Period (the “**Restricted Period**”), the Executive shall not, directly or indirectly, (i) in any manner whatsoever engage in any capacity with any business competitive with the Company’s Business for the Executive’s own benefit or for the benefit of any person or entity other than the Company or affiliate of the Company",
        "start": 12831
       },
       {
@@ -218,8 +205,8 @@
       },
       {
        "category": "No-Solicit Of Employees",
-       "end": 16279,
-       "quote": "During the Restricted Period, the Executive shall not, directly or indirectly (other than in furtherance of the business of the Company), initiate communications with, solicit, persuade, entice, induce or encourage any individual who is then or who has been within the preceding 12- month period, an employee of or consultant to the Company or any of its affiliates to terminate employment with, or a consulting relationship with, the Company or such affiliate, as the case may be, or to become employed by or enter into a contract or other agreement with any other person",
+       "end": 16187,
+       "quote": "During the Restricted Period, the Executive shall not, directly or indirectly (other than in furtherance of the business of the Company), initiate communications with, solicit, persuade, entice, induce or encourage any individual who is then or who has been within the preceding 12- month period, an employee of or consultant to the Company or any of its affiliates to terminate employment with, or a consulting relationship with, the Company or such affiliate, as the case may be",
        "start": 15707
       },
       {
@@ -243,20 +230,19 @@
      ],
      "model": "z-ai/glm-5.3-flashx-legal",
      "repaired": false,
-     "span_count": 14,
+     "span_count": 13,
      "status": "present",
      "value": [
-      "Document Name: EMPLOYMENT AGREEMENT",
+      "Document Name: EMPLOYMENT AGREEMENT BETWEEN RETICULATE MICRO, INC. AND PAUL SCARDINO, DATED JANUARY 1, 2024",
       "Agreement Date: dated as of 1 January, 2024",
-      "Parties: Reticulate Micro, Inc., a Nevada corporation (the “**Company**”), and Paul Scardino, an individual (the “**Executive**”).",
+      "Parties: Reticulate Micro, Inc., a Nevada corporation (the “**Company**”), and Paul Scardino, an individual (the “**Executive**”)",
       "Expiration Date: The term of this Employment Agreement (the “**Term**”) shall be for the initial period commencing on the date hereof and ending on the second anniversary of the date hereof",
       "Renewal Term: This Term of this Agreement shall automatically renew for additional one (1) year periods after the expiration of the initial Term and each renewal period",
-      "Notice Period To Terminate Renewal: unless either party gives written notice to the other at least thirty (30) days prior to the expiration of the initial term or any renewal period.",
+      "Notice Period To Terminate Renewal: unless either party gives written notice to the other at least thirty (30) days prior to the expiration of the initial term or any renewal period",
       "Termination For Convenience: The Company may terminate this Employment Agreement at any time, without cause, upon 30 days’ written notice by the Company to the Executive",
-      "Post-Termination Services: If during the Term the Company terminates this Employment Agreement pursuant to Section 4(d) hereof, all compensation payable to the Executive under Section 3 hereof shall cease as of the date of termination specified in the Company’s notice (the “**Termination Date**”), and the Company shall pay to the Executive, subject to Section 6 hereof, the following sums: (i) the Base Salary on the Termination Date for the shorter of (x) three months and (y) the remainder of the Term (the applicable period being referred to as the “**Severance Period**”), payable in monthly installments; (ii) benefits under group health and life insurance plans in which the Executive participated prior to termination through the Severance Period; and (iii) all previously earned, accrued, and unpaid benefits from the Company and its employee benefit plans, including any such benefits under the Company’s pension, disability, and life insurance plans, policies, and programs.",
-      "Non-Compete: During the Term and for the Severance Period (the “**Restricted Period**”), the Executive shall not, directly or indirectly, (i) in any manner whatsoever engage in any capacity with any business competitive with the Company’s Business for the Executive’s own benefit or for the benefit of any person or entity other than the Company or affiliate of the Company; or (ii) have any interest as owner, sole proprietor, shareholder, partner, lender, director, officer, manager, employee, consultant, agent or otherwise in any business competitive with the Company’s Business",
+      "Non-Compete: During the Term and for the Severance Period (the “**Restricted Period**”), the Executive shall not, directly or indirectly, (i) in any manner whatsoever engage in any capacity with any business competitive with the Company’s Business for the Executive’s own benefit or for the benefit of any person or entity other than the Company or affiliate of the Company",
       "Competitive Restriction Exception: provided, however, that the Executive may hold, directly or indirectly, solely as an investment, not more than two percent (2%) of the outstanding securities of any person or entity which are listed on any national securities exchange or regularly traded in the over-the-counter market notwithstanding the fact that such person or entity is engaged in a business competitive with the Company’s Business.",
-      "No-Solicit Of Employees: During the Restricted Period, the Executive shall not, directly or indirectly (other than in furtherance of the business of the Company), initiate communications with, solicit, persuade, entice, induce or encourage any individual who is then or who has been within the preceding 12- month period, an employee of or consultant to the Company or any of its affiliates to terminate employment with, or a consulting relationship with, the Company or such affiliate, as the case may be, or to become employed by or enter into a contract or other agreement with any other person",
+      "No-Solicit Of Employees: During the Restricted Period, the Executive shall not, directly or indirectly (other than in furtherance of the business of the Company), initiate communications with, solicit, persuade, entice, induce or encourage any individual who is then or who has been within the preceding 12- month period, an employee of or consultant to the Company or any of its affiliates to terminate employment with, or a consulting relationship with, the Company or such affiliate, as the case may be",
       "No-Solicit Of Customers: During the Restricted Period, the Executive shall not, directly or indirectly, initiate communications with, solicit, persuade, entice, induce, encourage (or assist in connection with any of the foregoing) any person who is then or has been within the preceding 12-month period a customer or account of the Company or its affiliates, or any actual customer leads whose identity the Executive learned during the course of his employment with the Company, to terminate or to adversely alter its contractual or other relationship with the Company or its affiliates.",
       "Governing Law: This Employment Agreement shall be governed by, and construed in accordance with and subject to, the laws of the State of Nevada applicable to agreements made and to be performed entirely within such state.",
       "Anti-Assignment: This Employment Agreement, and the Executive’s rights and obligations hereunder, may not be assigned by the Executive."
@@ -298,9 +284,9 @@
       },
       {
        "category": "Effective Date",
-       "end": 2434,
-       "quote": "commencing on the date hereof and ending on the second anniversary of the date hereof",
-       "start": 2349
+       "end": 2236,
+       "quote": "commencing effective upon completion of the offering describe in Section 3(a) below",
+       "start": 2153
       },
       {
        "category": "Expiration Date",
@@ -321,6 +307,12 @@
        "start": 2668
       },
       {
+       "category": "Price Restrictions",
+       "end": 3209,
+       "quote": "Base Salary shall increase by no less than five percent (5%) on each anniversary of this Agreement.",
+       "start": 3110
+      },
+      {
        "category": "Insurance",
        "end": 4257,
        "quote": "Notwithstanding anything herein to the contrary, the Executive and his family shall receive health insurance from the Company.",
@@ -328,8 +320,8 @@
       },
       {
        "category": "Termination For Convenience",
-       "end": 9988,
-       "quote": "The Company may terminate this Employment Agreement at any time, without cause, upon 30 days’ written notice by the Company to the Executive and, except as provided in Section 5(a) hereof, the Executive shall have no right to receive any compensation or benefit hereunder after such termination.",
+       "end": 9833,
+       "quote": "The Company may terminate this Employment Agreement at any time, without cause, upon 30 days’ written notice by the Company to the Executive",
        "start": 9693
       },
       {
@@ -340,8 +332,8 @@
       },
       {
        "category": "Cap On Liability",
-       "end": 10629,
-       "quote": "the Base Salary on the Termination Date for the shorter of (x) three months and (y) the remainder of the Term (the applicable period being referred to as the “**Severance Period**”), payable in monthly installments",
+       "end": 10524,
+       "quote": "the Base Salary on the Termination Date for the shorter of (x) three months and (y) the remainder of the Term",
        "start": 10415
       },
       {
@@ -389,7 +381,7 @@
      ],
      "model": "deepseek/deepseek-v4.1-flash",
      "repaired": false,
-     "span_count": 20,
+     "span_count": 21,
      "status": "present",
      "value": [
       "Document Name: EMPLOYMENT AGREEMENT",
@@ -397,14 +389,15 @@
       "Parties: Reticulate Micro, Inc., a Nevada corporation (the “**Company**”)",
       "Parties: Paul Scardino, an individual (the “**Executive**”)",
       "Exclusivity: The Executive agrees to devote his full customary business time and energies to the business of the Company and/or its affiliates and to perform his duties hereunder on an exclusive basis commencing effective upon completion of the offering describe in Section 3(a) below.",
-      "Effective Date: commencing on the date hereof and ending on the second anniversary of the date hereof",
+      "Effective Date: commencing effective upon completion of the offering describe in Section 3(a) below",
       "Expiration Date: ending on the second anniversary of the date hereof",
       "Renewal Term: This Term of this Agreement shall automatically renew for additional one (1) year periods after the expiration of the initial Term and each renewal period unless either party gives written notice to the other at least thirty (30) days prior to the expiration of the initial term or any renewal period.",
       "Notice Period To Terminate Renewal: unless either party gives written notice to the other at least thirty (30) days prior to the expiration of the initial term or any renewal period.",
+      "Price Restrictions: Base Salary shall increase by no less than five percent (5%) on each anniversary of this Agreement.",
       "Insurance: Notwithstanding anything herein to the contrary, the Executive and his family shall receive health insurance from the Company.",
-      "Termination For Convenience: The Company may terminate this Employment Agreement at any time, without cause, upon 30 days’ written notice by the Company to the Executive and, except as provided in Section 5(a) hereof, the Executive shall have no right to receive any compensation or benefit hereunder after such termination.",
+      "Termination For Convenience: The Company may terminate this Employment Agreement at any time, without cause, upon 30 days’ written notice by the Company to the Executive",
       "Post-Termination Services: the Company shall pay to the Executive, subject to Section 6 hereof, the following sums: (i) the Base Salary on the Termination Date for the shorter of (x) three months and (y) the remainder of the Term (the applicable period being referred to as the “**Severance Period**”), payable in monthly installments; (ii) benefits under group health and life insurance plans in which the Executive participated prior to termination through the Severance Period; and (iii) all previously earned, accrued, and unpaid benefits from the Company and its employee benefit plans, including any such benefits under the Company’s pension, disability, and life insurance plans, policies, and programs.",
-      "Cap On Liability: the Base Salary on the Termination Date for the shorter of (x) three months and (y) the remainder of the Term (the applicable period being referred to as the “**Severance Period**”), payable in monthly installments",
+      "Cap On Liability: the Base Salary on the Termination Date for the shorter of (x) three months and (y) the remainder of the Term",
       "Non-Compete: During the Term and for the Severance Period (the “**Restricted Period**”), the Executive shall not, directly or indirectly, (i) in any manner whatsoever engage in any capacity with any business competitive with the Company’s Business for the Executive’s own benefit or for the benefit of any person or entity other than the Company or affiliate of the Company; or (ii) have any interest as owner, sole proprietor, shareholder, partner, lender, director, officer, manager, employee, consultant, agent or otherwise in any business competitive with the Company’s Business",
       "Competitive Restriction Exception: provided, however, that the Executive may hold, directly or indirectly, solely as an investment, not more than two percent (2%) of the outstanding securities of any person or entity which are listed on any national securities exchange or regularly traded in the over-the-counter market notwithstanding the fact that such person or entity is engaged in a business competitive with the Company’s Business.",
       "No-Solicit Of Employees: During the Restricted Period, the Executive shall not, directly or indirectly (other than in furtherance of the business of the Company), initiate communications with, solicit, persuade, entice, induce or encourage any individual who is then or who has been within the preceding 12- month period, an employee of or consultant to the Company or any of its affiliates to terminate employment with, or a consulting relationship with, the Company or such affiliate, as the case may be, or to become employed by or enter into a contract or other agreement with any other person, and the Executive shall not approach any such employee or consultant for any such purpose or authorize or knowingly approve the taking of any such actions by any other person.",
@@ -443,8 +436,10 @@
     "Document Name: SECOND AMENDMENT TO TERM SHEET AND CONSULTING AGREEMENT",
     "Agreement Date: made this 28th day of January, 2022",
     "Effective Date: made this 28th day of January, 2022",
-    "Parties: Perfect Moment Asia Ltd.,**a Hong Kong company ( “**Perfect Moment Asia**”), **Perfect Moment Ltd.,**a Delaware corporation (“**Perfect Moment DE**”), and **Montrose Capital Partners Limited**, a corporation formed under the laws of the United Kingdom with its principal place of business at 21 Knightsbridge, 2nd Floor, London SW1X7LY, UK (the “**Consultant**”)",
-    "Expiration Date: the date that is the earlier of (a) August 31, 2022, or (b) six (6) months after the submission by Perfect Moment Ltd. with the Commission of the IPO S-1 (the “**Extension Date**”)",
+    "Parties: Perfect Moment Asia Ltd.,**a Hong Kong company",
+    "Parties: Perfect Moment Ltd.,**a Delaware corporation (“**Perfect Moment DE**”)",
+    "Parties: Montrose Capital Partners Limited**, a corporation formed under the laws of the United Kingdom",
+    "Expiration Date: the date that is the earlier of (a) August 31, 2022, or (b) six (6) months after the submission by Perfect Moment Ltd. with the Commission of the IPO S-1 (the “**Extension Date**”).",
     "Governing Law: This Amendment shall be governed by and construed in accordance with the laws of the State of New York without giving effect to any choice or conflict of law provision or rule that would cause the application of laws of any other jurisdiction."
    ],
    "candidate_presence": "populated",
@@ -471,14 +466,26 @@
     },
     {
      "category": "Parties",
-     "end": 759,
-     "quote": "Perfect Moment Asia Ltd.,**a Hong Kong company ( “**Perfect Moment Asia**”), **Perfect Moment Ltd.,**a Delaware corporation (“**Perfect Moment DE**”), and **Montrose Capital Partners Limited**, a corporation formed under the laws of the United Kingdom with its principal place of business at 21 Knightsbridge, 2nd Floor, London SW1X7LY, UK (the “**Consultant**”)",
+     "end": 443,
+     "quote": "Perfect Moment Asia Ltd.,**a Hong Kong company",
      "start": 397
     },
     {
+     "category": "Parties",
+     "end": 546,
+     "quote": "Perfect Moment Ltd.,**a Delaware corporation (“**Perfect Moment DE**”)",
+     "start": 476
+    },
+    {
+     "category": "Parties",
+     "end": 648,
+     "quote": "Montrose Capital Partners Limited**, a corporation formed under the laws of the United Kingdom",
+     "start": 554
+    },
+    {
      "category": "Expiration Date",
-     "end": 3009,
-     "quote": "the date that is the earlier of (a) August 31, 2022, or (b) six (6) months after the submission by Perfect Moment Ltd. with the Commission of the IPO S-1 (the “**Extension Date**”)",
+     "end": 3010,
+     "quote": "the date that is the earlier of (a) August 31, 2022, or (b) six (6) months after the submission by Perfect Moment Ltd. with the Commission of the IPO S-1 (the “**Extension Date**”).",
      "start": 2829
     },
     {
@@ -513,7 +520,7 @@
    "full_document_text": "\nEX-10.28 41 ea187099ex10-28_perfect.htm SECOND AMENDMENT TO TERM SHEET AND CONSULTING AGREEMENT BETWEEN PERFECT MOMENT ASIA LTD. AND MONTROSE CAPITAL PARTNERS LIMITED \n**Exhibit 10.28**\n\n**SECOND AMENDMENT TO\n\n TERM SHEET AND \n\n CONSULTING AGREEMENT**\n\nThis Second Amendment to Term Sheet and Consulting Agreement (this “**Amendment**”), made this 28th day of January, 2022, is entered into by **Perfect Moment Asia Ltd.,**a Hong Kong company ( “**Perfect Moment Asia**”), **Perfect Moment Ltd.,**a Delaware corporation (“**Perfect Moment DE**”), and **Montrose Capital Partners Limited**, a corporation formed under the laws of the United Kingdom with its principal place of business at 21 Knightsbridge, 2nd Floor, London SW1X7LY, UK (the “**Consultant**”).\n\nWHEREAS, Perfect Moment Asia and the Consultant entered into (a) that certain Term Sheet, dated November 24, 2020, executed as of November 25, 2020, as amended by that certain amendment, dated December 3, 2020 (the “**Term Sheet**”), (b) that certain Consulting Agreement, dated December 31, 2020 (the “**Consulting Agreement**”), and (c) that certain Amendment to Term Sheet and Consulting Agreement, dated March 10, 2021 (the “**First Amendment**”) (“**Term Sheet**” and “**Consulting Agreement**” as used herein refer to the Term Sheet and the Consulting Agreement each as amended by the First Amendment; other capitalized terms used herein, and not otherwise defined, shall have the respective meanings ascribed to them in the Term Sheet or the Consulting Agreement, as the case may be);\n\nWHEREAS, the Share Exchange referred to in the Consulting Agreement closed on March 15, 2021, whereby the shareholders of Perfect Moment Asia exchanged all of their shares of Perfect Moment Asia for shares of Perfect Moment DE, by virtue of which Perfect Moment Asia became a wholly owned subsidiary of Perfect Moment DE; and the Bridge Financing referred to in the Consulting Agreement also closed on March 15, 2021; and\n\nWHEREAS, the parties desire to (a) further amend the Term Sheet and (b) amend the Consulting Agreement, to extend certain dates in the Term Sheet and in the Consulting Agreement and to make Perfect Moment DE a direct party to each of the Term Sheet and the Consulting Agreement, in each case as provided herein.\n\nNOW, THEREFORE, in consideration of the mutual covenants and promises contained herein and other good and valuable consideration, the receipt and sufficiency of which is hereby acknowledged by the parties hereto, the parties agree as follows:\n\n1.Amendments to Consulting Agreement.\n\n1.1 Perfect Moment DE is made a party to the Consulting Agreement and shall be directly bound by all of the obligations of the “Company” therein.\n\n1.2 Clause (b) of Section 2 of the Consulting Agreement is hereby amended to replace “March 31, 2022” with “the date that is the earlier of (a) August 31, 2022, or (b) six (6) months after the submission by Perfect Moment Ltd. with the Commission of the IPO S-1 (the “**Extension Date**”).”\n\n1.3 Section 5.1 of the Consulting Agreement is hereby amended to replace “March 31, 2022” with “the Extension Date.”\n\n1.4 Section 5.2 of the Consulting Agreement is hereby amended to replace “March 31, 2022” with “the Extension Date.”\n\n1.5 Clause (a)(i)(A) of Section 13.2 of the Consulting Agreement is hereby amended to replace “March 31, 2022” with “August 31, 2022.”\n\n1.6 Clause (b)(i)(A) of Section 13.2 of the Consulting Agreement is hereby amended to replace “March 31, 2022” with “August 31, 2022.”\n\n1.7 Section 16.2 of the Consulting Agreement is hereby amended to replace “March 31, 2022” with “the Extension Date.”\n\nThe Consulting Agreement, as heretofore and hereby amended, is hereby in all respects ratified and confirmed.\n\n2. Amendments to Term Sheet.\n\n2.1 Perfect Moment DE is made a party to the Term Sheet and shall be directly bound by all of the obligations of “Perfect Moment” therein.\n\n2.2 The third paragraph of Section 1, of the Term Sheet is hereby amended to replace “March 31, 2022” with “May 31, 2022.”\n\n2.3 The first paragraph of Section 15 of the Term Sheet is hereby amended to replace “March 31, 2022” with “the date that is the earlier of (a) August 31, 2022, or (b) six (6) months after the submission by Perfect Moment Ltd. with the SEC of the IPO S-1 (as defined in the Consulting Agreement dated December 31, 2020, as amended, among Perfect Moment, Perfect Moment Ltd and Montrose.).”\n\nThe Term Sheet, as heretofore and hereby amended, is hereby in all respects ratified and confirmed.\n\n3.Governing Law. This Amendment shall be governed by and construed in accordance with the laws of the State of New York without giving effect to any choice or conflict of law provision or rule that would cause the application of laws of any other jurisdiction.\n\n4.Miscellaneous. This Amendment may be executed in any number of counterparts, each of which shall be enforceable against the parties actually executing such counterparts, and all of which together shall constitute one instrument. In the event that any signature is delivered by an e-mail, which contains a copy of an executed signature page such as a portable document format (.pdf) file, such signature shall create a valid and binding obligation of the party executing (or on whose behalf such signature is executed) with the same force and effect as if such e-mail of an executed signature page such as a .pdf signature page were an original thereof.\n\n_[Remainder of Page Intentionally Left Blank]_\n\n- 2 -\n\nIN WITNESS WHEREOF, the parties hereto have executed this Agreement as of the date and year first above written.\n\nPERFECT MOMENT LTD.\n\nBy:_/s/ Negin Yeganegy_\nName:Negin Yeganegy\nTitle:CEO\n\nPERFECT MOMENT ASIA LTD.\n\nBy:_/s/ Max Gottschalk_\nName:Max Gottschalk\nTitle:Chairman\n\nMONTROSE CAPITAL PARTNERS LIMITED\n\nBy:_/s/ Mark Tompkins_\nName:Mark Tompkins\nTitle:CEO\n",
    "human_approval": "pending",
    "issues": [
-    "The models disagree on the clauses: z-ai/glm-5.3-flashx-legal found 6; deepseek/deepseek-v4.1-flash found 6."
+    "The models disagree on the clauses: z-ai/glm-5.3-flashx-legal found 8; deepseek/deepseek-v4.1-flash found 6."
    ],
    "kind": "labeling_batch",
    "model_outputs": [
@@ -541,14 +548,26 @@
       },
       {
        "category": "Parties",
-       "end": 759,
-       "quote": "Perfect Moment Asia Ltd.,**a Hong Kong company ( “**Perfect Moment Asia**”), **Perfect Moment Ltd.,**a Delaware corporation (“**Perfect Moment DE**”), and **Montrose Capital Partners Limited**, a corporation formed under the laws of the United Kingdom with its principal place of business at 21 Knightsbridge, 2nd Floor, London SW1X7LY, UK (the “**Consultant**”)",
+       "end": 443,
+       "quote": "Perfect Moment Asia Ltd.,**a Hong Kong company",
        "start": 397
       },
       {
+       "category": "Parties",
+       "end": 546,
+       "quote": "Perfect Moment Ltd.,**a Delaware corporation (“**Perfect Moment DE**”)",
+       "start": 476
+      },
+      {
+       "category": "Parties",
+       "end": 648,
+       "quote": "Montrose Capital Partners Limited**, a corporation formed under the laws of the United Kingdom",
+       "start": 554
+      },
+      {
        "category": "Expiration Date",
-       "end": 3009,
-       "quote": "the date that is the earlier of (a) August 31, 2022, or (b) six (6) months after the submission by Perfect Moment Ltd. with the Commission of the IPO S-1 (the “**Extension Date**”)",
+       "end": 3010,
+       "quote": "the date that is the earlier of (a) August 31, 2022, or (b) six (6) months after the submission by Perfect Moment Ltd. with the Commission of the IPO S-1 (the “**Extension Date**”).",
        "start": 2829
       },
       {
@@ -560,14 +579,16 @@
      ],
      "model": "z-ai/glm-5.3-flashx-legal",
      "repaired": false,
-     "span_count": 6,
+     "span_count": 8,
      "status": "present",
      "value": [
       "Document Name: SECOND AMENDMENT TO TERM SHEET AND CONSULTING AGREEMENT",
       "Agreement Date: made this 28th day of January, 2022",
       "Effective Date: made this 28th day of January, 2022",
-      "Parties: Perfect Moment Asia Ltd.,**a Hong Kong company ( “**Perfect Moment Asia**”), **Perfect Moment Ltd.,**a Delaware corporation (“**Perfect Moment DE**”), and **Montrose Capital Partners Limited**, a corporation formed under the laws of the United Kingdom with its principal place of business at 21 Knightsbridge, 2nd Floor, London SW1X7LY, UK (the “**Consultant**”)",
-      "Expiration Date: the date that is the earlier of (a) August 31, 2022, or (b) six (6) months after the submission by Perfect Moment Ltd. with the Commission of the IPO S-1 (the “**Extension Date**”)",
+      "Parties: Perfect Moment Asia Ltd.,**a Hong Kong company",
+      "Parties: Perfect Moment Ltd.,**a Delaware corporation (“**Perfect Moment DE**”)",
+      "Parties: Montrose Capital Partners Limited**, a corporation formed under the laws of the United Kingdom",
+      "Expiration Date: the date that is the earlier of (a) August 31, 2022, or (b) six (6) months after the submission by Perfect Moment Ltd. with the Commission of the IPO S-1 (the “**Extension Date**”).",
       "Governing Law: This Amendment shall be governed by and construed in accordance with the laws of the State of New York without giving effect to any choice or conflict of law provision or rule that would cause the application of laws of any other jurisdiction."
      ]
     },
@@ -577,8 +598,8 @@
      "evidence_spans": [
       {
        "category": "Document Name",
-       "end": 96,
-       "quote": "SECOND AMENDMENT TO TERM SHEET AND CONSULTING AGREEMENT",
+       "end": 167,
+       "quote": "SECOND AMENDMENT TO TERM SHEET AND CONSULTING AGREEMENT BETWEEN PERFECT MOMENT ASIA LTD. AND MONTROSE CAPITAL PARTNERS LIMITED",
        "start": 41
       },
       {
@@ -617,7 +638,7 @@
      "span_count": 6,
      "status": "present",
      "value": [
-      "Document Name: SECOND AMENDMENT TO TERM SHEET AND CONSULTING AGREEMENT",
+      "Document Name: SECOND AMENDMENT TO TERM SHEET AND CONSULTING AGREEMENT BETWEEN PERFECT MOMENT ASIA LTD. AND MONTROSE CAPITAL PARTNERS LIMITED",
       "Agreement Date: made this 28th day of January, 2022",
       "Parties: Perfect Moment Asia Ltd.,",
       "Parties: Perfect Moment Ltd.,",

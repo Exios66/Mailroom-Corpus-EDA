@@ -964,7 +964,11 @@ class Launcher:
             sys.stdout, sys.stderr = saved
         if error is None and rc != 0:
             error = f"exit code {rc}: {EXIT_MEANING.get(rc, 'the run did not complete')}"
-        result = self._result(out_dir, rc)
+        try:
+            result = self._result(out_dir, rc)
+        except Exception as exc:  # noqa: BLE001 - a broken journal must not strand the run as "running"
+            result = {"out_dir": None if out_dir is None else str(out_dir)}
+            error = error or f"could not read back the run journal ({type(exc).__name__}: {exc})"
         with self._lock:
             self._state.update(state="succeeded" if error is None else "failed", finished_utc=_now(),
                                result=result, error=error)

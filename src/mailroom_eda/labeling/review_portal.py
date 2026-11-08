@@ -703,10 +703,22 @@ def main(argv=None) -> int:
             "status": "byte-verified private restore", "restored_files": len(restored)}))
     out = args.out or args.labels_root / "review_bundle" / "portal"
     if not args.no_public_fallback:
-        fallback = ensure_public_fallback(args.labels_root, out, revision=args.public_revision,
-                                          per_subclass=args.public_per_subclass)
-        if fallback is not None:
-            print(f"No labeling packets yet; reviewing public insurance claims from {fallback}")
+        fallback_root = args.labels_root / PUBLIC_FALLBACK_DIR
+        if fallback_root.resolve().is_relative_to(out.resolve()):
+            # out would swallow the fallback; packet_paths hides anything beneath it, so the
+            # page would still show no packets. Skip it and say why.
+            print(f"No labeling packets yet and the public fallback directory {fallback_root} is inside "
+                  f"--out {out}; not exporting it (pass --no-public-fallback to silence this).")
+        else:
+            try:
+                fallback = ensure_public_fallback(args.labels_root, out, revision=args.public_revision,
+                                                  per_subclass=args.public_per_subclass)
+            except ValueError as err:  # a Hub outage must not stop the page from binding
+                print(f"Public fallback refused ({type(err).__name__}: {str(err)[:200]}); continuing without it "
+                      "(pass --no-public-fallback to silence this).")
+            else:
+                if fallback is not None:
+                    print(f"No labeling packets yet; reviewing public insurance claims from {fallback}")
     portal = ReviewPortal(args.labels_root, out,
                           campaign=args.campaign, stage=args.stage, hf_checkpoint=args.hf_checkpoint,
                           launch_enabled=args.enable_launch)

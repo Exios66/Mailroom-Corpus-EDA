@@ -6,7 +6,7 @@
   "NOT_REVIEWED": "No decision; does not approve anything. Blank has the same meaning.",
   "REJECT": "Leave this field unlabeled; do not promote the candidate."
  },
- "packet_id": "cf19a7bff607c4ba6b4a7b7b91b6fa4bdae2db524e77f92cb650aff221fc3601",
+ "packet_id": "2f54c75cb0eedb0fda90adcf139979495dedc9052c5bc5d961b6b52e076f5f89",
  "producer": "labeling_batch_review/v1",
  "records": [
   {
@@ -86,14 +86,14 @@
      "model": "z-ai/glm-5.3-flashx-legal",
      "status": "present",
      "value": [
-      "Timely Notice: Date of Report: 2026-03-19",
-      "Proof Of Loss: Fire Brigade Report Filed: Yes (Reference: FB-2024-01-15-889)",
       "Exclusions Cited: Electronic devices are not covered as household content.",
       "Exclusions Cited: Building materials are not covered.",
       "Exclusions Cited: Water bodies, land, and permanent vegetation are not covered.",
       "Exclusions Cited: Costs for maintenance, repair, or improvement of operated facilities are not covered.",
       "Exclusions Cited: Permanently installed fixtures are not included.",
       "Exclusions Cited: Building structure is not insured.",
+      "Timely Notice: Date of Report: 2026-03-19",
+      "Proof Of Loss: Fire Brigade Report Filed: Yes (Reference: FB-2024-01-15-889)",
       "Amount Consistency: Estimated Damage: $850.00"
      ]
     },
@@ -110,6 +110,9 @@
      "status": "present",
      "value": [
       "Timely Notice: Date of Report: 2026-03-19",
+      "Amount Consistency: Estimated Damage: $850.00",
+      "Amount Consistency: Total excl. VAT: $820.00",
+      "Amount Consistency: Total incl. VAT: $984.00",
       "Proof Of Loss: Fire Brigade Report Filed: Yes (Reference: FB-2024-01-15-889)",
       "Exclusions Cited: Electronic devices are not covered as household content.",
       "Exclusions Cited: Building materials are not covered.",
@@ -117,9 +120,7 @@
       "Exclusions Cited: Costs for maintenance, repair, or improvement of operated facilities are not covered.",
       "Exclusions Cited: Permanently installed fixtures are not included.",
       "Exclusions Cited: Building structure is not insured.",
-      "Proof Of Loss: I am submitting additional documents as requested in relation to my claim for Fire at 5 SynthStreet_1131, SynthCity_14, Synth230 01, SynthCountryA01.",
-      "Amount Consistency: Estimated Damage: $850.00",
-      "Amount Consistency: Total excl. VAT: $820.00"
+      "Proof Of Loss: I am submitting additional documents as requested in relation to my claim for Fire at 5 SynthStreet_1131, SynthCity_14, Synth230 01, SynthCountryA01."
      ]
     }
    ],
@@ -213,7 +214,7 @@
      "status": "present",
      "value": [
       "Coverage Determination: Coverage determination: pending",
-      "Timely Notice: Date of report (recorded):    2024-05-07"
+      "Timely Notice: Date of report (recorded): 2024-05-07"
      ]
     },
     {

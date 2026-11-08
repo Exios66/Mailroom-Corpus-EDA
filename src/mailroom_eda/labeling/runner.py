@@ -405,11 +405,20 @@ def _done(calls_path: Path,
 
     The prompt sha is part of the key, so after a prompt or registry edit a re-run sends
     the new prompt instead of reusing answers to the old one. With a ``{model: level}``
-    mapping each answer must have run at its own model's level.
+    mapping each answer must have run at its own model's level. Answers served outside the
+    model's current route pin are not done either (``_reusable`` applies the same rule): a
+    resume would otherwise skip them while the finish-time gate rejects the run.
     """
-    return {(c["document_id"], c["model"], c.get("variant", ""), c.get("prompt_sha256", ""))
-            for c in export.read_journal(calls_path)
-            if not c.get("error") and call_matches(c, reasoning)}
+    out = set()
+    for c in export.read_journal(calls_path):
+        if c.get("error") or not call_matches(c, reasoning):
+            continue
+        model = str(c["model"])
+        if providers.served_outside_route(providers.model_route(model), c.get("reasoning") or "off",
+                                          {c.get("served_provider")}):
+            continue
+        out.add((c["document_id"], model, c.get("variant", ""), c.get("prompt_sha256", "")))
+    return out
 
 
 class _Stop(Exception):

@@ -6,7 +6,7 @@
   "NOT_REVIEWED": "No decision; does not approve anything. Blank has the same meaning.",
   "REJECT": "Leave this field unlabeled; do not promote the candidate."
  },
- "packet_id": "75d07284f919772c49acf43397036ce7ed4346339ae1766bbf4443bbd719ef26",
+ "packet_id": "545f886ee25d50367bd896f6178cebebf1014e95460a81811e3ba9f5f9430509",
  "producer": "labeling_batch_review/v1",
  "records": [
   {
@@ -23,6 +23,11 @@
    "dojo_type": "entity_list:free_text",
    "eligible_for_gold": true,
    "evidence": [
+    {
+     "end": 2815,
+     "quote": "The Base Restated Certificate, is hereby amended by deleting the second and third sentences of Article FOURTH thereof and inserting the following new paragraph",
+     "start": 2656
+    },
     {
      "end": 2883,
      "quote": "The Base Restated Certificate, is hereby amended by deleting the second and third sentences of Article FOURTH thereof and inserting the following new paragraph immediately following the first sentence of Article FOURTH thereof:",
@@ -55,23 +60,23 @@
    "full_document_text": "\nEX-3.1.2 4 d593074dex312.htm EX-3.1.2 EX-3.1.2\n\n**Exhibit 3.1.2**\n\n**CERTIFICATE OF AMENDMENT**\n\n**TO**\n\n**RESTATED CERTIFICATE OF INCORPORATION**\n\n**OF**\n\n**AMEDICA CORPORATION**\n\n(Pursuant to Section 242 of the\n\nGeneral Corporation Law of the State of Delaware)\n\nAmedica Corporation, a corporation organized and existing under the laws of the State of Delaware, hereby certifies as follows:\n\n1. The name of the corporation (hereinafter referred to as the “**_Corporation_**”) is Amedica Corporation.\n\n1. The date of filing of the Certificate of Incorporation of the Corporation with the Secretary of State of the State of Delaware was December 10, 1996 under the name Amedica Corp. A Restated Certificate of Incorporation of the Corporation was filed on October 25, 2004 (the “**_Base Restated Certificate_**”), and said Base Restated Certificate was amended by (a)a Certificate of Designation for Series C Convertible Preferred Stock filed on February 24, 2006, (b)a Certificate of Designation for Series D Convertible Preferred Stock filed on April 16, 2007, (c)Certificates of Amendment respectively filed on July 26, 2007 and November 1, 2007, (d)a Certificate of Increase of Series D Convertible Preferred Stock filed on December 21, 2007, (e)a Certificate of Amendment filed on March 1, 2010, (f)a Certificate of Designation for Series E Convertible Preferred Stock filed March 19, 2010, (g)Certificates of Designation of Series A-1 Convertible Preferred Stock, Series B-1 Convertible Preferred Stock, Series C-1 Convertible Preferred Stock and Series D-1 Convertible Preferred Stock filed on March 19, 2010, (h)a Certificate of Amendment filed on March 19, 2010, (i)a Certificate of Increase of Series D-1 Convertible Preferred Stock filed on March 24, 2010, (j)a Certificate of Decrease of the Series A Convertible Preferred Stock, Series B Convertible Preferred Stock, Series C Convertible Preferred Stock and Series D Convertible Preferred Stock filed on March 25, 2010, (k)a Certificate of Increase of Series E Convertible Preferred Stock filed on September 20, 2010, (l)a Certificate of Increase of Series C Convertible Preferred Stock filed May 10, 2012, (m)a Certificate of Increase of Series D Convertible Preferred Stock and a Certificate of Decrease of Series E Convertible Preferred Stock, each filed on December 14, 2012, (n)a Certificate of Designation of Series F Convertible Preferred Stock filed on December 14, 2012, (o)a Certificate of Amendment filed on August 27, 2013, (p)a Certificate of Increase of Series F Convertible Preferred Stock filed on August 27, 2013, and (q)a Certificate of Amendment filed on , 201.\n\n* * *\n\n3. The Base Restated Certificate, is hereby amended by deleting the second and third sentences of Article FOURTH thereof and inserting the following new paragraph immediately following the first sentence of Article FOURTH thereof:\n\n“Upon the effectiveness of this Certificate of Amendment to the Certificate of Incorporation, every  ()issued and outstanding shares of Common Stock of the Corporation shall be changed, combined and reclassified into one (1)whole share of Common Stock, which shares shall be fully paid and nonassessable shares of Common Stock of the Corporation; _provided, however_, that in lieu of fractional interests in shares of Common Stock to which any stockholder would otherwise be entitled pursuant hereto (taking into account all shares of Common Stock owned by such stockholder), such stockholder shall be entitled to receive a cash payment equal to the fair value of one share of Common Stock as determined by the Board of Directors of the Corporation multiplied by such fraction.\n\n4. Pursuant to Section 228(a) of the General Corporation Law of the State of Delaware, the holders of outstanding shares of the Corporation having no less than the minimum number of votes that would be necessary to authorize or take such actions at a meeting at which all shares entitled to vote thereon were present and voted, consented to the adoption of the aforesaid amendments without a meeting, without a vote and without prior notice and that written notice of the taking of such actions was given in accordance with Section 228(e) of the General Corporation Law of the State of Delaware.\n\n5. Said amendment was duly adopted in accordance with the provisions of Section 242 of the General Corporation Law of the State of Delaware.\n\n[THE REMAINDER OF THIS PAGE IS INTENTIONALLY LEFT BLANK.]\n\n* * *\n\nIN WITNESS WHEREOF, the Corporation has caused this Certificate of Amendment to be signed by its duly authorized officer this  day of , 201.\n\nAMEDICA CORPORATION\n\nBy:\n",
    "human_approval": "pending",
    "issues": [
-    "The models disagree: z-ai/glm-5.3-flashx-legal answered [\"Article FOURTH: deleted the second and third sentences and inserted a new paragraph providing that every issued and o…, deepseek/deepseek-v4.1-flash answered [\"Article FOURTH: The Base Restated Certificate is hereby amended by deleting the second and third sentences of Article…."
+    "The models disagree: z-ai/glm-5.3-flashx-legal answered [\"Article FOURTH: deleting the second and third sentences and inserting a new paragraph providing that every issued and…, deepseek/deepseek-v4.1-flash answered [\"Article FOURTH: The Base Restated Certificate, is hereby amended by deleting the second and third sentences of Articl…."
    ],
    "kind": "labeling_batch",
    "model_outputs": [
     {
-     "evidence": "The Base Restated Certificate, is hereby amended by deleting the second and third sentences of Article FOURTH thereof and inserting the following new paragraph immediately following the first sentence of Article FOURTH thereof:",
+     "evidence": "The Base Restated Certificate, is hereby amended by deleting the second and third sentences of Article FOURTH thereof and inserting the following new paragraph",
      "evidence_spans": [
       {
-       "end": 2883,
-       "quote": "The Base Restated Certificate, is hereby amended by deleting the second and third sentences of Article FOURTH thereof and inserting the following new paragraph immediately following the first sentence of Article FOURTH thereof:",
+       "end": 2815,
+       "quote": "The Base Restated Certificate, is hereby amended by deleting the second and third sentences of Article FOURTH thereof and inserting the following new paragraph",
        "start": 2656
       }
      ],
      "model": "z-ai/glm-5.3-flashx-legal",
      "status": "present",
      "value": [
-      "Article FOURTH: deleted the second and third sentences and inserted a new paragraph providing that every issued and outstanding share of Common Stock shall be changed, combined and reclassified into one whole share of Common Stock, with cash in lieu of fractional shares."
+      "Article FOURTH: deleting the second and third sentences and inserting a new paragraph providing that every issued and outstanding shares of Common Stock shall be changed, combined and reclassified into one whole share of Common Stock (reverse stock split with cash in lieu of fractional shares)"
      ]
     },
     {
@@ -86,7 +91,7 @@
      "model": "deepseek/deepseek-v4.1-flash",
      "status": "present",
      "value": [
-      "Article FOURTH: The Base Restated Certificate is hereby amended by deleting the second and third sentences of Article FOURTH thereof and inserting the following new paragraph immediately following the first sentence of Article FOURTH thereof: \"Upon the effectiveness of this Certificate of Amendment to the Certificate of Incorporation, every () issued and outstanding shares of Common Stock of the Corporation shall be changed, combined and reclassified into one (1) whole share of Common Stock, which shares shall be fully paid and nonassessable shares of Common Stock of the Corporation; provided, however, that in lieu of fractional interests in shares of Common Stock to which any stockholder would otherwise be entitled pursuant hereto (taking into account all shares of Common Stock owned by such stockholder), such stockholder shall be entitled to receive a cash payment equal to the fair value of one share of Common Stock as determined by the Board of Directors of the Corporation multiplied by such fraction.\""
+      "Article FOURTH: The Base Restated Certificate, is hereby amended by deleting the second and third sentences of Article FOURTH thereof and inserting the following new paragraph immediately following the first sentence of Article FOURTH thereof: \"Upon the effectiveness of this Certificate of Amendment to the Certificate of Incorporation, every ()issued and outstanding shares of Common Stock of the Corporation shall be changed, combined and reclassified into one (1)whole share of Common Stock...\""
      ]
     }
    ],
@@ -348,9 +353,9 @@
   {
    "absence_policy": "absent_ok",
    "batch": "smoke-corporate_record",
-   "candidate_labels": "Delaware",
-   "candidate_presence": "populated",
-   "candidate_status": "source_checks_passed",
+   "candidate_labels": null,
+   "candidate_presence": "pending_annotation",
+   "candidate_status": "needs_source_review",
    "chunk": "trial-corporate",
    "correction_type": "string",
    "doc_class": "corporate_record",
@@ -365,9 +370,9 @@
      "start": 266
     },
     {
-     "end": 393,
-     "quote": "Amedica Corporation, a corporation organized and existing under the laws of the State of Delaware, hereby certifies as follows:",
-     "start": 266
+     "end": 363,
+     "quote": "a corporation organized and existing under the laws of the State of Delaware",
+     "start": 287
     }
    ],
    "existing_gt_fields": {
@@ -395,22 +400,11 @@
    "filename": "0001193125-14-025241_d593074dex312.htm",
    "full_document_text": "\nEX-3.1.2 4 d593074dex312.htm EX-3.1.2 EX-3.1.2\n\n**Exhibit 3.1.2**\n\n**CERTIFICATE OF AMENDMENT**\n\n**TO**\n\n**RESTATED CERTIFICATE OF INCORPORATION**\n\n**OF**\n\n**AMEDICA CORPORATION**\n\n(Pursuant to Section 242 of the\n\nGeneral Corporation Law of the State of Delaware)\n\nAmedica Corporation, a corporation organized and existing under the laws of the State of Delaware, hereby certifies as follows:\n\n1. The name of the corporation (hereinafter referred to as the “**_Corporation_**”) is Amedica Corporation.\n\n1. The date of filing of the Certificate of Incorporation of the Corporation with the Secretary of State of the State of Delaware was December 10, 1996 under the name Amedica Corp. A Restated Certificate of Incorporation of the Corporation was filed on October 25, 2004 (the “**_Base Restated Certificate_**”), and said Base Restated Certificate was amended by (a)a Certificate of Designation for Series C Convertible Preferred Stock filed on February 24, 2006, (b)a Certificate of Designation for Series D Convertible Preferred Stock filed on April 16, 2007, (c)Certificates of Amendment respectively filed on July 26, 2007 and November 1, 2007, (d)a Certificate of Increase of Series D Convertible Preferred Stock filed on December 21, 2007, (e)a Certificate of Amendment filed on March 1, 2010, (f)a Certificate of Designation for Series E Convertible Preferred Stock filed March 19, 2010, (g)Certificates of Designation of Series A-1 Convertible Preferred Stock, Series B-1 Convertible Preferred Stock, Series C-1 Convertible Preferred Stock and Series D-1 Convertible Preferred Stock filed on March 19, 2010, (h)a Certificate of Amendment filed on March 19, 2010, (i)a Certificate of Increase of Series D-1 Convertible Preferred Stock filed on March 24, 2010, (j)a Certificate of Decrease of the Series A Convertible Preferred Stock, Series B Convertible Preferred Stock, Series C Convertible Preferred Stock and Series D Convertible Preferred Stock filed on March 25, 2010, (k)a Certificate of Increase of Series E Convertible Preferred Stock filed on September 20, 2010, (l)a Certificate of Increase of Series C Convertible Preferred Stock filed May 10, 2012, (m)a Certificate of Increase of Series D Convertible Preferred Stock and a Certificate of Decrease of Series E Convertible Preferred Stock, each filed on December 14, 2012, (n)a Certificate of Designation of Series F Convertible Preferred Stock filed on December 14, 2012, (o)a Certificate of Amendment filed on August 27, 2013, (p)a Certificate of Increase of Series F Convertible Preferred Stock filed on August 27, 2013, and (q)a Certificate of Amendment filed on , 201.\n\n* * *\n\n3. The Base Restated Certificate, is hereby amended by deleting the second and third sentences of Article FOURTH thereof and inserting the following new paragraph immediately following the first sentence of Article FOURTH thereof:\n\n“Upon the effectiveness of this Certificate of Amendment to the Certificate of Incorporation, every  ()issued and outstanding shares of Common Stock of the Corporation shall be changed, combined and reclassified into one (1)whole share of Common Stock, which shares shall be fully paid and nonassessable shares of Common Stock of the Corporation; _provided, however_, that in lieu of fractional interests in shares of Common Stock to which any stockholder would otherwise be entitled pursuant hereto (taking into account all shares of Common Stock owned by such stockholder), such stockholder shall be entitled to receive a cash payment equal to the fair value of one share of Common Stock as determined by the Board of Directors of the Corporation multiplied by such fraction.\n\n4. Pursuant to Section 228(a) of the General Corporation Law of the State of Delaware, the holders of outstanding shares of the Corporation having no less than the minimum number of votes that would be necessary to authorize or take such actions at a meeting at which all shares entitled to vote thereon were present and voted, consented to the adoption of the aforesaid amendments without a meeting, without a vote and without prior notice and that written notice of the taking of such actions was given in accordance with Section 228(e) of the General Corporation Law of the State of Delaware.\n\n5. Said amendment was duly adopted in accordance with the provisions of Section 242 of the General Corporation Law of the State of Delaware.\n\n[THE REMAINDER OF THIS PAGE IS INTENTIONALLY LEFT BLANK.]\n\n* * *\n\nIN WITNESS WHEREOF, the Corporation has caused this Certificate of Amendment to be signed by its duly authorized officer this  day of , 201.\n\nAMEDICA CORPORATION\n\nBy:\n",
    "human_approval": "pending",
-   "issues": [],
+   "issues": [
+    "The models disagree: z-ai/glm-5.3-flashx-legal answered State of Delaware, deepseek/deepseek-v4.1-flash answered Delaware."
+   ],
    "kind": "labeling_batch",
    "model_outputs": [
-    {
-     "evidence": "Amedica Corporation, a corporation organized and existing under the laws of the State of Delaware, hereby certifies as follows:",
-     "evidence_spans": [
-      {
-       "end": 393,
-       "quote": "Amedica Corporation, a corporation organized and existing under the laws of the State of Delaware, hereby certifies as follows:",
-       "start": 266
-      }
-     ],
-     "model": "z-ai/glm-5.3-flashx-legal",
-     "status": "present",
-     "value": "Delaware"
-    },
     {
      "evidence": "Amedica Corporation, a corporation organized and existing under the laws of the State of Delaware",
      "evidence_spans": [
@@ -418,6 +412,19 @@
        "end": 363,
        "quote": "Amedica Corporation, a corporation organized and existing under the laws of the State of Delaware",
        "start": 266
+      }
+     ],
+     "model": "z-ai/glm-5.3-flashx-legal",
+     "status": "present",
+     "value": "State of Delaware"
+    },
+    {
+     "evidence": "a corporation organized and existing under the laws of the State of Delaware",
+     "evidence_spans": [
+      {
+       "end": 363,
+       "quote": "a corporation organized and existing under the laws of the State of Delaware",
+       "start": 287
       }
      ],
      "model": "deepseek/deepseek-v4.1-flash",
@@ -436,7 +443,7 @@
     "deepseek/deepseek-v4.1-flash": "off",
     "z-ai/glm-5.3-flashx-legal": "low"
    },
-   "review_provenance": "Batch trial-corporate (corporate, remainder set), labeled by z-ai/glm-5.3-flashx-legal and deepseek/deepseek-v4.1-flash at reasoning glm-5.3-flashx-legal low, deepseek-v4.1-flash off. The candidate is the value the models agreed on after the evidence and grounding checks. It is a proposal for human review, not a gold label.",
+   "review_provenance": "Batch trial-corporate (corporate, remainder set), labeled by z-ai/glm-5.3-flashx-legal and deepseek/deepseek-v4.1-flash at reasoning glm-5.3-flashx-legal low, deepseek-v4.1-flash off. The candidate is left open because no value was agreed. It is a proposal for human review, not a gold label.",
    "schema_alignment": "aligned",
    "schema_status": "pinned_registry",
    "set": "remainder",
@@ -605,9 +612,9 @@
   {
    "absence_policy": "absent_ok",
    "batch": "smoke-corporate_record",
-   "candidate_labels": null,
-   "candidate_presence": "pending_annotation",
-   "candidate_status": "needs_source_review",
+   "candidate_labels": "The total number of shares of all classes of stock which the Corporation shall have authority to issue is 9,000 shares of Common Stock, without par value.",
+   "candidate_presence": "populated",
+   "candidate_status": "source_checks_passed",
    "chunk": "trial-corporate",
    "correction_type": "string",
    "doc_class": "corporate_record",
@@ -618,8 +625,8 @@
    "evidence": [
     {
      "end": 2829,
-     "quote": "The total number of shares of all classes of stock which the Corporation shall have authority to issue is 9,000 shares of Common Stock, without par value.",
-     "start": 2675
+     "quote": "FOURTH: The total number of shares of all classes of stock which the Corporation shall have authority to issue is 9,000 shares of Common Stock, without par value.",
+     "start": 2667
     }
    ],
    "existing_gt_fields": {
@@ -647,31 +654,29 @@
    "filename": "0001193125-08-114390_dex3156.htm",
    "full_document_text": "\nEX-3.1.56 20 dex3156.htm PROFESSIONAL RECOVERIES INC. Professional Recoveries Inc.\n\n**Exhibit 3.1.56**\n\n**AMENDED AND RESTATED ARTICLES OF INCORPORATION**\n\n**OF**\n\n**PROFESSIONAL RECOVERIES INC.**\n\n(a Wisconsin Corporation)\n\nProfessional Recoveries Inc., a business corporation organized and existing under the laws of the State of Wisconsin (the “Corporation”), does hereby certify as follows:\n\n1. The name of the Corporation is: Professional Recoveries Inc.\n\n2. The Articles of Incorporation of the Corporation were filed with the office of the Wisconsin Department of Financial Institutions on April 26, 1994.\n\n3. The Amended and Restated Articles of Incorporation of the Corporation are hereby amended so as henceforth to read as set forth in the Amended and Restated Articles of Incorporation annexed hereto as Exhibit A and made a part hereof.\n\n4. The Amended and Restated Articles of Incorporation of the Corporation were duly adopted by the Board of Directors and sole shareholder on April 14, 2008 in accordance with Sections 180.1003 and 180.1004 of the Wisconsin Statutes, and supercede and take the place of the existing Articles of Incorporation and any amendments thereto.\n\n5. The Amended and Restated Articles of Incorporation contains amendments to the Articles of Incorporation of the Corporation requiring shareholder approval.\n\n6. The Amended and Restated Articles of Incorporation does not provide for an exchange, reclassification or cancellation of issued shares.\n\n7. The number of shares outstanding at the time of the adoption of the amendment was 100 shares of Common Stock. The total number of shares entitled to vote thereon was 100 shares of Common Stock.\n\nThe number of shares voting for and against such amendment is as follows:\n\n**Number of Shares Voting for Amendment****Number of Shares Voting Against Amendment**\n-100 --0-\n\nThe undersigned hereby affirms that the facts stated above are true and correct and has executed this Amended and Restated Articles of Incorporation this 28 th day of April, 2008.\n\nPROFESSIONAL RECOVERIES INC.\n\nBy:/s/ Joshua Gindin\nName:Joshua Gindin\nTitle:Secretary\n\n**This document was not executed in Wisconsin**\n\nThis document was drafted by Kathleen Kirchner\n\n* * *\n\nExhibit A\n\nAMENDED AND RESTATED\n\nARTICLES OF INCORPORATION\n\nOF\n\nPROFESSIONAL RECOVERIES INC.\n\nFIRST: The name of the Corporation is Professional Recoveries, Inc. (the “Corporation”).\n\nSECOND: The Corporation is organized under Chapter 180 of the Wisconsin Statutes.\n\nTHIRD: The purpose of the Corporation is to engage in any lawful act or activity for which a corporation may be organized under the Wisconsin Business Corporation Law.\n\nFOURTH: The total number of shares of all classes of stock which the Corporation shall have authority to issue is 9,000 shares of Common Stock, without par value.\n\nFIFTH: The name of the registered agent is: CT Corporation System\n\nSIXTH: The street address of the registered agent is:\n\n8040 Excelsior Drive, Suite 200\n\nMadison, Wisconsin 53717\n\nSEVENTH: In furtherance and not in limitation of the powers conferred by the laws of the State of Wisconsin, the Board of Directors of the Corporation is expressly authorized and empowered to make, alter or repeal the By-laws of the Corporation, except as specifically stated therein.\n\nEIGHTH: The election of directors need not be by written ballot, unless the bylaws of the Corporation shall so provide.\n",
    "human_approval": "pending",
-   "issues": [
-    "The models disagree: z-ai/glm-5.3-flashx-legal answered 9,000 shares of Common Stock, without par value, deepseek/deepseek-v4.1-flash answered The total number of shares of all classes of stock which the Corporation shall have authority to issue is 9,000 shares …."
-   ],
+   "issues": [],
    "kind": "labeling_batch",
    "model_outputs": [
     {
-     "evidence": "The total number of shares of all classes of stock which the Corporation shall have authority to issue is 9,000 shares of Common Stock, without par value.",
+     "evidence": "FOURTH: The total number of shares of all classes of stock which the Corporation shall have authority to issue is 9,000 shares of Common Stock, without par value.",
      "evidence_spans": [
       {
        "end": 2829,
-       "quote": "The total number of shares of all classes of stock which the Corporation shall have authority to issue is 9,000 shares of Common Stock, without par value.",
-       "start": 2675
+       "quote": "FOURTH: The total number of shares of all classes of stock which the Corporation shall have authority to issue is 9,000 shares of Common Stock, without par value.",
+       "start": 2667
       }
      ],
      "model": "z-ai/glm-5.3-flashx-legal",
      "status": "present",
-     "value": "9,000 shares of Common Stock, without par value"
+     "value": "The total number of shares of all classes of stock which the Corporation shall have authority to issue is 9,000 shares of Common Stock, without par value."
     },
     {
-     "evidence": "The total number of shares of all classes of stock which the Corporation shall have authority to issue is 9,000 shares of Common Stock, without par value.",
+     "evidence": "FOURTH: The total number of shares of all classes of stock which the Corporation shall have authority to issue is 9,000 shares of Common Stock, without par value.",
      "evidence_spans": [
       {
        "end": 2829,
-       "quote": "The total number of shares of all classes of stock which the Corporation shall have authority to issue is 9,000 shares of Common Stock, without par value.",
-       "start": 2675
+       "quote": "FOURTH: The total number of shares of all classes of stock which the Corporation shall have authority to issue is 9,000 shares of Common Stock, without par value.",
+       "start": 2667
       }
      ],
      "model": "deepseek/deepseek-v4.1-flash",
@@ -690,7 +695,7 @@
     "deepseek/deepseek-v4.1-flash": "off",
     "z-ai/glm-5.3-flashx-legal": "low"
    },
-   "review_provenance": "Batch trial-corporate (corporate, remainder set), labeled by z-ai/glm-5.3-flashx-legal and deepseek/deepseek-v4.1-flash at reasoning glm-5.3-flashx-legal low, deepseek-v4.1-flash off. The candidate is left open because no value was agreed. It is a proposal for human review, not a gold label.",
+   "review_provenance": "Batch trial-corporate (corporate, remainder set), labeled by z-ai/glm-5.3-flashx-legal and deepseek/deepseek-v4.1-flash at reasoning glm-5.3-flashx-legal low, deepseek-v4.1-flash off. The candidate is the value the models agreed on after the evidence and grounding checks. It is a proposal for human review, not a gold label.",
    "schema_alignment": "aligned",
    "schema_status": "pinned_registry",
    "set": "remainder",
@@ -975,8 +980,8 @@
     },
     {
      "end": 342,
-     "quote": "organized and existing under the laws of the State of Wisconsin",
-     "start": 279
+     "quote": "Professional Recoveries Inc., a business corporation organized and existing under the laws of the State of Wisconsin",
+     "start": 226
     }
    ],
    "existing_gt_fields": {
@@ -1008,12 +1013,12 @@
    "kind": "labeling_batch",
    "model_outputs": [
     {
-     "evidence": "organized and existing under the laws of the State of Wisconsin",
+     "evidence": "Professional Recoveries Inc., a business corporation organized and existing under the laws of the State of Wisconsin",
      "evidence_spans": [
       {
        "end": 342,
-       "quote": "organized and existing under the laws of the State of Wisconsin",
-       "start": 279
+       "quote": "Professional Recoveries Inc., a business corporation organized and existing under the laws of the State of Wisconsin",
+       "start": 226
       }
      ],
      "model": "z-ai/glm-5.3-flashx-legal",
@@ -1073,11 +1078,6 @@
      "end": 2896,
      "quote": "FIFTH: The name of the registered agent is: CT Corporation System",
      "start": 2831
-    },
-    {
-     "end": 2896,
-     "quote": "The name of the registered agent is: CT Corporation System",
-     "start": 2838
     }
    ],
    "existing_gt_fields": {
@@ -1109,12 +1109,12 @@
    "kind": "labeling_batch",
    "model_outputs": [
     {
-     "evidence": "The name of the registered agent is: CT Corporation System",
+     "evidence": "FIFTH: The name of the registered agent is: CT Corporation System",
      "evidence_spans": [
       {
        "end": 2896,
-       "quote": "The name of the registered agent is: CT Corporation System",
-       "start": 2838
+       "quote": "FIFTH: The name of the registered agent is: CT Corporation System",
+       "start": 2831
       }
      ],
      "model": "z-ai/glm-5.3-flashx-legal",
