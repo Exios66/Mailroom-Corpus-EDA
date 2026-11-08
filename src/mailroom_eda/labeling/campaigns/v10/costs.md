@@ -7,25 +7,25 @@ exact windowed prompts, typical output per call, x1.25 for retries and repairs;
 
 ## Whole campaign on one model
 
-25.7M prompt and 3.7M output tokens: every task once, each extraction task on one model.
+25.9M prompt and 3.7M output tokens: every task once, each extraction task on one model.
 
 | model | USD |
 |---|---:|
-| `openai/gpt-6-luna-pro` | 4.40 |
-| `anthropic/claude-haiku-5.5` | 4.40 |
-| `openai/gpt-6-luna` | 4.40 |
-| `qwen/qwen3.8-flash` | 5.58 |
-| `z-ai/glm-5.3-flash` | 5.69 |
-| `minimax/minimax-m3.1-flash` | 6.06 |
-| `deepseek/deepseek-v4.1-flash` | 6.24 |
-| `deepseek/deepseek-v4.1-flash-1017` | 12.11 |
-| `z-ai/glm-5.3-flashx-legal` | 14.10 |
-| `google/gemini-3.5-flash-lite` | 16.88 |
-| `Qwen/Qwen3-32B-FP8` | 159.51 |
+| `openai/gpt-6-luna-pro` | 4.42 |
+| `anthropic/claude-haiku-5.5` | 4.42 |
+| `openai/gpt-6-luna` | 4.42 |
+| `qwen/qwen3.8-flash` | 5.61 |
+| `z-ai/glm-5.3-flash` | 5.72 |
+| `minimax/minimax-m3.1-flash` | 6.09 |
+| `deepseek/deepseek-v4.1-flash` | 6.27 |
+| `deepseek/deepseek-v4.1-flash-1017` | 12.17 |
+| `z-ai/glm-5.3-flashx-legal` | 14.17 |
+| `google/gemini-3.5-flash-lite` | 16.94 |
+| `Qwen/Qwen3-32B-FP8` | 160.26 |
 
 ## Recommended plan, chunk by chunk
 
-Projected total **$23.25**; the chunk caps add up to **$33.84**.
+Projected total **$23.09**; the chunk caps add up to **$33.44**.
 Two-model chunks are priced for both models.
 
 | chunk | task | set | slice | docs | calls | models | reasoning | projected USD | cap USD |
@@ -47,16 +47,16 @@ Two-model chunks are priced for both models.
 | 2a | cuad | pending | 1/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.29 | 0.45 |
 | 2b | cuad | pending | 2/3 | 30 | 30 | `winner_of_1` | winner_of_1 | 0.30 | 0.45 |
 | 2c | cuad | pending | 3/3 | 29 | 29 | `winner_of_1` | winner_of_1 | 0.22 | 0.35 |
-| 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash` | off | 0.05 | 0.10 |
+| 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash` | off | 0.06 | 0.10 |
 | 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash` | low | 0.00 | 0.00 |
-| 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash-1017` | off | 0.10 | 0.15 |
+| 3 | intent | calibration | all | 96 | 192 | `deepseek-v4.1-flash-1017` | off | 0.00 | 0.00 |
 | 3 | intent | calibration | all | 96 | 192 | `gpt-6-luna-pro` | off | 0.00 | 0.00 |
-| 3 | intent | calibration | all | 96 | 192 | `claude-haiku-5.5` | off | 0.04 | 0.10 |
-| 3 | intent | calibration | all | 96 | 192 | `minimax-m3.1-flash` | low | 0.09 | 0.15 |
+| 3 | intent | calibration | all | 96 | 192 | `claude-haiku-5.5` | off | 0.00 | 0.00 |
+| 3 | intent | calibration | all | 96 | 192 | `minimax-m3.1-flash` | low | 0.00 | 0.00 |
 | 4 | intent | flagged | all | 25 | 50 | `winner_of_3` | winner_of_3 | 0.00 | 0.00 |
-| 4a | intent | relabel | 1/3 | 302 | 1208 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.43 | 0.65 |
-| 4b | intent | relabel | 2/3 | 302 | 1208 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.43 | 0.65 |
-| 4c | intent | relabel | 3/3 | 300 | 1200 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.42 | 0.65 |
+| 4a | intent | relabel | 1/3 | 302 | 1208 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.45 | 0.65 |
+| 4b | intent | relabel | 2/3 | 302 | 1208 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.45 | 0.65 |
+| 4c | intent | relabel | 3/3 | 300 | 1200 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.45 | 0.65 |
 | 5a | contract_entities | calibration | all | 40 | 80 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.35 | 0.50 |
 | 5b | contract_entities | pilot | all | 52 | 104 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.61 | 0.90 |
 | 5c | contract_entities | remainder | 1/3 | 182 | 364 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 2.02 | 2.85 |

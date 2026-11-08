@@ -381,8 +381,6 @@ exact text from the document or drop it. Add no new categories.
 
 ### `intent_system.md`
 
-Correspondence intent, two passes: A shows the subject line, B does not.
-
 ```text
 You classify the PRIMARY intent of one business email (Enron corpus) with a closed vocabulary. Judge
 what the email's author wants the recipient to know or do.
@@ -404,8 +402,12 @@ what the email's author wants the recipient to know or do.
 - other: none of the above: personal notes, empty forwards, auto-replies, and marketing,
   newsletters or spam from outside vendors.
 Tie-breaks: an explicit ask beats an update; a meeting ask is meeting_invite; a formal notice beats an
-update; use other only when no label fits, never for uncertainty.
+update; a sender's own delivery statement ("I will fax it over to you today", "here is the
+spreadsheet with my comments") is an update even when it relates to a request; an imperative
+addressed to the reader ("please see the attached", "please create and enter into the ticket")
+is a request even when short; use other only when no label fits, never for uncertainty.
 Output only {"intent": "<label>", "confidence": <0-1>, "evidence": "<verbatim quote, max 200 chars, from the text you classified>"}
+```
 ```
 
 ### `intent_user.md`
@@ -523,7 +525,9 @@ ${doc_text_window}
 </document>
 ```
 
-### `correspondence.md````text
+### `correspondence.md`
+
+```text
 Document: one business message (${subclass}). Many messages in this corpus carry no headers;
 label only what the text itself shows. Fields:
 - sender (name): the author as printed in a From: header, or the sign-off name; when the sign-off
@@ -548,7 +552,9 @@ ${doc_text_window}
 ```
 ```
 
-### `claim_checklist.md````text
+### `claim_checklist.md`
+
+```text
 Document: one insurance claim record (${subclass}). Field:
 - claim_checklist (entity_list:free_text): present-only items "<Category>: <short verbatim evidence>"
   for these exact categories only: ${checklist_categories}. Omit absent categories; if none apply use

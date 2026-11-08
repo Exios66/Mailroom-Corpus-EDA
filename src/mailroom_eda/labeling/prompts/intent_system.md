@@ -18,5 +18,8 @@ what the email's author wants the recipient to know or do.
 - other: none of the above: personal notes, empty forwards, auto-replies, and marketing,
   newsletters or spam from outside vendors.
 Tie-breaks: an explicit ask beats an update; a meeting ask is meeting_invite; a formal notice beats an
-update; use other only when no label fits, never for uncertainty.
+update; a sender's own delivery statement ("I will fax it over to you today", "here is the
+spreadsheet with my comments") is an update even when it relates to a request; an imperative
+addressed to the reader ("please see the attached", "please create and enter into the ticket")
+is a request even when short; use other only when no label fits, never for uncertainty.
 Output only {"intent": "<label>", "confidence": <0-1>, "evidence": "<verbatim quote, max 200 chars, from the text you classified>"}

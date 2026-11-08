@@ -66,13 +66,13 @@ chunks:
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 1: DeepSeek v4.1 Flash, off"}
   - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash], reasoning: "low", skip: "2026-11-06 run: no κ gain over off (0.680 vs 0.686) at 4x the cost, and one email ran its reasoning past the allowance", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 2: DeepSeek v4.1 Flash, low"}
-  - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash-1017], reasoning: "off", cap_usd: 0.15,
+  - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash-1017], reasoning: "off", skip: "2026-11-06 run 3.3: complete, kappa 0.8233 passed its gate", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 3: DeepSeek v4.1 Flash 1017, off"}
   - {id: "3",  task: intent, set: calibration, models: [openai/gpt-6-luna-pro], reasoning: "off", skip: "2026-11-06 run: κ 0.543, clearly the weakest intent arm", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 4: GPT-6 Luna Pro"}
-  - {id: "3",  task: intent, set: calibration, models: [anthropic/claude-haiku-5.5], reasoning: "off", cap_usd: 0.10,
+  - {id: "3",  task: intent, set: calibration, models: [anthropic/claude-haiku-5.5], reasoning: "off", skip: "2026-11-06 run 3.5: complete, kappa 0.7626 passed its gate", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 5: Claude Haiku 5.5"}
-  - {id: "3",  task: intent, set: calibration, models: [minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.15,
+  - {id: "3",  task: intent, set: calibration, models: [minimax/minimax-m3.1-flash], reasoning: "low", skip: "2026-11-06 run 3.6: complete, kappa 0.7503 passed its gate", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 6: MiniMax M3.1 Flash, low"}
   - {id: "4", needs: ["3"],  task: intent, set: flagged, models: [winner_of_3], reasoning: winner_of_3, cap_usd: 0.00, gate: {kind: review},
      skip: "2026-11-06: superseded by 4a-4c, which re-read these 25 flagged emails with two models"}
