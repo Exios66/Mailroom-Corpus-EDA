@@ -38,6 +38,7 @@ function launchItems(body){
 const server=http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');
   if(req.url==='/review.html') {res.setHeader('Content-Type','text/html');res.end(template.replace('__REVIEW_PACKET_JSON__',JSON.stringify(packet).replaceAll('<','\\u003c')));return;}
+  if(req.url==='/axe.js') {res.setHeader('Content-Type','text/javascript');res.end(fs.readFileSync(process.env.AXE_PATH||'/nonexistent'));return;}
   res.setHeader('Content-Type','application/json');
   if(req.url==='/api/contract') {res.end(JSON.stringify({schema:'mailroom-review-agent-contract/v1',packet_schema:'mailroom-review-packet/v1',decision_key:packet.decision_key,rules:['per-label items ride correction_labels_json']}));return;}
   if(req.url==='/review-data.json') {launch.reloads++;res.end(JSON.stringify(packet));return;}
@@ -207,6 +208,17 @@ try {
   await evaluate(`document.activeElement.dispatchEvent(Object.assign(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true})))`);
   assert.equal(await evaluate(`$('tab-tracker').getAttribute('aria-selected')`),'true','selection wraps backwards');
   check('tab keyboard: arrow/home/end with roving tabindex');
+  // A11y invariants that hold in every run (the axe-core pass when AXE_PATH is set
+  // scans the whole document; these are the landmarks/roles it validates).
+  const a11y=await evaluate(`(()=>{const tabs=[...document.querySelectorAll('#tabs [role="tab"]')];
+    return {mains:document.querySelectorAll('main').length,
+            header:!!document.querySelector('header h1'),
+            panels:document.querySelectorAll('[role="tabpanel"]').length,
+            labelled:tabs.every((t)=>t.getAttribute('aria-controls') && document.getElementById(t.getAttribute('aria-controls'))),
+            selected:tabs.filter((t)=>t.getAttribute('aria-selected')==='true').length};})()`);
+  assert.equal(a11y.mains,1);assert.ok(a11y.header);
+  assert.equal(a11y.panels,3);assert.ok(a11y.labelled);assert.equal(a11y.selected,1);
+  check('single main landmark, headered page, labelled tab panels');
   // Launch panel: shown because the server says launch is enabled.
   await waitFor(`!$('launch-panel').hidden && $('launch-target').options.length===3`);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#launch-target optgroup')].map(g=>g.label)`),['Campaign','Public trial']);
@@ -254,6 +266,21 @@ try {
   assert.ok(launch.reloads>readsBefore,'a finished run reloads the batches');
   assert.equal(await evaluate(`JSON.stringify([localStorage,sessionStorage]).includes('BROWSER-SECRET')`),false);
   await screenshot('08-launch-finished');
+  // A11y pass: when AXE_PATH is set, the served /axe.js (vendored axe-core) scans the live
+  // document; the committed run stays offline and only the a11y invariants below execute.
+  if (process.env.AXE_PATH){
+    const ax=await evaluate(`new Promise((resolve)=>{
+      const s=document.createElement('script'); s.src='/axe.js';
+      s.onload=()=>axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','best-practice']}})
+        .then((r)=>resolve(JSON.stringify({violations:r.violations.map((v)=>v.id+' x'+v.nodes.length+(v.nodes[0]&&v.nodes[0].target?' @'+v.nodes[0].target.join(' '):'')),passes:r.passes.length,incomplete:r.incomplete.length})))
+        .catch((e)=>resolve(JSON.stringify({violations:['axe-error: '+e.message]})));
+      s.onerror=()=>resolve(JSON.stringify({violations:['axe-load-error']}));
+      document.head.append(s);
+    })`);
+    fs.writeFileSync(path.join(out,'axe.json'),ax);
+    console.log('AXE '+ax);
+    assert.deepEqual(JSON.parse(ax).violations,[]);
+  }
   assert.deepEqual(errors,[]);
   fs.writeFileSync(path.join(out,'submitted-review.json'),JSON.stringify(posts[0],null,2));
   fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({passed:true,saves,checkpoints,journal_events:posts[0].history.length,checks,console_exceptions:errors},null,2));

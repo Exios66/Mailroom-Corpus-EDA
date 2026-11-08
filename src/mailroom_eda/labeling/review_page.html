@@ -50,7 +50,8 @@ pre#launch-log { max-height: 220px; overflow: auto; background: #f6f6f6; padding
 </style>
 </head>
 <body>
-<h1>Human label review — private local packet</h1>
+<header><h1>Human label review — private local packet</h1></header>
+<main id="main">
 <div class="toolbar">
 <button id="save" class="primary">Save review to server</button>
 <button id="export">Export JSON</button>
@@ -138,6 +139,7 @@ The API key field is optional, is never stored (not even in this browser) and is
 </div>
 
 <p class="muted">Agent interface: <code>GET /api/contract</code> — the machine-readable packet schema, decision key, per-label rules and routes. Nothing publishes automatically; every decision expects a reviewer's initials.</p>
+</main>
 
 <script id="packet" type="application/json">__REVIEW_PACKET_JSON__</script>
 <script>

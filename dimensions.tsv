@@ -1,0 +1,3 @@
+# timestamp	interface_checks	rubric	axe	fixtures	replays	cap_guard	portal+launch	labeling	coverage	total_executed
+2026-11-08T09:14:21Z	27	100	violations	5	5	pass	0/0	0/0	pass	137
+2026-11-08T09:17:36Z	27	100	clean	5	5	pass	92/92	200/200	pass	468
