@@ -401,9 +401,9 @@ function modelAnswers(record){
   const box=node('details'); box.id='model-answers'; box.open=true;
   box.append(node('summary','Model answers ('+outs.length+')'));
   const t=node('table'), head=node('tr');
-  ['Verified','Model','Value','Status','Evidence'].forEach((h)=>head.append(node('th',h))); t.append(head);
+  ['Verified','Model','Value','Status','Evidence','Use'].forEach((h)=>head.append(node('th',h))); t.append(head);
   outs.forEach((o)=>{
-    const tr=node('tr'), verified=node('td'), value=node('td'), status=node('td'), ev=node('td');
+    const tr=node('tr'), verified=node('td'), value=node('td'), status=node('td'), ev=node('td'), use=node('td');
     if (o.model){
       const tick=node('input'); tick.type='checkbox'; tick.setAttribute('aria-label','Verified model '+o.model);
       tick.checked=(state.verified_models||[]).includes(String(o.model));
@@ -416,7 +416,21 @@ function modelAnswers(record){
       });
       verified.append(tick);
     }
-    tr.append(verified, node('td',String(o.model||'?')+(o.pass?' (pass '+o.pass+')':''),'k'), value, status, ev);
+    // One click turns a model's answer into the CORRECT replacement, so a reviewer who
+    // verified the models' consensus does not have to retype it. Arrays keep the picker.
+    if (record.correction_type!=='array' && o.value!=null){
+      const b=node('button','Use value'); b.type='button';
+      b.setAttribute('aria-label','Use this value as the correction');
+      b.addEventListener('click', ()=>{
+        const before=clone(decisions.get(KEY(record))), d=decisions.get(KEY(record));
+        d.decision='CORRECT'; d.corrected_labels_json=JSON.stringify(o.value); d.updated_at=now();
+        logChange(before, d);
+        $('decision').value='CORRECT'; $('correction').value=d.corrected_labels_json;
+        message('CORRECT filled from '+o.model+'. Verify it against the source, tick every model that agrees, then Save.', true);
+      });
+      use.append(b);
+    }
+    tr.append(verified, node('td',String(o.model||'?')+(o.pass?' (pass '+o.pass+')':''),'k'), value, status, ev, use);
     value.append(show(o.value, record.dojo_type));
     status.append(chip(label(o.status)||'—', o.status==='present'?'good':''));
     if (o.confidence!=null) status.append(node('span',' confidence '+o.confidence,'muted'));

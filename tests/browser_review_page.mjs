@@ -274,6 +274,12 @@ try {
   await evaluate(`$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
   const ticked=await evaluate(`(()=>{[...document.querySelectorAll('#model-answers input')][0].click();return decisions.get('SYNTH-002\\nentity_name').verified_models;})()`);
   assert.deepEqual(ticked,['synthetic/model-a'],'ticking a model row records the attribution');
+  // "Use value" turns the verified model answer into the CORRECT replacement in one click.
+  await evaluate(`[...document.querySelectorAll('#model-answers button')][0].click()`);
+  assert.equal(await evaluate(`$('decision').value`),'CORRECT','use-value selects CORRECT');
+  assert.equal(JSON.parse(await evaluate(`$('correction').value`)),'Example Corporation',
+    'the correction carries the model value byte-for-byte');
+  await evaluate(`$('decision').value='ACCEPT';$('decision').dispatchEvent(new Event('input'));`);
   await evaluate(`records[1].candidate_status='needs_source_review';renderTarget();`);
   assert.equal(await evaluate(`$('manual-wrap').hidden`),false,'blocked candidates expose the manual-verification checkbox');
   await evaluate(`$('decision').value='ACCEPT';$('decision').dispatchEvent(new Event('input'));`);
