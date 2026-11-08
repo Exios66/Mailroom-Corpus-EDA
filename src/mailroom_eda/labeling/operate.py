@@ -393,6 +393,12 @@ def stale_winner(name: str, entry: Mapping[str, Any], picked: Sequence[Mapping[s
     return ""
 
 
+def pick(rows: Sequence[Mapping[str, Any]], entry: Mapping[str, Any]) -> list:
+    """A chunk's rows: the campaign ``subclass`` filter first, then the ``i/n`` slice."""
+    return runner.chunk(runner.select(rows, entry["task"], entry["set"], entry.get("subclass")),
+                        entry.get("chunk"))
+
+
 def cmd_chunk(args: argparse.Namespace) -> int:
     """Run one campaign chunk arm with the campaign's models, reasoning, cap and wall limit."""
     entry, arm = chunk_entry(args.campaign, args.id, args.arm)
@@ -429,7 +435,7 @@ def cmd_chunk(args: argparse.Namespace) -> int:
         if not ok:
             raise SystemExit(f"Modal endpoint not ready: {why}")
     rows = runner.load_stage(args.stage)
-    picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
+    picked = pick(rows, entry)
     stale = stale_winner(args.campaign, entry, picked)
     if stale:
         raise SystemExit(stale)
@@ -506,7 +512,7 @@ def _sweep_projection(args: argparse.Namespace, plan: Sequence[tuple[Mapping[str
     for entry, arm in plan:
         models, reasoning = resolve(args.campaign, entry)
         models, _ = chunk_models(args, models)
-        picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
+        picked = pick(rows, entry)
         proj = runner.estimate(picked, entry["task"], models, entry["set"])
         out.append({"chunk": f"{entry['id']}{f'.{arm}' if arm else ''}", "task": entry["task"],
                     "set": entry["set"], "documents": proj["documents"], "calls": proj["calls"],
@@ -884,7 +890,7 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
     if not (out_dir / "calls.jsonl").exists():
         raise SystemExit(f"{out_dir} has no calls.jsonl; run `labeling chunk {entry['id']}` first")
     rows = runner.load_stage(stage)
-    picked = runner.chunk(runner.select(rows, entry["task"], entry["set"]), entry.get("chunk"))
+    picked = pick(rows, entry)
     models, reasoning = resolve(name, entry)
     provider, providers_of = "openrouter", None
     started = [r for r in export.read_journal(out_dir / "runs.jsonl") if r.get("started_utc") and r.get("models")]
@@ -940,6 +946,14 @@ def gate_result(name: str, entry: Mapping[str, Any], arm: int | None, out: Path,
                scored_utc=_now())
     if overlay is not None:  # informational: never part of passed
         res["interim"] = {**reviewed.get("interim", {}), "manifest_sha256": overlay.manifest_sha256}
+    if entry["task"] == "claim_checklist":
+        audit = json.loads((out_dir / "labeling-scores.json").read_text(encoding="utf-8"))
+        invalid_final = sum(f["final_decision"] == "adjudicate" and "; final labeling:" in f["reason"]
+                            for f in export.read_csv(out_dir / "fields.csv"))
+        res["labeling_quality"] = {k: audit[k] for k in ("policy_version", "accepted_checked", "blocked_accepted")}
+        res["labeling_quality"]["invalid_final_fields"] = invalid_final
+        if audit["blocked_accepted"] or invalid_final:
+            res["passed"] = False
     outside = pin_violations(current, reasoning)
     if outside:
         res.update(passed=False, served_outside_pin=outside)
@@ -1489,7 +1503,8 @@ def cmd_gate(args: argparse.Namespace) -> int:
         "temperature": {m: providers.temperature(m) for m in res["models"]}, "prompt_sha256": res["prompt_sha256"],
         "served_providers": res["served_providers"],
         "gate": {k: v for k, v in res.items() if k in ("kind", "micro_f1", "micro_precision", "cohen_kappa",
-                                                       "precision", "adjudicate_share", "passed")},
+                                                        "precision", "adjudicate_share", "passed")},
+        **({"labeling_quality": res["labeling_quality"]} if res.get("labeling_quality") else {}),
         "approved_by": args.initials, "approved_utc": _now()})
     path = _write_approvals(args.campaign, approvals, opinions)
     print(f"approved chunk {entry['id']}{f' arm {arm}' if arm else ''}"
@@ -2037,4 +2052,3 @@ def add_commands(sub: Any) -> None:
     p.add_argument("--no-checkpoint", action="store_true",
                    help="do not stage ping.jsonl to the private HF repo (other machines will not see it)")
     p.set_defaults(operate=cmd_ping)
-

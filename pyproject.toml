@@ -18,8 +18,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+review = ["openpyxl==3.1.5"]
 dev = [
     "pytest>=8.0",
+    "openpyxl==3.1.5",  # tests/test_labeling_review_packet.py imports it (same pin as review)
     "jupyter>=1.1",
     "ipykernel>=7.3",
     "nbconvert>=7.17",

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable
@@ -29,7 +30,7 @@ from .. import hf_interface
 STAGING_REPO = "Lucius-Morningstar/mailroom-dataset-v10-staging"
 LABELS_DIR = "labels"
 APPROVALS_FILE = "campaign/approved.yaml"
-SUFFIXES = {".jsonl", ".json", ".csv", ".md", ".yaml"}
+SUFFIXES = {".jsonl", ".json", ".csv", ".md", ".yaml", ".txt", ".xlsx", ".html"}
 CARD = """---
 license: cc-by-4.0
 configs:
@@ -49,11 +50,17 @@ byte-for-byte, spend included: this is a private backup of the run logs, never p
 
 
 def _sources(labels_root: Path, approvals: Path | None) -> Iterable[tuple[str, Path]]:
-    """``(path_in_repo, local file)`` for everything a checkpoint carries."""
+    """Yield repository paths and local files with supported checkpoint suffixes.
+
+    Include an existing approvals file separately. Raise SystemExit for symlinks
+    in the scanned paths or their parents inside the checkpoint tree."""
+    _reject_symlinks(labels_root)
     for p in sorted(labels_root.rglob("*")):
+        _reject_symlinks(p, labels_root)
         if p.is_file() and p.suffix in SUFFIXES and "__pycache__" not in p.parts:
             yield f"{LABELS_DIR}/{p.relative_to(labels_root).as_posix()}", p
     if approvals is not None and approvals.exists():
+        _reject_symlinks(approvals)
         yield APPROVALS_FILE, approvals
 
 
@@ -75,16 +82,56 @@ def git_blob_sha(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
-def verify(api: Any, repo_id: str, staged: dict[str, Path]) -> list[str]:
-    """Paths whose Hub copy is missing or differs (LFS sha256, else git blob sha1)."""
-    hub = {f.path: f for f in api.list_repo_tree(repo_id=repo_id, repo_type="dataset", recursive=True)}
+def _reject_symlinks(path: Path, root: Path | None = None) -> None:
+    """Raise SystemExit if ``path``, or any component between it and ``root``, is a symlink.
+
+    Only the checkpoint tree is the trust boundary: ancestors above ``root`` (a symlinked
+    home, data mount or macOS ``/tmp``) are not checked. Without ``root`` only ``path``
+    itself is checked."""
+    chain = [path]
+    if root is not None:
+        chain += [p for p in path.parents if p == root or root in p.parents]
+    if any(p.is_symlink() for p in chain):
+        raise SystemExit(f"checkpoint refuses symlink: {path}")
+
+
+def _matches(file: Any, data: bytes) -> bool:
+    """Compare bytes with Hub metadata using LFS SHA-256 or the Git blob ID."""
+    lfs = getattr(file, "lfs", None)
+    sha = lfs.get("sha256") if isinstance(lfs, dict) else getattr(lfs, "sha256", None)
+    return (sha == hashlib.sha256(data).hexdigest() if lfs is not None
+            else getattr(file, "blob_id", None) == git_blob_sha(data))
+
+
+def _snapshot(api: Any, repo_id: str, revision: str | None = None) -> str:
+    """Resolve a private checkpoint ref to a full commit SHA.
+
+    None selects the default revision. Raise SystemExit for the published
+    repository, a public repository, or an invalid SHA; Hub errors propagate."""
+    if repo_id == hf_interface.REPO_ID:
+        raise SystemExit("checkpoints never use the published dataset repo")
+    info = api.repo_info(repo_id=repo_id, repo_type="dataset", **({"revision": revision} if revision else {}))
+    if not info.private:
+        raise SystemExit(f"{repo_id} is public; labeling checkpoints go only to a private repo")
+    sha = getattr(info, "sha", None)
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise SystemExit("checkpoint could not resolve an immutable revision")
+    return sha
+
+
+def verify(api: Any, repo_id: str, staged: dict[str, Path], *, revision: str | None = None) -> list[str]:
+    """Return sorted staged paths whose Hub copy is missing or differs.
+
+    Resolve ``revision`` once, then compare LFS SHA-256 or Git blob SHA-1.
+    SystemExit from private-snapshot checks and Hub or local read errors propagate."""
+    revision = _snapshot(api, repo_id, revision)
+    hub = {f.path: f for f in api.list_repo_tree(repo_id=repo_id, repo_type="dataset", recursive=True,
+                                               revision=revision)}
     bad = []
     for rel, path in sorted(staged.items()):
         f = hub.get(rel)
         data = path.read_bytes()
-        lfs = getattr(f, "lfs", None) if f is not None else None
-        ok = f is not None and (lfs.sha256 == hashlib.sha256(data).hexdigest() if lfs is not None
-                                else getattr(f, "blob_id", None) == git_blob_sha(data))
+        ok = f is not None and _matches(f, data)
         if not ok:
             bad.append(rel)
     return bad
@@ -99,36 +146,75 @@ def ensure_private(api: Any, repo_id: str) -> None:
 
 def checkpoint(labels_root: Path, approvals: Path | None, message: str, *, api: Any = None,
                repo_id: str = STAGING_REPO) -> dict[str, Any]:
-    """Upload the labels root to the private staging repo and verify every file."""
+    """Upload the labels root and optional approvals to a private checkpoint.
+
+    Return the repository, file count, verified flag, and uploaded commit SHA.
+    Raise SystemExit for unsafe paths, a forbidden repository, an unavailable
+    commit SHA, or mismatched uploaded bytes. Hub and filesystem errors propagate."""
     if repo_id == hf_interface.REPO_ID:
         raise SystemExit("checkpoints never go to the published dataset repo")
     api = api or hf_interface.get_hf_api()
     ensure_private(api, repo_id)
     with tempfile.TemporaryDirectory() as tmp:
         staged = stage(Path(labels_root), approvals, Path(tmp))
-        hf_interface.upload_folder(api, tmp, repo_id, message)
-        bad = verify(api, repo_id, staged)
+        result = hf_interface.upload_folder(api, tmp, repo_id, message)
+        revision = result.get("revision") if isinstance(result, dict) else None
+        if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
+            raise SystemExit("checkpoint upload returned no immutable commit revision")
+        revision = _snapshot(api, repo_id, revision)
+        bad = verify(api, repo_id, staged, revision=revision)
     if bad:
         raise SystemExit(f"checkpoint upload did not verify: {', '.join(bad[:10])}")
-    return {"repo": repo_id, "files": len(staged), "verified": True}
+    return {"repo": repo_id, "files": len(staged), "verified": True, "revision": revision}
 
 
-def restore(labels_root: Path, *, api: Any = None, repo_id: str = STAGING_REPO) -> list[Path]:
-    """Download staged label files missing locally (never overwrites); returns what it wrote."""
+def restore(labels_root: Path, *, api: Any = None, repo_id: str = STAGING_REPO,
+            revision: str | None = None) -> list[Path]:
+    """Restore missing label files from one private Hub snapshot; return written paths.
+
+    ``revision`` selects a ref, or the default when None. Existing identical files
+    are skipped. Raise SystemExit for conflicting files, unsafe paths, symlinks,
+    or failed snapshot or hash checks. Download and verify all missing files before
+    writing any targets; filesystem and Hub errors propagate. Write failures can
+    leave a partial restore. Campaign approvals outside labels/ are not restored."""
     api = api or hf_interface.get_hf_api()
+    revision = _snapshot(api, repo_id, revision)
+    labels_root = Path(labels_root)
+    _reject_symlinks(labels_root)
     prefix = f"{LABELS_DIR}/"
     wrote = []
-    for f in api.list_repo_tree(repo_id=repo_id, repo_type="dataset", recursive=True):
+    missing = []
+    for f in api.list_repo_tree(repo_id=repo_id, repo_type="dataset", recursive=True, revision=revision):
         path = getattr(f, "path", "")
         if not path.startswith(prefix) or not hasattr(f, "blob_id"):
             continue
-        target = Path(labels_root) / path[len(prefix):]
+        rel = path[len(prefix):]
+        if any(part in ("", ".", "..") for part in rel.split("/")) or "\\" in rel:
+            raise SystemExit(f"unsafe checkpoint path: {path}")
+        if str(getattr(f, "mode", "")) == "120000" or getattr(f, "type", "") == "symlink":
+            raise SystemExit(f"checkpoint refuses symlink: {path}")
+        target = labels_root / rel
+        _reject_symlinks(target, labels_root)
         if target.exists():
+            if not target.is_file() or not _matches(f, target.read_bytes()):
+                raise SystemExit(f"checkpoint restore conflict: {target}")
             continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        local = hf_interface.download_file(api, repo_id, path, Path(tempfile.mkdtemp()) / path)
-        target.write_bytes(Path(local).read_bytes())
-        wrote.append(target)
+        missing.append((f, target))
+    with tempfile.TemporaryDirectory() as tmp:
+        downloads = []
+        for f, target in missing:
+            local = hf_interface.download_file(api, repo_id, f.path, Path(tmp).resolve() / f.path,
+                                               revision=revision)
+            _reject_symlinks(local, Path(tmp).resolve())
+            if not _matches(f, local.read_bytes()):
+                raise SystemExit(f"checkpoint download did not verify: {f.path}")
+            downloads.append((local, target))
+        for local, target in downloads:
+            _reject_symlinks(target, labels_root)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open("xb") as stream:
+                stream.write(local.read_bytes())
+            wrote.append(target)
     return wrote
 
 

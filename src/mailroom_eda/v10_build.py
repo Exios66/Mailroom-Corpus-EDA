@@ -350,7 +350,11 @@ def _evidence_spans(text: str, quotes: Sequence[str]) -> list[dict[str, Any]]:
 
 
 def class_record(row: Mapping[str, Any]) -> dict[str, Any]:
-    """The typed ``gt_<class>`` record of one derived row (with ``row["labels"]`` when ingested)."""
+    """The typed ``gt_<class>`` record of one derived row (with ``row["labels"]`` when ingested).
+
+    Populated checklist labels are rechecked against source text before their
+    values and evidence spans are included. Raise ValueError for checklist quality
+    or catalog parity failures."""
     cls = row["expected"]
     fields = class_fields(cls)
     applicable = applicable_fields(cls, row["subclass"])
@@ -367,8 +371,20 @@ def class_record(row: Mapping[str, Any]) -> dict[str, Any]:
         rec[name], presence[name], provenance[name] = field_cell(row, name, spec, applicable)
         lab = labels.get(name)
         if lab is not None and (presence[name] == "pending_annotation" or getattr(lab, "override", False)):
+            if name == "claim_checklist" and lab.presence == "populated":
+                from .labeling import scoring, verify
+
+                scoring.dojo_type(cls, name)
+                quality = scoring.score_checklist(lab.value, verify.DocIndex.build(row["doc_text"]))
+                if not quality.passed:
+                    codes = ", ".join(sorted({f.code for f in quality.findings}))
+                    raise ValueError(f"{row['document_id']}/{name}: labeling quality failed: {codes}")
+                spans = [{"start": e.start, "end": e.end, "text": row["doc_text"][e.start:e.end]}
+                         for e in quality.evidence]
+            else:
+                spans = _evidence_spans(row["doc_text"], lab.evidence)
             rec[name], presence[name], provenance[name] = _label_value(row, name, lab), lab.presence, lab.provenance
-            evidence[name] = _evidence_spans(row["doc_text"], lab.evidence)
+            evidence[name] = spans
     rec["presence"] = presence
     rec["evidence"] = evidence
     provenance["subclass"] = str(row.get("subclass_provenance") or (

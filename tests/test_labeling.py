@@ -831,8 +831,9 @@ def test_campaign_needs_order_and_output_dirs():
             d = operate.chunk_dir(Path("out"), entry, a)
             assert d not in seen_dirs, d
             seen_dirs.add(d)
-    # $30 plus the 904-email intent relabel the user added on 2026-11-06 (caps $1.95)
-    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 33.5  # +$1.85 of 5b-5e cap for whole-contract reading (approved 2026-11-06)
+    # $30 plus the 904-email intent relabel the user added on 2026-11-06 (caps $1.95); +$0.40
+    # on 2026-11-08: the claim_checklist per-type split (8b-8e) needs measured-p75 caps
+    assert sum(c["cap_usd"] for c in camp["chunks"]) <= 34.0
 
 
 def test_every_cap_covers_its_projection_with_headroom():
@@ -1773,9 +1774,10 @@ class _FakeHub:
     def create_repo(self, repo_id, repo_type, private, exist_ok):
         self.created.append((repo_id, private))
 
-    def repo_info(self, repo_id, repo_type):
+    def repo_info(self, repo_id, repo_type, revision=None):
         import types
-        return types.SimpleNamespace(private=self.private)
+        assert revision in (None, "a" * 40)
+        return types.SimpleNamespace(private=self.private, sha="a" * 40)
 
     def upload_folder(self, folder_path, repo_id, repo_type, path_in_repo, commit_message, allow_patterns):
         root = Path(folder_path)
@@ -1783,10 +1785,13 @@ class _FakeHub:
             if p.is_file():
                 self.files[p.relative_to(root).as_posix()] = p.read_bytes()
         self.commits.append(commit_message)
+        from types import SimpleNamespace
+        return SimpleNamespace(oid="a" * 40)
 
-    def list_repo_tree(self, repo_id, repo_type, recursive):
+    def list_repo_tree(self, repo_id, repo_type, recursive, revision=None):
         import types
         from mailroom_eda.labeling import checkpoint
+        assert revision == "a" * 40
         return [types.SimpleNamespace(path=k, lfs=None, blob_id=checkpoint.git_blob_sha(v))
                 for k, v in self.files.items()]
 
@@ -1857,7 +1862,8 @@ def test_restore_fills_only_missing_files(tmp_path, monkeypatch):
     hub = _FakeHub()
     checkpoint.checkpoint(tmp_path / "labels", None, "x", api=hub)
 
-    def download(api, repo_id, filename, local_path):
+    def download(api, repo_id, filename, local_path, *, revision=None):
+        assert revision == "a" * 40
         local_path.parent.mkdir(parents=True, exist_ok=True)
         local_path.write_bytes(hub.files[filename])
         return local_path
@@ -1866,8 +1872,12 @@ def test_restore_fills_only_missing_files(tmp_path, monkeypatch):
     fresh = tmp_path / "fresh"
     (fresh / "1.3_cuad-calibration").mkdir(parents=True)
     (fresh / "1.3_cuad-calibration" / "documents.csv").write_text("local\n")
-    wrote = checkpoint.restore(fresh, api=hub)
+    with pytest.raises(SystemExit, match="restore conflict"):
+        checkpoint.restore(fresh, api=hub)
     assert (fresh / "1.3_cuad-calibration" / "documents.csv").read_text() == "local\n"
+    (fresh / "1.3_cuad-calibration" / "documents.csv").write_bytes(
+        hub.files["labels/1.3_cuad-calibration/documents.csv"])
+    wrote = checkpoint.restore(fresh, api=hub)
     assert fresh / "1.3_cuad-calibration" / "calls.jsonl" in wrote
     assert not (fresh / "README.md").exists()
 
@@ -2283,7 +2293,8 @@ def test_auto_restore_fills_missing_files_and_respects_opt_out(tmp_path, monkeyp
     hub = _FakeHub()
     checkpoint.checkpoint(tmp_path / "labels", None, "x", api=hub)
 
-    def download(api, repo_id, filename, local_path):
+    def download(api, repo_id, filename, local_path, *, revision=None):
+        assert revision == "a" * 40
         local_path.parent.mkdir(parents=True, exist_ok=True)
         local_path.write_bytes(hub.files[filename])
         return local_path
@@ -2294,9 +2305,14 @@ def test_auto_restore_fills_missing_files_and_respects_opt_out(tmp_path, monkeyp
     (fresh / "1.3_cuad-calibration" / "documents.csv").write_text("local\n")
     assert operate.auto_restore(argparse.Namespace(out=fresh), api=hub) == []  # hand-built: no flag, no restore
     assert operate.auto_restore(argparse.Namespace(out=fresh, no_restore=True), api=hub) == []
+    with pytest.raises(SystemExit, match="restore conflict"):
+        operate.auto_restore(argparse.Namespace(out=fresh, no_restore=False), api=hub)
+    (fresh / "1.3_cuad-calibration" / "documents.csv").write_bytes(
+        hub.files["labels/1.3_cuad-calibration/documents.csv"])
     wrote = operate.auto_restore(argparse.Namespace(out=fresh, no_restore=False), api=hub)
     assert fresh / "1.3_cuad-calibration" / "calls.jsonl" in wrote
-    assert (fresh / "1.3_cuad-calibration" / "documents.csv").read_text() == "local\n"
+    assert (fresh / "1.3_cuad-calibration" / "documents.csv").read_bytes() == hub.files[
+        "labels/1.3_cuad-calibration/documents.csv"]
 
     class Broken(_FakeHub):
         def list_repo_tree(self, **kw):
@@ -3015,3 +3031,27 @@ def test_a_contract_read_in_part_records_no_absence(rows):
     by = {(f["document_id"], f["field"]): f["decision"] for f in field_rows}
     assert {by[("c1", n)] for n in absent_ok} == {"absent"}
     assert {by[("c2", n)] for n in absent_ok} == {"unlabeled"}
+
+
+def test_select_refuses_subclass_on_fixed_samples(rows):
+    """A subclass filter on a fixed sample (intent sets, CUAD calibration) is refused, not ignored."""
+    with pytest.raises(SystemExit, match="fixed sample"):
+        runner.select(rows, "intent", "calibration", ["financial"])
+    with pytest.raises(SystemExit, match="fixed sample"):
+        runner.select(rows, "cuad", "holdout", "license")
+
+
+def test_campaign_costs_counts_each_subclass_chunk(rows, monkeypatch):
+    """Subclass-split chunks of one task/set each enter the whole-campaign totals."""
+    claim = next(r for r in rows if r["expected"] == "insurance_claim")
+    rows = [*rows, {**claim, "expected_subclass": "carrier", "document_id": "i2", "filename": "i2.txt"}]
+    subs = ["carrier", "outpatient"]
+    base = {"task": "claim_checklist", "set": "all", "models": ["minimax/minimax-m3.1-flash"],
+            "reasoning": "off", "cap_usd": 1.0}
+    camp = {"chunks": [{**base, "id": "x1", "subclass": [subs[0]]},
+                       {**base, "id": "x2", "subclass": subs[1:]}]}
+    monkeypatch.setattr(runner, "campaign", lambda name: camp)
+    both = runner.campaign_costs(rows, "t")
+    camp["chunks"] = camp["chunks"][:1]
+    one = runner.campaign_costs(rows, "t")
+    assert both["campaign_prompt_tokens"] > one["campaign_prompt_tokens"]

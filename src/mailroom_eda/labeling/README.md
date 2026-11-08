@@ -53,6 +53,7 @@ the field registry, the prompts, the model list with prices, the campaign plan a
 | `providers.py` | OpenRouter and Modal clients: per-model provider routing from `models.yaml`, retries, schema fallback, usage and cost |
 | `spend.py` | the run gate: initials, cap, wall limit, key headroom |
 | `verify.py` | evidence location, grounding, per-type normalisation, agreement, decisions |
+| `scoring.py` | Dojo-catalog-compatible labeling checks, complete-line evidence and conservative checklist guards; not official Dojo metrics |
 | `export.py` | the JSONL journal and the review CSVs |
 | `runner.py` | the low-level command line: `select`, `estimate`, `run`, `review`, `costs` |
 | `operate.py` | the campaign commands: `stage`, `doctor`, `prices`, `ping`, `chunk`, `gate`, `status`, `check-class` |
@@ -72,7 +73,41 @@ PYTHONPATH=src python -m mailroom_eda.labeling chunk 1 --arm 1 --dry-run
 PYTHONPATH=src python -m mailroom_eda.labeling chunk 1 --arm 1 --initials XX
 PYTHONPATH=src python -m mailroom_eda.labeling gate 1 --arm 1 --approve --initials XX
 PYTHONPATH=src python -m mailroom_eda.labeling status
+PYTHONPATH=src python -m mailroom_eda.labeling.scoring docs/reports/audits/v10_labels/8a_claim_checklist-pilot
 ```
+
+## Labeling scores are an addition, not a replacement for Dojo
+
+`scoring.py` checks registry types and the exact catalog pin against the frozen Dojo
+snapshot. It retains `verify.py`'s evidence checks and acceptance heuristics, but **does
+not implement official Dojo evaluation scores**. In particular, local list Jaccard is
+not Dojo's fuzzy one-to-one matching or its partial-GT recall. Reports explicitly say
+`dojo_scoring: not_run`. Use the pinned Dojo scorer separately for official comparisons.
+
+For `claim_checklist`, labeling policy `claim-checklist-v1` additionally requires:
+
+- A nonempty list of `Category: quote` strings, from the registry's exact vocabulary.
+- Each quote is a **complete printed source line**, preserving words and case and allowing
+  spaces/tabs to collapse. Fragments, stitched lines and duplicate items fail.
+- No corpus-system extract or `Stated outcome (verbatim)` bookkeeping as evidence.
+- A determination explicitly states a claim outcome. General coverage, claimant compliance,
+  claim scope and conditional approval are not determinations. Unrecognized outcome wording
+  goes to review rather than being guessed.
+- A negative police/fire report is not present proof; `N/A` is not a deductible value.
+- Model field evidence is the earliest quoted item line, at most 300 characters.
+
+Review applies these checks **before agreement and again after reviewer overrides**;
+an invalid custom value remains in adjudication. `labeling-scores.json` records the policy,
+catalog pin, issue codes and item offsets. Gates record the policy and refuse invalid
+final overrides. The v10 build independently rechecks new populated checklist labels,
+including labels supplied outside the review path, and records their item evidence.
+
+Passing these checks means a candidate is structurally reviewable, **not gold**. These
+deterministic guards do not settle invoice comparability, source contradictions, omitted
+categories, arbitrary negations, or legal eligibility. Human calibration, test-split decisions
+and approvals remain separate. The offline CLI exits 1 for invalid accepted values or an
+empty accepted set; withheld rows stay withheld. The old `claim_checklist_smoke.py` now
+delegates to this same scorer instead of using a permissive, always-zero regex report.
 
 The low-level `select`, `estimate`, `run` and `review` commands take every setting as a
 flag; a paid `run` also needs `--initials`, `--api-cost-cap-usd` and `--max-wall-seconds`.

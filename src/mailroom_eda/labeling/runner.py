@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from . import derive, export, providers, spend, tasks, verify
+from . import derive, export, providers, scoring, spend, tasks, verify
 from . import interim as interim_mod
 from .registry import campaign, models_registry, vocabulary
 
@@ -46,11 +46,11 @@ PILOT_PER_STRATUM = {"contract_entities": 2, "merger_entities": 3, "merger_consi
 #: Output-token budget per call, by task (also the worst case the spend gate reserves).
 MAX_TOKENS = {"cuad": 8192, "intent": 400, "contract_entities": 3000, "merger_entities": 3500,
               "merger_consideration": 600,
-              "correspondence": 1200, "claim_checklist": 1500, "corporate": 2500}
+              "correspondence": 1200, "claim_checklist": 5000, "corporate": 2500}
 #: Typical output tokens per call, for estimates (measured from the field counts).
 TYPICAL_OUTPUT = {"cuad": 2500, "intent": 120, "contract_entities": 1200, "merger_entities": 1500,
                   "merger_consideration": 200,
-                  "correspondence": 450, "claim_checklist": 500, "corporate": 800}
+                  "correspondence": 450, "claim_checklist": 400, "corporate": 800}
 RETRY_FACTOR = 1.25
 #: Extra output tokens for a call with reasoning on: reasoning tokens count against
 #: ``max_tokens``, and without this a short answer budget (intent: 400) is cut off.
@@ -103,12 +103,27 @@ def pilot_rows(rows: Sequence[Mapping[str, Any]], task: str) -> list[Mapping[str
     return [r for sub in sorted(by_sub) for r in by_sub[sub][:per]]
 
 
-def select(rows: Sequence[Mapping[str, Any]], task: str, set_name: str) -> list[Mapping[str, Any]]:
-    """Rows for one task and set, sorted by filename."""
+def select(rows: Sequence[Mapping[str, Any]], task: str, set_name: str,
+           subclass: Any = "") -> list[Mapping[str, Any]]:
+    """Rows for one task and set, sorted by filename.
+
+    ``subclass`` restricts the class pool by expected_subclass, accepting one value
+    or a list/tuple; false values disable the filter. Pilot and remainder sets
+    sample within that pool. CUAD calibration/holdout, intent sets, and contract
+    entity calibration select fixed samples from the original rows, so a subclass
+    filter there raises SystemExit instead of being silently ignored.
+    Unsupported sets raise SystemExit; unknown tasks raise KeyError."""
     from .. import v9_4_revision as v94  # noqa: PLC0415
 
     cls = tasks.TASK_CLASSES[task]
     pool = [r for r in rows if r["expected"] == cls]
+    fixed = (task == "intent" or (task == "cuad" and set_name in ("calibration", "holdout"))
+             or (task == "contract_entities" and set_name == "calibration"))
+    if subclass and fixed:
+        raise SystemExit(f"{task} {set_name} is a fixed sample; a subclass filter does not apply")
+    if subclass:
+        subs = {str(s) for s in (subclass if isinstance(subclass, (list, tuple)) else [subclass])}
+        pool = [r for r in pool if str(r.get("expected_subclass") or "") in subs]
     if task == "cuad":
         if set_name == "calibration":
             out = v94.cuad_calibration_sample(rows)
@@ -623,12 +638,14 @@ def field_decisions(rows: Sequence[Mapping[str, Any]], calls: Sequence[Mapping[s
         counts: Counter = Counter()
         for name, spec in fields.items():
             t = spec.get("retype") or spec["type"]
-            vocab = vocabulary(spec["vocabulary"]) if spec.get("vocabulary") else None
             results = []
+            labeling_problems = []
             for c in got:
                 raw = ((c or {}).get("response") or {}).get("fields", {}).get(name) if c else None
-                results.append(verify.check_field(raw, t, idx, vocab=vocab,
-                                                  vocab_part=spec.get("vocabulary_part")) if c else None)
+                checked, quality = scoring.check_field(r["expected"], name, raw, idx) if c else (None, None)
+                results.append(checked)
+                if quality and not quality.passed:
+                    labeling_problems.extend(f.code for f in quality.findings)
             a = results[0]
             b = results[1] if len(results) > 1 else None
             if a is None:
@@ -637,6 +654,8 @@ def field_decisions(rows: Sequence[Mapping[str, Any]], calls: Sequence[Mapping[s
             if absence == "absent_ok" and tasks.reads_in_part(r, task):
                 absence = "evidence_only"  # the unread middle may hold it: no absence on silence
             decision, value, reason = verify.decide(a, b, t, absence)
+            if labeling_problems:
+                reason += "; labeling: " + ", ".join(sorted(set(labeling_problems)))
             counts[decision] += 1
             row = {"document_id": doc_id, "doc_class": r["expected"], "subclass": r.get("expected_subclass"),
                    "field": name, "type": t, "decision": decision, "reason": reason,
@@ -741,7 +760,12 @@ def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
     """Rebuild the derived journals and CSVs for one chunk directory (calls at ``reasoning``).
 
     With ``interim`` (an ``interim.Overlay``), field rows gain the flag-only ``interim_*``
-    columns and an intent chunk writes ``interim-intent.csv``."""
+    columns and an intent chunk writes ``interim-intent.csv``.
+
+    Return task-specific record or decision counts. Existing reviewer columns are
+    retained, but checklist confirmations may reopen when source checks fail.
+    Checklist chunks also write labeling-scores.json. Catalog validation and
+    filesystem errors propagate."""
     calls = [c for c in export.read_journal(out_dir / "calls.jsonl")
              if reasoning is None or c.get("reasoning") == reasoning]
     calls = current_prompt_calls(rows, task, calls, _run_set(out_dir))
@@ -790,17 +814,40 @@ def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
     fields, docs = field_decisions(rows, calls, task, models, interim=interim)
     keep = {**_reviewer_columns(out_dir / "fields.csv"), **_reviewer_columns(out_dir / "adjudication.csv")}
     open_items: Counter = Counter()
+    by_id = {tasks._ids(r)[0]: r for r in rows}
     for f in fields:
         f.update(keep.get((f["document_id"], f["field"]), {}))
+        reopened = (f["field"] == "claim_checklist" and f.get("reviewer_verdict") == "correct"
+                    and f["decision"] != "accept")
+        if reopened:
+            f["reviewer_verdict"] = ""
+            f["reviewer_note"] = ("Prior 'correct' confirmation reopened by labeling checks; human review required. "
+                                  + f.get("reviewer_note", ""))
         apply_verdict(f)
+        if reopened:
+            f["final_decision"], f["final_value"] = "adjudicate", None
+        if f["field"] == "claim_checklist" and f["final_decision"] == "accept":
+            value = f["final_value"]
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    value = None
+            quality = scoring.score_checklist(value, verify.DocIndex.build(by_id[f["document_id"]]["doc_text"]))
+            if not quality.passed:
+                f["final_decision"], f["final_value"] = "adjudicate", None
+                f["reason"] += "; final labeling: " + ", ".join(sorted({i.code for i in quality.findings}))
         open_items[f["document_id"]] += f["final_decision"] == "adjudicate"
     for d in docs:
         d["problems"] = open_items[d["document_id"]]
         d["status"] = "needs_review" if open_items[d["document_id"]] else "complete"
     export.write_csv(out_dir / "fields.csv", export.FIELD_COLUMNS, fields)
     export.write_csv(out_dir / "adjudication.csv", export.FIELD_COLUMNS,
-                     [f for f in fields if f["decision"] == "adjudicate"])
+                     [f for f in fields if f["decision"] == "adjudicate" or f["final_decision"] == "adjudicate"])
     export.write_csv(out_dir / "documents.csv", export.DOCUMENT_COLUMNS, docs)
+    if task == "claim_checklist":
+        audit = scoring.audit_fields(rows, export.read_csv(out_dir / "fields.csv"))
+        (out_dir / "labeling-scores.json").write_text(json.dumps(audit, indent=2) + "\n", encoding="utf-8")
     out = {"documents": len(docs), "fields": len(fields),
            "decisions": dict(Counter(f["decision"] for f in fields)),
            "final_decisions": dict(Counter(f["final_decision"] for f in fields))}
@@ -881,9 +928,9 @@ def campaign_costs(rows: Sequence[Mapping[str, Any]], name: str = "v10") -> dict
     out: list[dict[str, Any]] = []
     tokens: dict[str, list[int]] = {}
     for ch in camp["chunks"]:
-        picked = chunk(select(rows, ch["task"], ch["set"]), ch.get("chunk"))
+        from .operate import resolve, pick  # noqa: PLC0415
+        picked = pick(rows, ch)  # the subclass filter and slice apply whatever the models are
         try:  # an approved bake-off winner is priced as itself, otherwise as the costliest arm
-            from .operate import resolve  # noqa: PLC0415
             models, reasoning = resolve(name, ch)
         except SystemExit:
             models = [PLACEHOLDER_MODELS.get(m, m) for m in ch["models"]]
@@ -895,7 +942,10 @@ def campaign_costs(rows: Sequence[Mapping[str, Any]], name: str = "v10") -> dict
                     "prompt_tokens": est["prompt_tokens"] * len(models),
                     "output_tokens": sum(outputs.values()),
                     "projected_usd": round(cost, 4), "priced_models": models, "priced_reasoning": reasoning})
-        key = f"{ch['task']}:{ch['set']}:{ch.get('chunk') or ''}"
+        sub = ch.get("subclass") or ""
+        sub = ",".join(sorted(map(str, sub))) if isinstance(sub, (list, tuple)) else str(sub)
+        # Arms of one chunk share rows and count once; subclass-split chunks each count.
+        key = f"{ch['task']}:{ch['set']}:{ch.get('chunk') or ''}:{sub}"
         if ch["set"] != "calibration" or ch["task"] in ("cuad", "intent", "contract_entities", "merger_consideration"):
             tokens.setdefault(key, [est["prompt_tokens"], est["output_tokens"]])
     p_tok = sum(v[0] for v in tokens.values())

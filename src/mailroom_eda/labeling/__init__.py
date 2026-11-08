@@ -7,6 +7,7 @@ Modules:
 * ``providers`` sends one request to Modal vLLM or OpenRouter (OpenAI-compatible).
 * ``spend`` enforces the cost cap and key headroom and projects campaign cost.
 * ``verify`` checks evidence, normalises values per Dojo type and compares two models.
+* ``scoring`` adds labeling-quality checks to the pinned Dojo catalog, not its metrics.
 * ``export`` writes the JSONL journal and the review CSVs.
 * ``runner`` is the command line: ``python -m mailroom_eda.labeling --help``.
 
