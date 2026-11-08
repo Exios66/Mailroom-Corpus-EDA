@@ -368,6 +368,7 @@ function renderTarget(){
   renderSource(record);
   const values=$('values'); values.textContent='';
   values.append(node('div', humanize(record.field)+' · '+humanize(record.doc_class)+(record.subclass?' / '+humanize(record.subclass):''), 'field-title'));
+  if (record.batch||record.chunk) values.append(node('div','batch '+(record.batch||'')+(record.set?' · '+record.set:'')+(record.task?' · '+humanize(record.task):'')+(record.slice?' · '+record.slice:''),'muted'));
   const box=node('div','','value'); box.append(show(record.candidate_labels, record.dojo_type)); values.append(box);
   const pick=itemPicker(record); if (pick) values.append(pick);
   const chips=node('div','','chips');
@@ -456,7 +457,20 @@ function render(){
   const target=$('target');
   if (target.options.length!==records.length){
     target.textContent='';
-    records.forEach((r,i)=>{ const o=node('option',(i+1)+' · '+r.document_id+' · '+r.field); o.value=String(i); target.append(o); });
+    // Group the review list by batch (one option group per labeling batch), so the
+    // interface reads like the generation that produced it.
+    let group=null, lastGid='';
+    records.forEach((r,i)=>{
+      const gid=String(r.batch||r.chunk||'');
+      if (gid && (group===null || gid!==lastGid)){
+        group=node('optgroup');
+        group.dataset.gid=gid;
+        group.label=humanize(gid)+((r.task||r.set)?' · '+[humanize(r.task||''),r.set||''].filter(Boolean).join(' / '):'');
+        target.append(group); lastGid=gid;
+      }
+      const o=node('option',(i+1)+' · '+r.document_id+' · '+r.field); o.value=String(i);
+      (group&&gid?group:target).append(o);
+    });
   }
   tracker(); renderTarget(); renderJournal(); controls();
   $('binding').textContent='packet '+(packet.packet_id||'?')+' · state '+(packet.state_revision||'?')
