@@ -41,9 +41,18 @@ let ws,session,sequence=0;const pending=new Map(),errors=[];
 try {
   const address=await new Promise((resolve,reject)=>{let output='';chrome.stderr.on('data',d=>{output+=d;const m=output.match(/DevTools listening on (ws:\/\/[^\s]+)/);if(m)resolve(m[1]);});chrome.on('error',reject);chrome.on('exit',code=>reject(Error('Chrome exit '+code)));});
   ws=new WebSocket(address);await new Promise(resolve=>ws.addEventListener('open',resolve,{once:true}));
-  ws.addEventListener('message',event=>{const m=JSON.parse(event.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result);}else if(m.method==='Runtime.exceptionThrown') errors.push(m.params);else if(m.method==='Page.javascriptDialogOpening') call('Page.handleJavaScriptDialog',{accept:true});});
+  ws.addEventListener('message',event=>{const m=JSON.parse(event.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result);}else if(m.method==='Runtime.exceptionThrown') errors.push(m.params);else if(m.method==='Page.javascriptDialogOpening'){try{call('Page.handleJavaScriptDialog',{accept:true})}catch(exc){}}});
+  const evaluateAndRetry=async(method,params)=>{for(let attempt=0;;attempt++){try{return await call(method,params)}catch(exc){if(attempt>1||!/navigated or closed/i.test(exc.message))throw exc}}};
   function call(method,params={},sid=session){const id=++sequence;return new Promise((resolve,reject)=>{pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params,...(sid?{sessionId:sid}:{})}));});}
-  async function evaluate(expression){const r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;}
+  async function evaluate(expression){
+    for (let attempt=0; attempt<40; attempt++){
+      try { const r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});
+        if (r.exceptionDetails) throw Error(JSON.stringify(r.exceptionDetails));
+        return r.result.value; }
+      catch (exc) { if (!/navigated or closed/i.test(String(exc))) throw exc;
+        await new Promise(resolve=>setTimeout(resolve,50)); } }
+    throw Error('target context unavailable');
+  }
   async function waitFor(expression){await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;function check(){if(${expression})resolve(true);else if(Date.now()>end)reject(Error('Condition timeout'));else requestAnimationFrame(check);}check();})`);}
   async function screenshot(name){const r=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});fs.writeFileSync(path.join(out,name+'.png'),Buffer.from(r.data,'base64'));}
   async function input(id,value){await evaluate(`$('${id}').value=${JSON.stringify(value)};$('${id}').dispatchEvent(new Event('input',{bubbles:true}));`);}
@@ -80,7 +89,7 @@ try {
   assert.equal(await evaluate(`$('notes').value`),'Keep this local draft.');
   // A real reload exercises localStorage restoration rather than only an in-memory refresh.
   await evaluate(`window.onbeforeunload=null`);
-  await call('Page.navigate',{url:'about:blank'});
+  await evaluateAndRetry('Page.navigate',{url:'about:blank'});
   // CDP bypasses the synthetic tab's beforeunload prompt without altering the production page.
   await call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/review.html`});
   await waitFor(`document.getElementById('save') && !$('save').disabled`);

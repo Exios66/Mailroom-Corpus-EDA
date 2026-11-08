@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Private label review</title>
+<style>
+:root { color-scheme: light; font: 15px/1.45 system-ui, sans-serif; }
+body { margin: 0 auto; max-width: 1400px; padding: 8px 14px 40px; }
+h1, h2, h3 { margin: 8px 0 6px; }
+button, select, input, textarea { font: inherit; }
+button { padding: 4px 12px; border-radius: 6px; border: 1px solid #888; background: #f4f4f4; cursor: pointer; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.primary { background: #1652f0; border-color: #1652f0; color: #fff; }
+.panel { border: 1px solid #ccc; border-radius: 8px; padding: 8px 12px; margin: 10px 0; }
+.notice { padding: 6px 10px; border-radius: 6px; background: #ffe9a8; }
+.notice.ok { background: #d3f4d3; }
+.muted { color: #666; }
+.scroll { max-height: 260px; overflow: auto; }
+#source { white-space: pre-wrap; font: 13px/1.5 ui-monospace, monospace; max-height: 420px; overflow: auto;
+          border: 1px solid #ddd; padding: 8px; }
+mark { background: #ffe066; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #ddd; padding: 4px 8px; text-align: left; vertical-align: top; }
+th { background: #eef3ff; }
+td.k { font-weight: 600; white-space: nowrap; }
+label { display: block; margin: 8px 0 2px; font-weight: 600; }
+textarea, input { width: 100%; box-sizing: border-box; }
+.toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<h1>Human label review — private local packet</h1>
+<div class="toolbar">
+<button id="save" class="primary">Save review to server</button>
+<button id="export">Export JSON</button>
+<button id="reload">Reload batches</button>
+<button id="checkpoint" disabled>Checkpoint confirmed reviews</button>
+<button id="discard" hidden>Discard draft and load latest</button>
+</div>
+<div id="message" role="status" aria-live="polite" class="notice">Loading review packet…</div>
+<small id="binding" class="muted"></small>
+
+<section class="panel" aria-labelledby="tracker-title">
+<h2 id="tracker-title">Campaign tracker</h2>
+<p id="summary"></p>
+<label>Show tasks <select id="task-filter"><option value="todo">To do</option><option value="completed">Completed / skipped</option><option value="all">All tasks</option></select></label>
+<div id="tasks" class="scroll"></div>
+<p class="muted" id="tracker-scope"></p>
+<div id="tracker-source"></div>
+</section>
+
+<section class="panel" aria-labelledby="queue-title">
+<h2 id="queue-title">Production → v10 revision queue</h2>
+<p class="muted">Confirmed production decisions queued privately for v10 staging. This is not a deployment command.</p>
+<div id="revision-queue" class="scroll"></div>
+</section>
+
+<section class="panel">
+<label for="target">Review target</label><select id="target"></select>
+<div class="toolbar"><button id="previous">Previous target</button><button id="next">Next target</button></div>
+<p id="target-status"></p>
+</section>
+
+<div class="toolbar">
+<section class="panel" style="flex:1 1 480px" aria-labelledby="source-title"><h2 id="source-title">Complete source · evidence highlighted</h2><div id="links"></div><div id="source" tabindex="0"></div><h3>Evidence spans</h3><div id="evidence"></div></section>
+<section class="panel" style="flex:1 1 480px" aria-labelledby="proposal-title"><h2 id="proposal-title">Native field values</h2><div id="values"></div><div id="issues"></div>
+<form id="review-form">
+<label>Decision <select id="decision"><option>NOT_REVIEWED</option><option>ACCEPT</option><option>CORRECT</option><option>REJECT</option><option>NEEDS_SOURCE</option></select></label>
+<p id="decision-help" class="muted"></p>
+<label>Reviewer initials (2–6 uppercase letters) <input id="initials" pattern="[A-Z]{2,6}" maxlength="6" autocomplete="off"></label>
+<label>Reviewer notes <textarea id="notes"></textarea></label>
+<label>Complete replacement JSON (CORRECT only) <textarea id="correction" spellcheck="false" placeholder='A JSON value, not a patch'></textarea></label>
+<p id="correction-help" class="muted"></p>
+</form>
+</section>
+</div>
+
+<section class="panel"><h2>Change journal</h2><p class="muted">Actual browser edits and recovered receipt history. Initials and browser timestamps are claims, not signatures.</p><div id="journal"></div></section>
+
+<script id="packet" type="application/json">__REVIEW_PACKET_JSON__</script>
+<script>
+'use strict';
+const $=(id)=>document.getElementById(id);
+const clone=(v)=>JSON.parse(JSON.stringify(v));
+let packet=JSON.parse($('packet').textContent);
+let records=[], current=0, busy=false, dirty=false, staleDraft=false, pendingData=false;
+let decisions=new Map(), history=[];
+const KEY=(r)=>r.document_id+'\n'+r.field;
+const storageKey='mailroom-review-draft/'+packet.packet_id;
+function blank(r){ return {document_id:r.document_id, field:r.field, document_sha256:r.document_sha256, decision:'NOT_REVIEWED', corrected_labels_json:'', reviewer_initials:'', reviewer_notes:'', updated_at:''}; }
+function localDraft(){ return [...decisions.values()].some((d)=>d.decision!=='NOT_REVIEWED'||d.reviewer_notes||d.reviewer_initials||d.corrected_labels_json); }
+function seed(data, keep){
+  records=[...(data.records||[])];
+  decisions=new Map();
+  records.forEach((r)=>decisions.set(KEY(r), blank(r)));
+  (data.saved_decisions||[]).forEach((d)=>{ if(decisions.has(d.document_id+'\n'+d.field)) decisions.set(d.document_id+'\n'+d.field, clone(d)); });
+  history=clone(data.saved_history||[]);
+  if (keep) dirty=true; else dirty=false;
+}
+function overlay(kind){
+  // Local draft fields stay on top of server values unless explicitly reset.
+  if (kind==='reset') return;
+  const draft=JSON.parse(localStorage.getItem(storageKey)||'null');
+  (draft&&draft.packet_id===packet.packet_id?draft.decisions:[]).forEach((d)=>{ if(decisions.has(d.document_id+'\n'+d.field)) decisions.set(d.document_id+'\n'+d.field, clone(d)); });
+  if (draft&&draft.history&&draft.history.length>=history.length) history=clone(draft.history);
+}
+function decision(){ return decisions.get(KEY(records[current])); }
+function now(){ return new Date().toISOString(); }
+function payload(){ return {schema:'mailroom-human-review/v1',packet_id:packet.packet_id,state_revision:packet.state_revision,exported_at:now(),decisions:[...decisions.values()],history:clone(history)}; }
+function persist(){
+  try { localStorage.setItem(storageKey, JSON.stringify({packet_id:packet.packet_id, decisions:[...decisions.values()], history:clone(history), saved_at:now()})); }
+  catch (exc) { message('Local draft storage failed ('+exc.name+'); use Save or Export JSON to keep your work in files.'); }
+}
+function logChange(before, after){
+  history.push({at:now(), document_id:after.document_id, field:after.field, before:clone(before), after:clone(after)});
+  dirty=true; persist(); renderJournal(); renderTargetStatus(); controls();
+}
+function stateOf(record){
+  const found=(packet.review_states||[]).find((s)=>s.document_id===record.document_id&&s.field===record.field);
+  return found||{status:'awaiting_review'};
+}
+function message(text, ok=false){ $('message').textContent=text; $('message').className='notice'+(ok?' ok':''); }
+function node(tag, text=''){ const el=document.createElement(tag); if(text!=='') el.textContent=String(text); return el; }
+function keyvals(obj){
+  const t=node('table'), b=node('tbody');
+  Object.entries(obj||{}).forEach(([k,v])=>{ const tr=node('tr'); tr.append(node('td',k), node('td', v==null?'':typeof v==='object'?JSON.stringify(v):String(v))); b.append(tr); });
+  t.append(b); return t;
+}
+function safeHref(url){
+  try { const u=new URL(url, location.href); return /^https?:$/.test(u.protocol)?u.href:null; }
+  catch (exc) { return null; }
+}
+function cps(text){ return Array.from(text); }
+function renderSource(record){
+  const out=$('source'); out.textContent='';
+  const chars=cps(record.full_document_text||'');
+  let cursor=0;
+  (record.evidence||[]).filter((e)=>typeof e.start==='number'&&typeof e.end==='number'
+    &&e.start>=0&&e.end<=chars.length&&chars.slice(e.start,e.end).join('')===e.quote)
+    .sort((a,b)=>a.start-b.start)
+    .forEach((e)=>{ const c=Math.max(e.start,cursor);
+      if (c>cursor) out.append(node('span', chars.slice(cursor,c).join('')));
+      const mark=node('mark', chars.slice(c,e.end).join('')); mark.title='Evidence '+e.start+'–'+e.end; out.append(mark);
+      cursor=e.end; });
+  if (cursor<chars.length) out.append(node('span', chars.slice(cursor).join('')));
+  const links=$('links'); links.textContent='';
+  const href=safeHref(record.source_url);
+  if (href){ const a=node('a','Open original source'); a.href=href; a.rel='noopener noreferrer'; a.target='_blank'; links.append(a); }
+  else if (record.source_url){ links.append(node('span','Original link unverified or unavailable; review depends on the complete source text and packet metadata.')); }
+  const ev=$('evidence'); ev.textContent='';
+  (record.evidence||[]).forEach((e)=>{ const row=node('div','['+e.start+'–'+e.end+'] '+(e.quote||'')); row.className='badge';
+    row.addEventListener('click', ()=>{ const marks=out.querySelectorAll('mark'); marks.forEach((m)=>m.classList.remove('flash'));
+      marks.forEach((m)=>{ if(m.textContent===e.quote){ m.scrollIntoView({block:'center'}); } }); });
+    ev.append(row); });
+}
+function renderTarget(){
+  const record=records[current]; $('target').value=String(current);
+  renderSource(record);
+  $('values').textContent=''; $('values').append(keyvals({
+    'Candidate value': record.candidate_labels,
+    'Raw model output': record.raw_glm_labels,
+    'Dojo type': record.dojo_type, 'Correction type': record.correction_type,
+    'Presence': record.candidate_presence, 'Absence policy': record.absence_policy,
+    'Candidate status': record.candidate_status, 'Schema status': record.schema_status,
+    'Gold eligible': String(record.eligible_for_gold), 'Existing GT': record.existing_gt_fields,
+    'Provenance': record.review_provenance||record.kind, 'Split': record.split, 'Subclass': record.subclass }));
+  const issues=$('issues'); issues.textContent='';
+  (record.issues||[]).forEach((i)=>issues.append(node('li', i)));
+  const d=decision();
+  $('decision').value=d.decision; $('initials').value=d.reviewer_initials;
+  $('notes').value=d.reviewer_notes; $('correction').value=d.corrected_labels_json;
+  $('decision-help').textContent=packet.decision_key?packet.decision_key[d.decision]||'':'';
+  $('correction-help').textContent='Required only for CORRECT. Native JSON type: '
+    +(record.correction_type==='array'?'array of strings':record.correction_type==='number'?'number':record.correction_type||'string');
+  renderTargetStatus();
+}
+function renderTargetStatus(){
+  const d=decision();
+  $('target-status').textContent='Server state: '+stateOf(records[current]).status
+    +(dirty?' (unsaved local edits)':'')+(staleDraft?' (stale packet; discard or reload)':'')
+    +' · Decided: '+d.decision+(d.updated_at?' at '+d.updated_at:'');
+}
+function controls(){
+  $('save').disabled=busy||staleDraft;
+  $('export').disabled=busy;
+  $('reload').disabled=busy;
+  $('checkpoint').disabled=!(packet.checkpoint_enabled&&!busy&&!dirty&&
+    (packet.review_states||[]).some((s)=>['human_confirmed','checkpointed'].includes(s.status)));
+  $('discard').hidden=!staleDraft;
+}
+function tracker(){
+  const t=packet.tracker||{};
+  $('summary').textContent='Campaign '+(t.name||'?')+' — confirmed fields '
+    +(t.human_confirmed_fields==null?'?':t.human_confirmed_fields)+', checkpointed '
+    +(t.checkpointed_fields==null?'?':t.checkpointed_fields)+', remaining '
+    +(t.remaining_loaded_fields==null?'?':t.remaining_loaded_fields)+'. '
+    +((t.tasks||[]).length)+' tracked tasks. Field review never approves a task by itself.';
+  const filter=$('task-filter').value, done=['approved','skipped'];
+  const rows=(t.tasks||[]).filter((x)=>filter==='all'||done.includes(x.status)===(filter==='completed'));
+  const table=node('table'), head=node('tr');
+  ['id','task','set','status','reviewed/total','remaining','blocker'].forEach((h)=>head.append(node('th',h)));
+  table.append(head);
+  rows.forEach((x)=>{ const tr=node('tr');
+    [x.id||'', x.task, x.set, x.status,
+     x.reviewed==null?'—':x.reviewed+'/'+(x.documents_total==null?'?':x.documents_total),
+     x.remaining==null?(x.inventory_known===false?'?':'—'):String(x.remaining), x.blocker||'']
+      .forEach((v)=>tr.append(node('td',v))); table.append(tr); });
+  const tasks=$('tasks'); tasks.textContent=''; tasks.append(table);
+  $('tracker-scope').textContent=t.scope||'Task completion comes from the server, not browser decisions.';
+  const p=t.private_source||{};
+  $('tracker-source').textContent=''; $('tracker-source').append(keyvals({
+    'Private source revision': p.revision, 'Private source status': p.status, 'Private source repo': p.repo,
+    'Campaign file': t.campaign_file, 'Approval file': t.approval_file }));
+  const queue=$('revision-queue'); queue.textContent='';
+  if (!(packet.revision_queue||[]).length){ queue.append(node('p','No production revisions reported by the server.')); return; }
+  const qt=node('table'), qh=node('tr');
+  ['document','field','source revision','split','status','value','deployment'].forEach((h)=>qh.append(node('th',h)));
+  qt.append(qh); const qb=node('tbody');
+  packet.revision_queue.forEach((q)=>{ const tr=node('tr');
+    ['document_id','field','source_revision','split','status','value','deployment_status'].forEach((k)=>tr.append(node('td',q[k]))); qb.append(tr); });
+  qt.append(qb); queue.append(qt);
+}
+function renderJournal(){
+  const el=$('journal'); el.textContent='';
+  if (!history.length){ el.append(node('p','No edits yet for this review session.')); return; }
+  const t=node('table'), head=node('tr'); ['at','target','field','before → after'].forEach((h)=>head.append(node('th',h)));
+  t.append(head);
+  history.forEach((h)=>{ const tr=node('tr'); tr.append(node('td',h.at), node('td',h.document_id), node('td',h.field),
+    node('td', (h.before||{}).decision+' → '+(h.after||{}).decision)); t.append(tr); });
+  el.append(t);
+}
+function render(){
+  const target=$('target');
+  if (target.options.length!==records.length){
+    target.textContent='';
+    records.forEach((r,i)=>{ const o=node('option',(i+1)+' · '+r.document_id+' · '+r.field); o.value=String(i); target.append(o); });
+  }
+  tracker(); renderTarget(); renderJournal(); controls();
+  $('binding').textContent='packet '+(packet.packet_id||'?')+' · state '+(packet.state_revision||'?')
+    +' · '+records.length+' targets'+((packet.saved_decisions||[]).length?' · '+(packet.saved_decisions||[]).length+' decisions restored from receipts':'');
+}
+async function request(url, body){
+  const init=body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{cache:'no-store'};
+  const res=await fetch(url, init);
+  const value=await res.json().catch(()=>({}));
+  if (!res.ok){ const err=new Error(res.status+' '+res.statusText+' — '+(value.error||'')); err.status=res.status; throw err; }
+  return value;
+}
+async function refresh(reset){
+  busy=true; controls(); message('Syncing with portal server…');
+  const hadDirty=dirty&&!reset;
+  try {
+    const data=await request('/review-data.json');
+    const same=data.packet_id===packet.packet_id;
+    if (same && hadDirty && data.state_revision!==packet.state_revision){
+      pendingData=true; staleDraft=true;
+      packet=data; overlay(); tracker(); render(); controls();
+      message('Server data changed (state revision '+(data.state_revision||'?')+'); your local draft is retained. Download JSON or use Discard to accept the new data.'); return;
+    }
+    packet=data; seed(data); if (hadDirty) { overlay(); dirty=true; } else if (!reset) overlay();
+    current=Math.min(current, records.length-1);
+    staleDraft=false; pendingData=false;
+    message('Loaded '+records.length+' review targets'+((data.saved_decisions||[]).length?' with '+(data.saved_decisions||[]).length+' saved decisions restored.':'')
+      +' Review one target at a time; nothing publishes automatically.', true);
+    render();
+  } catch (exc) {
+    message('Reload failed: '+exc.message+(localDraft()?' Your local draft is retained; use Export JSON to keep it.':''));
+  } finally { busy=false; controls(); }
+}
+function validate(){
+  const d=decision();
+  if (d.decision==='NOT_REVIEWED') return true;
+  if (!/^[A-Z]{2,6}$/.test(d.reviewer_initials)){ message('Reviewer initials (2–6 uppercase letters) are required for a decision.'); return false; }
+  if (d.decision==='ACCEPT'&&records[current].candidate_status!=='source_checks_passed'){ message('This candidate did not pass automated source checks; choose CORRECT with verified JSON, REJECT, or NEEDS_SOURCE.'); return false; }
+  if (d.decision==='CORRECT'){ try { JSON.parse(d.corrected_labels_json||''); } catch (exc) { message('CORRECT needs valid JSON matching the native type.'); return false; } }
+  return true;
+}
+async function operation(fn){ if (busy) return; busy=true; controls(); try { await fn(); } finally { busy=false; controls(); } }
+$('save').addEventListener('click', ()=>operation(async()=>{
+  if (!dirty){ message('Nothing unsaved.', true); return; }
+  if (!validate()) return;
+  const body=payload();
+  try {
+    const result=await request('/api/reviews', body);
+    persist();
+    await refresh();
+    dirty=false; controls();
+    message('Saved. Receipt '+(result.receipt_id||'')+' · fields changed '+(result.changed_fields==null?'?':result.changed_fields)+'.', true);
+  } catch (exc) { message('Save failed: '+exc.message+' — Draft retained.'); }
+}));
+$('export').addEventListener('click', ()=>{
+  const url=URL.createObjectURL(new Blob([JSON.stringify(payload(),null,1)],{type:'application/json'}));
+  const a=node('a','download'); a.download='human-review-decisions.json'; a.href=url; document.body.append(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+  message('Exported machine-readable decisions; return the file to the agent under the packet returns/ folder.', true);
+});
+$('reload').addEventListener('click', ()=>operation(async()=>{ await refresh(); }));
+$('checkpoint').addEventListener('click', ()=>operation(async()=>{
+  if (!confirm('Checkpoint all locally confirmed fields to the private staging repo now?')) return;
+  try {
+    const result=await request('/api/checkpoint', {packet_id:packet.packet_id, confirm:true});
+    message(result.verified===true?'Private checkpoint verified at revision '+result.revision+'.'
+      :'Checkpoint not verified: '+(result.message||'server said not verified'), result.verified===true);
+    await refresh();
+  } catch (exc) { message('Checkpoint failed: '+exc.message+' — local confirmations remain pending.'); }
+}));
+$('discard').addEventListener('click', ()=>operation(async()=>{
+  if (!confirm('Discard all local decisions, notes and history for this packet? Download a return JSON first if you need to keep them. This does not delete downloaded files.')) return;
+  try { localStorage.removeItem(storageKey); } catch (exc) {}
+  seed(packet); await refresh(true);
+}));
+$('task-filter').addEventListener('change', tracker);
+$('target').addEventListener('change', ()=>{ current=Number($('target').value)||0; renderTarget(); });
+$('previous').addEventListener('click', ()=>{ current=Math.max(0,current-1); renderTarget(); controls(); });
+$('next').addEventListener('click', ()=>{ current=Math.min(records.length-1,current+1); renderTarget(); controls(); });
+[['decision','decision'],['initials','reviewer_initials'],['notes','reviewer_notes'],['correction','corrected_labels_json']]
+.forEach(([id,prop])=>$(id).addEventListener('input', ()=>{
+  const before=clone(decision());
+  decision()[prop]=$(id).value;
+  if (id==='decision') $('decision-help').textContent=packet.decision_key?packet.decision_key[decision().decision]||'':'';
+  logChange(before, decision());
+}));
+window.onbeforeunload=(event)=>{ if (dirty||staleDraft){ event.preventDefault(); return 'Unsaved review decisions.'; } };
+(async function init(){
+  try {
+    const saved=JSON.parse(localStorage.getItem(storageKey)||'null');
+    if (saved&&saved.packet_id===packet.packet_id){
+      saved.decisions.forEach((d)=>{ if(decisions.has(d.document_id+'\n'+d.field)) decisions.set(d.document_id+'\n'+d.field, clone(d)); });
+      if (Array.isArray(saved.history)&&saved.history.length) history=clone(saved.history);
+    }
+  } catch (exc) {}
+  if (!records.length) seed(packet);
+  persist();
+  render();
+  message('Loaded embedded packet'+(localDraft()?' and restored your local draft. Check Reload batches if you manage packets in files.':'')+'.', true);
+  await refresh();
+})();
+</script>
+</body>
+</html>
