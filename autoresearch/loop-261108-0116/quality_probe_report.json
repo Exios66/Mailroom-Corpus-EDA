@@ -1,0 +1,176 @@
+{
+ "task": "claim_checklist",
+ "documents": 14,
+ "models": [
+  "minimax/minimax-m3.1-flash",
+  "deepseek/deepseek-v4.1-flash"
+ ],
+ "answers": [
+  {
+   "document_id": "DOC-2d574972cb7a2f63",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-2d574972cb7a2f63",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-05d8be12f0b93d35",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-05d8be12f0b93d35",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-6e584b8a24fe3237",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-6e584b8a24fe3237",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-a45144527fdf86f9",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-a45144527fdf86f9",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-e32cb23329a4a3d2",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-e32cb23329a4a3d2",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-85d9e9f5e6019558",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-85d9e9f5e6019558",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-53f5588db67c2b85",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-53f5588db67c2b85",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-f3742e4778b4d648",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-f3742e4778b4d648",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
+  },
+  {
+   "document_id": "DOC-6dcc0b9ba494c25b",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-6dcc0b9ba494c25b",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
+  },
+  {
+   "document_id": "DOC-f4abca1c7ceedb03",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-f4abca1c7ceedb03",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
+  },
+  {
+   "document_id": "DOC-213e10442ee3dfea",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-213e10442ee3dfea",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
+  },
+  {
+   "document_id": "DOC-b25b2ca02e767426",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-b25b2ca02e767426",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "error": "provider: response truncated (finish_reason=length); raise max_tokens or shorten the window"
+  },
+  {
+   "document_id": "DOC-9a9cf3588165375a",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-9a9cf3588165375a",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-2b71b5b077b26bf9",
+   "model": "minimax/minimax-m3.1-flash",
+   "items": 0,
+   "violations": []
+  },
+  {
+   "document_id": "DOC-2b71b5b077b26bf9",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "items": 0,
+   "violations": []
+  }
+ ],
+ "spent_usd": 0.0241,
+ "clean_calls": 23,
+ "bad_calls": 5
+}

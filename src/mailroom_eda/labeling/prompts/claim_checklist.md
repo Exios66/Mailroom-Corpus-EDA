@@ -9,7 +9,10 @@ Document: one insurance claim record (${subclass}). Field:
   object, never nested quotes, never abbreviations. The quoted line is a complete printed line of
   the document, from its own start to end, with any run of spaces or tabs collapsed to one space;
   its printed label prefix ("COVERAGE DETERMINATION:", "Deductible:", the row's "1. HCPCS 93307"),
-  trailing parenthetical, and typographic quote marks stay in the quote. Never shorten,
+  trailing parenthetical, and typographic quote marks stay in the quote. Quote marks are copied,
+  never added: a value whose printed line carries none (a plain line like a determination sentence
+  "COVERAGE DETERMINATION: APPROVED - this fill was covered under the plan.") stays unquoted in the
+  output. Never shorten,
   paraphrase, or reorder the words inside a quote. Never stitch together distant lines; the same
   printed line is one item even where similar lines repeat.
   One item per category per printed line: one line may serve two categories (a service

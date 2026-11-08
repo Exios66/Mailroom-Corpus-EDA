@@ -61,6 +61,8 @@ BUNDLES: dict[str, tuple[int, list[str], list[tuple[str, str]]]] = {
         # themes calibrated from the 34 observed model disagreements (8a pilot fields.csv):
         (r'label prefix|prefix', "printed label prefix stays in the quote"),
         (r'typographic quote marks|enclosing quotes', "no enclosing quote marks unless printed"),
+        # live-verified via adjudication.csv both-model probe (2026-11-08, it7):
+        (r"Quote marks are copied, never added", "worked example bans adding quote pairs"),
         (r'different words|distinct lines', "distinct-line repeat rule"),
         (r'trailing parentheticals|trailing parenthetical', "service-line tail kept"),
         (r'first.{0,40}character to (?:its )?last|start.{0,20}to end', "whole-line span rule"),

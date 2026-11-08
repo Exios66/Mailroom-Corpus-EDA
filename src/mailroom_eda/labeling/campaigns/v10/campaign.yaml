@@ -129,13 +129,13 @@ chunks:
      reasoning: "low", cap_usd: 1.10, gate: {kind: agreement},
      subclass: [carrier, pde]}
   - {id: "8c", needs: ["8a"], task: claim_checklist, set: remainder, models: [z-ai/glm-5.3-flashx-legal, minimax/minimax-m3.1-flash],
-     reasoning: "low", cap_usd: 1.10, gate: {kind: agreement},
+     reasoning: "low", cap_usd: 1.12, gate: {kind: agreement},
      subclass: [inpatient, outpatient]}
   - {id: "8d", needs: ["8a"], task: claim_checklist, set: remainder, models: [z-ai/glm-5.3-flashx-legal, minimax/minimax-m3.1-flash],
      reasoning: "low", cap_usd: 1.10, gate: {kind: agreement},
      subclass: [auto]}
   - {id: "8e", needs: ["8a"], task: claim_checklist, set: remainder, models: [z-ai/glm-5.3-flashx-legal, minimax/minimax-m3.1-flash],
-     reasoning: "low", cap_usd: 1.15, gate: {kind: agreement},
+     reasoning: "low", cap_usd: 1.16, gate: {kind: agreement},
      subclass: [property]}
   - {id: "9a", task: corporate, set: pilot, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 0.25, gate: {kind: human_verdicts, precision: 0.90}}
