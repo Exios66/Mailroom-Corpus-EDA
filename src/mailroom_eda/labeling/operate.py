@@ -1828,9 +1828,14 @@ def cmd_ping(args: argparse.Namespace, chat=providers.chat, key_status=providers
     for c in campaign(args.campaign)["chunks"]:
         if picked and str(c["id"]) not in picked:
             continue
-        for m in c["models"]:
-            level = runner.reasoning_of(c["reasoning"], m)  # a mixed pair pings each model at its own level
-            if not str(m).startswith("winner_of_") and level is not None and not str(level).startswith("winner_of_"):
+        try:
+            models, levels = resolve(args.campaign, c)  # a winner_of_<id> chunk pings its approved arm
+        except SystemExit as skip:  # winner not approved yet: nothing to ping
+            print(f"ping skips chunk {c['id']}: {skip}", file=sys.stderr)
+            continue
+        for m in models:
+            level = runner.reasoning_of(levels, m)
+            if level is not None:
                 used.add((m, str(level)))
     msgs = [{"role": "system", "content": "Reply with JSON only."},
             {"role": "user", "content": 'Return {"ok": true, "word": "mailroom"}.'}]

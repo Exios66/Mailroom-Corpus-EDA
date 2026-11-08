@@ -46,7 +46,7 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
   in a trial pair runs at `off`; trial document ids are namespaced `public-v9.3:<id>` with
   `published_document_id` kept, so a trial packet and a stage packet of the same document load together in the
   portal. `test_reasoning_calls_get_a_reasoning_allowance_on_top_of_the_answer_budget` now asserts DeepSeek's
-  measured intent allowance (4,000) instead of the flat ceiling; the launch tests for the contract trial no
+  measured intent budget (400 answer + 3,600 allowance = 4,000) instead of the flat ceiling; the launch tests for the contract trial no
   longer expect it to wait for the chunk-1 winner.
 - Review portal can launch labeling batches from the page, off unless started with `--enable-launch`
   (`labeling/launch.py`; `GET /api/launch/options`, `POST /api/launch/preflight`, `POST /api/launch/start`,

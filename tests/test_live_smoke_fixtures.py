@@ -31,6 +31,9 @@ REAL_ROOT = sf.FIXTURE_ROOT
 NOT_RECORDED = "no live smoke fixtures recorded yet; run smoke_fixtures record"
 RECORDED = [t for t in sf.DOC_TYPES if (REAL_ROOT / t).is_dir()]
 GLM, DEEPSEEK = launch.GLM, launch.DEEPSEEK
+# Fake tokens, assembled at runtime so no committed literal matches a secret-scanner's pattern.
+FAKE_TOKEN_A = "abcdefghijklmnopqrstuvwxyz" + "0123456789"
+FAKE_TOKEN_B = "abcdefghijklmnopqrstuvwxyz" + "1234"
 
 
 def need_recorded() -> None:
@@ -477,7 +480,7 @@ def test_replay_reproduces_billed_failures_and_reasoning_runaways(tmp_path):
 
 
 def test_a_credential_in_a_journal_field_is_never_written(tmp_path):
-    leak = providers.ProviderError("HTTP 401 for Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123456789")
+    leak = providers.ProviderError("HTTP 401 for Authorization: Bearer " + FAKE_TOKEN_A)
     root = tmp_path / "live_smoke"
     rc, out, _, _ = run_record(root, chat=Chat(lambda model, n: leak if n == 1 else None), types=["correspondence"],
                                cap="0.10")
@@ -500,7 +503,7 @@ def test_the_credential_scan_allows_words_in_documents_and_model_answers(tmp_pat
     assert "contains 'Authorization'" in sf.credential_problems(calls)[0]
     calls.write_text(sf._line({"model": "m", "error": "key sk-or-v1-abc was rejected"}) + "\n")
     assert sf.credential_problems(calls)
-    calls.write_text(sf._line({"model": "m", "content": "Authorization: Bearer abcdefghijklmnopqrstuvwxyz1234"}) + "\n")
+    calls.write_text(sf._line({"model": "m", "content": "Authorization: Bearer " + FAKE_TOKEN_B}) + "\n")
     assert len(sf.credential_problems(calls)) == 2  # the pattern is refused even inside an answer
     calls.write_text(sf._line({"model": "m", "filename": "/home/someone/doc.txt"}) + "\n")
     assert "/home/" in sf.credential_problems(calls)[0]

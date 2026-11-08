@@ -49,18 +49,26 @@ def issue_sentence(code: str, item: int | None = None) -> str:
     return f"{where}: {code.replace('_', ' ')}."
 
 
-def _run_config(chunk_dir: Path) -> tuple[str, str]:
-    """The (model, reasoning) a checklist packet is built from.
+def _run_config(chunk_dir: Path, requested: str | None = None) -> tuple[str, str]:
+    """The (model, reasoning) a checklist packet is built from, ``requested`` overriding the model.
 
     Read from the last start record of ``runs.jsonl`` that lists models: ``MODEL`` when it
-    ran in the chunk, otherwise the chunk's first model. Without such a record the
-    original pair, ``MODEL`` at ``low``, applies. Torn journal lines are skipped."""
+    ran in the chunk, otherwise the chunk's first model. The requested model must be one the
+    chunk ran, and in a mixed-level run the level is its own, not the default model's.
+    Without such a record the original pair, ``MODEL`` at ``low``, applies. Torn journal
+    lines are skipped."""
     starts = [r for r in export.read_journal(chunk_dir / "runs.jsonl")
               if r.get("task") == FIELD and r.get("models")]
-    if not starts:
+    if not starts:  # legacy chunk with no start record: the original pair is the maximum we can infer
+        if requested is not None and requested != MODEL:
+            raise ValueError(f"{requested}: no runs.jsonl start record names a model, so its reasoning level "
+                             "cannot be placed")
         return MODEL, "low"
     models = [str(m) for m in starts[-1]["models"]]
-    model = MODEL if MODEL in models else models[0]
+    model = requested or (MODEL if MODEL in models else models[0])
+    if model not in models:
+        raise ValueError(f"{model} did not run in this chunk ({', '.join(models)} did); no call of that "
+                         "model exists to vouch for the packet")
     reasoning = starts[-1].get("reasoning")
     if isinstance(reasoning, dict):  # a mixed pair: the level this packet's model ran at
         reasoning = reasoning.get(model)
@@ -212,14 +220,14 @@ def export_packet(rows: Sequence[Mapping[str, Any]], chunk_dir: Path, dest: Path
     without it only accepted fields are exported. At least one accepted field is
     required. ``model`` is the answer the packet compares with the reviewed candidate;
     by default it and the reasoning level come from the chunk's ``runs.jsonl`` (``MODEL``
-    at ``low`` when the chunk has none). Raise ValueError for invalid source/provenance or unrepresentable
+    at ``low`` when the chunk has none); an explicit override names a model the chunk ran,
+    at its own recorded level. Raise ValueError for invalid source/provenance or unrepresentable
     spreadsheet cells before writing outputs. Missing-data KeyError, optional
     workbook ImportError, and filesystem errors propagate; existing files are
     overwritten, and an I/O failure can leave partial output."""
     chunk_dir, dest = Path(chunk_dir), Path(dest)
-    run_model, reasoning = _run_config(chunk_dir)
-    model = model or run_model
-    label = "GLM" if model == MODEL else model
+    run_model, reasoning = _run_config(chunk_dir, model)
+    model, label = run_model, ("GLM" if run_model == MODEL else run_model)
     fields = export.read_csv(chunk_dir / "fields.csv")
     calls = _journal(chunk_dir / "calls.jsonl")
     side_path = chunk_dir / "review-candidates.json"

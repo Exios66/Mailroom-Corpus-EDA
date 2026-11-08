@@ -302,11 +302,35 @@ def test_legacy_checklist_bundle_takes_its_model_from_the_run_journal(tmp_path):
     record = data["records"][0]
     assert result["accepted"] == 1 and record["model"] == DEEPSEEK and record["reasoning"] == "low"
     assert record["models"] == [DEEPSEEK] and record["candidate_attribution"] == f"unchanged raw {DEEPSEEK} candidate"
-    # an explicit model overrides the journal
+    # an explicit model overrides the journal, at its own recorded level
     review_packet.export_packet(picked, out, tmp_path / "other", model=MINIMAX)
     assert json.loads((tmp_path / "other" / "8a-review-data.json").read_text())["records"][0]["model"] == MINIMAX
-    with pytest.raises(ValueError, match="no successful current prompt another/model low call"):
+    with pytest.raises(ValueError, match="another/model did not run in this chunk"):
         review_packet.export_packet(picked, out, tmp_path / "none", model="another/model")
+
+
+def test_legacy_checklist_override_runs_at_the_overridden_models_own_level(tmp_path):
+    """A mixed-level run: the packet for an explicit model uses that model's level, not the default's."""
+    picked = _claim_rows()[:1]
+    out = _batch(tmp_path, picked, task="claim_checklist", models=[DEEPSEEK, MINIMAX],
+                 chat=_checklist_chat({DEEPSEEK: CHECKLIST, MINIMAX: CHECKLIST}),
+                 reasoning={DEEPSEEK: "low", MINIMAX: "off"}, chunk_id="8a")
+    review_packet.export_packet(picked, out, tmp_path / "by-model", model=MINIMAX)
+    record = json.loads((tmp_path / "by-model" / "8a-review-data.json").read_text())["records"][0]
+    assert record["model"] == MINIMAX and record["reasoning"] == "off"
+
+
+def test_intent_pair_missing_one_model_is_not_unanimous(tmp_path, rows):
+    """A configured model with no record for a document leaves that document without a candidate."""
+    base = {"intent": "payment_demand", "confidence": 0.9, "evidence": "please pay the outstanding $4,500"}
+    out = _intent_batch(tmp_path, rows, _fake_chat({DEEPSEEK: base, MINIMAX: base}),
+                        models=(DEEPSEEK, MINIMAX))
+    path = out / "intent-labels.jsonl"
+    kept = [r for r in export.read_journal(path) if r["model"] == DEEPSEEK]
+    path.write_text("\n".join(json.dumps(r) for r in kept) + "\n")
+    (record,) = review_page.validate_packet(review_export.build_packet(out, [rows[2]])).values()
+    assert record["candidate_labels"] is None and record["candidate_status"] == "needs_source_review"
+    assert any("incomplete" in i and MINIMAX in i for i in record["issues"])
 
 
 def test_legacy_checklist_bundle_records_follow_the_shared_contract(tmp_path):

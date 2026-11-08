@@ -27,6 +27,7 @@ sentence, never invented offsets.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -428,7 +429,13 @@ def _intent_records(batch: _Batch, chunk_dir: Path, rows: Sequence[Mapping[str, 
                                 "status": "present" if label else "not_found", "evidence": quote,
                                 "evidence_spans": [span] if span else [], "confidence": got.get("confidence")})
         labels = {v[2] for v in votes}
-        agreed = next(iter(labels)) if len(labels) == 1 and None not in labels else None
+        # every configured model must be represented too: one model's two passes alone are
+        # not an agreement between the configured pair
+        missing = [m for m in batch.models if m not in {mm for mm, _, _ in votes}]
+        agreed = next(iter(labels)) if len(labels) == 1 and None not in labels and not missing else None
+        if missing:
+            issues.append("The intent readings are incomplete: " + "; ".join(
+                f"{m} has no record for this document" for m in missing) + ".")
         if agreed is None:
             issues.append("The intent readings disagree or are missing: " + "; ".join(
                 f"{m} pass {v}: {l or 'none'}" for m, v, l in votes) + ".")
@@ -502,7 +509,14 @@ def export_chunk(chunk_dir: Path, *, stage: Path | None = None,
     if path.exists() and path.read_bytes() == content:
         return path
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_bytes(content)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # document text is never world-readable
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+    except OSError:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        raise
     tmp.chmod(0o600)
     os.replace(tmp, path)
     return path

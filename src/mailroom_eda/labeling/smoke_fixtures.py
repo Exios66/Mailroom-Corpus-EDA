@@ -674,6 +674,7 @@ def record(types: Sequence[str], *, initials: str, cap_usd: float, documents: in
     hub = hub or download_public
     stdin = stdin or sys.stdin
     root = Path(root)
+    types = list(dict.fromkeys(types))  # a duplicate --types must not rerun (and respend) at the same cap
     if not types or any(t not in DOC_TYPES for t in types):
         say(f"refused: --types must be some of {', '.join(DOC_TYPES)}")
         return 1
