@@ -8,6 +8,24 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 
 ## Unreleased
 
+- Gold smoke fixtures: `tests/fixtures/live_smoke/<doc_type>/` holds one real labeling run per document type
+  (contract, merger_agreement, corporate_record, insurance_claim, correspondence) as committed test data: the
+  public documents as downloaded (full text), every model call (`calls.jsonl`), the review packet
+  (`expected-review-data.json`) and a manifest of the dataset revision, plan and prompt / input / schema hashes.
+  New `mailroom_eda.labeling.smoke_fixtures` (`python -m mailroom_eda.labeling.smoke_fixtures`):
+  `record` builds each type's plan as the trial launcher does, runs its preflight, aborts before spending on any
+  failing item, splits `--cap-usd` per type (cuad 0.40, corporate 0.20, merger_consideration 0.15,
+  claim_checklist 0.15, correspondence 0.10 of $1.00), and needs the total cap typed again (`--plan-only` prints
+  the plan and spends nothing); only documents that need labels are recorded, never CUAD or MAUD gold; `check`
+  (offline) fails with a "Gold fixture <type> is stale" message and the exact re-record command when a prompt,
+  model, reasoning level, `max_tokens`, response schema, the dataset revision or a document's text changed;
+  `replay` (offline) feeds the recorded answers through the real `runner.execute`, review and export and diffs
+  the normalized packet; `verify-hub` re-checks each stored document against the Hub (test gated by
+  `MAILROOM_LIVE_HUB=1`). `tests/test_live_smoke_fixtures.py` runs `check`, `replay`, the portal and the
+  no-gold and no-credentials checks over every recorded fixture (skipped until they are recorded) and
+  exercises the recorder end to end with a fake hub and chat. Docs: `docs/labeler-review-viewer.md` "Gold
+  smoke fixtures".
+
 - Reasoning is per model, and its token allowance is measured. `reasoning` in `runner`, `operate` and
   `launch` is a level (`off`/`low`, unchanged) or `{model: level}` (`runner.reasoning_levels` normalizes
   and raises `ValueError` for an unknown model or level); `campaign.yaml` entries may give

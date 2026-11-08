@@ -210,6 +210,86 @@ in the source; a quote that cannot be found is reported in `issues`, never highl
 A re-export overwrites the packet (atomically); the portal reopens only the fields whose
 target changed. Within one labels root the lexically last packet wins per (document, field).
 
+## Gold smoke fixtures
+
+`tests/fixtures/live_smoke/<doc_type>/` holds one small, real labeling run for each of the five document
+types (`contract`, `merger_agreement`, `corporate_record`, `insurance_claim`, `correspondence`), recorded once
+from the public dataset and committed. Each directory has the documents exactly as downloaded
+(`documents.jsonl`, full text), every model call the run made (`calls.jsonl`: prompt, input and answer hashes,
+answers, tokens, cost), the review packet that run produced (`expected-review-data.json`), a `manifest.json`
+(dataset repo, revision and tag, the public file's sha256, task, set, models, per-model reasoning and
+`max_tokens`, prompt / input / response-schema hashes, who recorded it, when and for how much) and a short
+README. They are the gold examples the labeling path is tested against: `tests/test_live_smoke_fixtures.py`
+replays them offline on every run.
+
+**Only documents that need labels are recorded.** The recorder builds each type's plan exactly as the trial
+launcher does (same `runner.select` pool of `pending` / `remainder` documents, same models, per-model
+reasoning and `max_tokens`) and refuses any CUAD or MAUD gold document, so nothing already expert-labeled is
+billed: contracts are SEC EDGAR EX-10 without CUAD labels, mergers are those MAUD does not answer. The test
+suite checks the stored documents against the same rule.
+
+### What runs in CI
+
+All offline, none spends anything:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.smoke_fixtures check    # is each fixture still current?
+PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.smoke_fixtures replay   # replay the answers, diff the packet
+```
+
+* `check` recomputes with the current code the trial plan (task, set, models, reasoning, `max_tokens`), the
+  prompt and exact-input sha256 of every (document, model, variant) built from the stored documents, the
+  response-schema sha256, the dataset revision (`config.REPO_REVISION`) and each document's text hash, and
+  compares them with the manifest. A mismatch exits 1 and says what changed and how to fix it: *"Gold fixture
+  contract is stale: models was [...], now [...]. The recorded model answers no longer match what the code
+  would send. Re-record with: ... record --types contract --initials XX --cap-usd 0.40 --replace (projected
+  ~$0.18)"*.
+* `replay` pushes the recorded answers through the real `runner.execute` (so `run_chunk`, the CUAD repair
+  call, `review` and `review_export` all run) with a fake chat that answers from `calls.jsonl`, keyed by the
+  model and the hash of the exact messages sent. A request the fixture has no answer for is a stale-fixture
+  error, never a network call. The resulting packet is normalized (timestamps, temp paths and durations
+  replaced; values, evidence offsets, statuses, issues and `model_outputs` kept) and diffed against
+  `expected-review-data.json`; a difference prints one line per differing path.
+* The test file also checks that each packet validates and opens in `ReviewPortal` (an ACCEPT on a
+  `source_checks_passed` record saves), that no stored document is gold, and that no fixture file carries a
+  credential or a local path (`Authorization`, `Bearer`, `sk-or-` in any metadata field of `calls.jsonl`,
+  the manifest or the README; a key / header / bearer-token pattern anywhere). The fixture tests skip with
+  *"no live smoke fixtures recorded yet; run smoke_fixtures record"* until the fixtures exist.
+* `MAILROOM_LIVE_HUB=1` adds `verify-hub`: it re-downloads the public file at the manifest revision and
+  confirms the file sha256 and each stored document's text sha256.
+
+### When a fixture goes stale, and re-recording it
+
+A fixture is stale when a prompt template, the field registry, a model, a reasoning level, a `max_tokens`
+allowance, a response schema, the dataset revision pin or a document's text changes: the recorded answers
+were made for requests the code no longer sends. Any such change fails `check` until the affected type is
+re-recorded, in the same pull request. Re-recording is paid and is a human decision:
+
+```bash
+# 1. what would run and what it would cost; downloads the public file, sends nothing
+PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.smoke_fixtures record --initials XX --plan-only
+# 2. record (OPENROUTER_API_KEY must be set; type the total cap again to confirm)
+PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.smoke_fixtures record --initials XX --cap-usd 1.00
+# one stale type, replacing the old fixture
+PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling.smoke_fixtures record --types contract --initials XX \
+    --cap-usd 0.40 --replace
+```
+
+`record` runs the launcher's preflight for every type and aborts before the first request if any item fails,
+printing each failing item with its fix. `--plan-only` prints, per type, the selected documents (namespaced
+and published id, subclass, characters, text sha256), the models with their reasoning and `max_tokens`, the
+projected calls and cost, the per-type cap and the gold check. The total cap (default $1.00) is split
+`cuad` 0.40, `corporate` 0.20, `merger_consideration` 0.15, `claim_checklist` 0.15, `correspondence` 0.10
+(scaled for another `--cap-usd`, or for a subset of `--types`, where the cap you give is the cap of those types
+together); a type whose projection times the repo's 1.4x headroom exceeds its share is refused. The contract
+share is above the portal's $0.25 trial ceiling; the recorder applies its own cap, not that ceiling. A real
+run needs the total cap typed again on stdin, runs one worker per type (so which model is "A" and which "B" is
+the same every time), writes `tests/fixtures/live_smoke/<doc_type>/` atomically, and immediately runs `check`
+and `replay` on what it wrote. It refuses to overwrite a fixture without `--replace`, never writes outside the
+fixture folder and a temp directory, and keeps the temp directory (printing its path) when a run is stopped
+at the cap or a file would carry a credential. Cost is the sum of the calls in `calls.jsonl`
+(`spent_usd` in each manifest); the projection that `--plan-only` prints is a ceiling-style estimate, not a quote.
+
 ## Export local source artifacts into packets
 
 ```bash
