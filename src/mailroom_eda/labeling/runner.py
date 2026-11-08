@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from . import derive, export, providers, spend, tasks, verify
+from . import derive, export, providers, scoring, spend, tasks, verify
 from . import interim as interim_mod
 from .registry import campaign, models_registry, vocabulary
 
@@ -632,12 +632,14 @@ def field_decisions(rows: Sequence[Mapping[str, Any]], calls: Sequence[Mapping[s
         counts: Counter = Counter()
         for name, spec in fields.items():
             t = spec.get("retype") or spec["type"]
-            vocab = vocabulary(spec["vocabulary"]) if spec.get("vocabulary") else None
             results = []
+            labeling_problems = []
             for c in got:
                 raw = ((c or {}).get("response") or {}).get("fields", {}).get(name) if c else None
-                results.append(verify.check_field(raw, t, idx, vocab=vocab,
-                                                  vocab_part=spec.get("vocabulary_part")) if c else None)
+                checked, quality = scoring.check_field(r["expected"], name, raw, idx) if c else (None, None)
+                results.append(checked)
+                if quality and not quality.passed:
+                    labeling_problems.extend(f.code for f in quality.findings)
             a = results[0]
             b = results[1] if len(results) > 1 else None
             if a is None:
@@ -646,6 +648,8 @@ def field_decisions(rows: Sequence[Mapping[str, Any]], calls: Sequence[Mapping[s
             if absence == "absent_ok" and tasks.reads_in_part(r, task):
                 absence = "evidence_only"  # the unread middle may hold it: no absence on silence
             decision, value, reason = verify.decide(a, b, t, absence)
+            if labeling_problems:
+                reason += "; labeling: " + ", ".join(sorted(set(labeling_problems)))
             counts[decision] += 1
             row = {"document_id": doc_id, "doc_class": r["expected"], "subclass": r.get("expected_subclass"),
                    "field": name, "type": t, "decision": decision, "reason": reason,
@@ -799,17 +803,40 @@ def review(rows: Sequence[Mapping[str, Any]], task: str, out_dir: Path,
     fields, docs = field_decisions(rows, calls, task, models, interim=interim)
     keep = {**_reviewer_columns(out_dir / "fields.csv"), **_reviewer_columns(out_dir / "adjudication.csv")}
     open_items: Counter = Counter()
+    by_id = {tasks._ids(r)[0]: r for r in rows}
     for f in fields:
         f.update(keep.get((f["document_id"], f["field"]), {}))
+        reopened = (f["field"] == "claim_checklist" and f.get("reviewer_verdict") == "correct"
+                    and f["decision"] != "accept")
+        if reopened:
+            f["reviewer_verdict"] = ""
+            f["reviewer_note"] = ("Prior 'correct' confirmation reopened by labeling checks; human review required. "
+                                  + f.get("reviewer_note", ""))
         apply_verdict(f)
+        if reopened:
+            f["final_decision"], f["final_value"] = "adjudicate", None
+        if f["field"] == "claim_checklist" and f["final_decision"] == "accept":
+            value = f["final_value"]
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    value = None
+            quality = scoring.score_checklist(value, verify.DocIndex.build(by_id[f["document_id"]]["doc_text"]))
+            if not quality.passed:
+                f["final_decision"], f["final_value"] = "adjudicate", None
+                f["reason"] += "; final labeling: " + ", ".join(sorted({i.code for i in quality.findings}))
         open_items[f["document_id"]] += f["final_decision"] == "adjudicate"
     for d in docs:
         d["problems"] = open_items[d["document_id"]]
         d["status"] = "needs_review" if open_items[d["document_id"]] else "complete"
     export.write_csv(out_dir / "fields.csv", export.FIELD_COLUMNS, fields)
     export.write_csv(out_dir / "adjudication.csv", export.FIELD_COLUMNS,
-                     [f for f in fields if f["decision"] == "adjudicate"])
+                     [f for f in fields if f["decision"] == "adjudicate" or f["final_decision"] == "adjudicate"])
     export.write_csv(out_dir / "documents.csv", export.DOCUMENT_COLUMNS, docs)
+    if task == "claim_checklist":
+        audit = scoring.audit_fields(rows, export.read_csv(out_dir / "fields.csv"))
+        (out_dir / "labeling-scores.json").write_text(json.dumps(audit, indent=2) + "\n", encoding="utf-8")
     out = {"documents": len(docs), "fields": len(fields),
            "decisions": dict(Counter(f["decision"] for f in fields)),
            "final_decisions": dict(Counter(f["final_decision"] for f in fields))}

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable
@@ -29,7 +30,7 @@ from .. import hf_interface
 STAGING_REPO = "Lucius-Morningstar/mailroom-dataset-v10-staging"
 LABELS_DIR = "labels"
 APPROVALS_FILE = "campaign/approved.yaml"
-SUFFIXES = {".jsonl", ".json", ".csv", ".md", ".yaml"}
+SUFFIXES = {".jsonl", ".json", ".csv", ".md", ".yaml", ".txt", ".xlsx", ".html"}
 CARD = """---
 license: cc-by-4.0
 configs:
@@ -50,10 +51,13 @@ byte-for-byte, spend included: this is a private backup of the run logs, never p
 
 def _sources(labels_root: Path, approvals: Path | None) -> Iterable[tuple[str, Path]]:
     """``(path_in_repo, local file)`` for everything a checkpoint carries."""
+    _reject_symlinks(labels_root)
     for p in sorted(labels_root.rglob("*")):
+        _reject_symlinks(p)
         if p.is_file() and p.suffix in SUFFIXES and "__pycache__" not in p.parts:
             yield f"{LABELS_DIR}/{p.relative_to(labels_root).as_posix()}", p
     if approvals is not None and approvals.exists():
+        _reject_symlinks(approvals)
         yield APPROVALS_FILE, approvals
 
 
@@ -75,16 +79,40 @@ def git_blob_sha(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
-def verify(api: Any, repo_id: str, staged: dict[str, Path]) -> list[str]:
+def _reject_symlinks(path: Path) -> None:
+    if any(p.is_symlink() for p in (path, *path.parents)):
+        raise SystemExit(f"checkpoint refuses symlink: {path}")
+
+
+def _matches(file: Any, data: bytes) -> bool:
+    lfs = getattr(file, "lfs", None)
+    sha = lfs.get("sha256") if isinstance(lfs, dict) else getattr(lfs, "sha256", None)
+    return (sha == hashlib.sha256(data).hexdigest() if lfs is not None
+            else getattr(file, "blob_id", None) == git_blob_sha(data))
+
+
+def _snapshot(api: Any, repo_id: str, revision: str | None = None) -> str:
+    if repo_id == hf_interface.REPO_ID:
+        raise SystemExit("checkpoints never use the published dataset repo")
+    info = api.repo_info(repo_id=repo_id, repo_type="dataset", **({"revision": revision} if revision else {}))
+    if not info.private:
+        raise SystemExit(f"{repo_id} is public; labeling checkpoints go only to a private repo")
+    sha = getattr(info, "sha", None)
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise SystemExit("checkpoint could not resolve an immutable revision")
+    return sha
+
+
+def verify(api: Any, repo_id: str, staged: dict[str, Path], *, revision: str | None = None) -> list[str]:
     """Paths whose Hub copy is missing or differs (LFS sha256, else git blob sha1)."""
-    hub = {f.path: f for f in api.list_repo_tree(repo_id=repo_id, repo_type="dataset", recursive=True)}
+    revision = _snapshot(api, repo_id, revision)
+    hub = {f.path: f for f in api.list_repo_tree(repo_id=repo_id, repo_type="dataset", recursive=True,
+                                               revision=revision)}
     bad = []
     for rel, path in sorted(staged.items()):
         f = hub.get(rel)
         data = path.read_bytes()
-        lfs = getattr(f, "lfs", None) if f is not None else None
-        ok = f is not None and (lfs.sha256 == hashlib.sha256(data).hexdigest() if lfs is not None
-                                else getattr(f, "blob_id", None) == git_blob_sha(data))
+        ok = f is not None and _matches(f, data)
         if not ok:
             bad.append(rel)
     return bad
@@ -106,29 +134,56 @@ def checkpoint(labels_root: Path, approvals: Path | None, message: str, *, api: 
     ensure_private(api, repo_id)
     with tempfile.TemporaryDirectory() as tmp:
         staged = stage(Path(labels_root), approvals, Path(tmp))
-        hf_interface.upload_folder(api, tmp, repo_id, message)
-        bad = verify(api, repo_id, staged)
+        result = hf_interface.upload_folder(api, tmp, repo_id, message)
+        revision = _snapshot(api, repo_id, result.get("revision") if isinstance(result, dict) else None)
+        bad = verify(api, repo_id, staged, revision=revision)
     if bad:
         raise SystemExit(f"checkpoint upload did not verify: {', '.join(bad[:10])}")
-    return {"repo": repo_id, "files": len(staged), "verified": True}
+    return {"repo": repo_id, "files": len(staged), "verified": True, "revision": revision}
 
 
-def restore(labels_root: Path, *, api: Any = None, repo_id: str = STAGING_REPO) -> list[Path]:
+def restore(labels_root: Path, *, api: Any = None, repo_id: str = STAGING_REPO,
+            revision: str | None = None) -> list[Path]:
     """Download staged label files missing locally (never overwrites); returns what it wrote."""
     api = api or hf_interface.get_hf_api()
+    revision = _snapshot(api, repo_id, revision)
+    labels_root = Path(labels_root)
+    _reject_symlinks(labels_root)
     prefix = f"{LABELS_DIR}/"
     wrote = []
-    for f in api.list_repo_tree(repo_id=repo_id, repo_type="dataset", recursive=True):
+    missing = []
+    for f in api.list_repo_tree(repo_id=repo_id, repo_type="dataset", recursive=True, revision=revision):
         path = getattr(f, "path", "")
         if not path.startswith(prefix) or not hasattr(f, "blob_id"):
             continue
-        target = Path(labels_root) / path[len(prefix):]
+        rel = path[len(prefix):]
+        if any(part in ("", ".", "..") for part in rel.split("/")) or "\\" in rel:
+            raise SystemExit(f"unsafe checkpoint path: {path}")
+        if str(getattr(f, "mode", "")) == "120000" or getattr(f, "type", "") == "symlink":
+            raise SystemExit(f"checkpoint refuses symlink: {path}")
+        target = labels_root / rel
+        _reject_symlinks(target)
         if target.exists():
+            if not target.is_file() or not _matches(f, target.read_bytes()):
+                raise SystemExit(f"checkpoint restore conflict: {target}")
             continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        local = hf_interface.download_file(api, repo_id, path, Path(tempfile.mkdtemp()) / path)
-        target.write_bytes(Path(local).read_bytes())
-        wrote.append(target)
+        missing.append((f, target))
+    with tempfile.TemporaryDirectory() as tmp:
+        downloads = []
+        for f, target in missing:
+            # The central download_file wrapper has no revision argument; use the authenticated API.
+            local = Path(api.hf_hub_download(repo_id=repo_id, filename=f.path, repo_type="dataset",
+                                             revision=revision, local_dir=tmp))
+            _reject_symlinks(local)
+            if not _matches(f, local.read_bytes()):
+                raise SystemExit(f"checkpoint download did not verify: {f.path}")
+            downloads.append((local, target))
+        for local, target in downloads:
+            _reject_symlinks(target)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open("xb") as stream:
+                stream.write(local.read_bytes())
+            wrote.append(target)
     return wrote
 
 
