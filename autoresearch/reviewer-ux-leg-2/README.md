@@ -1,6 +1,9 @@
 # Reviewer UX — leg 2 (stacked on PR #58)
 
 Parent: `ar/prompt-loop-1` at `5c9c578`. Branch: `ar/reviewer-ux-leg-2`.
+The two initial experiments are complete. A subsequent user-directed follow-up
+adds live saved-progress reporting and resume behavior; the original four-task
+metric is unchanged, with additional reload/progress regression guards.
 Merge this PR into its parent branch first, or retarget after #58 merges;
 do not merge the parent automatically. Two bounded experiments, no paid calls.
 

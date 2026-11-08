@@ -118,8 +118,13 @@ try {
   check('unchanged decision produces no journal entry');
   await screenshot('02-saved-server-confirmed');
   await call('Page.reload');await waitFor(`document.getElementById('save') && !$('save').disabled`);
+  assert.equal(await evaluate(`$('target').value`),'1','reopening advances from the saved target to the next pending target');
+  assert.match(await evaluate(`$('review-progress-text').textContent`),/1 \/ 2 targets reviewed and saved/);
+  assert.equal(await evaluate(`$('review-progress').value`),1);
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
   assert.equal(await evaluate(`$('decision').value`),'ACCEPT');
   assert.equal(await evaluate(`history.length`),3,'recovered history must not be fabricated');
+  check('saved progress and next-pending resume after page reload');
   await evaluate(`$('export').click()`);
   await screenshot('03-reloaded-receipt');
   await evaluate(`window.confirm=()=>true;$('checkpoint').click()`);await waitFor(`!busy && packet.state_revision==='checkpoint-1'`);
@@ -315,8 +320,9 @@ try {
   check('autosave persists complete decisions without Save');
   // A reviewer can type while a manual Save is in flight; the response must not erase it.
   await evaluate(`showTab('review');window.originalRequest=request;window.releaseReviewSave=null;
-    request=async(url,body)=>{if(url==='/api/reviews') await new Promise(resolve=>window.releaseReviewSave=resolve);
-      return window.originalRequest(url,body);};`);
+    request=async(url,body)=>{const snapshot=body?clone(body):body;
+      if(url==='/api/reviews') await new Promise(resolve=>window.releaseReviewSave=resolve);
+      return window.originalRequest(url,snapshot);};`);
   await input('notes','Submitted before response.');
   await evaluate(`$('save').click()`);
   await waitFor(`!!window.releaseReviewSave`);
@@ -326,6 +332,8 @@ try {
   assert.equal(await evaluate(`$('notes').value`),'Newer edit while saving.');
   assert.equal(await evaluate(`decision().reviewer_notes`),'Newer edit while saving.');
   assert.equal(await evaluate(`dirty`),true,'newer work remains unsaved, never falsely durable');
+  assert.match(await evaluate(`$('review-progress-text').textContent`),/1 local drafts/,
+    'progress distinguishes an unsaved edit from the saved review count');
   assert.match(await evaluate(`$('journal').textContent`),/Updated Reviewer notes/,
     'the journal describes the actual edit rather than an unexplained ACCEPT to ACCEPT');
   await evaluate(`request=window.originalRequest`);
@@ -377,6 +385,29 @@ try {
   assert.ok(launch.reloads>readsBefore,'a finished run reloads the batches');
   assert.equal(await evaluate(`JSON.stringify([localStorage,sessionStorage]).includes('BROWSER-SECRET')`),false);
   await screenshot('08-launch-finished');
+  const resumeCases=await evaluate(`(()=>{
+    const oldRecords=records,oldDecisions=decisions,oldPacket=packet,oldCurrent=current;
+    const a={...records[0],document_id:'RESUME-A'},b={...records[1],document_id:'RESUME-B'};
+    const done={...blank(a),decision:'ACCEPT',reviewer_initials:'AB',updated_at:now()};
+    records=[b,a];decisions=new Map([[KEY(a),done],[KEY(b),blank(b)]]);
+    packet={...packet,saved_decisions:[done]};
+    resumeReview({document_id:b.document_id,field:b.field});
+    const reordered=current===0;
+    resumeReview({document_id:a.document_id,field:a.field});
+    const skipsSaved=current===0;
+    decisions.set(KEY(a),{...done,decision:'CORRECT',corrected_labels_json:'"unfinished"'});
+    resumeReview({document_id:a.document_id,field:a.field});
+    const keepsDraft=current===1;
+    decisions.set(KEY(a),done);
+    packet.saved_decisions.push({...blank(b),decision:'REJECT',reviewer_initials:'AB',updated_at:now()});
+    decisions.set(KEY(b),packet.saved_decisions[1]);
+    resumeReview({document_id:a.document_id,field:a.field});
+    const allReviewed=current===1;
+    records=oldRecords;decisions=oldDecisions;packet=oldPacket;current=oldCurrent;render();persist();
+    return {reordered,skipsSaved,keepsDraft,allReviewed};
+  })()`);
+  assert.deepEqual(resumeCases,{reordered:true,skipsSaved:true,keepsDraft:true,allReviewed:true});
+  check('resume identities survive reorder, unfinished drafts and completed queues');
   // Fixed leg-2 task score; unlike checks.length this denominator never grows with features.
   const uxTasks=await evaluate(`(()=>{
     const oldRecords=records, oldDecisions=decisions, oldHistory=history, oldCurrent=current;

@@ -1,5 +1,26 @@
 # Reviewer UX leg 2 — checkpoint
 
+## Requested follow-up: progress and resume
+
+The label-review panel now displays saved decisions / total targets, local drafts,
+remaining saved reviews and checkpointed fields. Counts update after edits and
+save-state hydration. Saved reviews include reject/defer decisions; the UI says
+explicitly that reviewed is not the same as approved.
+
+Position is stored locally as `(document_id, field)` independently of the packet
+hash, so queue reordering does not change its meaning. On startup, after restoring
+server reviews and local drafts, retain an unfinished target or advance from a
+saved target to the next pending one. Without a valid position, use the first
+pending target from restored server decisions. All-reviewed queues retain the
+last position. Clearing browser storage loses the exact cursor but not server
+review receipts.
+
+Verification: existing fixed UX score remains **4/4**; **35** synthetic browser
+checks, **48** focused Python tests, axe **0** violations (2 manual-review items).
+Evidence: `/private/tmp/opencode/reviewer-ux-leg-2/progress-resume/`.
+Manual-save race fixture now snapshots request bytes before delaying delivery,
+so a newer edit cannot accidentally change the simulated in-flight request.
+
 - PR #59 is stacked on #58: base `ar/prompt-loop-1` at `5c9c578`.
 - Two experiments kept: task score **0/4 → 3/4 → 4/4**.
 - Keep commits: `56806ce` (search/navigation); `1ad0d97` (draft/save safety).

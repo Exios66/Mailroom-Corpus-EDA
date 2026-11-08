@@ -121,6 +121,9 @@ The API key field is optional, is never stored (not even in this browser) and is
 
 <div id="review-view" role="tabpanel" aria-labelledby="tab-review">
 <section class="panel">
+<label for="review-progress">Saved review progress</label>
+<progress id="review-progress" value="0" max="1" style="width:100%"></progress>
+<p id="review-progress-text" role="status" class="muted"></p>
 <div class="review-search"><label for="target-search">Find a review target
 <input id="target-search" type="search" placeholder="Document ID, filename, field or class" aria-describedby="target-search-status"></label>
 <button id="clear-target-search" type="button">Clear search</button></div>
@@ -161,6 +164,9 @@ let packet=JSON.parse($('packet').textContent);
 let records=[], current=0, busy=false, dirty=false, staleDraft=false, pendingData=false;
 let decisions=new Map(), history=[];
 const KEY=(r)=>r.document_id+'\n'+r.field;
+const positionKey='mailroom-review-position/v1';
+let startingPosition=null;
+try { startingPosition=JSON.parse(localStorage.getItem(positionKey)||'null'); } catch (exc) {}
 const storageKey='mailroom-review-draft/'+packet.packet_id;
 function blank(r){ return {document_id:r.document_id, field:r.field, document_sha256:r.document_sha256, decision:'NOT_REVIEWED', corrected_labels_json:'', reviewer_initials:'', reviewer_notes:'', updated_at:'', verified_models:[], verified_outputs:[], manual_source_verification:false}; }
 function localDraft(){ return [...decisions.values()].some((d)=>d.decision!=='NOT_REVIEWED'||d.reviewer_notes||d.reviewer_initials||d.corrected_labels_json); }
@@ -513,6 +519,43 @@ function renderTargetStatus(){
     +(staleDraft?' (stale packet; discard or reload)':'')
     +' · Decided: '+d.decision+(d.updated_at?' at '+d.updated_at:'');
   batchProgress();
+  reviewProgress();
+  try { localStorage.setItem(positionKey,JSON.stringify({document_id:records[current].document_id,field:records[current].field})); } catch (exc) {}
+}
+function reviewProgress(){
+  const saved=new Map((packet.saved_decisions||[]).map((d)=>[d.document_id+'\n'+d.field,d]));
+  let count=0,drafts=0;
+  const content=(r,d)=>{ const value={...blank(r),...d};delete value.updated_at;return JSON.stringify(value); };
+  records.forEach((r)=>{
+    const prior=saved.get(KEY(r)),local=decisions.get(KEY(r));
+    if (prior&&prior.decision!=='NOT_REVIEWED') count++;
+    if (local&&local.decision!=='NOT_REVIEWED'&&content(r,local)!==content(r,prior||blank(r))) drafts++;
+  });
+  $('review-progress').max=Math.max(1,records.length);$('review-progress').value=count;
+  const staged=(packet.review_states||[]).filter((s)=>s.status==='checkpointed').length;
+  $('review-progress-text').textContent=count+' / '+records.length+' targets reviewed and saved · '
+    +drafts+' local drafts · '+(records.length-count)+' awaiting saved review · '+staged+' checkpointed. '
+    +'Saved includes rejections and deferrals; it does not mean all labels are approved.';
+}
+function resumeReview(position){
+  if (!records.length) return;
+  const index=position?records.findIndex((r)=>r.document_id===position.document_id&&r.field===position.field):-1;
+  const saved=new Map((packet.saved_decisions||[]).map((d)=>[d.document_id+'\n'+d.field,d]));
+  const pending=(r)=>!saved.has(KEY(r))||saved.get(KEY(r)).decision==='NOT_REVIEWED';
+  if (index>=0){
+    current=index;
+    const prior=saved.get(KEY(records[index])),local=decisions.get(KEY(records[index]));
+    // Preserve an unfinished local edit; only advance past a saved, unchanged target.
+    const content=(d)=>{const c={...blank(records[index]),...d};delete c.updated_at;return JSON.stringify(c);};
+    if (prior&&prior.decision!=='NOT_REVIEWED'&&content(prior)===content(local)){
+      for (let step=1;step<=records.length;step++){
+        const next=(index+step)%records.length;if(pending(records[next])){current=next;break;}
+      }
+    }
+  } else {
+    const first=records.findIndex(pending);current=first>=0?first:0;
+  }
+  renderTarget();controls();
 }
 /** Update batch option labels with local decided/total counts, including unsaved decisions. */
 function batchProgress(){
@@ -1064,6 +1107,7 @@ window.onbeforeunload=(event)=>{ if (dirty||staleDraft){ event.preventDefault();
   render();
   message('Loaded embedded packet'+(localDraft()?' and restored your local draft. Check Reload batches if you manage packets in files.':'')+'.', true);
   await refresh();
+  resumeReview(startingPosition);
   await launchInit();
   let saved=null; try { saved=localStorage.getItem(tabKey); } catch (exc) {}
   showTab(TABS.includes(saved)?saved:'review');
