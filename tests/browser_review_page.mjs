@@ -38,9 +38,8 @@ function launchItems(body){
 const server=http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');
   if(req.url==='/review.html') {res.setHeader('Content-Type','text/html');res.end(template.replace('__REVIEW_PACKET_JSON__',JSON.stringify(packet).replaceAll('<','\\u003c')));return;}
-  if(req.url==='/axe.js') {res.setHeader('Content-Type','text/javascript');res.end(fs.readFileSync(process.env.AXE_PATH||'/nonexistent'));return;}
+  if(req.url==='/axe.js') {res.setHeader('Content-Type','text/javascript');if(!process.env.AXE_PATH){res.writeHead(404);res.end();return;}res.end(fs.readFileSync(process.env.AXE_PATH));return;}
   res.setHeader('Content-Type','application/json');
-  if(req.url==='/api/contract') {res.end(JSON.stringify({schema:'mailroom-review-agent-contract/v1',packet_schema:'mailroom-review-packet/v1',decision_key:packet.decision_key,rules:['per-label items ride correction_labels_json']}));return;}
   if(req.url==='/review-data.json') {launch.reloads++;res.end(JSON.stringify(packet));return;}
   if(req.url==='/api/launch/options') {res.end(JSON.stringify({enabled:true,campaign:'synthetic',targets:launchTargets,trial:{default_documents:2,max_documents:5,cap_ceiling_usd:0.25}}));return;}
   if(req.url==='/api/launch/status') {
@@ -150,6 +149,12 @@ try {
   assert.match(await evaluate(`document.querySelector('#item-picker summary').textContent`),/2 of 2 kept/);
   await evaluate(`[...document.querySelectorAll('#item-picker .chips .chip')][0].click()`);
   assert.match(await evaluate(`document.querySelector('#item-picker summary').textContent`),/1 of 2 kept/);
+  // Manual keep/drop survives navigation away and back (the saved-draft adoption must not
+  // re-stomp picker state on re-render).
+  await evaluate(`$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
+  assert.match(await evaluate(`document.querySelector('#item-picker summary').textContent`),/1 of 2 kept/,
+    'manual keep/drop survives target navigation');
   await evaluate(`[...document.querySelectorAll('#item-picker input')][1].value='signed claim form (edited)';[...document.querySelectorAll('#item-picker input')][1].dispatchEvent(new Event('input',{bubbles:true}));`);
   await evaluate(`[...document.querySelectorAll('#item-picker button')].at(-1).click()`);
   assert.equal(await evaluate(`$('decision').value`),'CORRECT');

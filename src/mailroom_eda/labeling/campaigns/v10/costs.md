@@ -25,7 +25,7 @@ exact windowed prompts, typical output per call, x1.25 for retries and repairs;
 
 ## Recommended plan, chunk by chunk
 
-Projected total **$22.97**; the chunk caps add up to **$33.34**.
+Projected total **$21.69**; the chunk caps add up to **$33.34**.
 Two-model chunks are priced for both models.
 
 | chunk | task | set | slice | docs | calls | models | reasoning | projected USD | cap USD |
@@ -54,9 +54,9 @@ Two-model chunks are priced for both models.
 | 3 | intent | calibration | all | 96 | 192 | `claude-haiku-5.5` | off | 0.00 | 0.00 |
 | 3 | intent | calibration | all | 96 | 192 | `minimax-m3.1-flash` | low | 0.00 | 0.00 |
 | 4 | intent | flagged | all | 25 | 50 | `winner_of_3` | winner_of_3 | 0.00 | 0.00 |
-| 4a | intent | relabel | 1/3 | 302 | 1208 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.43 | 0.65 |
-| 4b | intent | relabel | 2/3 | 302 | 1208 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.43 | 0.65 |
-| 4c | intent | relabel | 3/3 | 300 | 1200 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.42 | 0.65 |
+| 4a | intent | relabel | 1/3 | 302 | 1208 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.00 | 0.65 |
+| 4b | intent | relabel | 2/3 | 302 | 1208 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.00 | 0.65 |
+| 4c | intent | relabel | 3/3 | 300 | 1200 | `winner_of_3` + `claude-haiku-5.5` | winner_of_3 | 0.00 | 0.65 |
 | 5a | contract_entities | calibration | all | 40 | 80 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.35 | 0.50 |
 | 5b | contract_entities | pilot | all | 52 | 104 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 0.61 | 0.90 |
 | 5c | contract_entities | remainder | 1/3 | 182 | 364 | `glm-5.3-flashx-legal` + `deepseek-v4.1-flash` | off | 2.02 | 2.85 |

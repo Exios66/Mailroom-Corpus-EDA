@@ -193,12 +193,15 @@ function labelItems(record){
 function itemsFor(record){
   const key=KEY(record), items=labelItems(record);
   if (items===null) return null;
-  if (!itemState.has(key)) itemState.set(key, {dropped:[], edits:{}});
+  const fresh=!itemState.has(key);
+  if (fresh) itemState.set(key, {dropped:[], edits:{}});
   const state=itemState.get(key);
   const d=decisions.get(key);
   const draft=parseMaybe(d.corrected_labels_json);
-  // If the draft correction is exactly a kept subset of the candidate items, adopt it.
-  if (Array.isArray(draft) && draft.length<=items.length && Object.keys(state.edits).length===0){
+  // If the draft correction is exactly a kept subset of the candidate items, adopt it —
+  // only when the picker state is fresh, so a later keep/drop toggle is never re-stomped
+  // by the saved draft on every re-render.
+  if (fresh && Array.isArray(draft) && draft.length<=items.length && Object.keys(state.edits).length===0){
     const chosen=draft.map((x)=>String(x)), used=[];
     items.forEach((text,i)=>{ if (chosen.includes(text)) used.push(i); });
     if (used.length) state.dropped=items.map((_,i)=>i).filter((i)=>!used.includes(i));
@@ -251,7 +254,6 @@ function itemPicker(record){
     editor.addEventListener('input', ()=>{ ctx.state.edits[i]=editor.value; });
     row.append(toggle, editor); list.append(row);
   });
-  box.append(list);
   const apply=node('button','Apply kept items as the correction'); apply.type='button';
   apply.addEventListener('click', ()=>{
     const d=decision();

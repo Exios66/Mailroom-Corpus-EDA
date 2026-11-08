@@ -83,11 +83,11 @@ chunks:
   # answer that fits the email's subtype is written, to the ground_truth config only; a subtype
   # conflict is read by a person (the subtypes came from older automatic labelers).
   # A test-split change is only proposed: a person decides it (the test split scores models).
-  - {id: "4a", needs: ["3"], task: intent, set: relabel, chunk: "1/3", models: [winner_of_3, anthropic/claude-haiku-5.5],
+  - {id: "4a", needs: ["3"], task: intent, set: relabel, chunk: "1/3", models: [winner_of_3, anthropic/claude-haiku-5.5], skip: "2026-11-06 run 4a: complete; 302 rows adjudicated, needs the human review pass",
      reasoning: winner_of_3, cap_usd: 0.65, gate: {kind: intent_relabel}}
-  - {id: "4b", needs: ["3"], task: intent, set: relabel, chunk: "2/3", models: [winner_of_3, anthropic/claude-haiku-5.5],
+  - {id: "4b", needs: ["3"], task: intent, set: relabel, chunk: "2/3", models: [winner_of_3, anthropic/claude-haiku-5.5], skip: "2026-11-06 run 4b: complete; 302 rows adjudicated, needs the human review pass",
      reasoning: winner_of_3, cap_usd: 0.65, gate: {kind: intent_relabel}}
-  - {id: "4c", needs: ["3"], task: intent, set: relabel, chunk: "3/3", models: [winner_of_3, anthropic/claude-haiku-5.5],
+  - {id: "4c", needs: ["3"], task: intent, set: relabel, chunk: "3/3", models: [winner_of_3, anthropic/claude-haiku-5.5], skip: "2026-11-06 run 4c: complete; 300 rows adjudicated, needs the human review pass",
      reasoning: winner_of_3, cap_usd: 0.65, gate: {kind: intent_relabel}}
   - {id: "5a", task: contract_entities, set: calibration, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 0.50, gate: {kind: field_accuracy, accuracy: 0.85}, requires: "llm-dojo-scoring 0.28.0 (G1)"}
