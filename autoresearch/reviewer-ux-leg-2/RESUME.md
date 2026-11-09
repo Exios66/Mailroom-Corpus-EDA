@@ -1,5 +1,21 @@
 # Reviewer UX leg 2 — checkpoint
 
+## Field outcomes and review-comment follow-up
+
+- Added per-document field navigation and explicit field-only approve/correct/
+  reject/defer actions. Draft intentions are labelled not saved; saved and
+  checkpointed outcomes remain distinct. Schema-blocked review never claims gold
+  approval. No whole-document approval is implied.
+- Lists retain keep/drop/edit granularity. An unreconciled saved array correction
+  now disables the original-item picker rather than risking overwriting edits.
+- All three #59 comments validated: exact grouping, meaningful empty-state text,
+  and real partial-autosave HTTP/visible-warning coverage implemented.
+- Current guards: 37 browser checks, 48 focused Python tests, 4/4 fixed tasks,
+  zero axe violations (3 manual-review items). Evidence `field-outcomes/`.
+- Parent #58 review threads were inventoried separately. Its picker issue is
+  fixed by this stacked branch; other parent probe/accounting/backup-runner issues
+  are not silently marked resolved. Parent changes require a separate follow-up.
+
 ## Requested follow-up: progress and resume
 
 The label-review panel now displays saved decisions / total targets, local drafts,

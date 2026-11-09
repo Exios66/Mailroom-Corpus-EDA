@@ -132,12 +132,22 @@ The API key field is optional, is never stored (not even in this browser) and is
 <div class="toolbar"><button id="previous">Previous target</button><button id="next">Next target</button><button id="next-pending" title="Jump to the next undecided target (keyboard: N)">Next pending</button><button id="next-pending-batch" title="Jump to the next undecided target inside the current batch, else the next pending anywhere (keyboard: Shift+N)">Next pending in batch</button><button id="bulk-accept" title="Set ACCEPT (with the remembered initials) for every undecided target in the current record's batch whose candidate passed the automated source checks; review then Save as usual">Accept verified in batch</button></div>
 <label for="batch-jump">Jump to batch</label><select id="batch-jump" aria-label="Jump to a batch's first pending target"></select>
 <p id="target-status"></p>
+<h2>Fields in this document</h2>
+<p class="muted">Review each extraction separately. Approving a field does not approve the entire document. For list values, keep, drop or edit individual items, then apply the replacement list.</p>
+<div id="document-fields" class="toolbar" aria-label="Field outcomes for the current document"></div>
 </section>
 
 <div class="columns">
 <section class="panel" style="flex:1 1 480px" aria-labelledby="source-title"><h2 id="source-title">Complete source · evidence highlighted</h2><div id="links"></div><div id="source" tabindex="0"></div><h3>Evidence spans</h3><div id="evidence"></div></section>
 <section class="panel" style="flex:1 1 480px" aria-labelledby="proposal-title"><h2 id="proposal-title">Proposed value</h2><div id="values"></div><div id="issues"></div>
 <form id="review-form">
+<p id="field-outcome" role="status"></p>
+<div class="toolbar" aria-label="Set outcome for this field">
+<button type="button" data-outcome="ACCEPT">Approve displayed value</button>
+<button type="button" data-outcome="CORRECT">Approve a correction</button>
+<button type="button" data-outcome="REJECT">Reject extraction</button>
+<button type="button" data-outcome="NEEDS_SOURCE">Defer for source review</button>
+</div>
 <label>Decision <select id="decision"><option>NOT_REVIEWED</option><option>ACCEPT</option><option>CORRECT</option><option>REJECT</option><option>NEEDS_SOURCE</option></select></label>
 <p id="decision-help" class="muted"></p>
 <label id="manual-wrap" hidden><input type="checkbox" id="manual-verify"> I verified this value against the full source myself</label>
@@ -225,10 +235,13 @@ function itemsFor(record){
   // only when the picker state is fresh, so a later keep/drop toggle is never re-stomped
   // by the saved draft on every re-render. Draft text that no candidate matches (edited
   // labels) cannot map back and is left to the CORRECT field, shown in the summary.
-  if (fresh && Array.isArray(draft) && draft.length<=items.length && Object.keys(state.edits).length===0){
-    const chosen=draft.map((x)=>String(x)), used=[];
-    items.forEach((text,i)=>{ if (chosen.includes(text)) used.push(i); });
-    if (used.length && used.length===draft.length) state.dropped=items.map((_,i)=>i).filter((i)=>!used.includes(i));
+  if (fresh && d.corrected_labels_json){
+    const used=[];let cursor=0;
+    if (Array.isArray(draft)) for (const text of draft){
+      const found=items.indexOf(text,cursor);if(found<0) break;used.push(found);cursor=found+1;
+    }
+    if (Array.isArray(draft)&&used.length===draft.length) state.dropped=items.map((_,i)=>i).filter((i)=>!used.includes(i));
+    else state.blocked=true;
   }
   return {items, state};
 }
@@ -251,6 +264,11 @@ function itemPicker(record){
   const ctx=itemsFor(record);
   if (ctx===null) return null;
   const box=node('details'); box.id='item-picker';
+  if(ctx.state.blocked){
+    box.open=true;box.append(node('summary','Saved correction preserved'));
+    box.append(node('p','The saved correction contains edits that cannot be mapped safely to the original items. Continue editing the complete replacement JSON below; the item picker is disabled so it cannot overwrite your saved work.'));
+    return box;
+  }
   const summary=node('summary'); box.append(summary);
   const refreshTitle=()=>{
     const kept=keptItems(record);
@@ -520,7 +538,29 @@ function renderTargetStatus(){
     +' · Decided: '+d.decision+(d.updated_at?' at '+d.updated_at:'');
   batchProgress();
   reviewProgress();
+  renderFieldOutcomes();
   try { localStorage.setItem(positionKey,JSON.stringify({document_id:records[current].document_id,field:records[current].field})); } catch (exc) {}
+}
+function fieldOutcome(r){
+  const d=decisions.get(KEY(r))||blank(r);
+  const prior=(packet.saved_decisions||[]).find((x)=>x.document_id===r.document_id&&x.field===r.field);
+  const content=(value)=>{const c={...blank(r),...value};delete c.updated_at;return JSON.stringify(c);};
+  const names={ACCEPT:'Approved',CORRECT:'Approved with correction',REJECT:'Rejected',NEEDS_SOURCE:'Deferred for source review',NOT_REVIEWED:'Not reviewed'};
+  if (d.decision!=='NOT_REVIEWED'&&content(d)!==content(prior||blank(r))) return 'Draft — '+names[d.decision]+' (not saved)';
+  if (!prior||prior.decision==='NOT_REVIEWED') return 'Not reviewed';
+  const state=stateOf(r);
+  if (state.status==='reviewed_needs_schema') return 'Review saved — schema approval still required';
+  return names[prior.decision]+' — '+(state.status==='checkpointed'?'checkpointed':'saved locally');
+}
+function renderFieldOutcomes(){
+  const active=records[current],box=$('document-fields');box.textContent='';
+  $('field-outcome').textContent=humanize(active.field)+': '+fieldOutcome(active);
+  records.forEach((r,i)=>{
+    if(r.document_id!==active.document_id) return;
+    const button=node('button',humanize(r.field)+' · '+fieldOutcome(r));button.type='button';
+    if(i===current) button.setAttribute('aria-current','true');
+    button.addEventListener('click',()=>{current=i;renderTarget();controls();});box.append(button);
+  });
 }
 function reviewProgress(){
   const saved=new Map((packet.saved_decisions||[]).map((d)=>[d.document_id+'\n'+d.field,d]));
@@ -955,6 +995,11 @@ $('manual-verify').addEventListener('change', ()=>{
   decision().updated_at=now();
   logChange(before, decision());
 });
+document.querySelectorAll('[data-outcome]').forEach((button)=>button.addEventListener('click',()=>{
+  const before=clone(decision());decision().decision=button.dataset.outcome;decision().updated_at=now();
+  logChange(before,decision());renderTarget();controls();
+  message(button.dataset.outcome==='CORRECT'?'Enter the complete replacement JSON or use a model value, then verify it.':'Outcome selected for this field only. Valid decisions autosave; initials and source verification rules still apply.',true);
+}));
 
 // ---- Launch panel (only when the server runs with --enable-launch) ----
 let launchOpts=null, launchPre=null, launchPoll=null, launchKeyUsed=false, launchWatching=false;

@@ -408,6 +408,57 @@ try {
   })()`);
   assert.deepEqual(resumeCases,{reordered:true,skipsSaved:true,keepsDraft:true,allReviewed:true});
   check('resume identities survive reorder, unfinished drafts and completed queues');
+  const granular=await evaluate(`(()=>{
+    const oldRecords=records,oldDecisions=decisions,oldPacket=packet,oldCurrent=current,oldHistory=history,oldDirty=dirty;
+    const a={...records[1],document_id:'FIELD-REVIEW',field:'entity_name'};
+    const b={...a,field:'jurisdiction',candidate_labels:'Delaware'};
+    records=[a,b];packet={...packet,saved_decisions:[],review_states:[]};
+    decisions=new Map(records.map(r=>[KEY(r),blank(r)]));history=[];current=0;render();
+    document.querySelector('[data-outcome="ACCEPT"]').click();
+    const isolated=decisions.get(KEY(a)).decision==='ACCEPT'&&decisions.get(KEY(b)).decision==='NOT_REVIEWED';
+    const draft=$('field-outcome').textContent.includes('Draft — Approved (not saved)');
+    $('document-fields').querySelectorAll('button')[1].click();
+    document.querySelector('[data-outcome="NEEDS_SOURCE"]').click();
+    const deferred=current===1&&$('field-outcome').textContent.includes('Deferred');
+    packet.saved_decisions=[clone(decisions.get(KEY(a)))];
+    const saved=fieldOutcome(a)==='Approved — saved locally';
+    packet.review_states=[{document_id:a.document_id,field:a.field,status:'reviewed_needs_schema'}];
+    const blocked=fieldOutcome(a).includes('schema approval still required');
+    records=oldRecords;decisions=oldDecisions;packet=oldPacket;current=oldCurrent;history=oldHistory;dirty=oldDirty;
+    render();persist();return {isolated,draft,deferred,saved,blocked};
+  })()`);
+  assert.deepEqual(granular,{isolated:true,draft:true,deferred:true,saved:true,blocked:true});
+  check('granular field outcomes distinguish drafts, saved approval and schema blockers');
+  const pickerSafe=await evaluate(`(()=>{
+    const oldCurrent=current,oldState=itemState,oldDecisions=decisions;
+    decisions=new Map(decisions);current=0;itemState=new Map();
+    const d={...blank(records[0]),decision:'CORRECT',corrected_labels_json:'["previously edited entity"]'};
+    decisions.set(KEY(records[0]),d);renderTarget();
+    const safe=$('item-picker').textContent.includes('Saved correction preserved')
+      &&$('item-picker').querySelectorAll('button,input').length===0
+      &&$('correction').value===d.corrected_labels_json;
+    decisions=oldDecisions;itemState=oldState;current=oldCurrent;render();persist();return safe;
+  })()`);
+  assert.ok(pickerSafe,'reopening an edited array never offers a picker that can revert saved text');
+  check('unreconciled saved array correction cannot be overwritten by picker');
+  // Exercise a real partial autosave through the form and HTTP route, not applySave directly.
+  failSave=false;
+  await evaluate(`showTab('review');autosaveEnabled=false;$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  await input('decision','CORRECT');await input('correction','not JSON yet');await input('initials','');
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));autosaveEnabled=true;`);
+  await input('decision','ACCEPT');await input('initials','AB');
+  const partialPostsBefore=posts.length;
+  await evaluate(`message('Waiting for partial autosave')`);
+  await input('notes','Partial autosave form exercise.');
+  await waitFor(`$('message').textContent.includes('Auto-saved at')&& !busy`);
+  assert.ok(posts.length>partialPostsBefore);
+  assert.ok(!posts.at(-1).decisions.some(d=>d.document_id==='SYNTH-002'&&d.decision==='CORRECT'),
+    'invalid correction is excluded from the posted decisions');
+  await evaluate(`autosaveEnabled=false;$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  const partialSaveOutcome=await evaluate(`dirty&&$('decision').value==='CORRECT'&&$('correction').value==='not JSON yet'
+    &&$('target-status').textContent.includes('autosaving')&&$('review-progress-text').textContent.includes('1 local drafts')
+    &&$('checkpoint').disabled&&!$('review-progress-text').hidden`);
+  assert.equal(partialSaveOutcome,true,'the real save path preserves the draft and visibly warns that it is unsaved');
   // Fixed leg-2 task score; unlike checks.length this denominator never grows with features.
   const uxTasks=await evaluate(`(()=>{
     const oldRecords=records, oldDecisions=decisions, oldHistory=history, oldCurrent=current;
@@ -417,27 +468,24 @@ try {
     const c={...records[0],document_id:'UX-C',field:'recipient',batch:'alpha',chunk:''};
     records=[a,b,c]; decisions=new Map(records.map(r=>[KEY(r),blank(r)])); history=[];current=0;
     $('target').textContent='';render();
-    const groups=[...$('target').querySelectorAll('optgroup')].map(g=>g.dataset.gid);
-    const consolidated=groups.length===2&&new Set(groups).size===2;
+    const groups=[...$('target').querySelectorAll('optgroup')].map(g=>({id:g.dataset.gid,values:[...g.querySelectorAll('option')].map(o=>o.value)}));
+    const consolidated=JSON.stringify(groups)===JSON.stringify([{id:'alpha',values:['0','2']},{id:'beta',values:['1']}]);
     let search=false, empty=false;
     if ($('target-search')){
       $('target-search').value='ux-b intent';$('target-search').dispatchEvent(new Event('input'));
       search=[...$('target').options].length===1&&$('target').options[0].value==='1';
       const before=current;
       $('target-search').value='no-such-review-target';$('target-search').dispatchEvent(new Event('input'));
-      empty=$('target').options.length===0&&current===before&&!$('target-search-status').hidden;
+      empty=$('target').options.length===0&&current===before&&!$('target-search-status').hidden
+        &&$('target-search-status').textContent.includes('No matching targets.')
+        &&$('target-search-status').textContent.includes('Clear the search');
       $('target-search').value='';$('target-search').dispatchEvent(new Event('input'));
     }
-    const complete={...blank(a),decision:'ACCEPT',reviewer_initials:'AB',updated_at:now()};
-    const incomplete={...blank(b),decision:'CORRECT',corrected_labels_json:'"unfinished"',reviewer_initials:'',updated_at:now()};
-    decisions.set(KEY(a),complete);decisions.set(KEY(b),incomplete);dirty=true;
-    applySave({data:{state_revision:'ux-state',saved_decisions:[complete],saved_history:[],review_states:[]}},true);
-    const partial=dirty&&decisions.get(KEY(b)).decision==='CORRECT';
     records=oldRecords;decisions=oldDecisions;history=oldHistory;current=oldCurrent;packet=oldPacket;dirty=oldDirty;
     $('target').textContent='';render();persist();
-    return {find_target:search,empty_search_preserves_position:empty,consolidated_batches:consolidated,
-            partial_save_preserves_unsaved_work:partial};
+    return {find_target:search,empty_search_preserves_position:empty,consolidated_batches:consolidated};
   })()`);
+  uxTasks.partial_save_preserves_unsaved_work=partialSaveOutcome;
   const uxScore=Object.values(uxTasks).filter(Boolean).length;
   fs.writeFileSync(path.join(out,'ux-tasks.json'),JSON.stringify({score:uxScore,total:4,tasks:uxTasks},null,2));
   console.log('UX_TASK_SCORE '+uxScore+'/4');

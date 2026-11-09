@@ -20,6 +20,11 @@ Primary: number of successful tasks out of **4**, denominator fixed before edits
 Verify: `autoresearch/reviewer-ux-leg-2/verify.sh <evidence-dir>`.
 Higher is better. Fixtures are synthetic; no human decisions are submitted.
 Task assertions live in `tests/browser_review_page.mjs`; results in `ux-tasks.json`.
+Review refinement (PR #59): group scoring now verifies exact alpha/beta membership
+of every fixture target, empty-state scoring checks the visible explanatory text,
+and partial-save scoring uses the actual form → autosave → HTTP → rendered-warning
+path. The denominator is still four. Earlier result rows used weaker assertions;
+do not present the strengthening as an additional productivity gain.
 
 Guards: the inherited browser checks must all pass, axe must report zero
 violations when supplied, and relevant Python tests must pass. Test counts are
