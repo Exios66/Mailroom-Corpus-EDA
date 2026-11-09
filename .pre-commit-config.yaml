@@ -30,3 +30,9 @@ repos:
         language: system
         pass_filenames: false
         files: ^(src/mailroom_eda/labeling/(review_|registry\.py|fields\.yaml|spend\.py)|tests/(portal_browser_harness\.py|browser_review_portal\.mjs))
+      - id: quality-gate
+        name: quality gate before push (lint + harness + full tests)
+        entry: make check
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

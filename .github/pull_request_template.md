@@ -9,8 +9,11 @@
   launcher, packet exporter, campaign tracker or browser scripts (includes both
   browser suites and axe-core; install axe once with `make axe`).
 - [ ] New/changed behavior has a test in the same commit.
+- [ ] `make coverage` (or `make coverage-check`) was run when behavior changed;
+  the coverage tool is the local replacement for CI reporting (no GitHub Actions).
 - [ ] No paid OpenRouter call, real review submission, HF upload or credential
   is included in this PR.
+- [ ] No GitHub Actions workflow was added; the `make` gates are the CI substitute.
 - [ ] If a live-smoke fixture is stale, it was re-recorded in this PR (or the
   reason it is intentionally unchanged is written below).
 

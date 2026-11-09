@@ -22,6 +22,7 @@ review = ["openpyxl==3.1.5"]
 dev = [
     "pytest>=8.0",
     "ruff==0.17.4",
+    "coverage==7.17.2",
     "pre-commit>=4.0",
     "openpyxl==3.1.5",  # tests/test_labeling_review_packet.py imports it (same pin as review)
     "jupyter>=1.1",

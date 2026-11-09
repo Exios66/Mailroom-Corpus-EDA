@@ -24,10 +24,13 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
   (`Haiku-5.5`, `DeepSeek-V4.1-Flash`; optional `model:` prefix), never a provider route (`Anthropic/Haiku-5.5`,
   rejected). Human initials stay 2–6 capitals. The page pre-fills, validates and persists the identity; the
   contract and `docs/TESTING.md` document it. This is attribution, not authentication.
-- Quality gates: real `.github/workflows/ci.yml` (lint/undefined-name gate, full pytest on 3.12 and 3.13 with
-  the pinned `llm-mailroom` sibling, both browser suites with axe and artifact upload), `Makefile`
-  (`make check`, `make check-all`, `make browser`, `make axe`), `.pre-commit-config.yaml`, a PR template, and
-  `docs/TESTING.md`. `tests/test_ci_tooling.py` fails if the workflow regresses to a stub.
+- Quality gates (local only; no GitHub Actions): `Makefile` (`make check`, `make check-all`, `make browser`,
+  `make axe`, `make coverage`, `make coverage-check`), `.pre-commit-config.yaml` with pre-commit and pre-push
+  hooks, a PR template, and `docs/TESTING.md`. `scripts/ci/coverage_report.py` reports real line+branch
+  coverage (74.98% of `mailroom_eda.labeling` at this commit; review_page 74.0%, review_portal 75.4%) using a
+  pre-import workaround for the Python 3.13 + numpy tracer bug that breaks `coverage run`; a subprocess test
+  proves the report contains real covered statements. `tests/test_ci_tooling.py` fails if a workflow returns or
+  the local gates drift.
 - `parse_manifest` now initializes its continuation key (the undefined-name gate caught a first-line crash);
   `local_backup` carries `reviewer_kind` alongside each reviewer.
 

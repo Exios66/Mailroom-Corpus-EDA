@@ -112,8 +112,9 @@ blocked and empty candidates, resume, autosave and 409 conflicts, checkpoint
 success/failure and the local mirror, the campaign tracker, the launcher
 preflight and a real public-trial run, storage failure, responsive layout and
 axe-core WCAG A/AA. Evidence is written to `.cache/browser-evidence/` (never
-committed); CI uploads it when the browser job fails. See
-[`docs/TESTING.md`](TESTING.md) for the full gate.
+committed); keep its `results.json`/screenshots with the review. See
+[`docs/TESTING.md`](TESTING.md) for the full local gate (GitHub Actions are not
+used on this repository).
 
 ## Launch a labeling batch from the page (off by default)
 
@@ -306,7 +307,7 @@ reasoning and `max_tokens`) and refuses any CUAD or MAUD gold document, so nothi
 billed: contracts are SEC EDGAR EX-10 without CUAD labels, mergers are those MAUD does not answer. The test
 suite checks the stored documents against the same rule.
 
-### What runs in CI
+### What the local gate runs
 
 All offline, none spends anything:
 

@@ -1,22 +1,26 @@
 # Testing and pre-PR quality gates
 
-The repository is tested at four levels. Nothing here spends money, calls
-OpenRouter, or writes to the Hub; the paid labels path has its own tests and is
-never exercised by CI.
+The repository is tested with local gates. **GitHub Actions are intentionally
+not used**; `.github/workflows/` is empty, and the commands below are the CI
+substitute. Nothing here spends money, calls OpenRouter, or writes to the Hub;
+the paid labels path has its own tests and is never exercised by these gates.
 
 | Level | Command | What it proves |
 |:--|:--|:--|
 | Lint and syntax | `make lint` | no undefined names or invalid syntax anywhere (`ruff --select E9,F63,F7,F82`); every module byte-compiles |
 | Focused review tests | `make test-review` | the review page, portal, export, corporate exporter, checkpoint and recovery contracts |
 | Full offline suite | `make test` | every unit/integration test in `tests/` (live-Hub tests skip unless `MAILROOM_LIVE_HUB=1`) |
+| Harness build | `make harness` | the real browser harness packets, registry and campaign still load (no browser needed) |
 | Browser suites | `make check-all` | the shipped page in real headless Chrome, including the real portal server, receipts, journal, tracker, revision queue, launcher preflight and axe-core |
+| Coverage | `make coverage` | real line + branch coverage per `mailroom_eda` module from the unit tests |
 
 ## Before you open a PR
 
 ```bash
-make install            # .venv + test/lint/browser dependencies (once)
+make install            # .venv, dependencies, and both git hook types (once)
 make axe                # axe-core under .cache/axe (once; needs npm)
 make check-all          # lint + harness + full pytest + both browser suites
+make coverage           # per-module coverage table (JSON in .cache/quality/)
 ```
 
 `make check` is the fast gate (lint, harness build, full pytest). Run
@@ -24,15 +28,54 @@ make check-all          # lint + harness + full pytest + both browser suites
 campaign tracker changed. A PR that changes a behavior must carry its tests in
 the same commit.
 
-Enable the local hooks so a staged change is checked before it becomes a commit:
+`make install` installs both hook types with pre-commit:
+
+* **pre-commit** fixes lint on the staged files, runs the focused review tests,
+  and builds the browser harness when a review file changed.
+* **pre-push** runs `make check` (lint + harness + full pytest) before anything
+  leaves the machine.
+
+They are convenience gates, not a replacement for `make check-all`. To install
+them manually:
 
 ```bash
 .venv/bin/pre-commit install
+.venv/bin/pre-commit install --hook-type pre-push
 ```
 
-The hooks fix lint on the staged files, run the focused review tests, and build
-the browser harness when a review file changed. They are a convenience, not a
-replacement for `make check-all`.
+## Coverage: the real numbers, locally
+
+`coverage run -m pytest` is not usable on this Python 3.13 + numpy build: a lazy
+C extension imported under the tracer raises *"cannot load module more than once
+per process"*. `scripts/ci/coverage_report.py` works around it by pre-importing
+the dependency tree before starting coverage, then runs pytest through
+`coverage.Coverage` and writes a JSON report plus a per-module table.
+
+```bash
+make coverage                     # full suite; writes .cache/quality/coverage.json
+make coverage-review              # focused review-interface tests only
+make coverage-check               # full suite + fail under COVERAGE_MIN (default 70%)
+```
+
+The report covers `mailroom_eda.labeling` with branch coverage enabled. Baseline
+at the time this gate was added (full suite, 1062 tests):
+
+| module | coverage |
+|:--|--:|
+| `review_page.py` | 74.0% |
+| `review_portal.py` | 75.4% |
+| `launch.py` | 75.3% |
+| `checkpoint.py` | 77.8% |
+| `review_export.py` | 81.1% |
+| `review_packet.py` | 82.7% |
+| `local_backup.py` | 66.9% |
+| `spend.py` | 68.7% |
+| **all `mailroom_eda.labeling`** | **74.98%** (5,394/7,367 statements, 2,750 branches) |
+
+Coverage numbers move; rerun the command rather than trusting this table.
+`tests/test_coverage_report.py` runs the tool against a focused test and checks
+the JSON contains real covered statements, so a broken tracer cannot silently
+turn into a fake percentage.
 
 ## The two browser suites
 
@@ -65,7 +108,7 @@ This drives the **shipped** HTTP handler and page, not a hand-written mock:
 
 Evidence lands in `.cache/browser-evidence/real/` (ignored by git):
 `results.json`, one PNG per checkpoint, `axe.json` and the exported decisions.
-CI uploads it when the job fails.
+It stays on the machine; attach the paths or paste the result when reporting.
 
 ```bash
 make browser            # both suites
@@ -75,20 +118,24 @@ make browser-real       # the real portal suite only
 Chrome defaults to `google-chrome`/`chromium` when found, else the macOS app
 path; override with `CHROME=/path/to/chrome`. In containers set
 `CHROME_NO_SANDBOX=1`. Without `AXE_PATH` the axe step is skipped, but the
-other 32 steps still run; CI installs axe-core and runs it.
+other 32 steps still run; `make axe` installs it locally.
 
-## CI jobs
+## Why there is no CI job
 
-`.github/workflows/ci.yml` runs on every PR and on `main`:
+The host account cannot run GitHub Actions (jobs are refused with a billing
+lock), and the repository standard is now local gates. The old workflow stub was
+removed, `tests/test_ci_tooling.py` asserts that no workflow files return, and
+the same commands are available to every maintainer:
 
-| Job | Content |
-|:--|:--|
-| `lint` | whole-tree undefined-name/invalid-syntax gate + `compileall` |
-| `test` (3.12 and 3.13) | installs pinned dependencies, pins the sibling `llm-mailroom` at `9e8f30b2…`, full `pytest`, `pip check` |
-| `browser` | installs axe-core, runs the synthetic page smoke and the real portal E2E, uploads evidence on failure |
+```bash
+make check          # pre-commit / pre-push plus the fast pre-PR gate
+make check-all      # the full local equivalent of a CI run
+make coverage       # the coverage report a CI service would have produced
+```
 
-`tests/test_ci_tooling.py` fails if the workflow regresses to a stub or stops
-running either browser suite, so the gate cannot be quietly removed.
+A local run can still be recorded as evidence: `make check-all` leaves
+`results.json`, screenshots and `axe.json` under `.cache/browser-evidence/`;
+`make coverage` leaves the JSON under `.cache/quality/`. Both are git-ignored.
 
 ## Fixtures and live-Hub tests
 
@@ -112,16 +159,18 @@ network outage never masquerades as a code failure.
 A model integration identifies itself with its **short display identity**, for
 example `Haiku-5.5` or `DeepSeek-V4.1-Flash` — never the provider route
 (`Anthropic/Haiku-5.5`). Human reviewers keep 2–6 capital initials (`JB`).
-Every journal event records `reviewer_kind` as `human` or `model` (receipts keep the identity string);
-a model identity is attribution, not a human countersign, and downstream
-promotion gates must check that kind. The browser E2E uses `Haiku-5.5` so this
-path is exercised on every run.
+Every journal event records `reviewer_kind` as `human` or `model` (receipts keep
+the identity string); a model identity is attribution, not a human countersign,
+and downstream promotion gates must check that kind. The browser E2E uses
+`Haiku-5.5` so this path is exercised on every run.
 
 ## Troubleshooting
 
-* **No Chrome** — the Python suite and `make check` still pass; CI and
-  `make check-all` need Chrome. Set `CHROME` or install one.
+* **No Chrome** — the Python suite, `make check` and `make coverage` still pass;
+  `make check-all` needs Chrome. Set `CHROME` or install one.
 * **axe skipped** — run `make axe` (or set `AXE_PATH` to a vendored
   `axe.min.js`); the rest of the browser suite is independent.
 * **Sibling taxonomy tests skip** — clone `Exios66/llm-mailroom` at
-  `9e8f30b279e7626c056b03511f823105760f80d7`, the exact CI pin.
+  `9e8f30b279e7626c056b03511f823105760f80d7`, the pin the contract tests expect.
+* **Coverage import error** — use `make coverage`, not `coverage run -m pytest`;
+  the script's pre-import is the fix for the Python 3.13 + numpy tracer bug.
