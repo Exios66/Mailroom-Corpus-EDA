@@ -154,6 +154,20 @@ def test_verified_outputs_store_pass_level_votes():
         page.validate_return(p, r)
 
 
+def test_model_attribution_requires_a_real_run():
+    p = packet()  # this target carries no model_outputs at all
+    r = returned(p)
+    r["decisions"][0]["verified_outputs"] = [{"model": "m", "pass": 1}]
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    with pytest.raises(ValueError, match="did not make"):
+        page.validate_return(p, r)
+    r["decisions"][0]["verified_outputs"] = []
+    r["decisions"][0]["verified_models"] = ["m"]
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    with pytest.raises(ValueError, match="did not run"):
+        page.validate_return(p, r)
+
+
 def test_changed_correction_cannot_reuse_old_history():
     p = packet(); r = returned(p, "CORRECT")
     r["decisions"][0]["corrected_labels_json"] = '[]'

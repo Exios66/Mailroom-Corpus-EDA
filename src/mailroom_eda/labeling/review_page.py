@@ -167,9 +167,10 @@ def validate_return(packet: Mapping[str, Any], returned: Mapping[str, Any]) -> N
             if pair in seen_outputs:
                 raise ValueError(f"repeated verified output: {key}")
             seen_outputs.add(pair)
-            if known and pair not in known:
+            # No model outputs means no run to vouch for: votes for this target are refused.
+            if not known or pair not in known:
                 raise ValueError(f"verified_outputs names a run this target did not make: {key}")
-        if verified_models and known and not set(verified_models) <= {m for m, _ in known}:
+        if verified_models and not set(verified_models) <= {m for m, _ in known}:
             raise ValueError(f"verified_models names a model this target did not run: {key}")
         if not isinstance(d.get("manual_source_verification", False), bool):
             raise ValueError(f"manual_source_verification must be boolean: {key}")
