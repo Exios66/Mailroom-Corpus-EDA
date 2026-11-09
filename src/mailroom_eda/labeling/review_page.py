@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from .spend import INITIALS_RE
+from .spend import identity_kind
 from .registry import dojo_snapshot
 
 PACKET_SCHEMA = "mailroom-review-packet/v1"
@@ -176,8 +176,9 @@ def validate_return(packet: Mapping[str, Any], returned: Mapping[str, Any]) -> N
             raise ValueError(f"manual_source_verification must be boolean: {key}")
         if decision == "NOT_REVIEWED":
             continue
-        if not INITIALS_RE.fullmatch(d["reviewer_initials"]) or not _time(d.get("updated_at")):
-            raise ValueError(f"reviewer initials and a timestamp are required: {key}")
+        if not identity_kind(d["reviewer_initials"]) or not _time(d.get("updated_at")):
+            raise ValueError(f"reviewer initials (2-6 capitals) or a short model identity "
+                             f"(e.g. Haiku-5.5) and a timestamp are required: {key}")
         if decision == "ACCEPT" and source["candidate_status"] != "source_checks_passed" \
                 and d.get("manual_source_verification") is not True:
             raise ValueError(f"blocked candidate cannot be accepted without manual source verification: {key}")

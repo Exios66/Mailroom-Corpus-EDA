@@ -26,6 +26,29 @@ from typing import Any, Callable, Mapping
 from .registry import models_registry
 
 INITIALS_RE = re.compile(r"^[A-Z]{2,6}$")
+#: A model's short display identity, e.g. ``Haiku-5.5`` or ``DeepSeek-V4.1-Flash``.
+#: Provider-qualified routes (``Anthropic/Haiku-5.5``) are deliberately not accepted:
+#: the reviewer records the model that answered, not the transport that served it.
+MODEL_IDENTITY_RE = re.compile(
+    r"^(?:model:)?(?=[A-Za-z0-9._-]{2,64}$)(?=.*[A-Za-z])(?=.*[0-9._-])[A-Za-z0-9][A-Za-z0-9._-]*$")
+#: The optional explicit prefix an automated client may send with a model identity.
+IDENTITY_PREFIX = "model:"
+
+
+def identity_kind(value: str | None) -> str:
+    """Return ``"human"``, ``"model"`` or ``""`` for a reviewer identity field.
+
+    Human initials stay 2-6 capital letters. A model identity is the short display
+    slug (``Haiku-5.5``), optionally prefixed with ``model:``; it must contain a
+    letter and a version-ish digit or separator so a lowercase typo is not silently
+    accepted as an automated reviewer. The distinction is recorded in journals and
+    receipts as ``reviewer_kind``.
+    """
+    text = str(value or "")
+    if INITIALS_RE.fullmatch(text):
+        return "human"
+    return "model" if MODEL_IDENTITY_RE.fullmatch(text) else ""
+
 
 
 class SpendError(RuntimeError):

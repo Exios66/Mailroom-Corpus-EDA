@@ -96,7 +96,7 @@ The API key field is optional, is never stored (not even in this browser) and is
 <div id="launch-checklist"></div>
 <h3>Run status</h3>
 <div id="launch-status" class="muted">idle</div>
-<pre id="launch-log" aria-label="Run log"></pre>
+<pre id="launch-log" role="log" aria-label="Run log"></pre>
 </div>
 </div>
 </section>
@@ -449,7 +449,7 @@ function modelAnswers(record){
   const t=node('table'), head=node('tr');
   ['Verified','Model','Value','Status','Evidence','Use'].forEach((h)=>head.append(node('th',h))); t.append(head);
   outs.forEach((o)=>{
-    const tr=node('tr'), verified=node('td'), value=node('td'), status=node('td'), ev=node('td'), use=node('td');
+    const tr=node('tr'), votes=node('td'), value=node('td'), status=node('td'), ev=node('td'), use=node('td');
     if (o.model){
       const tick=node('input'); tick.type='checkbox'; tick.setAttribute('aria-label','Verified model '+o.model);
       tick.checked=isTicked(o);
@@ -462,7 +462,7 @@ function modelAnswers(record){
         d.updated_at=now();
         logChange(before, d);
       });
-      verified.append(tick);
+      votes.append(tick);
     }
     // One click turns a model's answer into the CORRECT replacement, so a reviewer who
     // verified the models' consensus does not have to retype it. Arrays keep the picker.
@@ -479,7 +479,7 @@ function modelAnswers(record){
       });
       use.append(b);
     }
-    tr.append(verified, node('td',String(o.model||'?')+(o.pass?' (pass '+o.pass+')':''),'k'), value, status, ev, use);
+    tr.append(votes, node('td',String(o.model||'?')+(o.pass?' (pass '+o.pass+')':''),'k'), value, status, ev, use);
     value.append(show(o.value, record.dojo_type));
     status.append(chip(label(o.status)||'—', o.status==='present'?'good':''));
     if (o.confidence!=null) status.append(node('span',' confidence '+o.confidence,'muted'));
@@ -887,10 +887,13 @@ $('checkpoint').addEventListener('click', ()=>operation(async()=>{
   if (!confirm('Checkpoint all locally confirmed fields to the private staging repo now?')) return;
   try {
     const result=await request('/api/checkpoint', {packet_id:packet.packet_id, confirm:true});
-    message((result.verified===true?'Private checkpoint verified at revision '+result.revision+'.'
+    // Keep the checkpoint outcome visible: refresh() announces the reloaded packet,
+    // which would otherwise overwrite the verified revision and mirror path at once.
+    const note=(result.verified===true?'Private checkpoint verified at revision '+result.revision+'.'
       :'Checkpoint not verified: '+(result.message||'server said not verified'))
-      +(result.local_backup?' Local mirror: '+result.local_backup+'.':''), result.verified===true);
+      +(result.local_backup?' Local mirror: '+result.local_backup+'.':'');
     await refresh();
+    message(note, result.verified===true);
   } catch (exc) { message('Checkpoint failed: '+exc.message+' — local confirmations remain pending.'); }
 }));
 $('discard').addEventListener('click', ()=>operation(async()=>{
@@ -954,6 +957,10 @@ $('batch-jump').addEventListener('change', ()=>{
   const gid=$('batch-jump').value;
   const idx=records.findIndex((r)=>String(r.batch||r.chunk||'')===gid && (decisions.get(KEY(r))||{}).decision==='NOT_REVIEWED');
   if (idx>=0){ current=idx; renderTarget(); controls(); }
+  else { // A fully decided batch stays put, but the click must never look ignored.
+    const total=records.filter((r)=>String(r.batch||r.chunk||'')===gid).length;
+    message('Batch "'+gid+'" has no pending targets ('+total+' of '+total+' decided); the open review did not move.', true);
+  }
   renderTargetStatus(); // batchProgress() runs inside renderTargetStatus
 });
 // Bulk "accept verified in batch": candidates the server already verified
