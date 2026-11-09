@@ -153,8 +153,11 @@ The API key field is optional, is never stored (not even in this browser) and is
 <label id="manual-wrap" hidden><input type="checkbox" id="manual-verify"> I verified this value against the full source myself</label>
 <label>Reviewer initials (2–6 uppercase letters) <input id="initials" pattern="[A-Z]{2,6}" maxlength="6" autocomplete="off"></label>
 <label>Reviewer notes <textarea id="notes"></textarea></label>
-<label>Complete replacement JSON (CORRECT only) <textarea id="correction" spellcheck="false" placeholder='A JSON value, not a patch'></textarea></label>
+<div id="correction-editor" hidden>
+<label>Corrected value <textarea id="correction" spellcheck="false" placeholder='Choose a model value, use the template, or edit the displayed value'></textarea></label>
+<button id="correction-template" type="button">Start from displayed value / template</button>
 <p id="correction-help" class="muted"></p>
+</div>
 </form>
 </section>
 </div>
@@ -308,7 +311,7 @@ function itemPicker(record){
     d.corrected_labels_json=JSON.stringify(kept);
     d.decision='CORRECT'; d.updated_at=now();
     $('correction').value=d.corrected_labels_json; $('decision').value='CORRECT';
-    $('decision-help').textContent=packet.decision_key?packet.decision_key.CORRECT||'':'';
+    correctionHelp();
     logChange(before, d);
     message('Built the replacement list from '+kept.length+' kept items; review it in the CORRECT field.', true);
   });
@@ -327,7 +330,7 @@ function logChange(before, after){
   const semantic=(d)=>{ const c={...d}; delete c.updated_at; return JSON.stringify(c); };
   if (semantic(before)===semantic(after)){ after.updated_at=before.updated_at; return; }
   history.push({at:now(), document_id:after.document_id, field:after.field, before:clone(before), after:clone(after)});
-  dirty=true; editSeq++; persist(); scheduleAutoSave(); renderJournal(); renderTargetStatus(); controls();
+  dirty=true; editSeq++; persist(); scheduleAutoSave(); renderJournal(); renderTargetStatus(); tracker(); controls();
 }
 function stateOf(record){
   const found=(packet.review_states||[]).find((s)=>s.document_id===record.document_id&&s.field===record.field);
@@ -471,6 +474,7 @@ function modelAnswers(record){
         d.decision='CORRECT'; d.corrected_labels_json=JSON.stringify(o.value); d.updated_at=now();
         logChange(before, d);
         $('decision').value='CORRECT'; $('correction').value=d.corrected_labels_json;
+        correctionHelp();
         message('CORRECT filled from '+o.model+'. Verify it against the source, tick every model that agrees, then Save.', true);
       });
       use.append(b);
@@ -523,10 +527,24 @@ function renderTarget(){
   const blocked=record.candidate_status!=='source_checks_passed';
   $('manual-wrap').hidden=!blocked;
   $('manual-verify').checked=!!d.manual_source_verification;
-  $('decision-help').textContent=packet.decision_key?packet.decision_key[d.decision]||'':'';
-  $('correction-help').textContent='Required only for CORRECT. Native JSON type: '
-    +(record.correction_type==='array'?'array of strings':record.correction_type==='number'?'number':record.correction_type||'string');
+  correctionHelp();
+  $('correction-help').textContent='Native JSON type: '
+    +(record.correction_type==='array'?'array of strings':record.correction_type==='number'?'number':record.correction_type||'string')
+    +'. The editor is prefilled; keep the whole value valid JSON. Unfinished drafts stay local and are never approved.';
   renderTargetStatus();
+}
+function prefillCorrection(d,record){
+  if(d.corrected_labels_json.trim()) return;
+  if(record.candidate_labels!==undefined&&record.candidate_labels!==null)
+    d.corrected_labels_json=JSON.stringify(record.candidate_labels,null,2);
+}
+function correctionHelp(){
+  const d=decision(),correct=d.decision==='CORRECT';
+  $('correction-editor').hidden=!correct;
+  $('decision-help').textContent=correct
+    ?'Edit the prefilled value below, or choose “Use value” on a model answer. Existing corrections are preserved.'
+    :d.decision==='ACCEPT'?'Approve the displayed value as it stands. No replacement JSON is needed.'
+    :(packet.decision_key?packet.decision_key[d.decision]||'':'');
 }
 /** Refresh the current target's status and batch decision counts. */
 function renderTargetStatus(){
@@ -619,13 +637,31 @@ function controls(){
     (packet.review_states||[]).some((s)=>['human_confirmed','checkpointed'].includes(s.status)));
   $('discard').hidden=!staleDraft;
 }
+function liveTaskCount(task){
+  const saved=new Map((packet.saved_decisions||[]).map((d)=>[d.document_id+'\n'+d.field,d]));
+  const pool=records.filter((r)=>(!task.task||r.task===task.task)&&(!task.set||r.set===task.set));
+  if(!pool.length) return null; // no loaded records for this task: keep the server snapshot
+  return pool.filter((r)=>saved.has(KEY(r))&&saved.get(KEY(r)).decision!=='NOT_REVIEWED').length;
+}
+function liveProgress(){
+  const saved=new Map((packet.saved_decisions||[]).map((d)=>[d.document_id+'\n'+d.field,d]));
+  let reviewed=0,drafts=0;
+  records.forEach((r)=>{
+    const prior=saved.get(KEY(r)),local=decisions.get(KEY(r));
+    if(prior&&prior.decision!=='NOT_REVIEWED') reviewed++;
+    if(local&&local.decision!=='NOT_REVIEWED'&&fieldOutcome(r).startsWith('Draft')) drafts++;
+  });
+  return {reviewed,drafts,remaining:records.length-reviewed};
+}
 function tracker(){
-  const t=packet.tracker||{};
-  $('summary').textContent='Campaign '+(t.name||'?')+' — confirmed fields '
-    +(t.human_confirmed_fields==null?'?':t.human_confirmed_fields)+', checkpointed '
-    +(t.checkpointed_fields==null?'?':t.checkpointed_fields)+', remaining '
-    +(t.remaining_loaded_fields==null?'?':t.remaining_loaded_fields)+'. '
-    +((t.tasks||[]).length)+' tracked tasks. Field review never approves a task by itself.';
+  const t=packet.tracker||{},live=liveProgress();
+  $('summary').textContent='Campaign '+(t.name||'?')+' — live: '+live.reviewed+'/'+records.length+' saved reviews'
+    +(live.drafts?' · '+live.drafts+' drafts awaiting save':'')+' · '
+    +(t.checkpointed_fields==null?'?':t.checkpointed_fields)+' checkpointed · '
+    +live.remaining+' remaining. Server snapshot: confirmed '
+    +(t.human_confirmed_fields==null?'?':t.human_confirmed_fields)+', remaining '
+    +(t.remaining_loaded_fields==null?'?':t.remaining_loaded_fields)+'. '+((t.tasks||[]).length)
+    +' tracked tasks. Field review never approves a task by itself.';
   const filter=$('task-filter').value, done=['approved','skipped'];
   const rows=(t.tasks||[]).filter((x)=>filter==='all'||done.includes(x.status)===(filter==='completed'));
   const table=node('table'), head=node('tr');
@@ -633,7 +669,7 @@ function tracker(){
   table.append(head);
   rows.forEach((x)=>{ const tr=node('tr');
     [x.id||'', x.task, x.set, x.status,
-     x.reviewed==null?'—':x.reviewed+'/'+(x.documents_total==null?'?':x.documents_total),
+     x.documents_total==null?(x.reviewed==null?'—':x.reviewed):(liveTaskCount(x)==null?(x.reviewed==null?'—':x.reviewed):liveTaskCount(x))+'/'+x.documents_total,
      x.remaining==null?(x.inventory_known===false?'?':'—'):String(x.remaining), x.blocker||'']
       .forEach((v)=>tr.append(node('td',v))); table.append(tr); });
   const tasks=$('tasks'); tasks.textContent=''; tasks.append(table);
@@ -986,7 +1022,10 @@ document.addEventListener('keydown', (e)=>{
   decision()[prop]=$(id).value;
   decision().updated_at=now();
   if (id==='initials'){ try { localStorage.setItem(storageKey+'/initials', $(id).value); } catch (exc) {} } // sticky initials across targets
-  if (id==='decision') $('decision-help').textContent=packet.decision_key?packet.decision_key[decision().decision]||'':'';
+  if (id==='decision'){
+    if(decision().decision==='CORRECT') prefillCorrection(decision(),records[current]);
+    $('correction').value=decision().corrected_labels_json;correctionHelp();
+  }
   logChange(before, decision());
 }));
 $('manual-verify').addEventListener('change', ()=>{
@@ -997,9 +1036,23 @@ $('manual-verify').addEventListener('change', ()=>{
 });
 document.querySelectorAll('[data-outcome]').forEach((button)=>button.addEventListener('click',()=>{
   const before=clone(decision());decision().decision=button.dataset.outcome;decision().updated_at=now();
+  if(button.dataset.outcome==='CORRECT') prefillCorrection(decision(),records[current]);
   logChange(before,decision());renderTarget();controls();
-  message(button.dataset.outcome==='CORRECT'?'Enter the complete replacement JSON or use a model value, then verify it.':'Outcome selected for this field only. Valid decisions autosave; initials and source verification rules still apply.',true);
+  message(button.dataset.outcome==='CORRECT'?'Review the prefilled value and edit only what needs changing. You can also choose a model answer.':'Outcome selected for this field only. Valid decisions autosave; initials and source verification rules still apply.',true);
 }));
+$('correction-template').addEventListener('click',()=>{
+  const d=decision();
+  if(d.corrected_labels_json.trim()){
+    message('Your current correction is preserved. Edit it directly; clear it first if you want to start over.');return;
+  }
+  const before=clone(d),r=records[current];prefillCorrection(d,r);
+  if(!d.corrected_labels_json){
+    $('correction').value=JSON.stringify(r.correction_type==='array'?['REPLACE WITH VERIFIED ITEM']:r.correction_type==='number'?'REPLACE WITH VERIFIED NUMBER':'REPLACE WITH VERIFIED VALUE',null,2);
+    message('Example only — not saved or approved. Type the verified value in place of the example; for numbers, enter a JSON number without quotes.');return;
+  }
+  d.updated_at=now();$('correction').value=d.corrected_labels_json;logChange(before,d);
+  message('Starting value inserted. Replace any template text or example number with the verified value before approving.');
+});
 
 // ---- Launch panel (only when the server runs with --enable-launch) ----
 let launchOpts=null, launchPre=null, launchPoll=null, launchKeyUsed=false, launchWatching=false;
@@ -1156,6 +1209,7 @@ window.onbeforeunload=(event)=>{ if (dirty||staleDraft){ event.preventDefault();
   await launchInit();
   let saved=null; try { saved=localStorage.getItem(tabKey); } catch (exc) {}
   showTab(TABS.includes(saved)?saved:'review');
+  document.body.dataset.reviewReady='1';
 })();
 </script>
 </body>

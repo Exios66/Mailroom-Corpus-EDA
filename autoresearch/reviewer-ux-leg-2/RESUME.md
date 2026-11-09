@@ -80,3 +80,41 @@ Do not switch the live review server to experimental backend code or restart it
 while the human may have unsaved work. Source HTML is read dynamically, so a new
 page load in this checkout can see current HTML even without a process restart.
 For strict deployment separation, run future experiments from a separate worktree.
+
+## Correction ergonomics and live tracker (follow-up 5)
+
+- **No hand-written JSON for approval.** "Approve displayed value" needs no
+  replacement text at all. "Approve a correction" prefills the displayed candidate
+  so only the wrong part is edited. A model value can still be inserted with one
+  click. Only when no candidate exists does the editor offer an explicit example
+  template that is NOT stored as a decision and cannot autosave until replaced
+  with a real value (numbers must be JSON numbers, not template text).
+- Saved corrections are never overwritten by prefill: an existing
+  `corrected_labels_json` is preserved when switching to CORRECT.
+- **Campaign tracker is live.** Summary shows saved reviews / total, local drafts
+  awaiting save, checkpointed count and remaining from the current session;
+  per-task reviewed counts use loaded records when a task maps to them, falling
+  back to the server snapshot otherwise. Counters refresh on every decision and
+  after every applied save.
+- Verification: 4/4 fixed tasks under the strengthened assertions; 39 browser
+  checks incl. CORRECT-prefill/no-JSON and live-tracker regressions; 48 focused
+  Python tests; axe zero violations (3 manual-review items).
+- Correction help copy now describes the prefilled editor instead of the old
+  "required only for CORRECT" wording.
+
+## Parent review fixes (round 6)
+
+- quality_probe: provider setup errors print cleanly (exit 1); billed usage from
+  failed/truncated calls counts against the cap.
+- grade_corporate returns nonzero when real violations remain.
+- verify_all counts pytest errors and empty summaries as failures, and records the
+  axe dimension before returning a failing exit status.
+- local_backup: later snapshots of the same document id are allowed (checkpoints,
+  HF retries); different documents with identical content are still refused.
+- review_portal: a failed local mirror is reported in the receipt and never blocks
+  the private staging upload.
+- Corporate batch test now uses a synthetic fixture (no private staged data).
+- Rubric comment labels the two correspondence themes fixture-recorded; the 3.3r
+  run log points at the archived packet beside it.
+- Evidence: 39 browser checks, axe clean, 97/97 portal+launch, 201/201 labeling,
+  48 focused Python tests.

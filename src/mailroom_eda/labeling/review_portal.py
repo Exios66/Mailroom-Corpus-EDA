@@ -628,10 +628,14 @@ class ReviewPortal:
             latest = {(e["document_id"], e["field"]): e for e in _lines(self.journal)}
             event_ids = [latest[k]["event_id"] for k in sorted(pending)]
             state_revision = self._state_revision()
-            mirror = None
+            mirror, mirror_error = None, ""
             if self.local_backup is not None:
                 # Mirror the reviewed work locally first, so it survives an HF outage.
-                mirror = local_backup.backup(self.labels_root, self.local_backup, out=self.out)["path"]
+                # Best effort: a mirror problem must not block the private staging upload.
+                try:
+                    mirror = local_backup.backup(self.labels_root, self.local_backup, out=self.out)["path"]
+                except (ValueError, KeyError, OSError) as exc:
+                    mirror_error = f"{type(exc).__name__}: {str(exc)[:200]}"
             try:
                 api = api or checkpoint.hf_interface.get_hf_api()
                 result = checkpoint.checkpoint(self.labels_root, registry.CAMPAIGNS_DIR / self.campaign / "approved.yaml",
@@ -647,10 +651,11 @@ class ReviewPortal:
                 _append(self.checkpoints, [{"verified": False, "server_received_at": _now(),
                                            "error_type": type(exc).__name__, "event_ids": event_ids}])
                 return {"verified": False, "pending_fields": len(event_ids), "local_backup": mirror,
+                        "local_backup_error": mirror_error,
                         "message": "private checkpoint failed; local confirmations remain pending"}
             receipt = {"verified": True, "revision": revision, "repo": result["repo"],
                        "files": result["files"], "event_ids": event_ids, "server_received_at": _now(),
-                       "local_backup": mirror}
+                       "local_backup": mirror, "local_backup_error": mirror_error}
             _append(self.checkpoints, [receipt])
             return receipt
 

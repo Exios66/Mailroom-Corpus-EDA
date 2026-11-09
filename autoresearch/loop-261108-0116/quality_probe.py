@@ -115,7 +115,11 @@ def main() -> int:
                     doc_ids.append(r["document_id"])
         rows = {d["document_id"]: d for d in (json.loads(l) for l in open(args.state, encoding="utf-8"))}
 
-    backend = providers.Backend.from_env(args.provider)
+    try:
+        backend = providers.Backend.from_env(args.provider)
+    except providers.ProviderError as exc:
+        print(f"provider setup failed: {exc}", file=sys.stderr)
+        return 1
     # max_tokens per model, from the recorded insurance-claim fixture (the probe grades
     # the same builder the chunks use; a smaller ceiling would truncate long lists).
     fixture_manifest = REPO / "tests/fixtures/live_smoke/insurance_claim/manifest.json"
@@ -141,6 +145,7 @@ def main() -> int:
                                             reasoning="low",
                                             max_tokens=int(per_model.get(model, 8192)))
             except providers.ProviderError as exc:  # e.g. output truncated (finish_reason=length)
+                spent += float((exc.usage or {}).get("cost_usd") or 0.0)  # billed even when it failed
                 report["answers"].append({"document_id": doc_id, "model": model,
                                           "error": "provider: " + str(exc)[:160]})
                 bad_calls += 1

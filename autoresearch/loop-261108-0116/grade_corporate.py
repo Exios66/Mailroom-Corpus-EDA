@@ -101,7 +101,7 @@ def self_check() -> int:
     return fail
 
 
-def grade() -> None:
+def grade() -> int:
     report = json.loads(REPORT.read_text(encoding="utf-8"))
     docs = {r["doc_file"].removeprefix("docs/"):
             norm((DOCS / r["doc_file"].removeprefix("docs/")).read_text(encoding="utf-8"))
@@ -132,6 +132,7 @@ def grade() -> None:
         print("(parsed captured: run the gold-agreement pass on a future report)")
     else:
         print("(no parsed answers in this report — quoting oracle only; that was the plan)")
+    return 1 if verdicts["real"] + verdicts["date_real"] else 0
 
 
 def main() -> int:

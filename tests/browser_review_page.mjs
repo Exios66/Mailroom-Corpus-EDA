@@ -105,6 +105,7 @@ try {
   assert.match(await evaluate(`$('tasks').textContent`),/approved/);
   assert.doesNotMatch(await evaluate(`$('tasks').textContent`),/pending/);
   await screenshot('01-source-tracker-highlight');
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
   await input('decision','ACCEPT');await input('initials','AB');await input('notes','Synthetic source verified.');
   assert.equal(await evaluate(`$('checkpoint').disabled`),true);
   await evaluate(`$('save').click()`);await waitFor(`!busy && !dirty`);
@@ -117,7 +118,8 @@ try {
     'reselecting ACCEPT does not change history, timestamp or dirty state');
   check('unchanged decision produces no journal entry');
   await screenshot('02-saved-server-confirmed');
-  await call('Page.reload');await waitFor(`document.getElementById('save') && !$('save').disabled`);
+  await evaluate(`delete document.body.dataset.reviewReady`); // old document must not satisfy the reload wait
+  await call('Page.reload');await waitFor(`document.body.dataset.reviewReady==='1'`);
   assert.equal(await evaluate(`$('target').value`),'1','reopening advances from the saved target to the next pending target');
   assert.match(await evaluate(`$('review-progress-text').textContent`),/1 \/ 2 targets reviewed and saved/);
   assert.equal(await evaluate(`$('review-progress').value`),1);
@@ -441,6 +443,21 @@ try {
   })()`);
   assert.ok(pickerSafe,'reopening an edited array never offers a picker that can revert saved text');
   check('unreconciled saved array correction cannot be overwritten by picker');
+  // Approving a correction no longer demands hand-written JSON: the displayed value is
+  // prefilled, and plain approval keeps the editor out of the way entirely.
+  await evaluate(`showTab('review');$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  await evaluate(`document.querySelector('[data-outcome="CORRECT"]').click()`);
+  assert.equal(JSON.parse(await evaluate(`$('correction').value`)),'Example Corporation','CORRECT prefills the displayed value');
+  assert.equal(await evaluate(`$('correction-editor').hidden`),false);
+  await evaluate(`document.querySelector('[data-outcome="ACCEPT"]').click()`);
+  assert.equal(await evaluate(`$('correction-editor').hidden`),true,'ACCEPT needs no replacement JSON');
+  assert.match(await evaluate(`$('decision-help').textContent`),/No replacement JSON is needed/);
+  check('CORRECT prefills the displayed value; ACCEPT needs no JSON');
+  // Campaign tracker counters follow the current session instead of only the server snapshot.
+  await input('initials','AB');
+  assert.match(await evaluate(`$('summary').textContent`),/live: .*saved reviews.*drafts awaiting save/,
+    'tracker reflects live review state');
+  check('campaign tracker updates live with review progress');
   // Exercise a real partial autosave through the form and HTTP route, not applySave directly.
   failSave=false;
   await evaluate(`showTab('review');autosaveEnabled=false;$('target').value='1';$('target').dispatchEvent(new Event('change'));`);

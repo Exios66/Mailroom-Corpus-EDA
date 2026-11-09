@@ -12,13 +12,17 @@ from mailroom_eda.labeling import review_corporate
 from mailroom_eda.labeling.review_packet import _csv
 
 
-def test_batch_ids_uses_draft_order_and_only_resolved_labels() -> None:
-    root = Path(__file__).resolve().parents[1]
-    ids = review_corporate.batch_ids(root, "batch_A")
+def test_batch_ids_uses_draft_order_and_only_resolved_labels(tmp_path: Path) -> None:
+    package = tmp_path / review_corporate.PACKAGE
+    drafts = package / "drafts"
+    drafts.mkdir(parents=True)
+    (package / "corporate-labels.jsonl").write_text(
+        '{"kl3m_identifier": "s3://first"}\n{"kl3m_identifier": "s3://second"}\n', encoding="utf-8")
+    (drafts / "batch_A.drafts.jsonl").write_text(
+        '{"kl3m_identifier": "s3://second"}\n{"kl3m_identifier": "s3://unresolved"}\n'
+        '{"kl3m_identifier": "s3://first"}\n', encoding="utf-8")
 
-    assert len(ids) == 22
-    assert len(set(ids)) == len(ids)
-    assert all(isinstance(source_id, str) and source_id.startswith("s3://") for source_id in ids)
+    assert review_corporate.batch_ids(tmp_path, "batch_A") == ["s3://second", "s3://first"]
 
 
 def test_oversized_document_text_becomes_a_spreadsheet_pointer() -> None:
