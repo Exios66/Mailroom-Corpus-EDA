@@ -77,15 +77,18 @@ def reviewed_documents(packets: Sequence[Path], decisions: Sequence[dict]) -> li
     return sorted(documents.values(), key=lambda d: d["document_id"])
 
 
-def prior_reviewed(root: Path) -> dict[str, str]:
-    """document_sha256 -> the earlier backup directory that reviewed it."""
-    prior: dict[str, str] = {}
+def prior_reviewed(root: Path) -> dict[str, dict[str, str]]:
+    """content sha -> {document_id: the earlier backup directory that reviewed it}.
+
+    The document id separates a later snapshot of the same review (allowed) from an
+    independent review of a different document whose content happens to match (refused)."""
+    prior: dict[str, dict[str, str]] = {}
     if not root.exists():
         return prior
     for manifest in sorted(root.rglob(MANIFEST)):
         data = json.loads(manifest.read_text(encoding="utf-8"))
         for doc in data.get("reviewed_documents", []):
-            prior.setdefault(doc["document_sha256"], str(manifest.parent))
+            prior.setdefault(doc["document_sha256"], {}).setdefault(doc["document_id"], str(manifest.parent))
     return prior
 
 
@@ -105,7 +108,8 @@ def backup(labels_root: Path, dest_root: Path, *, out: Path | None = None,
     reviewed = reviewed_documents(packets, decisions)
 
     prior = prior_reviewed(dest_root)
-    duplicates = sorted({doc["document_id"] for doc in reviewed if doc["document_sha256"] in prior})
+    duplicates = sorted({doc["document_id"] for doc in reviewed
+                         if any(other != doc["document_id"] for other in prior.get(doc["document_sha256"], {}))})
     if duplicates and not allow_re_review:
         raise ValueError(
             "already reviewed in an earlier backup: " + ", ".join(duplicates)

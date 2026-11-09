@@ -105,6 +105,7 @@ try {
   assert.match(await evaluate(`$('tasks').textContent`),/approved/);
   assert.doesNotMatch(await evaluate(`$('tasks').textContent`),/pending/);
   await screenshot('01-source-tracker-highlight');
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
   await input('decision','ACCEPT');await input('initials','AB');await input('notes','Synthetic source verified.');
   assert.equal(await evaluate(`$('checkpoint').disabled`),true);
   await evaluate(`$('save').click()`);await waitFor(`!busy && !dirty`);
@@ -117,9 +118,15 @@ try {
     'reselecting ACCEPT does not change history, timestamp or dirty state');
   check('unchanged decision produces no journal entry');
   await screenshot('02-saved-server-confirmed');
-  await call('Page.reload');await waitFor(`document.getElementById('save') && !$('save').disabled`);
+  await evaluate(`delete document.body.dataset.reviewReady`); // old document must not satisfy the reload wait
+  await call('Page.reload');await waitFor(`document.body.dataset.reviewReady==='1'`);
+  assert.equal(await evaluate(`$('target').value`),'1','reopening advances from the saved target to the next pending target');
+  assert.match(await evaluate(`$('review-progress-text').textContent`),/1 \/ 2 targets reviewed and saved/);
+  assert.equal(await evaluate(`$('review-progress').value`),1);
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
   assert.equal(await evaluate(`$('decision').value`),'ACCEPT');
   assert.equal(await evaluate(`history.length`),3,'recovered history must not be fabricated');
+  check('saved progress and next-pending resume after page reload');
   await evaluate(`$('export').click()`);
   await screenshot('03-reloaded-receipt');
   await evaluate(`window.confirm=()=>true;$('checkpoint').click()`);await waitFor(`!busy && packet.state_revision==='checkpoint-1'`);
@@ -313,6 +320,26 @@ try {
   assert.match(await evaluate(`$('target-status').textContent`),/auto-saved/);
   await evaluate(`autosaveEnabled=false`);
   check('autosave persists complete decisions without Save');
+  // A reviewer can type while a manual Save is in flight; the response must not erase it.
+  await evaluate(`showTab('review');window.originalRequest=request;window.releaseReviewSave=null;
+    request=async(url,body)=>{const snapshot=body?clone(body):body;
+      if(url==='/api/reviews') await new Promise(resolve=>window.releaseReviewSave=resolve);
+      return window.originalRequest(url,snapshot);};`);
+  await input('notes','Submitted before response.');
+  await evaluate(`$('save').click()`);
+  await waitFor(`!!window.releaseReviewSave`);
+  await input('notes','Newer edit while saving.');
+  await evaluate(`window.releaseReviewSave()`);
+  await waitFor(`!busy`);
+  assert.equal(await evaluate(`$('notes').value`),'Newer edit while saving.');
+  assert.equal(await evaluate(`decision().reviewer_notes`),'Newer edit while saving.');
+  assert.equal(await evaluate(`dirty`),true,'newer work remains unsaved, never falsely durable');
+  assert.match(await evaluate(`$('review-progress-text').textContent`),/1 local drafts/,
+    'progress distinguishes an unsaved edit from the saved review count');
+  assert.match(await evaluate(`$('journal').textContent`),/Updated Reviewer notes/,
+    'the journal describes the actual edit rather than an unexplained ACCEPT to ACCEPT');
+  await evaluate(`request=window.originalRequest`);
+  check('manual save response preserves newer edits');
   // Launch panel: shown because the server says launch is enabled.
   await waitFor(`!$('launch-panel').hidden && $('launch-target').options.length===3`);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#launch-target optgroup')].map(g=>g.label)`),['Campaign','Public trial']);
@@ -360,6 +387,144 @@ try {
   assert.ok(launch.reloads>readsBefore,'a finished run reloads the batches');
   assert.equal(await evaluate(`JSON.stringify([localStorage,sessionStorage]).includes('BROWSER-SECRET')`),false);
   await screenshot('08-launch-finished');
+  const resumeCases=await evaluate(`(()=>{
+    const oldRecords=records,oldDecisions=decisions,oldPacket=packet,oldCurrent=current;
+    const a={...records[0],document_id:'RESUME-A'},b={...records[1],document_id:'RESUME-B'};
+    const done={...blank(a),decision:'ACCEPT',reviewer_initials:'AB',updated_at:now()};
+    records=[b,a];decisions=new Map([[KEY(a),done],[KEY(b),blank(b)]]);
+    packet={...packet,saved_decisions:[done]};
+    resumeReview({document_id:b.document_id,field:b.field});
+    const reordered=current===0;
+    resumeReview({document_id:a.document_id,field:a.field});
+    const skipsSaved=current===0;
+    decisions.set(KEY(a),{...done,decision:'CORRECT',corrected_labels_json:'"unfinished"'});
+    resumeReview({document_id:a.document_id,field:a.field});
+    const keepsDraft=current===1;
+    decisions.set(KEY(a),done);
+    packet.saved_decisions.push({...blank(b),decision:'REJECT',reviewer_initials:'AB',updated_at:now()});
+    decisions.set(KEY(b),packet.saved_decisions[1]);
+    resumeReview({document_id:a.document_id,field:a.field});
+    const allReviewed=current===1;
+    records=oldRecords;decisions=oldDecisions;packet=oldPacket;current=oldCurrent;render();persist();
+    return {reordered,skipsSaved,keepsDraft,allReviewed};
+  })()`);
+  assert.deepEqual(resumeCases,{reordered:true,skipsSaved:true,keepsDraft:true,allReviewed:true});
+  check('resume identities survive reorder, unfinished drafts and completed queues');
+  const granular=await evaluate(`(()=>{
+    const oldRecords=records,oldDecisions=decisions,oldPacket=packet,oldCurrent=current,oldHistory=history,oldDirty=dirty;
+    const a={...records[1],document_id:'FIELD-REVIEW',field:'entity_name'};
+    const b={...a,field:'jurisdiction',candidate_labels:'Delaware'};
+    records=[a,b];packet={...packet,saved_decisions:[],review_states:[]};
+    decisions=new Map(records.map(r=>[KEY(r),blank(r)]));history=[];current=0;render();
+    document.querySelector('[data-outcome="ACCEPT"]').click();
+    const isolated=decisions.get(KEY(a)).decision==='ACCEPT'&&decisions.get(KEY(b)).decision==='NOT_REVIEWED';
+    const draft=$('field-outcome').textContent.includes('Draft — Approved (not saved)');
+    $('document-fields').querySelectorAll('button')[1].click();
+    document.querySelector('[data-outcome="NEEDS_SOURCE"]').click();
+    const deferred=current===1&&$('field-outcome').textContent.includes('Deferred');
+    packet.saved_decisions=[clone(decisions.get(KEY(a)))];
+    const saved=fieldOutcome(a)==='Approved — saved locally';
+    packet.review_states=[{document_id:a.document_id,field:a.field,status:'reviewed_needs_schema'}];
+    const blocked=fieldOutcome(a).includes('schema approval still required');
+    records=oldRecords;decisions=oldDecisions;packet=oldPacket;current=oldCurrent;history=oldHistory;dirty=oldDirty;
+    render();persist();return {isolated,draft,deferred,saved,blocked};
+  })()`);
+  assert.deepEqual(granular,{isolated:true,draft:true,deferred:true,saved:true,blocked:true});
+  check('granular field outcomes distinguish drafts, saved approval and schema blockers');
+  const pickerSafe=await evaluate(`(()=>{
+    const oldCurrent=current,oldState=itemState,oldDecisions=decisions;
+    decisions=new Map(decisions);current=0;itemState=new Map();
+    const d={...blank(records[0]),decision:'CORRECT',corrected_labels_json:'["previously edited entity"]'};
+    decisions.set(KEY(records[0]),d);renderTarget();
+    const safe=$('item-picker').textContent.includes('Saved correction preserved')
+      &&$('item-picker').querySelectorAll('button,input').length===0
+      &&$('correction').value===d.corrected_labels_json;
+    decisions=oldDecisions;itemState=oldState;current=oldCurrent;render();persist();return safe;
+  })()`);
+  assert.ok(pickerSafe,'reopening an edited array never offers a picker that can revert saved text');
+  check('unreconciled saved array correction cannot be overwritten by picker');
+  // Approving a correction no longer demands hand-written JSON: the displayed value is
+  // prefilled, and plain approval keeps the editor out of the way entirely.
+  await evaluate(`showTab('review');$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  await evaluate(`document.querySelector('[data-outcome="CORRECT"]').click()`);
+  assert.equal(JSON.parse(await evaluate(`$('correction').value`)),'Example Corporation','CORRECT prefills the displayed value');
+  assert.equal(await evaluate(`$('correction-editor').hidden`),false);
+  await evaluate(`document.querySelector('[data-outcome="ACCEPT"]').click()`);
+  assert.equal(await evaluate(`$('correction-editor').hidden`),true,'ACCEPT needs no replacement JSON');
+  assert.match(await evaluate(`$('decision-help').textContent`),/No replacement JSON is needed/);
+  check('CORRECT prefills the displayed value; ACCEPT needs no JSON');
+  // Campaign tracker counters follow the current session instead of only the server snapshot.
+  await input('initials','AB');
+  assert.match(await evaluate(`$('summary').textContent`),/live: .*saved reviews.*drafts awaiting save/,
+    'tracker reflects live review state');
+  check('campaign tracker updates live with review progress');
+  // Exercise a real partial autosave through the form and HTTP route, not applySave directly.
+  failSave=false;
+  await evaluate(`showTab('review');autosaveEnabled=false;$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  await input('decision','CORRECT');await input('correction','not JSON yet');await input('initials','');
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));autosaveEnabled=true;`);
+  await input('decision','ACCEPT');await input('initials','AB');
+  const partialPostsBefore=posts.length;
+  await evaluate(`message('Waiting for partial autosave')`);
+  await input('notes','Partial autosave form exercise.');
+  await waitFor(`$('message').textContent.includes('Auto-saved at')&& !busy`);
+  assert.ok(posts.length>partialPostsBefore);
+  assert.ok(!posts.at(-1).decisions.some(d=>d.document_id==='SYNTH-002'&&d.decision==='CORRECT'),
+    'invalid correction is excluded from the posted decisions');
+  await evaluate(`autosaveEnabled=false;$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  const partialSaveOutcome=await evaluate(`dirty&&$('decision').value==='CORRECT'&&$('correction').value==='not JSON yet'
+    &&$('target-status').textContent.includes('autosaving')&&$('review-progress-text').textContent.includes('1 local drafts')
+    &&$('checkpoint').disabled&&!$('review-progress-text').hidden`);
+  assert.equal(partialSaveOutcome,true,'the real save path preserves the draft and visibly warns that it is unsaved');
+  // Fixed leg-2 task score; unlike checks.length this denominator never grows with features.
+  const uxTasks=await evaluate(`(()=>{
+    const oldRecords=records, oldDecisions=decisions, oldHistory=history, oldCurrent=current;
+    const oldPacket=packet, oldDirty=dirty;
+    const a={...records[0],document_id:'UX-A',field:'sender',batch:'alpha',chunk:''};
+    const b={...records[0],document_id:'UX-B',field:'intent',batch:'beta',chunk:''};
+    const c={...records[0],document_id:'UX-C',field:'recipient',batch:'alpha',chunk:''};
+    records=[a,b,c]; decisions=new Map(records.map(r=>[KEY(r),blank(r)])); history=[];current=0;
+    $('target').textContent='';render();
+    const groups=[...$('target').querySelectorAll('optgroup')].map(g=>({id:g.dataset.gid,values:[...g.querySelectorAll('option')].map(o=>o.value)}));
+    const consolidated=JSON.stringify(groups)===JSON.stringify([{id:'alpha',values:['0','2']},{id:'beta',values:['1']}]);
+    let search=false, empty=false;
+    if ($('target-search')){
+      $('target-search').value='ux-b intent';$('target-search').dispatchEvent(new Event('input'));
+      search=[...$('target').options].length===1&&$('target').options[0].value==='1';
+      const before=current;
+      $('target-search').value='no-such-review-target';$('target-search').dispatchEvent(new Event('input'));
+      empty=$('target').options.length===0&&current===before&&!$('target-search-status').hidden
+        &&$('target-search-status').textContent.includes('No matching targets.')
+        &&$('target-search-status').textContent.includes('Clear the search');
+      $('target-search').value='';$('target-search').dispatchEvent(new Event('input'));
+    }
+    records=oldRecords;decisions=oldDecisions;history=oldHistory;current=oldCurrent;packet=oldPacket;dirty=oldDirty;
+    $('target').textContent='';render();persist();
+    return {find_target:search,empty_search_preserves_position:empty,consolidated_batches:consolidated};
+  })()`);
+  uxTasks.partial_save_preserves_unsaved_work=partialSaveOutcome;
+  const uxScore=Object.values(uxTasks).filter(Boolean).length;
+  fs.writeFileSync(path.join(out,'ux-tasks.json'),JSON.stringify({score:uxScore,total:4,tasks:uxTasks},null,2));
+  console.log('UX_TASK_SCORE '+uxScore+'/4');
+  if (uxScore===4){
+    const preserved=await evaluate(`(()=>{
+      const oldPacket=packet,oldDecisions=decisions,oldHistory=history,oldDirty=dirty;
+      const a=records[0], b=records[1];
+      const done={...blank(a),decision:'ACCEPT',reviewer_initials:'AB',updated_at:now()};
+      const prior={...blank(b),decision:'ACCEPT',reviewer_initials:'AB',updated_at:now()};
+      const unfinished={...prior,decision:'CORRECT',corrected_labels_json:'not JSON yet'};
+      decisions=new Map(records.map(r=>[KEY(r),blank(r)]));
+      decisions.set(KEY(a),done);decisions.set(KEY(b),unfinished);
+      history=[{document_id:b.document_id,field:b.field,after:unfinished}];dirty=true;
+      applySave({data:{saved_decisions:[done,prior],saved_history:[]}},true,[done]);
+      const ok=dirty&&decisions.get(KEY(b)).corrected_labels_json==='not JSON yet'&&history.length===1;
+      packet=oldPacket;decisions=oldDecisions;history=oldHistory;dirty=oldDirty;persist();render();
+      return ok;
+    })()`);
+    assert.ok(preserved,'a partial autosave cannot overwrite an excluded draft with its older server decision or discard its history');
+  }
+  await evaluate(`showTab('review')`);
+  await screenshot('09-review-ux-final');
   // A11y pass: when AXE_PATH is set, the served /axe.js (vendored axe-core) scans the live
   // document; the committed run stays offline and only the a11y invariants below execute.
   if (process.env.AXE_PATH){

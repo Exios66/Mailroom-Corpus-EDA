@@ -81,7 +81,9 @@ BUNDLES: dict[str, tuple[int, list[str], list[tuple[str, str]]]] = {
         (r'never not_found', "label field must always answer"),
         (r'\$\{urgencies\}', "urgency enum inject"),
         (r'carry no headers', "header-absence guidance"),
-        # live-verified themes (correspondence fixture re-record 2026-11-08, Ro1+TCM):
+        # fixture-recorded themes (correspondence fixture re-record 2026-11-08, Ro1+TCM);
+        # the fixture does not exercise multi-person sign-offs or same-day forwards, so treat
+        # these wording matches as recorded-template evidence, not live behavioural proof:
         (r"first signatory's full printed name", "multi-name sign-off keeps signatory #1 in full"),
         (r'newest message was sent', "same-day rule anchored to the newest printed send date"),
     ]),

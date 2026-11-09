@@ -1,0 +1,19 @@
+{
+  "version": "2.1.0",
+  "source": "loop",
+  "status": "BOUNDED",
+  "results_tsv": "autoresearch/reviewer-ux-leg-2/results.tsv",
+  "config": {
+    "goal": "Improve reviewer navigation and preservation of unfinished work",
+    "scope": "src/mailroom_eda/labeling/review_page.html; tests/browser_review_page.mjs",
+    "metric": "fixed review tasks passed out of 4",
+    "direction": "higher_is_better",
+    "verify": "sh autoresearch/reviewer-ux-leg-2/verify.sh",
+    "iterations": 2
+  },
+  "findings": [
+    "0/4 baseline; experiment 1 reaches 3/4; experiment 2 reaches 4/4",
+    "Navigation and save-race guards pass with synthetic evidence",
+    "Local-backup dedupe and retry behavior requires a subsequent bounded investigation"
+  ]
+}

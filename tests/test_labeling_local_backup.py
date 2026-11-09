@@ -61,3 +61,16 @@ def test_backup_copies_work_and_refuses_a_duplicate_review(tmp_path: Path) -> No
 
     allowed = local_backup.backup(labels_root, dest, out=labels_root / "portal", allow_re_review=True)
     assert allowed["re_review_allowed"] is True
+
+
+def test_later_snapshot_of_same_document_is_not_a_duplicate(tmp_path: Path) -> None:
+    labels_root, dest = tmp_path / "labels", tmp_path / "labels-staging"
+    sha = "b" * 64
+    _packet(labels_root, "corporate-A", "p1", "doc-1", sha)
+    _journal(labels_root, "doc-1")
+    first = local_backup.backup(labels_root, dest, out=labels_root / "portal",
+                                now=datetime(2026, 11, 8, 20, 30, tzinfo=timezone.utc))
+    # A second checkpoint of the SAME document is a snapshot, not an independent duplicate.
+    second = local_backup.backup(labels_root, dest, out=labels_root / "portal",
+                                 now=datetime(2026, 11, 8, 21, 30, tzinfo=timezone.utc))
+    assert second["documents"] == 1 and Path(second["path"]) != Path(first["path"])

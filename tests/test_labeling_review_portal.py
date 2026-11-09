@@ -337,6 +337,24 @@ def test_checkpoint_disabled_and_failed_verification_keep_local_confirmations(en
     assert states(env.app.data())["entity_name"] == "human_confirmed"
 
 
+def test_local_mirror_failure_never_blocks_the_private_checkpoint(env, monkeypatch):
+    env.app.hf_checkpoint = True
+    env.app.local_backup = env.root / "staging-mirror"
+    saved = env.app.save(returned(env.app.data(), ("entity_name", "ACCEPT", None)))
+
+    def refuse(*args, **kwargs):
+        raise ValueError("already reviewed in an earlier backup: D1")
+
+    monkeypatch.setattr(portal.local_backup, "backup", refuse)
+    monkeypatch.setattr(checkpoint, "checkpoint",
+                        lambda *a, **k: {"repo": checkpoint.STAGING_REPO, "files": 1,
+                                         "verified": True, "revision": "fake-revision"})
+    receipt = env.app.checkpoint(saved["data"]["packet_id"], api=object())
+    assert receipt["verified"] is True and receipt["revision"] == "fake-revision"
+    assert receipt["local_backup"] is None
+    assert "already reviewed" in receipt["local_backup_error"]
+
+
 def test_verified_checkpoint_and_restore_into_clean_root_replay_per_field_state(env, tmp_path, monkeypatch):
     env.app.hf_checkpoint = True
     saved = env.app.save(returned(env.app.data(), ("entity_name", "ACCEPT", None)))

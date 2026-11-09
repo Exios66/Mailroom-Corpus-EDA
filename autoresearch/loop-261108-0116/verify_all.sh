@@ -33,10 +33,13 @@ fi
 axe=skip
 if [ -n "${AXE_PATH:-}" ]; then
   CHROME="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}" \
-  node tests/browser_review_page.mjs "$evidence/axe" > "$evidence/axe.out" 2>&1
+  status=0
+  node tests/browser_review_page.mjs "$evidence/axe" > "$evidence/axe.out" 2>&1 || status=$?
   # clean only when the whole smoke PASSED and axe printed zero violations
-  if grep -q 'PASS: integrated synthetic review browser smoke' "$evidence/axe.out" \
+  if [ "$status" -eq 0 ] && grep -q 'PASS: integrated synthetic review browser smoke' "$evidence/axe.out" \
      && grep -q 'AXE {"violations":\[\]' "$evidence/axe.out"; then axe=clean; else axe=violations; fi
+  # the ledger row is written below even when the scan failed; exit nonzero afterwards
+  axe_status=$status
 fi
 
 "$python" - "$evidence" "$ts" "$axe" "$root" "$cov" <<'PYEOF'
@@ -47,10 +50,11 @@ def suites(name):
     """(passed, failed) from the pytest summary; a crashed run with no summary counts as failed."""
     text = (ev / name).read_text()
     pm = re.search(r'(\d+) passed', text); fm = re.search(r'(\d+) failed', text)
-    if not pm and not fm and text.strip():
+    em = re.search(r'(\d+) errors?', text)
+    if not pm and not fm:  # empty log or a crash summary: never read as a clean run
         return 0, 1
     p = int(pm.group(1)) if pm else 0
-    f = int(fm.group(1)) if fm else 0
+    f = (int(fm.group(1)) if fm else 0) + (int(em.group(1)) if em else 0)
     return p, f
 def okcount(name):
     return sum(1 for l in (ev / name).read_text().splitlines() if l.lower().startswith("ok"))
@@ -86,3 +90,4 @@ tsv.write_text(tsv.read_text() + "\t".join(str(x) for x in (
     cov, res["checks_executed"])) + "\n")
 print("ALL: " + json.dumps(res["dimensions"]) + " ledger=" + str(tsv))
 PYEOF
+if [ "${axe_status:-0}" -ne 0 ]; then exit "$axe_status"; fi
