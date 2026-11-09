@@ -2,12 +2,13 @@
 // CHROME=/path/to/chrome node tests/browser_review_page.mjs [evidence-directory]
 import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 
-const out=process.argv[2] || '/private/tmp/opencode/review-integrated-evidence';
+const out=process.argv[2] || path.join(os.tmpdir(),'opencode','review-integrated-evidence');
 fs.mkdirSync(out,{recursive:true});
 const text='🧾 SYNTHETIC DOCUMENT ONLY\nProvide a signed claim form.\n<img src=x onerror="window.injected=true">\nEND OF COMPLETE SOURCE';
 const quote='signed claim form', start=Array.from(text.split(quote)[0]).length;
@@ -38,7 +39,7 @@ function launchItems(body){
 const server=http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');
   if(req.url==='/review.html') {res.setHeader('Content-Type','text/html');res.end(template.replace('__REVIEW_PACKET_JSON__',JSON.stringify(packet).replaceAll('<','\\u003c')));return;}
-  if(req.url==='/axe.js') {res.setHeader('Content-Type','text/javascript');if(!process.env.AXE_PATH){res.writeHead(404);res.end();return;}res.end(fs.readFileSync(process.env.AXE_PATH));return;}
+  if(req.url==='/axe.js') {res.setHeader('Content-Type','text/javascript');if(!process.env.AXE_PATH||!fs.existsSync(process.env.AXE_PATH)){res.writeHead(404);res.end();return;}res.end(fs.readFileSync(process.env.AXE_PATH));return;}
   res.setHeader('Content-Type','application/json');
   if(req.url==='/review-data.json') {launch.reloads++;res.end(JSON.stringify(packet));return;}
   if(req.url==='/review-state.json') {res.end(JSON.stringify({packet_id:packet.packet_id,state_revision:packet.state_revision,review_states:packet.review_states,saved_decisions:packet.saved_decisions,saved_history:packet.saved_history,tracker:packet.tracker}));return;}
@@ -68,7 +69,7 @@ const server=http.createServer(async(req,res)=>{
   res.writeHead(404);res.end('{}');
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-const chrome=spawn(process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',['--headless=new','--remote-debugging-port=0','--user-data-dir='+path.join(out,'chrome-profile'),'--no-first-run','--no-default-browser-check','--disable-background-networking','--disable-component-update','--window-size=1440,1100','about:blank'],{stdio:['ignore','ignore','pipe']});
+const chrome=spawn(process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',['--headless=new',...(process.env.CHROME_NO_SANDBOX?['--no-sandbox']:[]),'--remote-debugging-port=0','--user-data-dir='+path.join(out,'chrome-profile'),'--no-first-run','--no-default-browser-check','--disable-background-networking','--disable-component-update','--window-size=1440,1100','about:blank'],{stdio:['ignore','ignore','pipe']});
 let ws,session,sequence=0;const pending=new Map(),errors=[];
 try {
   const address=await new Promise((resolve,reject)=>{let output='';chrome.stderr.on('data',d=>{output+=d;const m=output.match(/DevTools listening on (ws:\/\/[^\s]+)/);if(m)resolve(m[1]);});chrome.on('error',reject);chrome.on('exit',code=>reject(Error('Chrome exit '+code)));});
@@ -527,7 +528,7 @@ try {
   await screenshot('09-review-ux-final');
   // A11y pass: when AXE_PATH is set, the served /axe.js (vendored axe-core) scans the live
   // document; the committed run stays offline and only the a11y invariants below execute.
-  if (process.env.AXE_PATH){
+  if (process.env.AXE_PATH && fs.existsSync(process.env.AXE_PATH)){
     const ax=await evaluate(`new Promise((resolve)=>{
       const s=document.createElement('script'); s.src='/axe.js';
       s.onload=()=>axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','best-practice']}})
@@ -540,6 +541,7 @@ try {
     console.log('AXE '+ax);
     assert.deepEqual(JSON.parse(ax).violations,[]);
   }
+  if (!(process.env.AXE_PATH && fs.existsSync(process.env.AXE_PATH))) console.log('AXE skipped: no axe-core at '+(process.env.AXE_PATH||'(unset)'));
   assert.deepEqual(errors,[]);
   fs.writeFileSync(path.join(out,'submitted-review.json'),JSON.stringify(posts[0],null,2));
   fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({passed:true,saves,checkpoints,journal_events:posts[0].history.length,checks,console_exceptions:errors},null,2));

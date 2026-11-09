@@ -23,6 +23,7 @@ from typing import Any, Mapping
 
 from . import checkpoint, local_backup, registry, review_page, scoring, verify
 from .review_packet import DECISION_KEY
+from .spend import identity_kind
 
 MAX_BODY = 10 * 1024 * 1024
 
@@ -302,9 +303,17 @@ class ReviewPortal:
         return states
 
     def _state_revision(self) -> str:
-        """Hash the current confirmation and checkpoint journals, treating missing files as empty."""
-        return hashlib.sha256(b"\0".join(p.read_bytes() if p.exists() else b""
-                                        for p in (self.journal, self.checkpoints))).hexdigest()
+        """Hash the confirmation journal and verified checkpoints; missing files are empty.
+
+        A failed checkpoint is audit history, not review state: it must not invalidate
+        every open page's state revision, or the next save conflicts for no reason.
+        """
+        journal = self.journal.read_bytes() if self.journal.exists() else b""
+        verified = b""
+        if self.checkpoints.exists():
+            verified = b"".join(line for line in self.checkpoints.read_bytes().splitlines(keepends=True)
+                                if json.loads(line).get("verified") is True)
+        return hashlib.sha256(journal + b"\0" + verified).hexdigest()
 
     def _campaign_tracker(self, packet: dict, states: list[dict]) -> dict:
         """Return campaign gate, approval, inventory, and loaded review counts.
@@ -394,14 +403,8 @@ class ReviewPortal:
         tracker["approval_file"] = str(approvals_path)
         return tracker
 
-    def _data(self) -> dict:
-        """Assemble packet, current review state, saved receipts, revision queue, and tracker."""
-        packet = self._collect()
-        states = self._states(packet)
-        docs = {}
-        for state in states:
-            docs.setdefault(state["document_id"], []).append(state)
-        saved, history = self._saved_receipts(states)
+    def _revision_queue(self, packet: dict, states: list[dict], saved: list[dict]) -> list[dict]:
+        """Confirmed public-dataset fields queued for the private v10 staging pass."""
         records = {(r["document_id"], r["field"]): r for r in packet["records"]}
         decisions = {(d["document_id"], d["field"]): d for d in saved}
         revision_queue = []
@@ -420,9 +423,19 @@ class ReviewPortal:
                                    "value": json.loads(decision["corrected_labels_json"]) if decision["decision"] == "CORRECT"
                                    else record.get("candidate_value", record.get("candidate_labels")),
                                    "deployment_status": "pending v10 gates; production unchanged"})
+        return revision_queue
+
+    def _data(self) -> dict:
+        """Assemble packet, current review state, saved receipts, revision queue, and tracker."""
+        packet = self._collect()
+        states = self._states(packet)
+        docs = {}
+        for state in states:
+            docs.setdefault(state["document_id"], []).append(state)
+        saved, history = self._saved_receipts(states)
         return {**copy.deepcopy(packet), "review_states": states, "state_revision": self._state_revision(),
                  "saved_decisions": saved, "saved_history": history,
-                 "revision_queue": revision_queue,
+                 "revision_queue": self._revision_queue(packet, states, saved),
                 "documents": [{"document_id": doc, "loaded_target_fields": len(ss),
                                "loaded_targets_complete": all(s["status"] in ("human_confirmed", "checkpointed") for s in ss),
                                "scope": "all loaded applicable targets only; not whole-corpus completeness"}
@@ -456,6 +469,7 @@ class ReviewPortal:
         saved, history = self._saved_receipts(states)
         return {"packet_id": packet["packet_id"], "state_revision": self._state_revision(),
                 "review_states": states, "saved_decisions": saved, "saved_history": history,
+                "revision_queue": self._revision_queue(packet, states, saved),
                 "tracker": self._campaign_tracker(packet, states)}
 
     def data(self) -> dict:
@@ -484,7 +498,7 @@ class ReviewPortal:
                                   "(POST /api/launch/preflight)", "(POST /api/launch/start)"],
                 "rules": [
                     "Read /review-data.json first: records are keyed on (document_id, field); check each record's candidate_status before ACCEPT.",
-                    "Saved decisions carry initials (2-6 capital letters) and updated_at as a timestamp with a timezone.",
+                    "Saved decisions carry a reviewer identity and updated_at as a timestamp with a timezone. The identity is either 2-6 capital letters for a person (JB) or a model's short display name (Haiku-5.5, DeepSeek-V4.1-Flash), optionally prefixed model:; provider routes with slashes are rejected. Journal events record reviewer_kind as human or model; receipts keep the identity string.",
                     "ACCEPT on a candidate that did not pass automated source checks (candidate_status "
                     "'needs_source_review') is allowed only with manual_source_verification: true — the "
                     "reviewer verified the value against the full source themselves. Without that flag the "
@@ -505,9 +519,11 @@ class ReviewPortal:
                     "human reviewer must carry that reviewer's own initials; the page's 'Accept "
                     "verified in batch' is the intended path — candidates that already passed "
                     "source checks get ACCEPT with the reviewer's remembered initials in one "
-                    "click, then one Save. Initials are unverified claims: this is a loopback "
-                    "service and the save route never authenticates humans, so receipts and "
-                    "journals record attribution, they are not proof of it (the same caveat "
+                    "click, then one Save. A fully automated integration instead sends its model's "
+                    "short display name (Haiku-5.5); every journal event records reviewer_kind, so "
+                    "the two are never conflated. Identities are unverified claims: this is a "
+                    "loopback service and the save route never authenticates anyone, so receipts "
+                    "and journals record attribution, they are not proof of it (the same caveat "
                     "the page's Change journal prints). Provenance discipline is enforced by "
                     "the review process, not by the transport.",
                 ]}
@@ -588,6 +604,7 @@ class ReviewPortal:
                                 "verified_outputs": outputs,
                                 "manual_source_verification": bool(decision.get("manual_source_verification")),
                                 "reviewer": decision["reviewer_initials"], "reviewer_notes": decision["reviewer_notes"],
+                                "reviewer_kind": identity_kind(decision["reviewer_initials"]),
                                 "server_received_at": received_at, "decision_sha256": signature,
                                 "provenance": source["portal_provenance"]})
             if receipt.is_symlink():

@@ -126,16 +126,63 @@ def test_slim_save_returns_state_without_the_records(env):
 def test_save_logs_model_attribution_and_manual_verification(env):
     """The decision journal keeps which model(s) the reviewer verified and whether the
     human verified a source-check-blocked candidate themselves."""
+    write_packet(env.source, [
+        record(model_outputs=[{"model": "synthetic/model-a", "value": "Example LLC", "status": "present"}]),
+        record("jurisdiction", "Delaware")])
     data = env.app.data()
     body = returned(data, ("entity_name", "ACCEPT", None))
     body["decisions"][0].update(verified_models=["synthetic/model-a"],
-                                manual_source_verification=True)
+                                manual_source_verification=True,
+                                reviewer_initials="Haiku-5.5")
     body["history"][0]["after"] = copy.deepcopy(body["decisions"][0])
     env.app.save(body)
     event = json.loads((env.out / "confirmed-fields.jsonl").read_text().splitlines()[-1])
     assert event["verified_models"] == ["synthetic/model-a"]
     assert event["manual_source_verification"] is True
     assert event["human_confirmed"] is True
+    assert event["reviewer"] == "Haiku-5.5"
+    assert event["reviewer_kind"] == "model"
+
+
+def test_a_slim_save_returns_the_live_revision_queue(env):
+    """The page's post-save state carries the production queue, so it is not stale."""
+    write_packet(env.source, [record(source_dataset="Lucius-Morningstar/mailroom-dataset",
+                                     source_revision="7fd99b40")])
+    data = env.app.data()
+    body = returned(data, ("entity_name", "ACCEPT", None))
+    body["slim"] = True
+    result = env.app.save(body)
+    queue = result["data"]["revision_queue"]
+    assert queue and queue[0]["field"] == "entity_name"
+    assert queue[0]["source_revision"] == "7fd99b40"
+    assert queue[0]["deployment_status"].startswith("pending v10")
+
+
+def test_a_failed_checkpoint_does_not_invalidate_the_review_state(env, monkeypatch):
+    """A failed backup is audit history, not review state: open pages may still save."""
+    env.app.hf_checkpoint = True
+    env.app.save(returned(env.app.data(), ("entity_name", "ACCEPT", None)))
+    data = env.app.state()
+    before = data["state_revision"]
+
+    def down(*args, **kwargs):
+        raise OSError("synthetic Hub outage")
+
+    monkeypatch.setattr(checkpoint, "checkpoint", down)
+    result = env.app.checkpoint(data["packet_id"], api=object())
+    assert result["verified"] is False
+    assert env.app.state()["state_revision"] == before
+    # The page can save immediately: the failed attempt did not move the guard.
+    saved = env.app.save(returned(env.app.data(), ("jurisdiction", "ACCEPT", None)))
+    assert saved["receipt_id"]
+
+
+def test_journal_records_a_human_reviewer_kind(env):
+    """Human initials stay distinguishable from a model display identity in every event."""
+    body = returned(env.app.data(), ("entity_name", "ACCEPT", None))
+    env.app.save(body)
+    event = json.loads((env.out / "confirmed-fields.jsonl").read_text().splitlines()[-1])
+    assert event["reviewer"] == "AB" and event["reviewer_kind"] == "human"
 
 
 def test_collector_finished_packets_only_cache_and_auto_refresh(env, monkeypatch):

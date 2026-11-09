@@ -147,6 +147,33 @@ uv member (no build).
 PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling doctor   # labeling readiness, no paid call
 ```
 
+**Pre-PR gate** (see `docs/TESTING.md` for the full pyramid and troubleshooting):
+
+```bash
+make install                    # .venv + pytest/ruff/coverage/axe-core prerequisites, once
+make check                      # lint + harness build + full offline pytest
+make check-all                  # above + both real-browser suites (needs Chrome)
+make coverage                   # real line/branch coverage table + JSON (workaround: see docs)
+make coverage-check             # full suite + fail under COVERAGE_MIN (default 70%)
+.venv/bin/pre-commit install --hook-type pre-commit   # staged-file lint + focused review tests
+.venv/bin/pre-commit install --hook-type pre-push     # make check before anything leaves the machine
+```
+
+The browser suites are `tests/browser_review_page.mjs` (synthetic page contract)
+and `tests/browser_review_portal.mjs` (real portal server, receipts, journal,
+tracker, launcher preflight and axe). They write evidence under
+`.cache/browser-evidence/` (git-ignored). **GitHub Actions are not used** on this
+repository; `.github/workflows/` is empty and `tests/test_ci_tooling.py` fails if
+a workflow returns. The local gates above are the CI substitute, and
+`scripts/ci/coverage_report.py` provides the coverage report without relying on
+`coverage run` (which is broken by a Python 3.13 + numpy tracer bug).
+
+A model integration that reviews labels identifies with its short display name
+(`Haiku-5.5`, `DeepSeek-V4.1-Flash`), never the provider route
+(`Anthropic/Haiku-5.5`). Human reviewers use 2–6 capital initials. Journal events record
+`reviewer_kind` (`human`/`model`); receipts keep the identity string, so an
+automated attribution is never mistaken for a human countersign.
+
 **Release verification** (after every Hub publish or tag move, before re-pinning
 `config.py`):
 

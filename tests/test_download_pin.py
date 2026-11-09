@@ -37,3 +37,12 @@ def test_a_snapshot_at_the_pin_is_reused(snap):
     (root / ".hub_revision").write_text("pin-new\n")
     d.download_corpus()
     assert calls == []
+
+
+def test_parse_manifest_joins_continuation_lines(tmp_path):
+    """A wrapped manifest value is joined instead of crashing on an undefined key."""
+    path = tmp_path / "manifest.txt"
+    path.write_text("Title: Corpus\nVersion: v9.3\nnotes: first line\n  second line\n\nLicense: CC-BY-4.0\n")
+    manifest = d.parse_manifest(path)
+    assert manifest["notes"] == "first line second line"
+    assert manifest["License"] == "CC-BY-4.0"

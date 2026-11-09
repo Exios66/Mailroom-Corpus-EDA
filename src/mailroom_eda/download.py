@@ -58,16 +58,16 @@ def download_corpus(force: bool = False) -> Path:
 def parse_manifest(path: Path = MANIFEST_PATH) -> dict:
     """Parse the flat manifest.txt into a dict (multi-line values joined)."""
     raw: dict[str, list[str]] = {}
+    last_key = None
     for line in path.read_text().splitlines():
         if not line.strip() or set(line.strip()) == {"="}:
             continue
         m = re.match(r"^(\w+)\s*:\s*(.*)$", line)
         if m:
-            raw.setdefault(m.group(1), []).append(m.group(2).strip())
-        elif raw:
+            last_key = m.group(1)
+            raw.setdefault(last_key, []).append(m.group(2).strip())
+        elif last_key:
             raw[last_key].append(line.strip())
-            continue
-        last_key = m.group(1) if m else None
     return {k: " ".join(v) for k, v in raw.items()}
 
 

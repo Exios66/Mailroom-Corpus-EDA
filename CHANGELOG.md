@@ -8,6 +8,32 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 
 ## Unreleased
 
+- Review interface hardening from a real-browser end-to-end audit (33 steps against the shipped portal, not a
+  mock). Fixed: model-answer checkboxes threw `TypeError` because the row cell shadowed the run matcher
+  (per-model attribution was unusable); sticky initials were written into every opened target, so a save left the
+  page permanently dirty, disabled Checkpoint and made the next save a no-op; saved history from older receipts
+  was not normalized, so resuming and re-saving failed with "reviewed decision has no matching change log"; a
+  failed private checkpoint advanced the state revision and 409'd every open page's next save; a confirmed
+  production field did not appear in the revision queue until Reload because the slim post-save payload omitted
+  it; an empty candidate could be ACCEPTed and only failed at the server; one invalid decision elsewhere turned
+  Save into an opaque 400 (the page now names and jumps to the offending target); a fully decided batch jump
+  silently did nothing (now says why); a blocked ACCEPT with no candidate could not be saved and said so; the
+  checkpoint success message was overwritten by the refresh; and the launch log failed axe-core
+  (`aria-prohibited-attr`/scrollable region). `reviewer_kind` is recorded on every journal event.
+- Model reviewer identity: a model integration passes its short display name as `reviewer_initials`
+  (`Haiku-5.5`, `DeepSeek-V4.1-Flash`; optional `model:` prefix), never a provider route (`Anthropic/Haiku-5.5`,
+  rejected). Human initials stay 2–6 capitals. The page pre-fills, validates and persists the identity; the
+  contract and `docs/TESTING.md` document it. This is attribution, not authentication.
+- Quality gates (local only; no GitHub Actions): `Makefile` (`make check`, `make check-all`, `make browser`,
+  `make axe`, `make coverage`, `make coverage-check`), `.pre-commit-config.yaml` with pre-commit and pre-push
+  hooks, a PR template, and `docs/TESTING.md`. `scripts/ci/coverage_report.py` reports real line+branch
+  coverage (74.98% of `mailroom_eda.labeling` at this commit; review_page 74.0%, review_portal 75.4%) using a
+  pre-import workaround for the Python 3.13 + numpy tracer bug that breaks `coverage run`; a subprocess test
+  proves the report contains real covered statements. `tests/test_ci_tooling.py` fails if a workflow returns or
+  the local gates drift.
+- `parse_manifest` now initializes its continuation key (the undefined-name gate caught a first-line crash);
+  `local_backup` carries `reviewer_kind` alongside each reviewer.
+
 - Gold smoke fixtures: `tests/fixtures/live_smoke/<doc_type>/` holds one real labeling run per document type
   (contract, merger_agreement, corporate_record, insurance_claim, correspondence) as committed test data: the
   public documents as downloaded (full text), every model call (`calls.jsonl`), the review packet

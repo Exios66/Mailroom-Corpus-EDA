@@ -29,7 +29,7 @@ def _journal(root: Path, document_id: str, field: str = "entity_name") -> None:
     (out / "confirmed-fields.jsonl").write_text(json.dumps({
         "event_id": "e" * 64, "receipt_id": "r" * 64, "packet_id": "p1",
         "document_id": document_id, "field": field, "decision": "ACCEPT",
-        "reviewer": "LM", "server_received_at": "2026-11-08T20:00:00+00:00",
+        "reviewer": "LM", "reviewer_kind": "human", "server_received_at": "2026-11-08T20:00:00+00:00",
     }) + "\n", encoding="utf-8")
 
 
@@ -45,7 +45,7 @@ def test_backup_copies_work_and_refuses_a_duplicate_review(tmp_path: Path) -> No
     assert first["documents"] == 1 and first["decisions"] == 1
     manifest = json.loads((Path(first["path"]) / local_backup.MANIFEST).read_text())
     assert manifest["reviewed_documents"][0]["fields"][0] == {
-        "field": "entity_name", "decision": "ACCEPT", "reviewer": "LM",
+        "field": "entity_name", "decision": "ACCEPT", "reviewer": "LM", "reviewer_kind": "human",
         "server_received_at": "2026-11-08T20:00:00+00:00", "receipt_id": "r" * 64,
         "verified_models": [], "verified_outputs": [], "manual_source_verification": False,
     }

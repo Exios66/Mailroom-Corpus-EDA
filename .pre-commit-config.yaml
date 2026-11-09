@@ -1,0 +1,38 @@
+# Fast, local pre-commit gate. Install once with:
+#   .venv/bin/pre-commit install
+# It lints/fixes only the files you stage, then runs the review-interface tests
+# when a review file changed. `make check` remains the complete pre-PR gate.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+  - repo: local
+    hooks:
+      - id: review-interface-tests
+        name: review interface tests
+        entry: env PYTHONPATH=src .venv/bin/python -m pytest tests/test_labeling_review_page.py tests/test_labeling_review_portal.py tests/test_labeling_review_export.py tests/test_review_checkpoint_recovery.py -q
+        language: system
+        pass_filenames: false
+        files: ^(src/mailroom_eda/labeling/(review_|spend\.py|local_backup\.py|checkpoint\.py)|tests/(browser_review|portal_browser|test_labeling_review|test_review_checkpoint))
+      - id: review-portal-harness
+        name: review portal harness builds
+        entry: env PYTHONPATH=src .venv/bin/python tests/portal_browser_harness.py --root .cache/browser-harness --check
+        language: system
+        pass_filenames: false
+        files: ^(src/mailroom_eda/labeling/(review_|registry\.py|fields\.yaml|spend\.py)|tests/(portal_browser_harness\.py|browser_review_portal\.mjs))
+      - id: quality-gate
+        name: quality gate before push (lint + harness + full tests)
+        entry: make check
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

@@ -96,7 +96,7 @@ The API key field is optional, is never stored (not even in this browser) and is
 <div id="launch-checklist"></div>
 <h3>Run status</h3>
 <div id="launch-status" class="muted">idle</div>
-<pre id="launch-log" aria-label="Run log"></pre>
+<pre id="launch-log" role="log" tabindex="0" aria-label="Run log"></pre>
 </div>
 </div>
 </section>
@@ -151,7 +151,8 @@ The API key field is optional, is never stored (not even in this browser) and is
 <label>Decision <select id="decision"><option>NOT_REVIEWED</option><option>ACCEPT</option><option>CORRECT</option><option>REJECT</option><option>NEEDS_SOURCE</option></select></label>
 <p id="decision-help" class="muted"></p>
 <label id="manual-wrap" hidden><input type="checkbox" id="manual-verify"> I verified this value against the full source myself</label>
-<label>Reviewer initials (2–6 uppercase letters) <input id="initials" pattern="[A-Z]{2,6}" maxlength="6" autocomplete="off"></label>
+<label>Reviewer initials (2–6 uppercase) or model identity <input id="initials" pattern="(?:[A-Z]{2,6}|(?:model:)?[A-Za-z0-9][A-Za-z0-9._-]{1,63})" maxlength="96" autocomplete="off"></label>
+<p class="muted" id="initials-help">Automated integrations use the model's short display name (Haiku-5.5, DeepSeek-V4.1-Flash), not the provider route (Anthropic/Haiku-5.5); the journal records which kind of reviewer.</p>
 <label>Reviewer notes <textarea id="notes"></textarea></label>
 <div id="correction-editor" hidden>
 <label>Corrected value <textarea id="correction" spellcheck="false" placeholder='Choose a model value, use the template, or edit the displayed value'></textarea></label>
@@ -183,6 +184,18 @@ try { startingPosition=JSON.parse(localStorage.getItem(positionKey)||'null'); } 
 const storageKey='mailroom-review-draft/'+packet.packet_id;
 function blank(r){ return {document_id:r.document_id, field:r.field, document_sha256:r.document_sha256, decision:'NOT_REVIEWED', corrected_labels_json:'', reviewer_initials:'', reviewer_notes:'', updated_at:'', verified_models:[], verified_outputs:[], manual_source_verification:false}; }
 function localDraft(){ return [...decisions.values()].some((d)=>d.decision!=='NOT_REVIEWED'||d.reviewer_notes||d.reviewer_initials||d.corrected_labels_json); }
+/** Normalize saved history entries over the current blank decision.
+ * Older receipts predate fields such as verified_outputs/manual_source_verification;
+ * the decision merge already defaults them, and the change log must agree or a
+ * legitimate re-save is refused as "no matching change log".
+ */
+function normalizeHistory(byKey, list){
+  return (list||[]).map((h)=>{
+    if (!h||!h.after) return h;
+    const r=byKey.get(h.document_id+'\n'+h.field); if (!r) return h;
+    return {...h, before:{...blank(r),...(h.before||{})}, after:{...blank(r),...h.after}};
+  });
+}
 /** Reset targets, item choices, decisions, and history from packet data.
  * A truthy keep marks the resulting state as unsaved.
  */
@@ -196,7 +209,7 @@ function seed(data, keep){
   const byKey=new Map(records.map((r)=>[KEY(r),r]));
   (data.saved_decisions||[]).forEach((d)=>{ const k=d.document_id+'\n'+d.field;
     if(decisions.has(k)) decisions.set(k, {...blank(byKey.get(k)), ...clone(d)}); }); // older receipts lack new fields
-  history=clone(data.saved_history||[]);
+  history=normalizeHistory(byKey, data.saved_history);
   if (keep) dirty=true; else dirty=false;
 }
 function overlay(kind){
@@ -206,7 +219,7 @@ function overlay(kind){
   const byKey=new Map(records.map((r)=>[KEY(r),r]));
   (draft&&draft.packet_id===packet.packet_id?draft.decisions:[]).forEach((d)=>{ const k=d.document_id+'\n'+d.field;
     if(decisions.has(k)) decisions.set(k, {...blank(byKey.get(k)), ...clone(d)}); });
-  if (draft&&draft.history&&draft.history.length>=history.length) history=clone(draft.history);
+  if (draft&&draft.history&&draft.history.length>=history.length) history=normalizeHistory(byKey, draft.history);
 }
 function decision(){ return decisions.get(KEY(records[current])); }
 // Per-label items: keep / drop / edit individual labels of an array candidate. The choice
@@ -320,12 +333,23 @@ function itemPicker(record){
   return box;
 }
 function now(){ return new Date().toISOString(); }
+// Reviewer identity: human initials or a model's short display name. Keep this in
+// lockstep with mailroom_eda.labeling.spend.identity_kind.
+const HUMAN_INITIALS=/^[A-Z]{2,6}$/;
+const MODEL_IDENTITY=/^(?:model:)?(?=[A-Za-z0-9._-]{2,64}$)(?=.*[A-Za-z])(?=.*[0-9._-])[A-Za-z0-9][A-Za-z0-9._-]*$/;
+function identityKind(value){ const v=String(value||''); if (HUMAN_INITIALS.test(v)) return 'human'; return MODEL_IDENTITY.test(v)?'model':''; }
 function payload(){ return {schema:'mailroom-human-review/v1',packet_id:packet.packet_id,state_revision:packet.state_revision,exported_at:now(),decisions:[...decisions.values()],history:clone(history)}; }
 function persist(){
   try { localStorage.setItem(storageKey, JSON.stringify({packet_id:packet.packet_id, decisions:[...decisions.values()], history:clone(history), saved_at:now()})); }
   catch (exc) { message('Local draft storage failed ('+exc.name+'); use Save or Export JSON to keep your work in files.'); }
 }
 function logChange(before, after){
+  // Sticky identity is session state, not a field default: a decision adopts the
+  // remembered reviewer identity when it is made, never by opening the target.
+  if (after.decision!=='NOT_REVIEWED' && !after.reviewer_initials){
+    const remembered=$('initials').value;
+    if (identityKind(remembered)) after.reviewer_initials=remembered;
+  }
   // A changed timestamp alone is not a decision change: no history entry, no autosave.
   const semantic=(d)=>{ const c={...d}; delete c.updated_at; return JSON.stringify(c); };
   if (semantic(before)===semantic(after)){ after.updated_at=before.updated_at; return; }
@@ -449,7 +473,7 @@ function modelAnswers(record){
   const t=node('table'), head=node('tr');
   ['Verified','Model','Value','Status','Evidence','Use'].forEach((h)=>head.append(node('th',h))); t.append(head);
   outs.forEach((o)=>{
-    const tr=node('tr'), verified=node('td'), value=node('td'), status=node('td'), ev=node('td'), use=node('td');
+    const tr=node('tr'), votes=node('td'), value=node('td'), status=node('td'), ev=node('td'), use=node('td');
     if (o.model){
       const tick=node('input'); tick.type='checkbox'; tick.setAttribute('aria-label','Verified model '+o.model);
       tick.checked=isTicked(o);
@@ -462,7 +486,7 @@ function modelAnswers(record){
         d.updated_at=now();
         logChange(before, d);
       });
-      verified.append(tick);
+      votes.append(tick);
     }
     // One click turns a model's answer into the CORRECT replacement, so a reviewer who
     // verified the models' consensus does not have to retype it. Arrays keep the picker.
@@ -479,7 +503,7 @@ function modelAnswers(record){
       });
       use.append(b);
     }
-    tr.append(verified, node('td',String(o.model||'?')+(o.pass?' (pass '+o.pass+')':''),'k'), value, status, ev, use);
+    tr.append(votes, node('td',String(o.model||'?')+(o.pass?' (pass '+o.pass+')':''),'k'), value, status, ev, use);
     value.append(show(o.value, record.dojo_type));
     status.append(chip(label(o.status)||'—', o.status==='present'?'good':''));
     if (o.confidence!=null) status.append(node('span',' confidence '+o.confidence,'muted'));
@@ -519,10 +543,11 @@ function renderTarget(){
   const issues=$('issues'); issues.textContent='';
   (record.issues||[]).forEach((i)=>issues.append(node('li', i)));
   const d=decision();
-  if (!d.reviewer_initials){ // sticky initials: remember the reviewer across targets of a session
-    try { d.reviewer_initials = localStorage.getItem(storageKey+'/initials') || ''; } catch (exc) {}
-  }
-  $('decision').value=d.decision; $('initials').value=d.reviewer_initials;
+  let remembered='';
+  try { remembered=localStorage.getItem(storageKey+'/initials')||''; } catch (exc) {}
+  // Fill the field for the next decision; do not write it into an undecided target
+  // (that made every opened target look like an unsaved draft after a save).
+  $('decision').value=d.decision; $('initials').value=d.reviewer_initials||remembered;
   $('notes').value=d.reviewer_notes; $('correction').value=d.corrected_labels_json;
   const blocked=record.candidate_status!=='source_checks_passed';
   $('manual-wrap').hidden=!blocked;
@@ -553,7 +578,7 @@ function renderTargetStatus(){
     +(syncPending?' · sync pending (kept in this browser)':dirty?' (autosaving…)':'')
     +(lastSavedAt?' · auto-saved '+lastSavedAt:'')
     +(staleDraft?' (stale packet; discard or reload)':'')
-    +' · Decided: '+d.decision+(d.updated_at?' at '+d.updated_at:'');
+    +' · Decided: '+d.decision+(d.updated_at?' at '+d.updated_at:'')+(d.reviewer_initials?' · Reviewer: '+(identityKind(d.reviewer_initials)||'unverified')+' '+d.reviewer_initials:'');
   batchProgress();
   reviewProgress();
   renderFieldOutcomes();
@@ -786,9 +811,10 @@ function autosavePayload(){
   const byKey=new Map(records.map((r)=>[KEY(r),r]));
   const ds=[...decisions.values()].filter((d)=>{
     if (d.decision==='NOT_REVIEWED') return true;
-    if (!/^[A-Z]{2,6}$/.test(d.reviewer_initials||'')) return false;
+    if (!identityKind(d.reviewer_initials)) return false;
     if (d.decision==='CORRECT'){ try { JSON.parse(d.corrected_labels_json||''); } catch (exc) { return false; } }
     const r=byKey.get(d.document_id+'\n'+d.field)||{};
+    if (d.decision==='ACCEPT'&&isEmpty(r.candidate_labels)&&!['schema_documented_absence','not_applicable'].includes(String(r.candidate_presence||''))) return false;
     if (d.decision==='ACCEPT'&&r.candidate_status!=='source_checks_passed'&&!d.manual_source_verification) return false;
     return true;
   });
@@ -801,6 +827,7 @@ function applySave(result, applyDecisions, submitted){
   packet={...packet};
   if (d.state_revision) packet.state_revision=d.state_revision;
   if (Array.isArray(d.review_states)) packet.review_states=d.review_states;
+  if (Array.isArray(d.revision_queue)) packet.revision_queue=d.revision_queue;
   if (d.tracker) packet.tracker=d.tracker;
   if (applyDecisions){
     if (Array.isArray(d.saved_decisions)){
@@ -815,7 +842,9 @@ function applySave(result, applyDecisions, submitted){
     const content=(r,d)=>{ const normalized={...blank(r),...d}; delete normalized.updated_at; return JSON.stringify(normalized); };
     dirty=records.some((r)=>content(r,decisions.get(KEY(r)))!==content(r,saved.get(KEY(r))||blank(r)));
     // A partial autosave must not erase the history of unfinished decisions.
-    if (!dirty && Array.isArray(d.saved_history)) history=clone(d.saved_history);
+    if (!dirty && Array.isArray(d.saved_history)) {
+      history=normalizeHistory(new Map(records.map((r)=>[KEY(r),r])), d.saved_history);
+    }
   }
   persist();
   tracker(); renderTargetStatus(); controls(); renderJournal();
@@ -854,18 +883,50 @@ async function runAutoSave(){
 function validate(){
   const d=decision();
   if (d.decision==='NOT_REVIEWED') return true;
-  if (!/^[A-Z]{2,6}$/.test(d.reviewer_initials)){ message('Reviewer initials (2–6 uppercase letters) are required for a decision.'); return false; }
+  if (!identityKind(d.reviewer_initials)){ message('A reviewer identity is required: 2–6 uppercase initials for a person, or a model\'s short display name like Haiku-5.5 (not Anthropic/Haiku-5.5).'); return false; }
   if (d.decision==='ACCEPT'&&records[current].candidate_status!=='source_checks_passed'){
     if (!$('manual-verify').checked){ message('This candidate did not pass automated source checks. Verify the value against the full source, tick "I verified this value against the full source myself", then ACCEPT — or choose CORRECT with verified JSON, REJECT, or NEEDS_SOURCE.'); return false; }
     d.manual_source_verification=true; // logged with the decision; unverified ACCEPT stays impossible
   }
+  if (d.decision==='ACCEPT'){
+    const r=records[current], presence=String(r.candidate_presence||'');
+    if (isEmpty(r.candidate_labels)&&presence!=='schema_documented_absence'&&presence!=='not_applicable'){
+      message('There is no candidate value to approve. Choose CORRECT with the verified value, REJECT, or NEEDS_SOURCE — ACCEPT cannot confirm an empty proposal.');
+      return false;
+    }
+  }
   if (d.decision==='CORRECT'){ try { JSON.parse(d.corrected_labels_json||''); } catch (exc) { message('CORRECT needs valid JSON matching the native type.'); return false; } }
   return true;
+}
+/** Client-known reason a decision cannot be saved, or ''.
+ * The server still grounds values against the source; this catches the rules the
+ * page can see, so one bad target elsewhere cannot turn a Save into an opaque 400.
+ */
+function decisionProblem(d,r){
+  if (d.decision==='NOT_REVIEWED') return '';
+  if (!identityKind(d.reviewer_initials)) return 'a reviewer identity is required';
+  if (d.decision==='ACCEPT'&&isEmpty(r.candidate_labels)
+      &&!['schema_documented_absence','not_applicable'].includes(String(r.candidate_presence||'')))
+    return 'there is no candidate value to approve';
+  if (d.decision==='ACCEPT'&&r.candidate_status!=='source_checks_passed'&&!d.manual_source_verification)
+    return 'the candidate did not pass source checks; tick manual source verification or choose another outcome';
+  if (d.decision==='CORRECT'){ try { JSON.parse(d.corrected_labels_json||''); } catch (exc) { return 'CORRECT needs valid JSON'; } }
+  return '';
+}
+function invalidDecisions(){
+  return records.map((r)=>[r,decisionProblem(decisions.get(KEY(r))||blank(r),r)]).filter(([,why])=>why);
 }
 async function operation(fn){ if (busy) return; busy=true; controls(); try { await fn(); } finally { busy=false; controls(); } }
 $('save').addEventListener('click', ()=>operation(async()=>{
   if (!dirty){ message('Nothing unsaved.', true); return; }
   if (!validate()) return;
+  const bad=invalidDecisions();
+  if (bad.length){
+    const [record,why]=bad[0];
+    current=records.indexOf(record); renderTarget(); controls();
+    message('Cannot save: '+why+' — '+record.document_id+' / '+humanize(record.field)+'. Fix that target first.');
+    return;
+  }
   const seq=editSeq;
   const body={...payload(), slim:true};
   try {
@@ -887,10 +948,13 @@ $('checkpoint').addEventListener('click', ()=>operation(async()=>{
   if (!confirm('Checkpoint all locally confirmed fields to the private staging repo now?')) return;
   try {
     const result=await request('/api/checkpoint', {packet_id:packet.packet_id, confirm:true});
-    message((result.verified===true?'Private checkpoint verified at revision '+result.revision+'.'
+    // Keep the checkpoint outcome visible: refresh() announces the reloaded packet,
+    // which would otherwise overwrite the verified revision and mirror path at once.
+    const note=(result.verified===true?'Private checkpoint verified at revision '+result.revision+'.'
       :'Checkpoint not verified: '+(result.message||'server said not verified'))
-      +(result.local_backup?' Local mirror: '+result.local_backup+'.':''), result.verified===true);
+      +(result.local_backup?' Local mirror: '+result.local_backup+'.':'');
     await refresh();
+    message(note, result.verified===true);
   } catch (exc) { message('Checkpoint failed: '+exc.message+' — local confirmations remain pending.'); }
 }));
 $('discard').addEventListener('click', ()=>operation(async()=>{
@@ -954,6 +1018,10 @@ $('batch-jump').addEventListener('change', ()=>{
   const gid=$('batch-jump').value;
   const idx=records.findIndex((r)=>String(r.batch||r.chunk||'')===gid && (decisions.get(KEY(r))||{}).decision==='NOT_REVIEWED');
   if (idx>=0){ current=idx; renderTarget(); controls(); }
+  else { // A fully decided batch stays put, but the click must never look ignored.
+    const total=records.filter((r)=>String(r.batch||r.chunk||'')===gid).length;
+    message('Batch "'+gid+'" has no pending targets ('+total+' of '+total+' decided); the open review did not move.', true);
+  }
   renderTargetStatus(); // batchProgress() runs inside renderTargetStatus
 });
 // Bulk "accept verified in batch": candidates the server already verified
@@ -965,7 +1033,7 @@ $('bulk-accept').addEventListener('click', ()=>{
   const record=records[current], gid=String(record.batch||record.chunk||'');
   if (!gid){ message('These records carry no batch header (production review run); accept each one separately.', true); return; }
   const initials=$('initials').value;
-  if (!/^[A-Z]{2,6}$/.test(initials)){ message('Enter your reviewer initials first (they apply to the whole batch).'); return; }
+  if (!identityKind(initials)){ message('Enter your reviewer identity first (initials, or a model display name like Haiku-5.5); it applies to the whole batch.'); return; }
   const picked=[];
   records.forEach((r,i)=>{
     if (String(r.batch||r.chunk||'')!==gid) return;
@@ -979,7 +1047,7 @@ $('bulk-accept').addEventListener('click', ()=>{
     picked.push(r);
   });
   if (!picked.length) message('No verifiable undecided targets in batch "'+(gid||'-')+'".', true);
-  else { message(picked.length+' verified targets in the batch marked ACCEPT with your initials; review them and Save.', true); renderTarget(); }
+  else { message(picked.length+' verified targets in the batch marked ACCEPT as '+initials+' ('+identityKind(initials)+'); review them and Save.', true); renderTarget(); }
 });
 // Tabs: launcher, review and tracker live in separate views so the page stays
 // navigable; the choice is remembered like the sticky initials.
