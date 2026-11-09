@@ -59,6 +59,19 @@ def validate_packet(packet: Mapping[str, Any]) -> dict[tuple[str, str], Mapping[
     return by_key
 
 
+def _compact_payload(packet: Mapping[str, Any]) -> dict:
+    """Embed each source text once per content sha, not once per field record.
+
+    The page rehydrates ``full_document_text`` client-side; the packet contract and
+    /review-data.json keep their per-record text untouched."""
+    texts: dict[str, str] = {}
+    records = []
+    for record in packet["records"]:
+        texts.setdefault(record["document_sha256"], record["full_document_text"])
+        records.append({k: v for k, v in record.items() if k != "full_document_text"})
+    return {**packet, "records": records, "document_texts": texts}
+
+
 def render_page(packet: Mapping[str, Any], out: Path) -> Path:
     """Embed the full packet safely in a standalone page with no external resources.
 
@@ -70,7 +83,7 @@ def render_page(packet: Mapping[str, Any], out: Path) -> Path:
     marker = "__REVIEW_PACKET_JSON__"
     if template.count(marker) != 1:
         raise ValueError("review page must contain exactly one packet placeholder")
-    payload = json.dumps(packet, ensure_ascii=False)
+    payload = json.dumps(_compact_payload(packet), ensure_ascii=False)
     for char, escaped in (("<", "\\u003c"), (">", "\\u003e"), ("&", "\\u0026"),
                           ("\u2028", "\\u2028"), ("\u2029", "\\u2029")):
         payload = payload.replace(char, escaped)
@@ -118,7 +131,8 @@ def validate_return(packet: Mapping[str, Any], returned: Mapping[str, Any]) -> N
         raise ValueError("decisions and history arrays are required")
     seen = set()
     allowed = {"document_id", "field", "document_sha256", "decision", "corrected_labels_json",
-               "reviewer_initials", "reviewer_notes", "updated_at"}
+               "reviewer_initials", "reviewer_notes", "updated_at",
+               "verified_models", "verified_outputs", "manual_source_verification"}
     for d in decisions:
         if not isinstance(d, dict) or set(d) - allowed:
             raise ValueError("unknown decision fields")
@@ -135,12 +149,38 @@ def validate_return(packet: Mapping[str, Any], returned: Mapping[str, Any]) -> N
         for name in ("corrected_labels_json", "reviewer_initials", "reviewer_notes"):
             if not isinstance(d.get(name), str):
                 raise ValueError(f"{name} must be text")
+        verified_models = d.get("verified_models", [])
+        if not isinstance(verified_models, list) or not all(isinstance(m, str) for m in verified_models):
+            raise ValueError(f"verified_models must be a list of model names: {key}")
+        outputs = d.get("verified_outputs", [])
+        if not isinstance(outputs, list):
+            raise ValueError(f"verified_outputs must be a list: {key}")
+        known = {(str(o.get("model")), o.get("pass")) for o in source.get("model_outputs") or []
+                 if isinstance(o, dict) and o.get("model")}
+        seen_outputs = set()
+        for output in outputs:
+            if (not isinstance(output, dict) or set(output) - {"model", "pass"}
+                    or not isinstance(output.get("model"), str)
+                    or not (output.get("pass") is None or type(output.get("pass")) is int)):
+                raise ValueError(f"verified_outputs entries need a model name and an optional pass: {key}")
+            pair = (output["model"], output.get("pass"))
+            if pair in seen_outputs:
+                raise ValueError(f"repeated verified output: {key}")
+            seen_outputs.add(pair)
+            # No model outputs means no run to vouch for: votes for this target are refused.
+            if not known or pair not in known:
+                raise ValueError(f"verified_outputs names a run this target did not make: {key}")
+        if verified_models and not set(verified_models) <= {m for m, _ in known}:
+            raise ValueError(f"verified_models names a model this target did not run: {key}")
+        if not isinstance(d.get("manual_source_verification", False), bool):
+            raise ValueError(f"manual_source_verification must be boolean: {key}")
         if decision == "NOT_REVIEWED":
             continue
         if not INITIALS_RE.fullmatch(d["reviewer_initials"]) or not _time(d.get("updated_at")):
             raise ValueError(f"reviewer initials and a timestamp are required: {key}")
-        if decision == "ACCEPT" and source["candidate_status"] != "source_checks_passed":
-            raise ValueError(f"blocked candidate cannot be accepted: {key}")
+        if decision == "ACCEPT" and source["candidate_status"] != "source_checks_passed" \
+                and d.get("manual_source_verification") is not True:
+            raise ValueError(f"blocked candidate cannot be accepted without manual source verification: {key}")
         if decision == "CORRECT":
             try:
                 corrected = json.loads(d["corrected_labels_json"])

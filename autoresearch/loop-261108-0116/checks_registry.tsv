@@ -1,0 +1,16 @@
+# checks_registry — the autoresearch loop's dynamic coverage contract
+# Registered dimension → what it measures → where it is wired → expectation direction.
+# Rule: every new interface check, prompt theme, suite or corpus gate is wired in
+# verify_all.sh AND gets a row here (exact wire identified), so subsequent iterations of
+# the loop evaluate it on every later run — the ledger (dimensions.tsv) then grows instead
+# of going stale.
+dimension	wire	direction
+interface_named_checks	verify_all.sh -> verify_interface.sh -> tests/browser_review_page.mjs check() calls	higher (was 3 -> 27)
+a11y_axe_scan	verify_all.sh -> AXE_PATH=/private/tmp/opencode/axe.min.js node tests/browser_review_page.mjs -> axe-core wcag2a+aa+best-practice	clean row when scanned; evidence axe.json carries printer violations
+prompt_rubric_percent	verify_all.sh -> rubric_prompt.py (weighted theme coverage per bundle)	higher (96/claim+correspondence+corporate+intent themes at 100 now)
+smoke_fixtures_current	smoke_fixtures check  (per prompt+_bulk hashes)	equal (fixture set stays committed)
+smoke_fixture_replays	smoke_fixtures replay (recorded providers replay to the review packets)	equal (must remain green without paid calls)
+cap_headroom_guard	tests/test_labeling.py::test_every_cap_covers_its_projection_with_headroom (1.4x cap headroom per pending chunk)	pass
+portal_launch_tests	tests/test_labeling_review_portal.py + tests/test_labeling_launch.py	total # tests passed, 0 failures
+labeling_tests	tests/test_labeling.py	total # tests passed, 0 failures
+docclass_coverage_check	scripts/audit/coverage_matrix.py --check (per-doc_type/-subclass label-coverage oracle)	pass; honest skip recorded when data/ snapshot absent

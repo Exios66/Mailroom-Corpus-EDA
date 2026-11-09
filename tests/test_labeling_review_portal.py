@@ -78,6 +78,66 @@ def states(data):
     return {r["field"]: r["status"] for r in data["review_states"]}
 
 
+def test_agent_contract_lists_schema_routes_and_perlabel_rule(env):
+    """One machine-readable page tells an agent how to read the packet and save decisions."""
+    contract = env.app.agent_contract()
+    assert contract["schema"] == "mailroom-review-agent-contract/v1"
+    assert contract["packet_schema"] == review_page.PACKET_SCHEMA
+    assert contract["return_schema"] == review_page.RETURN_SCHEMA
+    assert contract["decision_key"] == DECISION_KEY
+    assert set(contract["read"]) == {"packet", "revision_queue"}
+    assert set(contract["write"]) == {"save_decisions", "checkpoint_confirmed"}
+    all_rules = " ".join(contract["rules"])
+    assert "CORRECT" in all_rules and "candidate_labels" in all_rules and "kept labels" in all_rules
+    assert "state_revision" in all_rules and "409" in all_rules
+    assert "never publishes" in all_rules
+
+
+def test_correct_can_drop_a_single_label_item(env):
+    """Per-label keep/drop rides the CORRECT contract as the array of kept labels."""
+    text = ("COVERAGE DETERMINATION: APPROVED - this claim has been adjudicated and paid.\n"
+            "Date of Report: 2026-02-25\n")
+    items = ["Coverage Determination: COVERAGE DETERMINATION: APPROVED - this claim has been adjudicated and paid.",
+             "Timely Notice: Date of Report: 2026-02-25",
+             "Deductible: invented wrong line"]
+    write_packet(env.source, [record("claim_checklist", items, text=text,
+                                     doc_class="insurance_claim", subclass="property")])
+    assert states(env.app.save(returned(env.app.data(),
+                                        ("claim_checklist", "CORRECT", [items[0], items[1]])))["data"])["claim_checklist"] == "human_confirmed"
+    receipt = next(iter(env.app.returns.glob("review-*.json"))).read_text()
+    row = json.loads(receipt)["decisions"][0]
+    assert row["decision"] == "CORRECT"
+    assert json.loads(row["corrected_labels_json"]) == [items[0], items[1]]
+
+
+def test_slim_save_returns_state_without_the_records(env):
+    """A save with slim:true answers the page with review state only; the receipt stays canonical."""
+    data = env.app.data()
+    body = returned(data, ("entity_name", "ACCEPT", None))
+    body["slim"] = True
+    result = env.app.save(body)
+    assert "records" not in result["data"] and "document_texts" not in result["data"]
+    assert result["data"]["state_revision"] and result["data"]["review_states"]
+    assert result["data"]["saved_decisions"][0]["field"] == "entity_name"
+    receipt = json.loads(next(iter(env.app.returns.glob("review-*.json"))).read_text())
+    assert "slim" not in receipt
+
+
+def test_save_logs_model_attribution_and_manual_verification(env):
+    """The decision journal keeps which model(s) the reviewer verified and whether the
+    human verified a source-check-blocked candidate themselves."""
+    data = env.app.data()
+    body = returned(data, ("entity_name", "ACCEPT", None))
+    body["decisions"][0].update(verified_models=["synthetic/model-a"],
+                                manual_source_verification=True)
+    body["history"][0]["after"] = copy.deepcopy(body["decisions"][0])
+    env.app.save(body)
+    event = json.loads((env.out / "confirmed-fields.jsonl").read_text().splitlines()[-1])
+    assert event["verified_models"] == ["synthetic/model-a"]
+    assert event["manual_source_verification"] is True
+    assert event["human_confirmed"] is True
+
+
 def test_collector_finished_packets_only_cache_and_auto_refresh(env, monkeypatch):
     (env.root / "raw").mkdir()
     (env.root / "raw" / "fields.csv").write_text("torn,raw,not_ready")
@@ -183,6 +243,26 @@ def test_receipt_idempotency_and_defaults_do_not_erase_prior_confirmation(env):
     assert states(result["data"])["entity_name"] == "human_confirmed"
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+def test_timestamp_only_resave_creates_no_event_or_receipt(env, legacy):
+    first = env.app.save(returned(env.app.data(), ("entity_name", "ACCEPT", None)))
+    if legacy:
+        events = portal._lines(env.app.journal)
+        del events[0]["content_sha256"]
+        env.app.journal.write_text(json.dumps(events[0]) + "\n")
+    before = env.app.journal.read_bytes()
+    receipts = set(env.app.returns.glob("review-*.json"))
+    request = returned(env.app.data(), ("entity_name", "ACCEPT", None),
+                       at="2026-11-08T12:00:00+00:00")
+    assert env.app.save(request)["changed_fields"] == 0
+    assert env.app.journal.read_bytes() == before
+    assert set(env.app.returns.glob("review-*.json")) == receipts
+    request["decisions"][0]["reviewer_notes"] = "Rechecked source evidence."
+    request["history"][-1]["after"] = copy.deepcopy(request["decisions"][0])
+    assert env.app.save(request)["changed_fields"] == 1
+    assert len(portal._lines(env.app.journal)) == 2
+
+
 @pytest.mark.parametrize("code", ["REJECT", "NEEDS_SOURCE"])
 def test_explicit_rejection_supersedes_confirmation_without_losing_history(env, code):
     first = env.app.save(returned(env.app.data(), ("entity_name", "ACCEPT", None)))
@@ -255,6 +335,24 @@ def test_checkpoint_disabled_and_failed_verification_keep_local_confirmations(en
     failed = env.app.checkpoint(result["data"]["packet_id"], api=object())
     assert failed["verified"] is False and failed["pending_fields"] == 1
     assert states(env.app.data())["entity_name"] == "human_confirmed"
+
+
+def test_local_mirror_failure_never_blocks_the_private_checkpoint(env, monkeypatch):
+    env.app.hf_checkpoint = True
+    env.app.local_backup = env.root / "staging-mirror"
+    saved = env.app.save(returned(env.app.data(), ("entity_name", "ACCEPT", None)))
+
+    def refuse(*args, **kwargs):
+        raise ValueError("already reviewed in an earlier backup: D1")
+
+    monkeypatch.setattr(portal.local_backup, "backup", refuse)
+    monkeypatch.setattr(checkpoint, "checkpoint",
+                        lambda *a, **k: {"repo": checkpoint.STAGING_REPO, "files": 1,
+                                         "verified": True, "revision": "fake-revision"})
+    receipt = env.app.checkpoint(saved["data"]["packet_id"], api=object())
+    assert receipt["verified"] is True and receipt["revision"] == "fake-revision"
+    assert receipt["local_backup"] is None
+    assert "already reviewed" in receipt["local_backup_error"]
 
 
 def test_verified_checkpoint_and_restore_into_clean_root_replay_per_field_state(env, tmp_path, monkeypatch):

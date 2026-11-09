@@ -5,6 +5,8 @@ Output one JSON object, nothing else: {"clauses": [{"category": "<exact name>", 
 1. category is exactly one of the 41 names in the user message.
 2. text is copied character for character (same words, order, punctuation, capitalisation). Never
    paraphrase, summarise, fix typos or join text from two places. Markdown marks (* _ #) may be dropped.
+   Copy the bytes as printed: placeholder or deletion artifacts (digit-only lines, runs of `----`,
+   runs of blank lines) stay in the quote exactly where they appear; never smooth them away.
 3. Copy the operative sentence or clause, not a whole article and not a heading. A heading alone
    ("Governing Law.", "ARTICLE 3 CONFIDENTIALITY AND NON-COMPETITION") is never a span.
 4. Presence test. Each category in the user message is a question. Add the category only when the span

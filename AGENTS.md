@@ -95,6 +95,47 @@ uv member (no build).
     figures can never be byte-identical. The committed files are the canonical
     upstream bytes; treat local regeneration as scratch output only.
 
+## Labeling results staging & private checkpoints (where the results live)
+
+- **Private Hub staging repo**: `Lucius-Morningstar/mailroom-dataset-v10-staging` —
+  the durable staging surface for v10 labeling results. Every paid unit of
+  command-line work auto-checkpoints (chunk run, adjudicate, gate approval, route
+  ping) — the portal's own **Save is local only** (immutable receipts under
+  `review_bundle/portal/`) and staging is advanced by the portal review's explicit
+  Checkpoint request (`POST /api/checkpoint`, server started with
+  `--hf-checkpoint`). That upload commits the labels root (packets, receipts, journals, decisions
+  signed off by initials) plus `campaign/approved.yaml` into that private repo;
+  every uploaded file is sha-verified and the commit is immutable. Provenance is
+  human: agents accelerate (per-label picker, bulk "Accept verified in batch",
+  next-pending) but never forge initials — a decision is staged with its reviewer's
+  own initials and one human Save. Restore is the mirrored flow:
+  `PYTHONPATH=src python -m mailroom_eda.labeling.review_portal --restore-revision <sha>`. The checklist the flow enforces:
+  `require HF_TOKEN to stage`, refuse a public staging repo, never touch `REPO_ID`,
+  never build a blind config from label files (code:
+  `src/mailroom_eda/labeling/checkpoint.py`, tests:
+  `tests/test_review_checkpoint_recovery.py`, card written on every checkpoint).
+  A pending `--no-checkpoint` flag skips only that command's upload; a later
+  checkpoint scans the whole labels root, so discard-outcome runs live OUTSIDE it
+  (e.g. `docs/reports/audits/v10_labeling_verify/`) and stage as journal evidence
+  without advancing staging.
+- **Local backup staging repo**: `/Users/luciusjmorningstar/Downloads/labels-staging`
+  = `https://github.com/Exios66/labels-staging` (branch `main`). Autoresearch loop
+  state and experiment results are backed up per session under `YYYY-MM-DD-session-N/`
+  (`SUMMARY.md`, `spend-ledger.csv`, `manifest.sha256`, the loop TSVs, gate.json /
+  decisions.csv per chunk, pilot review packets, smoke-fixture manifests, and the
+  coverage oracle snapshot `coverage/docclass-coverage-*.json`). Read-only access is
+  public; the reviewer-facing notice is in that repo's README.
+- **Results bundled in this repo**: `docs/reports/audits/v10_labels/` holds the live
+  chunk journals (calls/runs/gates), the *-review-data.json review packets the
+  portal serves, and the coverage matrix output
+  (`docs/reports/audits/docclass_coverage_matrix.json`, written by
+  `scripts/audit/coverage_matrix.py` WITHOUT `--check`; `--check` reads only and
+  prints its summary). The
+  labeling interfaces to all three surfaces: `labeling doctor`, the review portal
+  (module entry `mailroom_eda.labeling.review_portal --labels-root docs/reports/audits/v10_labels`),
+  and `docs/labeler-review-viewer.md` "Agent interface (machine)" (`GET /api/contract`).
+
+
 ## Commands
 
 ```bash

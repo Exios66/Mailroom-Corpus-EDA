@@ -26,6 +26,10 @@ th { background: #eef3ff; }
 td.k { font-weight: 600; white-space: nowrap; }
 label { display: block; margin: 8px 0 2px; font-weight: 600; }
 textarea, input { width: 100%; box-sizing: border-box; }
+input[type="checkbox"] { width: auto; }
+.review-search { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+.review-search label { flex: 1 1 280px; }
+#target { width: 100%; }
 .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .columns { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
 .field-title { font-size: 1.15em; font-weight: 700; margin: 2px 0; }
@@ -34,7 +38,7 @@ textarea, input { width: 100%; box-sizing: border-box; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
 .chip { font-size: .85em; padding: 1px 8px; border-radius: 10px; background: #eee; }
 .chip.good { background: #d3f4d3; } .chip.warn { background: #ffe9a8; } .chip.bad { background: #ffd6d6; }
-.empty { color: #888; font-style: italic; }
+.empty { color: #666; font-style: italic; }
 tr.current td { background: #fff7d6; }
 details { margin: 6px 0; } summary { cursor: pointer; font-weight: 600; }
 label.inline { display: flex; gap: 6px; align-items: center; font-weight: 400; }
@@ -43,10 +47,15 @@ label.inline input { width: auto; }
 .check.fail { border-color: #c62828; background: #fff5f5; } .check.warn { border-color: #e0a100; }
 .check.pass { border-color: #2e7d32; } .check .fix { margin: 2px 0; font-weight: 600; }
 pre#launch-log { max-height: 220px; overflow: auto; background: #f6f6f6; padding: 6px; font-size: 12px; white-space: pre-wrap; }
+#tabs { display: flex; gap: 6px; margin: 12px 0 0; }
+#tabs [role="tab"] { border-radius: 6px 6px 0 0; }
+#tabs [aria-selected="true"] { background: #1652f0; border-color: #1652f0; color: #fff; font-weight: 600; }
+#tabs .avail::after { content: " ·"; color: #1652f0; font-weight: 700; }
 </style>
 </head>
 <body>
-<h1>Human label review — private local packet</h1>
+<header><h1>Human label review — private local packet</h1></header>
+<main id="main">
 <div class="toolbar">
 <button id="save" class="primary">Save review to server</button>
 <button id="export">Export JSON</button>
@@ -56,7 +65,15 @@ pre#launch-log { max-height: 220px; overflow: auto; background: #f6f6f6; padding
 </div>
 <div id="message" role="status" aria-live="polite" class="notice">Loading review packet…</div>
 <small id="binding" class="muted"></small>
+<p class="muted" id="kbd-legend">Shortcuts: <kbd>N</kbd> next pending · <kbd>Shift+N</kbd> next pending in batch</p>
 
+<nav id="tabs" role="tablist" aria-label="Page sections">
+<button id="tab-launch" role="tab" aria-controls="launch-view" aria-selected="false">Batch launcher</button>
+<button id="tab-review" role="tab" aria-controls="review-view" aria-selected="true">Label review</button>
+<button id="tab-tracker" role="tab" aria-controls="tracker-view" aria-selected="false">Campaign tracker</button>
+</nav>
+
+<div id="launch-view" role="tabpanel" aria-labelledby="tab-launch">
 <section class="panel" id="launch-panel" hidden aria-labelledby="launch-title">
 <h2 id="launch-title">Launch a labeling batch</h2>
 <p class="muted">This spends real money on OpenRouter. Choose a target, run the preflight, fix every red item, then launch.
@@ -83,7 +100,9 @@ The API key field is optional, is never stored (not even in this browser) and is
 </div>
 </div>
 </section>
+</div>
 
+<div id="tracker-view" role="tabpanel" aria-labelledby="tab-tracker" hidden>
 <section class="panel" aria-labelledby="tracker-title">
 <h2 id="tracker-title">Campaign tracker</h2>
 <p id="summary"></p>
@@ -98,28 +117,56 @@ The API key field is optional, is never stored (not even in this browser) and is
 <p class="muted">Confirmed production decisions queued privately for v10 staging. This is not a deployment command.</p>
 <div id="revision-queue" class="scroll"></div>
 </section>
+</div>
 
+<div id="review-view" role="tabpanel" aria-labelledby="tab-review">
 <section class="panel">
+<label for="review-progress">Saved review progress</label>
+<progress id="review-progress" value="0" max="1" style="width:100%"></progress>
+<p id="review-progress-text" role="status" class="muted"></p>
+<div class="review-search"><label for="target-search">Find a review target
+<input id="target-search" type="search" placeholder="Document ID, filename, field or class" aria-describedby="target-search-status"></label>
+<button id="clear-target-search" type="button">Clear search</button></div>
+<p id="target-search-status" role="status" class="muted"></p>
 <label for="target">Review target</label><select id="target"></select>
-<div class="toolbar"><button id="previous">Previous target</button><button id="next">Next target</button></div>
+<div class="toolbar"><button id="previous">Previous target</button><button id="next">Next target</button><button id="next-pending" title="Jump to the next undecided target (keyboard: N)">Next pending</button><button id="next-pending-batch" title="Jump to the next undecided target inside the current batch, else the next pending anywhere (keyboard: Shift+N)">Next pending in batch</button><button id="bulk-accept" title="Set ACCEPT (with the remembered initials) for every undecided target in the current record's batch whose candidate passed the automated source checks; review then Save as usual">Accept verified in batch</button></div>
+<label for="batch-jump">Jump to batch</label><select id="batch-jump" aria-label="Jump to a batch's first pending target"></select>
 <p id="target-status"></p>
+<h2>Fields in this document</h2>
+<p class="muted">Review each extraction separately. Approving a field does not approve the entire document. For list values, keep, drop or edit individual items, then apply the replacement list.</p>
+<div id="document-fields" class="toolbar" aria-label="Field outcomes for the current document"></div>
 </section>
 
 <div class="columns">
 <section class="panel" style="flex:1 1 480px" aria-labelledby="source-title"><h2 id="source-title">Complete source · evidence highlighted</h2><div id="links"></div><div id="source" tabindex="0"></div><h3>Evidence spans</h3><div id="evidence"></div></section>
 <section class="panel" style="flex:1 1 480px" aria-labelledby="proposal-title"><h2 id="proposal-title">Proposed value</h2><div id="values"></div><div id="issues"></div>
 <form id="review-form">
+<p id="field-outcome" role="status"></p>
+<div class="toolbar" aria-label="Set outcome for this field">
+<button type="button" data-outcome="ACCEPT">Approve displayed value</button>
+<button type="button" data-outcome="CORRECT">Approve a correction</button>
+<button type="button" data-outcome="REJECT">Reject extraction</button>
+<button type="button" data-outcome="NEEDS_SOURCE">Defer for source review</button>
+</div>
 <label>Decision <select id="decision"><option>NOT_REVIEWED</option><option>ACCEPT</option><option>CORRECT</option><option>REJECT</option><option>NEEDS_SOURCE</option></select></label>
 <p id="decision-help" class="muted"></p>
+<label id="manual-wrap" hidden><input type="checkbox" id="manual-verify"> I verified this value against the full source myself</label>
 <label>Reviewer initials (2–6 uppercase letters) <input id="initials" pattern="[A-Z]{2,6}" maxlength="6" autocomplete="off"></label>
 <label>Reviewer notes <textarea id="notes"></textarea></label>
-<label>Complete replacement JSON (CORRECT only) <textarea id="correction" spellcheck="false" placeholder='A JSON value, not a patch'></textarea></label>
+<div id="correction-editor" hidden>
+<label>Corrected value <textarea id="correction" spellcheck="false" placeholder='Choose a model value, use the template, or edit the displayed value'></textarea></label>
+<button id="correction-template" type="button">Start from displayed value / template</button>
 <p id="correction-help" class="muted"></p>
+</div>
 </form>
 </section>
 </div>
 
 <section class="panel"><h2>Change journal</h2><p class="muted">Actual browser edits and recovered receipt history. Initials and browser timestamps are claims, not signatures.</p><div id="journal"></div></section>
+</div>
+
+<p class="muted">Agent interface: <code>GET /api/contract</code> — the machine-readable packet schema, decision key, per-label rules and routes. Nothing publishes automatically; every decision expects a reviewer's initials.</p>
+</main>
 
 <script id="packet" type="application/json">__REVIEW_PACKET_JSON__</script>
 <script>
@@ -130,14 +177,25 @@ let packet=JSON.parse($('packet').textContent);
 let records=[], current=0, busy=false, dirty=false, staleDraft=false, pendingData=false;
 let decisions=new Map(), history=[];
 const KEY=(r)=>r.document_id+'\n'+r.field;
+const positionKey='mailroom-review-position/v1';
+let startingPosition=null;
+try { startingPosition=JSON.parse(localStorage.getItem(positionKey)||'null'); } catch (exc) {}
 const storageKey='mailroom-review-draft/'+packet.packet_id;
-function blank(r){ return {document_id:r.document_id, field:r.field, document_sha256:r.document_sha256, decision:'NOT_REVIEWED', corrected_labels_json:'', reviewer_initials:'', reviewer_notes:'', updated_at:''}; }
+function blank(r){ return {document_id:r.document_id, field:r.field, document_sha256:r.document_sha256, decision:'NOT_REVIEWED', corrected_labels_json:'', reviewer_initials:'', reviewer_notes:'', updated_at:'', verified_models:[], verified_outputs:[], manual_source_verification:false}; }
 function localDraft(){ return [...decisions.values()].some((d)=>d.decision!=='NOT_REVIEWED'||d.reviewer_notes||d.reviewer_initials||d.corrected_labels_json); }
+/** Reset targets, item choices, decisions, and history from packet data.
+ * A truthy keep marks the resulting state as unsaved.
+ */
 function seed(data, keep){
-  records=[...(data.records||[])];
+  // Text travels once per content sha (compact payload); rehydrate before use.
+  records=[...(data.records||[])].map((r)=>({...r, full_document_text: r.full_document_text!==undefined
+    ? r.full_document_text : ((data.document_texts||{})[r.document_sha256]||'')}));
   decisions=new Map();
+  itemState=new Map();
   records.forEach((r)=>decisions.set(KEY(r), blank(r)));
-  (data.saved_decisions||[]).forEach((d)=>{ if(decisions.has(d.document_id+'\n'+d.field)) decisions.set(d.document_id+'\n'+d.field, clone(d)); });
+  const byKey=new Map(records.map((r)=>[KEY(r),r]));
+  (data.saved_decisions||[]).forEach((d)=>{ const k=d.document_id+'\n'+d.field;
+    if(decisions.has(k)) decisions.set(k, {...blank(byKey.get(k)), ...clone(d)}); }); // older receipts lack new fields
   history=clone(data.saved_history||[]);
   if (keep) dirty=true; else dirty=false;
 }
@@ -145,10 +203,122 @@ function overlay(kind){
   // Local draft fields stay on top of server values unless explicitly reset.
   if (kind==='reset') return;
   const draft=JSON.parse(localStorage.getItem(storageKey)||'null');
-  (draft&&draft.packet_id===packet.packet_id?draft.decisions:[]).forEach((d)=>{ if(decisions.has(d.document_id+'\n'+d.field)) decisions.set(d.document_id+'\n'+d.field, clone(d)); });
+  const byKey=new Map(records.map((r)=>[KEY(r),r]));
+  (draft&&draft.packet_id===packet.packet_id?draft.decisions:[]).forEach((d)=>{ const k=d.document_id+'\n'+d.field;
+    if(decisions.has(k)) decisions.set(k, {...blank(byKey.get(k)), ...clone(d)}); });
   if (draft&&draft.history&&draft.history.length>=history.length) history=clone(draft.history);
 }
 function decision(){ return decisions.get(KEY(records[current])); }
+// Per-label items: keep / drop / edit individual labels of an array candidate. The choice
+// travels as the CORRECT replacement array (corrected_labels_json), so the server contract
+// stays one decision per (document, field); itemState is browser-side only.
+let itemState=new Map();
+/** Return candidate items as strings, or null unless this is an array correction
+ * with an array candidate (including a candidate encoded as JSON text).
+ */
+function labelItems(record){
+  if (record.correction_type!=='array') return null;
+  const parsed=parseMaybe(record.candidate_labels);
+  return Array.isArray(parsed) ? parsed.map((x)=>String(x)) : null;
+}
+/** Return candidate items and their mutable picker state, or null for non-array candidates.
+ * With no item edits, a nonempty match in a draft correction no longer than the
+ * candidate list resets dropped indices to the candidates absent from that draft —
+ * adopted only into a freshly created picker state, so later manual toggles persist.
+ */
+function itemsFor(record){
+  const key=KEY(record), items=labelItems(record);
+  if (items===null) return null;
+  const fresh=!itemState.has(key);
+  if (fresh) itemState.set(key, {dropped:[], edits:{}});
+  const state=itemState.get(key);
+  const d=decisions.get(key);
+  const draft=parseMaybe(d.corrected_labels_json);
+  // If the draft correction is exactly a kept subset of the candidate items, adopt it —
+  // only when the picker state is fresh, so a later keep/drop toggle is never re-stomped
+  // by the saved draft on every re-render. Draft text that no candidate matches (edited
+  // labels) cannot map back and is left to the CORRECT field, shown in the summary.
+  if (fresh && d.corrected_labels_json){
+    const used=[];let cursor=0;
+    if (Array.isArray(draft)) for (const text of draft){
+      const found=items.indexOf(text,cursor);if(found<0) break;used.push(found);cursor=found+1;
+    }
+    if (Array.isArray(draft)&&used.length===draft.length) state.dropped=items.map((_,i)=>i).filter((i)=>!used.includes(i));
+    else state.blocked=true;
+  }
+  return {items, state};
+}
+/** Return kept labels in candidate order, or null for non-array candidates.
+ * Truthy item edits replace the original text; empty edits retain it.
+ */
+function keptItems(record){
+  const ctx=itemsFor(record);
+  if (ctx===null) return null;
+  // Object.hasOwn: an explicitly cleared edit ('') stays an edit, so Apply can refuse
+  // a blank label instead of silently restoring the original text.
+  return ctx.items.map((text,i)=>{ const text2=String(Object.hasOwn(ctx.state.edits,i)?ctx.state.edits[i]:text); return [i,{dropped:ctx.state.dropped.includes(i), text:text2}]; })
+    .filter(([,v])=>!v.dropped).map(([,v])=>v.text);
+}
+/** Build the keep/drop/edit controls, or return null for non-array candidates.
+ * Applying the selection sets the current decision to CORRECT and records a local
+ * draft change; saving it to the server still requires Save.
+ */
+function itemPicker(record){
+  const ctx=itemsFor(record);
+  if (ctx===null) return null;
+  const box=node('details'); box.id='item-picker';
+  if(ctx.state.blocked){
+    box.open=true;box.append(node('summary','Saved correction preserved'));
+    box.append(node('p','The saved correction contains edits that cannot be mapped safely to the original items. Continue editing the complete replacement JSON below; the item picker is disabled so it cannot overwrite your saved work.'));
+    return box;
+  }
+  const summary=node('summary'); box.append(summary);
+  const refreshTitle=()=>{
+    const kept=keptItems(record);
+    summary.textContent='Label items · '+kept.length+' of '+ctx.items.length+' kept';
+  };
+  const list=node('div','Approve or drop each label; kept items become the CORRECT replacement list.','muted');
+  const keeper=(i, toggle)=>{
+    const keep=!ctx.state.dropped.includes(i);
+    toggle.textContent=keep?'Keep':'Dropped';
+    toggle.className='chip'+(keep?' good':'');
+    toggle.setAttribute('aria-pressed', String(keep));
+    refreshTitle();
+    return keep;
+  };
+  ctx.items.forEach((text,i)=>{
+    const row=node('div'); row.className='chips';
+    const toggle=node('button',''); toggle.type='button';
+    toggle.addEventListener('click', ()=>{
+      const idx=ctx.state.dropped.indexOf(i);
+      if (idx>=0) ctx.state.dropped.splice(idx,1); else ctx.state.dropped.push(i);
+      keeper(i, toggle);
+    });
+    keeper(i, toggle);
+    const editor=node('input'); editor.type='text';
+    editor.value=String(Object.hasOwn(ctx.state.edits,i)?ctx.state.edits[i]:text);
+    editor.setAttribute('aria-label','Item '+(i+1)+' text');
+    editor.addEventListener('input', ()=>{ ctx.state.edits[i]=editor.value; });
+    row.append(toggle, editor); list.append(row);
+  });
+  const apply=node('button','Apply kept items as the correction'); apply.type='button';
+  apply.addEventListener('click', ()=>{
+    const d=decision();
+    const kept=keptItems(record);
+    if (!kept.length){ message('Every label is dropped; REJECT the candidate instead (the server refuses empty correction lists).', true); return; }
+    if (kept.some((t)=>!String(t).trim())){ message('Drop empty-edited items rather than keeping blank labels.', true); return; }
+    const before=clone(d);
+    d.corrected_labels_json=JSON.stringify(kept);
+    d.decision='CORRECT'; d.updated_at=now();
+    $('correction').value=d.corrected_labels_json; $('decision').value='CORRECT';
+    correctionHelp();
+    logChange(before, d);
+    message('Built the replacement list from '+kept.length+' kept items; review it in the CORRECT field.', true);
+  });
+  list.append(apply);
+  box.append(list);
+  return box;
+}
 function now(){ return new Date().toISOString(); }
 function payload(){ return {schema:'mailroom-human-review/v1',packet_id:packet.packet_id,state_revision:packet.state_revision,exported_at:now(),decisions:[...decisions.values()],history:clone(history)}; }
 function persist(){
@@ -156,8 +326,11 @@ function persist(){
   catch (exc) { message('Local draft storage failed ('+exc.name+'); use Save or Export JSON to keep your work in files.'); }
 }
 function logChange(before, after){
+  // A changed timestamp alone is not a decision change: no history entry, no autosave.
+  const semantic=(d)=>{ const c={...d}; delete c.updated_at; return JSON.stringify(c); };
+  if (semantic(before)===semantic(after)){ after.updated_at=before.updated_at; return; }
   history.push({at:now(), document_id:after.document_id, field:after.field, before:clone(before), after:clone(after)});
-  dirty=true; persist(); renderJournal(); renderTargetStatus(); controls();
+  dirty=true; editSeq++; persist(); scheduleAutoSave(); renderJournal(); renderTargetStatus(); tracker(); controls();
 }
 function stateOf(record){
   const found=(packet.review_states||[]).find((s)=>s.document_id===record.document_id&&s.field===record.field);
@@ -264,31 +437,69 @@ function renderSource(record){
     ev.append(row); });
 }
 function modelAnswers(record){
-  // One row per model (and per pass): the exporter's model_outputs, so a reviewer can compare the models.
+  // One row per model (and per pass): the exporter's model_outputs, so a reviewer can compare
+  // the models and record which one(s) produced the verified output.
   const outs=Array.isArray(record.model_outputs)?record.model_outputs.filter((o)=>o&&typeof o==='object'):[];
   if (!outs.length) return null;
+  const state=decisions.get(KEY(record))||{};
+  const verified=(x,o)=>String(x.model)===String(o.model)&&((x.pass==null&&o.pass==null)||(x.pass===o.pass));
+  const isTicked=(o)=>(state.verified_outputs||[]).some((x)=>verified(x,o));
   const box=node('details'); box.id='model-answers'; box.open=true;
   box.append(node('summary','Model answers ('+outs.length+')'));
   const t=node('table'), head=node('tr');
-  ['Model','Value','Status','Evidence'].forEach((h)=>head.append(node('th',h))); t.append(head);
+  ['Verified','Model','Value','Status','Evidence','Use'].forEach((h)=>head.append(node('th',h))); t.append(head);
   outs.forEach((o)=>{
-    const tr=node('tr'), value=node('td'), status=node('td'), ev=node('td');
+    const tr=node('tr'), verified=node('td'), value=node('td'), status=node('td'), ev=node('td'), use=node('td');
+    if (o.model){
+      const tick=node('input'); tick.type='checkbox'; tick.setAttribute('aria-label','Verified model '+o.model);
+      tick.checked=isTicked(o);
+      tick.addEventListener('change', ()=>{
+        const before=clone(decisions.get(KEY(record))), d=decisions.get(KEY(record));
+        const list=(d.verified_outputs||[]).filter((x)=>!verified(x,o));
+        if (tick.checked) list.push({model:String(o.model), pass:o.pass==null?null:o.pass});
+        d.verified_outputs=list;
+        d.verified_models=[...new Set(list.map((x)=>x.model))].sort();
+        d.updated_at=now();
+        logChange(before, d);
+      });
+      verified.append(tick);
+    }
+    // One click turns a model's answer into the CORRECT replacement, so a reviewer who
+    // verified the models' consensus does not have to retype it. Arrays keep the picker.
+    if (record.correction_type!=='array' && o.value!=null){
+      const b=node('button','Use value'); b.type='button';
+      b.setAttribute('aria-label','Use this value as the correction');
+      b.addEventListener('click', ()=>{
+        const before=clone(decisions.get(KEY(record))), d=decisions.get(KEY(record));
+        d.decision='CORRECT'; d.corrected_labels_json=JSON.stringify(o.value); d.updated_at=now();
+        logChange(before, d);
+        $('decision').value='CORRECT'; $('correction').value=d.corrected_labels_json;
+        correctionHelp();
+        message('CORRECT filled from '+o.model+'. Verify it against the source, tick every model that agrees, then Save.', true);
+      });
+      use.append(b);
+    }
+    tr.append(verified, node('td',String(o.model||'?')+(o.pass?' (pass '+o.pass+')':''),'k'), value, status, ev, use);
     value.append(show(o.value, record.dojo_type));
     status.append(chip(label(o.status)||'—', o.status==='present'?'good':''));
     if (o.confidence!=null) status.append(node('span',' confidence '+o.confidence,'muted'));
     const quote=typeof o.evidence==='string'&&o.evidence?o.evidence:(Array.isArray(o.evidence_spans)?o.evidence_spans.map((s)=>s.quote).filter(Boolean).join(' … '):'');
     ev.append(quote?node('span',quote):node('span','No evidence quote','empty'));
-    tr.append(node('td',String(o.model||'?')+(o.pass?' (pass '+o.pass+')':''),'k'), value, status, ev); t.append(tr);
+    t.append(tr);
   });
   box.append(t); return box;
 }
+/** Render the current target and decision, filling missing initials from local storage.
+ * Storage access failures leave initials unchanged.
+ */
 function renderTarget(){
   const record=records[current]; $('target').value=String(current);
   renderSource(record);
   const values=$('values'); values.textContent='';
   values.append(node('div', humanize(record.field)+' · '+humanize(record.doc_class)+(record.subclass?' / '+humanize(record.subclass):''), 'field-title'));
+  if (record.batch||record.chunk) values.append(node('div','batch '+(record.batch||'')+(record.set?' · '+record.set:'')+(record.task?' · '+humanize(record.task):'')+(record.slice?' · '+record.slice:''),'muted'));
   const box=node('div','','value'); box.append(show(record.candidate_labels, record.dojo_type)); values.append(box);
-  const chips=node('div','','chips');
+  const pick=itemPicker(record); if (pick) values.append(pick);  const chips=node('div','','chips');
   const checked=record.candidate_status==='source_checks_passed';
   if (record.candidate_status) chips.append(chip(label(record.candidate_status), checked?'good':'warn'));
   if (record.candidate_presence) chips.append(chip(label(record.candidate_presence), record.candidate_presence==='populated'?'good':''));
@@ -308,18 +519,115 @@ function renderTarget(){
   const issues=$('issues'); issues.textContent='';
   (record.issues||[]).forEach((i)=>issues.append(node('li', i)));
   const d=decision();
+  if (!d.reviewer_initials){ // sticky initials: remember the reviewer across targets of a session
+    try { d.reviewer_initials = localStorage.getItem(storageKey+'/initials') || ''; } catch (exc) {}
+  }
   $('decision').value=d.decision; $('initials').value=d.reviewer_initials;
   $('notes').value=d.reviewer_notes; $('correction').value=d.corrected_labels_json;
-  $('decision-help').textContent=packet.decision_key?packet.decision_key[d.decision]||'':'';
-  $('correction-help').textContent='Required only for CORRECT. Native JSON type: '
-    +(record.correction_type==='array'?'array of strings':record.correction_type==='number'?'number':record.correction_type||'string');
+  const blocked=record.candidate_status!=='source_checks_passed';
+  $('manual-wrap').hidden=!blocked;
+  $('manual-verify').checked=!!d.manual_source_verification;
+  correctionHelp();
+  $('correction-help').textContent='Native JSON type: '
+    +(record.correction_type==='array'?'array of strings':record.correction_type==='number'?'number':record.correction_type||'string')
+    +'. The editor is prefilled; keep the whole value valid JSON. Unfinished drafts stay local and are never approved.';
   renderTargetStatus();
 }
+function prefillCorrection(d,record){
+  if(d.corrected_labels_json.trim()) return;
+  if(record.candidate_labels!==undefined&&record.candidate_labels!==null)
+    d.corrected_labels_json=JSON.stringify(record.candidate_labels,null,2);
+}
+function correctionHelp(){
+  const d=decision(),correct=d.decision==='CORRECT';
+  $('correction-editor').hidden=!correct;
+  $('decision-help').textContent=correct
+    ?'Edit the prefilled value below, or choose “Use value” on a model answer. Existing corrections are preserved.'
+    :d.decision==='ACCEPT'?'Approve the displayed value as it stands. No replacement JSON is needed.'
+    :(packet.decision_key?packet.decision_key[d.decision]||'':'');
+}
+/** Refresh the current target's status and batch decision counts. */
 function renderTargetStatus(){
   const d=decision();
   $('target-status').textContent='Server state: '+stateOf(records[current]).status
-    +(dirty?' (unsaved local edits)':'')+(staleDraft?' (stale packet; discard or reload)':'')
+    +(syncPending?' · sync pending (kept in this browser)':dirty?' (autosaving…)':'')
+    +(lastSavedAt?' · auto-saved '+lastSavedAt:'')
+    +(staleDraft?' (stale packet; discard or reload)':'')
     +' · Decided: '+d.decision+(d.updated_at?' at '+d.updated_at:'');
+  batchProgress();
+  reviewProgress();
+  renderFieldOutcomes();
+  try { localStorage.setItem(positionKey,JSON.stringify({document_id:records[current].document_id,field:records[current].field})); } catch (exc) {}
+}
+function fieldOutcome(r){
+  const d=decisions.get(KEY(r))||blank(r);
+  const prior=(packet.saved_decisions||[]).find((x)=>x.document_id===r.document_id&&x.field===r.field);
+  const content=(value)=>{const c={...blank(r),...value};delete c.updated_at;return JSON.stringify(c);};
+  const names={ACCEPT:'Approved',CORRECT:'Approved with correction',REJECT:'Rejected',NEEDS_SOURCE:'Deferred for source review',NOT_REVIEWED:'Not reviewed'};
+  if (d.decision!=='NOT_REVIEWED'&&content(d)!==content(prior||blank(r))) return 'Draft — '+names[d.decision]+' (not saved)';
+  if (!prior||prior.decision==='NOT_REVIEWED') return 'Not reviewed';
+  const state=stateOf(r);
+  if (state.status==='reviewed_needs_schema') return 'Review saved — schema approval still required';
+  return names[prior.decision]+' — '+(state.status==='checkpointed'?'checkpointed':'saved locally');
+}
+function renderFieldOutcomes(){
+  const active=records[current],box=$('document-fields');box.textContent='';
+  $('field-outcome').textContent=humanize(active.field)+': '+fieldOutcome(active);
+  records.forEach((r,i)=>{
+    if(r.document_id!==active.document_id) return;
+    const button=node('button',humanize(r.field)+' · '+fieldOutcome(r));button.type='button';
+    if(i===current) button.setAttribute('aria-current','true');
+    button.addEventListener('click',()=>{current=i;renderTarget();controls();});box.append(button);
+  });
+}
+function reviewProgress(){
+  const saved=new Map((packet.saved_decisions||[]).map((d)=>[d.document_id+'\n'+d.field,d]));
+  let count=0,drafts=0;
+  const content=(r,d)=>{ const value={...blank(r),...d};delete value.updated_at;return JSON.stringify(value); };
+  records.forEach((r)=>{
+    const prior=saved.get(KEY(r)),local=decisions.get(KEY(r));
+    if (prior&&prior.decision!=='NOT_REVIEWED') count++;
+    if (local&&local.decision!=='NOT_REVIEWED'&&content(r,local)!==content(r,prior||blank(r))) drafts++;
+  });
+  $('review-progress').max=Math.max(1,records.length);$('review-progress').value=count;
+  const staged=(packet.review_states||[]).filter((s)=>s.status==='checkpointed').length;
+  $('review-progress-text').textContent=count+' / '+records.length+' targets reviewed and saved · '
+    +drafts+' local drafts · '+(records.length-count)+' awaiting saved review · '+staged+' checkpointed. '
+    +'Saved includes rejections and deferrals; it does not mean all labels are approved.';
+}
+function resumeReview(position){
+  if (!records.length) return;
+  const index=position?records.findIndex((r)=>r.document_id===position.document_id&&r.field===position.field):-1;
+  const saved=new Map((packet.saved_decisions||[]).map((d)=>[d.document_id+'\n'+d.field,d]));
+  const pending=(r)=>!saved.has(KEY(r))||saved.get(KEY(r)).decision==='NOT_REVIEWED';
+  if (index>=0){
+    current=index;
+    const prior=saved.get(KEY(records[index])),local=decisions.get(KEY(records[index]));
+    // Preserve an unfinished local edit; only advance past a saved, unchanged target.
+    const content=(d)=>{const c={...blank(records[index]),...d};delete c.updated_at;return JSON.stringify(c);};
+    if (prior&&prior.decision!=='NOT_REVIEWED'&&content(prior)===content(local)){
+      for (let step=1;step<=records.length;step++){
+        const next=(index+step)%records.length;if(pending(records[next])){current=next;break;}
+      }
+    }
+  } else {
+    const first=records.findIndex(pending);current=first>=0?first:0;
+  }
+  renderTarget();controls();
+}
+/** Update batch option labels with local decided/total counts, including unsaved decisions. */
+function batchProgress(){
+  // Per-batch decided/total on the optgroup label, so agents and reviewers see
+  // progress without opening the tracker; rebuilt from the decisions map.
+  document.querySelectorAll('#target optgroup[data-gid]').forEach((og)=>{
+    const gid=og.dataset.gid;
+    const inBatch=records.filter((r)=>String(r.batch||r.chunk||'')===gid);
+    if (!inBatch.length) return;
+    const decided=inBatch.filter((r)=>(decisions.get(KEY(r))||{}).decision!=='NOT_REVIEWED').length;
+    const base=og.label.replace(/ — \d+\/\d+ decided$/, '');
+    og.label=base+' — '+decided+'/'+inBatch.length+' decided';
+  });
+  batchJumpRebuild();
 }
 function controls(){
   $('save').disabled=busy||staleDraft;
@@ -329,13 +637,31 @@ function controls(){
     (packet.review_states||[]).some((s)=>['human_confirmed','checkpointed'].includes(s.status)));
   $('discard').hidden=!staleDraft;
 }
+function liveTaskCount(task){
+  const saved=new Map((packet.saved_decisions||[]).map((d)=>[d.document_id+'\n'+d.field,d]));
+  const pool=records.filter((r)=>(!task.task||r.task===task.task)&&(!task.set||r.set===task.set));
+  if(!pool.length) return null; // no loaded records for this task: keep the server snapshot
+  return pool.filter((r)=>saved.has(KEY(r))&&saved.get(KEY(r)).decision!=='NOT_REVIEWED').length;
+}
+function liveProgress(){
+  const saved=new Map((packet.saved_decisions||[]).map((d)=>[d.document_id+'\n'+d.field,d]));
+  let reviewed=0,drafts=0;
+  records.forEach((r)=>{
+    const prior=saved.get(KEY(r)),local=decisions.get(KEY(r));
+    if(prior&&prior.decision!=='NOT_REVIEWED') reviewed++;
+    if(local&&local.decision!=='NOT_REVIEWED'&&fieldOutcome(r).startsWith('Draft')) drafts++;
+  });
+  return {reviewed,drafts,remaining:records.length-reviewed};
+}
 function tracker(){
-  const t=packet.tracker||{};
-  $('summary').textContent='Campaign '+(t.name||'?')+' — confirmed fields '
-    +(t.human_confirmed_fields==null?'?':t.human_confirmed_fields)+', checkpointed '
-    +(t.checkpointed_fields==null?'?':t.checkpointed_fields)+', remaining '
-    +(t.remaining_loaded_fields==null?'?':t.remaining_loaded_fields)+'. '
-    +((t.tasks||[]).length)+' tracked tasks. Field review never approves a task by itself.';
+  const t=packet.tracker||{},live=liveProgress();
+  $('summary').textContent='Campaign '+(t.name||'?')+' — live: '+live.reviewed+'/'+records.length+' saved reviews'
+    +(live.drafts?' · '+live.drafts+' drafts awaiting save':'')+' · '
+    +(t.checkpointed_fields==null?'?':t.checkpointed_fields)+' checkpointed · '
+    +live.remaining+' remaining. Server snapshot: confirmed '
+    +(t.human_confirmed_fields==null?'?':t.human_confirmed_fields)+', remaining '
+    +(t.remaining_loaded_fields==null?'?':t.remaining_loaded_fields)+'. '+((t.tasks||[]).length)
+    +' tracked tasks. Field review never approves a task by itself.';
   const filter=$('task-filter').value, done=['approved','skipped'];
   const rows=(t.tasks||[]).filter((x)=>filter==='all'||done.includes(x.status)===(filter==='completed'));
   const table=node('table'), head=node('tr');
@@ -343,7 +669,7 @@ function tracker(){
   table.append(head);
   rows.forEach((x)=>{ const tr=node('tr');
     [x.id||'', x.task, x.set, x.status,
-     x.reviewed==null?'—':x.reviewed+'/'+(x.documents_total==null?'?':x.documents_total),
+     x.documents_total==null?(x.reviewed==null?'—':x.reviewed):(liveTaskCount(x)==null?(x.reviewed==null?'—':x.reviewed):liveTaskCount(x))+'/'+x.documents_total,
      x.remaining==null?(x.inventory_known===false?'?':'—'):String(x.remaining), x.blocker||'']
       .forEach((v)=>tr.append(node('td',v))); table.append(tr); });
   const tasks=$('tasks'); tasks.textContent=''; tasks.append(table);
@@ -364,18 +690,46 @@ function tracker(){
 function renderJournal(){
   const el=$('journal'); el.textContent='';
   if (!history.length){ el.append(node('p','No edits yet for this review session.')); return; }
-  const t=node('table'), head=node('tr'); ['at','target','field','before → after'].forEach((h)=>head.append(node('th',h)));
+  const t=node('table'), head=node('tr'); ['at','target','field','change'].forEach((h)=>head.append(node('th',h)));
   t.append(head);
-  history.forEach((h)=>{ const tr=node('tr'); tr.append(node('td',h.at), node('td',h.document_id), node('td',h.field),
-    node('td', (h.before||{}).decision+' → '+(h.after||{}).decision)); t.append(tr); });
+  history.forEach((h)=>{
+    const before=h.before||{},after=h.after||{};
+    const changed=[...new Set([...Object.keys(before),...Object.keys(after)])]
+      .filter((key)=>key!=='updated_at'&&JSON.stringify(before[key])!==JSON.stringify(after[key]));
+    const detail=before.decision!==after.decision?before.decision+' → '+after.decision
+      :changed.length?'Updated '+changed.map(humanize).join(', ')+' (decision remains '+after.decision+')':'No content change (historical entry)';
+    const tr=node('tr'); tr.append(node('td',h.at),node('td',h.document_id),node('td',h.field),node('td',detail));t.append(tr);
+  });
   el.append(t);
 }
-function render(){
+/** Refresh the review views and packet binding, rebuilding target options when their count changes. */
+function renderTargetOptions(){
   const target=$('target');
-  if (target.options.length!==records.length){
-    target.textContent='';
-    records.forEach((r,i)=>{ const o=node('option',(i+1)+' · '+r.document_id+' · '+r.field); o.value=String(i); target.append(o); });
-  }
+  const terms=$('target-search').value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  target.textContent='';
+  const groups=new Map();
+  records.forEach((r,i)=>{
+      const text=[r.document_id,r.filename,r.field,r.doc_class,r.subclass,r.batch,r.chunk].filter(Boolean).join(' ').toLowerCase();
+      if (!terms.every((term)=>text.includes(term))) return;
+      const gid=String(r.batch||r.chunk||'');
+      let group=groups.get(gid);
+      if (gid && !group){
+        group=node('optgroup'); groups.set(gid,group);
+        group.dataset.gid=gid;
+        group.label=humanize(gid)+((r.task||r.set)?' · '+[humanize(r.task||''),r.set||''].filter(Boolean).join(' / '):'');
+        target.append(group);
+      }
+      const o=node('option',(i+1)+' · '+r.document_id+' · '+r.field); o.value=String(i);
+      (group&&gid?group:target).append(o);
+  });
+  target.value=String(current);
+  $('target-search-status').textContent=target.options.length
+    ?target.options.length+' of '+records.length+' targets. Search narrows this list; your current review stays open.'
+    :'No matching targets. Clear the search to see all labels; your current review is unchanged.';
+  batchProgress();
+}
+function render(){
+  renderTargetOptions();
   tracker(); renderTarget(); renderJournal(); controls();
   $('binding').textContent='packet '+(packet.packet_id||'?')+' · state '+(packet.state_revision||'?')
     +' · '+records.length+' targets'+((packet.saved_decisions||[]).length?' · '+(packet.saved_decisions||[]).length+' decisions restored from receipts':'');
@@ -387,32 +741,124 @@ async function request(url, body){
   if (!res.ok){ const err=new Error(res.status+' '+res.statusText+' — '+(value.error||'')); err.status=res.status; throw err; }
   return value;
 }
-async function refresh(reset){
+async function refresh(reset, forceFull){
   busy=true; controls(); message('Syncing with portal server…');
-  const hadDirty=dirty&&!reset;
+  const hadDirty=dirty&&!reset; // reset discards the local draft; a plain reload keeps it
   try {
-    const data=await request('/review-data.json');
+    // Records are already embedded; only an explicit re-read pulls the packets again.
+    const data=await request((forceFull||reset)?'/review-data.json':'/review-state.json');
     const same=data.packet_id===packet.packet_id;
     if (same && hadDirty && data.state_revision!==packet.state_revision){
       pendingData=true; staleDraft=true;
       packet=data; overlay(); tracker(); render(); controls();
       message('Server data changed (state revision '+(data.state_revision||'?')+'); your local draft is retained. Download JSON or use Discard to accept the new data.'); return;
     }
-    packet=data; seed(data); if (hadDirty) { overlay(); dirty=true; } else if (!reset) overlay();
+    if (data.records){
+      packet=data; seed(data); if (hadDirty) { overlay(); dirty=true; } else if (!reset) overlay();
+    } else { // state-only response: records stay, server decisions replace their targets
+      packet={...packet, ...(['state_revision','review_states','saved_decisions','saved_history','tracker']
+        .reduce((acc,k)=>{ if (data[k]!==undefined) acc[k]=data[k]; return acc; }, {}))};
+      const byKey=new Map(records.map((r)=>[KEY(r),r]));
+      (data.saved_decisions||[]).forEach((d)=>{ const k=d.document_id+'\n'+d.field;
+        if(decisions.has(k)) decisions.set(k, {...blank(byKey.get(k)), ...clone(d)}); });
+      overlay(); dirty=hadDirty;
+    }
     current=Math.min(current, records.length-1);
     staleDraft=false; pendingData=false;
     message('Loaded '+records.length+' review targets'+((data.saved_decisions||[]).length?' with '+(data.saved_decisions||[]).length+' saved decisions restored.':'')
       +' Review one target at a time; nothing publishes automatically.', true);
     render();
+    if (dirty) scheduleAutoSave();
   } catch (exc) {
     message('Reload failed: '+exc.message+(localDraft()?' Your local draft is retained; use Export JSON to keep it.':''));
   } finally { busy=false; controls(); }
+}
+// ---- Autosave: every complete decision reaches the server within ~1.2s, so a
+// browser crash, a server restart or a dropped connection cannot strand reviewed
+// work in this tab. Incomplete decisions stay local until they are valid.
+let autoTimer=null, syncPending=false, lastSavedAt='', autosaveEnabled=true, editSeq=0, lastAutoSig='';
+function scheduleAutoSave(){
+  if (!autosaveEnabled) return;
+  if (autoTimer) clearTimeout(autoTimer);
+  autoTimer=setTimeout(runAutoSave, 1200);
+}
+function autosavePayload(){
+  const byKey=new Map(records.map((r)=>[KEY(r),r]));
+  const ds=[...decisions.values()].filter((d)=>{
+    if (d.decision==='NOT_REVIEWED') return true;
+    if (!/^[A-Z]{2,6}$/.test(d.reviewer_initials||'')) return false;
+    if (d.decision==='CORRECT'){ try { JSON.parse(d.corrected_labels_json||''); } catch (exc) { return false; } }
+    const r=byKey.get(d.document_id+'\n'+d.field)||{};
+    if (d.decision==='ACCEPT'&&r.candidate_status!=='source_checks_passed'&&!d.manual_source_verification) return false;
+    return true;
+  });
+  return {schema:'mailroom-human-review/v1', packet_id:packet.packet_id, state_revision:packet.state_revision,
+          exported_at:now(), decisions:ds, history:clone(history), slim:true};
+}
+/** Apply a save/slim response: state and tracker always; decisions only when no newer edit raced it. */
+function applySave(result, applyDecisions, submitted){
+  const d=result.data||{};
+  packet={...packet};
+  if (d.state_revision) packet.state_revision=d.state_revision;
+  if (Array.isArray(d.review_states)) packet.review_states=d.review_states;
+  if (d.tracker) packet.tracker=d.tracker;
+  if (applyDecisions){
+    if (Array.isArray(d.saved_decisions)){
+      packet.saved_decisions=d.saved_decisions;
+      const byKey=new Map(records.map((r)=>[KEY(r),r]));
+      const sent=submitted?new Set(submitted.filter((x)=>x.decision!=='NOT_REVIEWED').map((x)=>x.document_id+'\n'+x.field)):null;
+      (d.saved_decisions||[]).forEach((x)=>{ const k=x.document_id+'\n'+x.field;
+        if(decisions.has(k)&&(!sent||sent.has(k))) decisions.set(k,{...blank(byKey.get(k)),...clone(x)}); });
+    }
+    if (Array.isArray(d.saved_history)) packet.saved_history=d.saved_history;
+    const saved=new Map((packet.saved_decisions||[]).map((x)=>[x.document_id+'\n'+x.field,x]));
+    const content=(r,d)=>{ const normalized={...blank(r),...d}; delete normalized.updated_at; return JSON.stringify(normalized); };
+    dirty=records.some((r)=>content(r,decisions.get(KEY(r)))!==content(r,saved.get(KEY(r))||blank(r)));
+    // A partial autosave must not erase the history of unfinished decisions.
+    if (!dirty && Array.isArray(d.saved_history)) history=clone(d.saved_history);
+  }
+  persist();
+  tracker(); renderTargetStatus(); controls(); renderJournal();
+}
+async function runAutoSave(){
+  autoTimer=null;
+  if (!autosaveEnabled) return;
+  if (busy||pendingData||staleDraft){ autoTimer=setTimeout(runAutoSave, 2000); return; }
+  const body=autosavePayload();
+  if (!body.decisions.some((d)=>d.decision!=='NOT_REVIEWED')){
+    if (localDraft()) message('Draft kept in this browser only: finish the decision (initials, valid CORRECT JSON, or the manual-verification tick for a blocked candidate) and it saves itself.');
+    return;
+  }
+  const signature=JSON.stringify([body.state_revision, body.decisions.map((d)=>{ const c={...d}; delete c.updated_at; return c; })]);
+  if (signature===lastAutoSig) return; // identical decisions in this server state: nothing to send
+  const seq=editSeq;
+  busy=true; controls();
+  try{
+    const result=await request('/api/reviews', body);
+    applySave(result, seq===editSeq, body.decisions);
+    lastAutoSig=signature;
+    syncPending=false; lastSavedAt=new Date().toLocaleTimeString();
+    message('Auto-saved at '+lastSavedAt+' (receipt '+String(result.receipt_id||'').slice(0,12)+').'
+      +(dirty?' Unfinished or newer edits remain in this browser; complete them to save.':''), true);
+  }catch(exc){
+    if (exc.status===409){ // another tab moved the audit state; only an explicit reload merges safely
+      syncPending=true;
+      message('Auto-save conflict: another tab changed the review state. Your edits stay local; use Reload batches to merge, then keep reviewing.');
+    } else {
+      syncPending=true;
+      message('Auto-save failed ('+exc.message+'). Decisions stay in this browser (local draft) and the save retries every 5s.');
+      setTimeout(()=>{ if(syncPending&&autosaveEnabled&&!busy) runAutoSave(); }, 5000);
+    }
+  }finally{ busy=false; controls(); renderTargetStatus(); }
 }
 function validate(){
   const d=decision();
   if (d.decision==='NOT_REVIEWED') return true;
   if (!/^[A-Z]{2,6}$/.test(d.reviewer_initials)){ message('Reviewer initials (2–6 uppercase letters) are required for a decision.'); return false; }
-  if (d.decision==='ACCEPT'&&records[current].candidate_status!=='source_checks_passed'){ message('This candidate did not pass automated source checks; choose CORRECT with verified JSON, REJECT, or NEEDS_SOURCE.'); return false; }
+  if (d.decision==='ACCEPT'&&records[current].candidate_status!=='source_checks_passed'){
+    if (!$('manual-verify').checked){ message('This candidate did not pass automated source checks. Verify the value against the full source, tick "I verified this value against the full source myself", then ACCEPT — or choose CORRECT with verified JSON, REJECT, or NEEDS_SOURCE.'); return false; }
+    d.manual_source_verification=true; // logged with the decision; unverified ACCEPT stays impossible
+  }
   if (d.decision==='CORRECT'){ try { JSON.parse(d.corrected_labels_json||''); } catch (exc) { message('CORRECT needs valid JSON matching the native type.'); return false; } }
   return true;
 }
@@ -420,13 +866,14 @@ async function operation(fn){ if (busy) return; busy=true; controls(); try { awa
 $('save').addEventListener('click', ()=>operation(async()=>{
   if (!dirty){ message('Nothing unsaved.', true); return; }
   if (!validate()) return;
-  const body=payload();
+  const seq=editSeq;
+  const body={...payload(), slim:true};
   try {
     const result=await request('/api/reviews', body);
-    persist();
-    await refresh();
-    dirty=false; controls();
-    message('Saved. Receipt '+(result.receipt_id||'')+' · fields changed '+(result.changed_fields==null?'?':result.changed_fields)+'.', true);
+    applySave(result, seq===editSeq, body.decisions);
+    syncPending=false; lastSavedAt=new Date().toLocaleTimeString();
+    message(result.receipt_id?('Saved. Receipt '+(result.receipt_id||'')+' · fields changed '+(result.changed_fields==null?'?':result.changed_fields)+'.')
+      :'No change to store: this decision set is already saved.', true);
   } catch (exc) { message('Save failed: '+exc.message+' — Draft retained.'); }
 }));
 $('export').addEventListener('click', ()=>{
@@ -435,13 +882,14 @@ $('export').addEventListener('click', ()=>{
   setTimeout(()=>URL.revokeObjectURL(url),4000);
   message('Exported machine-readable decisions; return the file to the agent under the packet returns/ folder.', true);
 });
-$('reload').addEventListener('click', ()=>operation(async()=>{ await refresh(); }));
+$('reload').addEventListener('click', ()=>operation(async()=>{ await refresh(false, true); }));
 $('checkpoint').addEventListener('click', ()=>operation(async()=>{
   if (!confirm('Checkpoint all locally confirmed fields to the private staging repo now?')) return;
   try {
     const result=await request('/api/checkpoint', {packet_id:packet.packet_id, confirm:true});
-    message(result.verified===true?'Private checkpoint verified at revision '+result.revision+'.'
-      :'Checkpoint not verified: '+(result.message||'server said not verified'), result.verified===true);
+    message((result.verified===true?'Private checkpoint verified at revision '+result.revision+'.'
+      :'Checkpoint not verified: '+(result.message||'server said not verified'))
+      +(result.local_backup?' Local mirror: '+result.local_backup+'.':''), result.verified===true);
     await refresh();
   } catch (exc) { message('Checkpoint failed: '+exc.message+' — local confirmations remain pending.'); }
 }));
@@ -451,17 +899,160 @@ $('discard').addEventListener('click', ()=>operation(async()=>{
   seed(packet); await refresh(true);
 }));
 $('task-filter').addEventListener('change', tracker);
+$('target-search').addEventListener('input', renderTargetOptions);
+$('clear-target-search').addEventListener('click', ()=>{ $('target-search').value=''; renderTargetOptions(); $('target-search').focus(); });
 $('target').addEventListener('change', ()=>{ current=Number($('target').value)||0; renderTarget(); });
 $('previous').addEventListener('click', ()=>{ current=Math.max(0,current-1); renderTarget(); controls(); });
 $('next').addEventListener('click', ()=>{ current=Math.min(records.length-1,current+1); renderTarget(); controls(); });
+/** Return the next undecided record index after from, wrapping through from itself.
+ * Return from when no undecided record exists or the record list is empty.
+ */
+function nextPending(from){
+  for (let step=1; step<=records.length; step++){
+    const i=(from+step)%records.length;
+    if (records.length && (decisions.get(KEY(records[i]))||{}).decision==='NOT_REVIEWED') return i;
+  }
+  return from;
+}
+$('next-pending').addEventListener('click', ()=>{ if (!records.length) return; current=nextPending(current); renderTarget(); controls(); });
+// Batch-scoped next pending: same rule, restricted to the cursor's batch, falling back
+// to the global scan when that batch is fully decided (keyboard: Shift+N).
+/** Scan after record index from with wraparound, preferring its batch (or chunk).
+ * Fall back to the global pending scan; an empty record list returns from.
+ */
+function nextPendingInBatch(from){
+  if (!records.length) return from;
+  const gid=String(records[from].batch||records[from].chunk||'');
+  for (let step=1; step<=records.length; step++){
+    const i=(from+step)%records.length, inBatch=String(records[i].batch||records[i].chunk||'')===gid;
+    if (inBatch && (decisions.get(KEY(records[i]))||{}).decision==='NOT_REVIEWED') return i;
+  }
+  return nextPending(from);
+}
+$('next-pending-batch').addEventListener('click', ()=>{ if (!records.length) return; current=nextPendingInBatch(current); renderTarget(); controls(); });
+// Batch jump: one select mirrors the batch groups (decided/total) and choosing a batch
+// lands on its first undefined target; a fully decided batch says so and stays put.
+function batchJumpRebuild(){
+  const sel=$('batch-jump'), groups=new Map();
+  records.forEach((r,i)=>{
+    const gid=String(r.batch||r.chunk||'');
+    if (!gid) return;
+    let g=groups.get(gid);
+    if (!g) groups.set(gid, g={decided:0, total:0});
+    g.total++;
+    if ((decisions.get(KEY(r))||{}).decision!=='NOT_REVIEWED') g.decided++;
+  });
+  const chosen=sel.value; // rebuilding replaces options and would snap the selection back
+  sel.textContent='';
+  for (const [gid,g] of groups){
+    const o=node('option', humanize(gid)+' — '+(g.total-g.decided)+' pending of '+g.total);
+    o.value=gid; sel.append(o);
+  }
+  if ([...sel.options].some((o)=>o.value===chosen)) sel.value=chosen;
+}
+$('batch-jump').addEventListener('change', ()=>{
+  const gid=$('batch-jump').value;
+  const idx=records.findIndex((r)=>String(r.batch||r.chunk||'')===gid && (decisions.get(KEY(r))||{}).decision==='NOT_REVIEWED');
+  if (idx>=0){ current=idx; renderTarget(); controls(); }
+  renderTargetStatus(); // batchProgress() runs inside renderTargetStatus
+});
+// Bulk "accept verified in batch": candidates the server already verified
+// (candidate_status 'source_checks_passed') get ACCEPT with the sticky initials.
+// Still one decision per (document, field): initials and Save remain
+// the human reviewer's act, so provenance stays a human attribution.
+$('bulk-accept').addEventListener('click', ()=>{
+  if (!records.length) return;
+  const record=records[current], gid=String(record.batch||record.chunk||'');
+  if (!gid){ message('These records carry no batch header (production review run); accept each one separately.', true); return; }
+  const initials=$('initials').value;
+  if (!/^[A-Z]{2,6}$/.test(initials)){ message('Enter your reviewer initials first (they apply to the whole batch).'); return; }
+  const picked=[];
+  records.forEach((r,i)=>{
+    if (String(r.batch||r.chunk||'')!==gid) return;
+    const d=decisions.get(KEY(r));
+    if (d.decision!=='NOT_REVIEWED'||stateOf(r).status==='human_confirmed') return;
+    if (r.candidate_status!=='source_checks_passed') return;
+    const before=clone(d);
+    d.decision='ACCEPT'; d.reviewer_initials=initials; d.updated_at=now();
+    d.corrected_labels_json=''; // an ACCEPT rides the candidate, never a stale picker draft
+    logChange(before, d);
+    picked.push(r);
+  });
+  if (!picked.length) message('No verifiable undecided targets in batch "'+(gid||'-')+'".', true);
+  else { message(picked.length+' verified targets in the batch marked ACCEPT with your initials; review them and Save.', true); renderTarget(); }
+});
+// Tabs: launcher, review and tracker live in separate views so the page stays
+// navigable; the choice is remembered like the sticky initials.
+const TABS=['launch','review','tracker'];
+const tabKey='mailroom-review-tabs';
+/** Select a launch, review, or tracker tab and remember it when storage is available.
+ * Update view visibility and tab accessibility state without moving focus.
+ */
+function showTab(name){
+  TABS.forEach((n)=>{
+    document.getElementById(n+'-view').hidden = n!==name;
+    const tab=document.getElementById('tab-'+n);
+    tab.setAttribute('aria-selected', String(n===name));
+    tab.tabIndex = n===name?0:-1; // roving tabindex: only the active tab is in the tab order
+  });
+  try { localStorage.setItem(tabKey, name); } catch (exc) {}
+}
+TABS.forEach((n)=>$('tab-'+n).addEventListener('click', ()=>showTab(n)));
+TABS.forEach((n)=>$('tab-'+n).addEventListener('keydown', (e)=>{ // ARIA tabs pattern
+  if (e.altKey||e.ctrlKey||e.metaKey) return;
+  const d={ArrowRight:1,ArrowLeft:-1}[e.key];
+  if (d===undefined && e.key!=='Home' && e.key!=='End') return;
+  const name=e.key==='Home'?TABS[0]:e.key==='End'?TABS[TABS.length-1]:TABS[(TABS.indexOf(n)+d+TABS.length)%TABS.length];
+  showTab(name); document.getElementById('tab-'+name).focus();
+  e.preventDefault(); // preempts the page-level 'N' shortcut with defaultPrevented
+}));
+document.addEventListener('keydown', (e)=>{
+  if (e.defaultPrevented||e.altKey||e.ctrlKey||e.metaKey) return;
+  const t=e.target;
+  if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)||t.isContentEditable)) return;
+  if ((e.key==='n'||e.key==='N') && records.length){
+    if (e.shiftKey) current=nextPendingInBatch(current); // Shift+N: next pending inside the batch
+    else current=nextPending(current);
+    renderTarget(); controls(); e.preventDefault();
+  }
+});
 [['decision','decision'],['initials','reviewer_initials'],['notes','reviewer_notes'],['correction','corrected_labels_json']]
 .forEach(([id,prop])=>$(id).addEventListener('input', ()=>{
   const before=clone(decision());
   decision()[prop]=$(id).value;
   decision().updated_at=now();
-  if (id==='decision') $('decision-help').textContent=packet.decision_key?packet.decision_key[decision().decision]||'':'';
+  if (id==='initials'){ try { localStorage.setItem(storageKey+'/initials', $(id).value); } catch (exc) {} } // sticky initials across targets
+  if (id==='decision'){
+    if(decision().decision==='CORRECT') prefillCorrection(decision(),records[current]);
+    $('correction').value=decision().corrected_labels_json;correctionHelp();
+  }
   logChange(before, decision());
 }));
+$('manual-verify').addEventListener('change', ()=>{
+  const before=clone(decision());
+  decision().manual_source_verification=$('manual-verify').checked;
+  decision().updated_at=now();
+  logChange(before, decision());
+});
+document.querySelectorAll('[data-outcome]').forEach((button)=>button.addEventListener('click',()=>{
+  const before=clone(decision());decision().decision=button.dataset.outcome;decision().updated_at=now();
+  if(button.dataset.outcome==='CORRECT') prefillCorrection(decision(),records[current]);
+  logChange(before,decision());renderTarget();controls();
+  message(button.dataset.outcome==='CORRECT'?'Review the prefilled value and edit only what needs changing. You can also choose a model answer.':'Outcome selected for this field only. Valid decisions autosave; initials and source verification rules still apply.',true);
+}));
+$('correction-template').addEventListener('click',()=>{
+  const d=decision();
+  if(d.corrected_labels_json.trim()){
+    message('Your current correction is preserved. Edit it directly; clear it first if you want to start over.');return;
+  }
+  const before=clone(d),r=records[current];prefillCorrection(d,r);
+  if(!d.corrected_labels_json){
+    $('correction').value=JSON.stringify(r.correction_type==='array'?['REPLACE WITH VERIFIED ITEM']:r.correction_type==='number'?'REPLACE WITH VERIFIED NUMBER':'REPLACE WITH VERIFIED VALUE',null,2);
+    message('Example only — not saved or approved. Type the verified value in place of the example; for numbers, enter a JSON number without quotes.');return;
+  }
+  d.updated_at=now();$('correction').value=d.corrected_labels_json;logChange(before,d);
+  message('Starting value inserted. Replace any template text or example number with the verified value before approving.');
+});
 
 // ---- Launch panel (only when the server runs with --enable-launch) ----
 let launchOpts=null, launchPre=null, launchPoll=null, launchKeyUsed=false, launchWatching=false;
@@ -571,6 +1162,9 @@ async function pollLaunch(){
     }
   } catch (exc) { launchMessage('Status unavailable: '+exc.message); }
 }
+/** Initialize launch choices and handlers, then start status polling when launch is enabled.
+ * Disabled launch or a failed options request leaves the panel uninitialized.
+ */
 async function launchInit(){
   if (!packet.launch_enabled) return;
   try { launchOpts=await request('/api/launch/options'); } catch (exc) { return; }
@@ -587,6 +1181,7 @@ async function launchInit(){
   $('launch-start').addEventListener('click', startLaunch);
   setCap(); renderLaunchInfo();
   $('launch-panel').hidden=false;
+  $('tab-launch').classList.add('avail');
   pollLaunch();
 }
 window.onbeforeunload=(event)=>{ if (dirty||staleDraft){ event.preventDefault(); return 'Unsaved review decisions.'; } };
@@ -597,17 +1192,24 @@ window.onbeforeunload=(event)=>{ if (dirty||staleDraft){ event.preventDefault();
   try {
     const saved=JSON.parse(localStorage.getItem(storageKey)||'null');
     if (saved&&saved.packet_id===packet.packet_id){
-      saved.decisions.forEach((d)=>{ if(decisions.has(d.document_id+'\n'+d.field)) decisions.set(d.document_id+'\n'+d.field, clone(d)); });
+      const byKey=new Map(records.map((r)=>[KEY(r),r]));
+      saved.decisions.forEach((d)=>{ const k=d.document_id+'\n'+d.field;
+        if(decisions.has(k)) decisions.set(k, {...blank(byKey.get(k)), ...clone(d)}); });
       if (Array.isArray(saved.history)&&saved.history.length) history=clone(saved.history);
       const server=new Map((packet.saved_decisions||[]).map((d)=>[d.document_id+'\n'+d.field, JSON.stringify(d)]));
       dirty=[...decisions.entries()].some(([k,d])=>JSON.stringify(d)!==(server.get(k)||JSON.stringify(blank(records.find((r)=>KEY(r)===k)))));
+      if (dirty) scheduleAutoSave(); // a resumed unsaved draft flushes itself to the server
     }
   } catch (exc) {}
   persist();
   render();
   message('Loaded embedded packet'+(localDraft()?' and restored your local draft. Check Reload batches if you manage packets in files.':'')+'.', true);
   await refresh();
+  resumeReview(startingPosition);
   await launchInit();
+  let saved=null; try { saved=localStorage.getItem(tabKey); } catch (exc) {}
+  showTab(TABS.includes(saved)?saved:'review');
+  document.body.dataset.reviewReady='1';
 })();
 </script>
 </body>

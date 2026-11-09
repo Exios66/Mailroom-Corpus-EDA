@@ -62,17 +62,17 @@ chunks:
   - {id: "2b", needs: ["1", "1h"], task: cuad, set: pending, chunk: "2/3", models: [winner_of_1], reasoning: winner_of_1, cap_usd: 0.45, gate: {kind: review}}
   - {id: "2c", needs: ["1", "1h"], task: cuad, set: pending, chunk: "3/3", models: [winner_of_1], reasoning: winner_of_1, cap_usd: 0.35, gate: {kind: review}}
   # Chunk 3 is the intent model bake-off on the 96 human-labeled emails (same candidates).
-  - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash], reasoning: "off", cap_usd: 0.10,
+  - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash], reasoning: "off", skip: "2026-11-06 run 3.1: complete, kappa 0.8117 passed its gate", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 1: DeepSeek v4.1 Flash, off"}
   - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash], reasoning: "low", skip: "2026-11-06 run: no κ gain over off (0.680 vs 0.686) at 4x the cost, and one email ran its reasoning past the allowance", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 2: DeepSeek v4.1 Flash, low"}
-  - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash-1017], reasoning: "off", cap_usd: 0.15,
+  - {id: "3",  task: intent, set: calibration, models: [deepseek/deepseek-v4.1-flash-1017], reasoning: "off", skip: "2026-11-06 run 3.3 complete (kappa 0.8233); 2026-11-08 it4 verify re-run 3.3r scored kappa 0.7356 and FAILED the 0.75 gate -> prompt reverted", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 3: DeepSeek v4.1 Flash 1017, off"}
   - {id: "3",  task: intent, set: calibration, models: [openai/gpt-6-luna-pro], reasoning: "off", skip: "2026-11-06 run: κ 0.543, clearly the weakest intent arm", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 4: GPT-6 Luna Pro"}
-  - {id: "3",  task: intent, set: calibration, models: [anthropic/claude-haiku-5.5], reasoning: "off", cap_usd: 0.10,
+  - {id: "3",  task: intent, set: calibration, models: [anthropic/claude-haiku-5.5], reasoning: "off", skip: "2026-11-06 run 3.5: complete, kappa 0.7626 passed its gate", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 5: Claude Haiku 5.5"}
-  - {id: "3",  task: intent, set: calibration, models: [minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.15,
+  - {id: "3",  task: intent, set: calibration, models: [minimax/minimax-m3.1-flash], reasoning: "low", skip: "2026-11-06 run 3.6: complete, kappa 0.7503 passed its gate", cap_usd: 0.00,
      gate: {kind: intent_kappa, kappa: 0.75}, note: "arm 6: MiniMax M3.1 Flash, low"}
   - {id: "4", needs: ["3"],  task: intent, set: flagged, models: [winner_of_3], reasoning: winner_of_3, cap_usd: 0.00, gate: {kind: review},
      skip: "2026-11-06: superseded by 4a-4c, which re-read these 25 flagged emails with two models"}
@@ -83,11 +83,11 @@ chunks:
   # answer that fits the email's subtype is written, to the ground_truth config only; a subtype
   # conflict is read by a person (the subtypes came from older automatic labelers).
   # A test-split change is only proposed: a person decides it (the test split scores models).
-  - {id: "4a", needs: ["3"], task: intent, set: relabel, chunk: "1/3", models: [winner_of_3, anthropic/claude-haiku-5.5],
+  - {id: "4a", needs: ["3"], task: intent, set: relabel, chunk: "1/3", models: [winner_of_3, anthropic/claude-haiku-5.5], skip: "2026-11-06 run 4a: complete; 302 rows adjudicated, needs the human review pass",
      reasoning: winner_of_3, cap_usd: 0.65, gate: {kind: intent_relabel}}
-  - {id: "4b", needs: ["3"], task: intent, set: relabel, chunk: "2/3", models: [winner_of_3, anthropic/claude-haiku-5.5],
+  - {id: "4b", needs: ["3"], task: intent, set: relabel, chunk: "2/3", models: [winner_of_3, anthropic/claude-haiku-5.5], skip: "2026-11-06 run 4b: complete; 302 rows adjudicated, needs the human review pass",
      reasoning: winner_of_3, cap_usd: 0.65, gate: {kind: intent_relabel}}
-  - {id: "4c", needs: ["3"], task: intent, set: relabel, chunk: "3/3", models: [winner_of_3, anthropic/claude-haiku-5.5],
+  - {id: "4c", needs: ["3"], task: intent, set: relabel, chunk: "3/3", models: [winner_of_3, anthropic/claude-haiku-5.5], skip: "2026-11-06 run 4c: complete; 300 rows adjudicated, needs the human review pass",
      reasoning: winner_of_3, cap_usd: 0.65, gate: {kind: intent_relabel}}
   - {id: "5a", task: contract_entities, set: calibration, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 0.50, gate: {kind: field_accuracy, accuracy: 0.85}, requires: "llm-dojo-scoring 0.28.0 (G1)"}
@@ -114,9 +114,9 @@ chunks:
   - {id: "7a", task: correspondence, set: pilot, models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash],
      reasoning: "low", cap_usd: 0.15, gate: {kind: human_verdicts, precision: 0.90}}
   - {id: "7b", needs: ["7a"], task: correspondence, set: remainder, chunk: "1/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.90, gate: {kind: agreement}}
-  - {id: "7c", needs: ["7a"], task: correspondence, set: remainder, chunk: "2/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.85, gate: {kind: agreement}}
-  - {id: "7d", needs: ["7a"], task: correspondence, set: remainder, chunk: "3/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.85, gate: {kind: agreement}}
-  - {id: "7e", needs: ["7a"], task: correspondence, set: remainder, chunk: "4/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.85, gate: {kind: agreement}}
+  - {id: "7c", needs: ["7a"], task: correspondence, set: remainder, chunk: "2/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.88, gate: {kind: agreement}}
+  - {id: "7d", needs: ["7a"], task: correspondence, set: remainder, chunk: "3/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.88, gate: {kind: agreement}}
+  - {id: "7e", needs: ["7a"], task: correspondence, set: remainder, chunk: "4/4", models: [deepseek/deepseek-v4.1-flash, minimax/minimax-m3.1-flash], reasoning: "low", cap_usd: 0.88, gate: {kind: agreement}}
   - {id: "8a", task: claim_checklist, set: pilot, models: [z-ai/glm-5.3-flashx-legal, minimax/minimax-m3.1-flash],
      reasoning: "low", cap_usd: 0.15, gate: {kind: human_verdicts, precision: 0.90}}
   # 8b-8e split the claim_checklist remainder BY CLAIM TYPE (2026-11-08): the four CMS-family
@@ -129,13 +129,13 @@ chunks:
      reasoning: "low", cap_usd: 1.10, gate: {kind: agreement},
      subclass: [carrier, pde]}
   - {id: "8c", needs: ["8a"], task: claim_checklist, set: remainder, models: [z-ai/glm-5.3-flashx-legal, minimax/minimax-m3.1-flash],
-     reasoning: "low", cap_usd: 1.10, gate: {kind: agreement},
+     reasoning: "low", cap_usd: 1.12, gate: {kind: agreement},
      subclass: [inpatient, outpatient]}
   - {id: "8d", needs: ["8a"], task: claim_checklist, set: remainder, models: [z-ai/glm-5.3-flashx-legal, minimax/minimax-m3.1-flash],
      reasoning: "low", cap_usd: 1.10, gate: {kind: agreement},
      subclass: [auto]}
   - {id: "8e", needs: ["8a"], task: claim_checklist, set: remainder, models: [z-ai/glm-5.3-flashx-legal, minimax/minimax-m3.1-flash],
-     reasoning: "low", cap_usd: 1.15, gate: {kind: agreement},
+     reasoning: "low", cap_usd: 1.16, gate: {kind: agreement},
      subclass: [property]}
   - {id: "9a", task: corporate, set: pilot, models: [z-ai/glm-5.3-flashx-legal, deepseek/deepseek-v4.1-flash],
      reasoning: "off", cap_usd: 0.25, gate: {kind: human_verdicts, precision: 0.90}}

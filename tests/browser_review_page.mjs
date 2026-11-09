@@ -11,14 +11,16 @@ const out=process.argv[2] || '/private/tmp/opencode/review-integrated-evidence';
 fs.mkdirSync(out,{recursive:true});
 const text='🧾 SYNTHETIC DOCUMENT ONLY\nProvide a signed claim form.\n<img src=x onerror="window.injected=true">\nEND OF COMPLETE SOURCE';
 const quote='signed claim form', start=Array.from(text.split(quote)[0]).length;
-const record={document_id:'SYNTH-001',field:'claim_checklist',document_sha256:createHash('sha256').update(text).digest('hex'),full_document_text:text,split:'train',candidate_status:'source_checks_passed',candidate_labels:['signed claim form'],existing_gt_fields:{claim_checklist:[]},evidence:[{start,end:start+quote.length,quote}],source_url:'javascript:alert(1)'};
-let packet={schema:'mailroom-review-packet/v1',packet_id:'synthetic-packet-1',state_revision:'r1',decision_key:{NOT_REVIEWED:'Not reviewed',ACCEPT:'Accept source-checked proposal',CORRECT:'Supply replacement JSON',REJECT:'Reject',NEEDS_SOURCE:'Needs source'},records:[record,{...record,document_id:'SYNTH-002',field:'entity_name',candidate_labels:'Example Corporation',dojo_type:'name',correction_type:'string',source_url:'https://example.invalid/source',model_outputs:[{model:'synthetic/model-a',value:'Example Corporation',status:'present',evidence:'Example Corporation',evidence_spans:[]},{model:'synthetic/model-b',value:null,status:'not_found',evidence:'',evidence_spans:[]}]}],launch_enabled:true,review_states:[],saved_decisions:[],saved_history:[],checkpoint_enabled:true,tracker:{name:'Synthetic campaign',loaded_target_fields:2,human_confirmed_fields:0,remaining_loaded_fields:2,checkpointed_fields:0,scope:'Synthetic tracker only; review is not task approval.',tasks:[{id:'A',task:'claim_checklist',status:'pending',documents_total:2,ready:1,reviewed:0,remaining:2,loaded_target_fields:1},{id:'B',task:'corporate',status:'approved',documents_total:1,ready:1,reviewed:1,remaining:0,loaded_target_fields:1}]}};
+const record={document_id:'SYNTH-001',field:'claim_checklist',document_sha256:createHash('sha256').update(text).digest('hex'),full_document_text:text,split:'train',candidate_status:'source_checks_passed',candidate_labels:['signed claim form','signed claim form - secondary'],correction_type:'array',batch:'8a',task:'claim_checklist',set:'pilot',existing_gt_fields:{claim_checklist:[]},evidence:[{start,end:start+quote.length,quote}],source_url:'javascript:alert(1)'};
+let packet={schema:'mailroom-review-packet/v1',packet_id:'synthetic-packet-1',state_revision:'r1',decision_key:{NOT_REVIEWED:'Not reviewed',ACCEPT:'Accept source-checked proposal',CORRECT:'Supply replacement JSON',REJECT:'Reject',NEEDS_SOURCE:'Needs source'},records:[record,{...record,document_id:'SYNTH-002',field:'entity_name',batch:'9a',task:'corporate',set:'pilot',candidate_labels:'Example Corporation',dojo_type:'name',correction_type:'string',source_url:'https://example.invalid/source',model_outputs:[{model:'synthetic/model-a',value:'Example Corporation',status:'present',evidence:'Example Corporation',evidence_spans:[]},{model:'synthetic/model-b',value:null,status:'not_found',evidence:'',evidence_spans:[]}]}],launch_enabled:true,review_states:[],saved_decisions:[],saved_history:[],checkpoint_enabled:true,tracker:{name:'Synthetic campaign',loaded_target_fields:2,human_confirmed_fields:0,remaining_loaded_fields:2,checkpointed_fields:0,scope:'Synthetic tracker only; review is not task approval.',tasks:[{id:'A',task:'claim_checklist',status:'pending',documents_total:2,ready:1,reviewed:0,remaining:2,loaded_target_fields:1},{id:'B',task:'corporate',status:'approved',documents_total:1,ready:1,reviewed:1,remaining:0,loaded_target_fields:1}]}};
 const template=fs.readFileSync(new URL('../src/mailroom_eda/labeling/review_page.html',import.meta.url),'utf8');
 packet.revision_queue=[{document_id:'SYNTH-PRODUCTION',field:'entity_name',source_dataset:'synthetic/public',source_revision:'public-sha',split:'test',status:'human_confirmed',value:'Example Corporation'}];
 Object.assign(packet.tracker,{private_source:{repo:'synthetic/private',revision:'private-sha',status:'connected'},campaign_file:'synthetic/campaign.yaml',approval_file:'synthetic/approvals.yaml'});
 assert.equal(template.split('__REVIEW_PACKET_JSON__').length-1,1);
 assert(!template.includes('innerHTML'));
 let saves=0, checkpoints=0, failSave=false, posts=[];
+const checks=['Unicode offsets','full source','no HTML injection','safe source URLs','native values','task filters','save contract','receipt/history hydration','localStorage resume','same-revision reload','409 retains draft','changed-revision explicit discard','checkpoint','model answers table','launch panel targets and kind labels','loud preflight checklist','api key cleared and never stored','typed-cap confirmation','status polling and reload'];
+const check=(name)=>checks.push(name);
 // Launch mock: the real checks live in tests/test_labeling_launch.py; this serves the shapes the page renders.
 const SECRET='sk-or-v1-BROWSER-SECRET-key-4411';
 const launch={preflights:[], starts:[], statusReads:0, state:'idle', reloads:0};
@@ -36,8 +38,10 @@ function launchItems(body){
 const server=http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');
   if(req.url==='/review.html') {res.setHeader('Content-Type','text/html');res.end(template.replace('__REVIEW_PACKET_JSON__',JSON.stringify(packet).replaceAll('<','\\u003c')));return;}
+  if(req.url==='/axe.js') {res.setHeader('Content-Type','text/javascript');if(!process.env.AXE_PATH){res.writeHead(404);res.end();return;}res.end(fs.readFileSync(process.env.AXE_PATH));return;}
   res.setHeader('Content-Type','application/json');
   if(req.url==='/review-data.json') {launch.reloads++;res.end(JSON.stringify(packet));return;}
+  if(req.url==='/review-state.json') {res.end(JSON.stringify({packet_id:packet.packet_id,state_revision:packet.state_revision,review_states:packet.review_states,saved_decisions:packet.saved_decisions,saved_history:packet.saved_history,tracker:packet.tracker}));return;}
   if(req.url==='/api/launch/options') {res.end(JSON.stringify({enabled:true,campaign:'synthetic',targets:launchTargets,trial:{default_documents:2,max_documents:5,cap_ceiling_usd:0.25}}));return;}
   if(req.url==='/api/launch/status') {
     launch.statusReads++;
@@ -56,7 +60,9 @@ const server=http.createServer(async(req,res)=>{
     if(failSave) {res.writeHead(409);res.end(JSON.stringify({error:'synthetic revision conflict'}));return;}
     posts.push(body); saves++;
     packet={...packet,state_revision:'r'+(saves+1),saved_decisions:body.decisions,saved_history:body.history,review_states:[{document_id:record.document_id,field:record.field,status:'human_confirmed'}],tracker:{...packet.tracker,human_confirmed_fields:1,remaining_loaded_fields:1}};
-    res.end(JSON.stringify({saved:true}));return;
+    res.end(JSON.stringify({receipt_id:'synthetic-receipt-'+saves,changed_fields:body.decisions.length,
+      data:{packet_id:packet.packet_id,state_revision:packet.state_revision,review_states:packet.review_states,
+            saved_decisions:packet.saved_decisions,saved_history:packet.saved_history,tracker:packet.tracker}}));return;
   }
   if(req.url==='/api/checkpoint') {assert.deepEqual(body,{packet_id:packet.packet_id,confirm:true});checkpoints++;packet={...packet,state_revision:'checkpoint-1',tracker:{...packet.tracker,checkpointed_fields:1}};res.end(JSON.stringify({checkpointed:true}));return;}
   res.writeHead(404);res.end('{}');
@@ -89,6 +95,7 @@ try {
   await call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/review.html`});
   await waitFor(`document.getElementById('save') && !$('save').disabled`);
   assert.equal(await evaluate(`$('source').textContent`),text);
+  await evaluate(`autosaveEnabled=false`);
   assert.equal(await evaluate(`document.querySelector('#source mark').textContent`),quote);
   assert.equal(await evaluate(`document.querySelectorAll('#source img, #links a').length`),0);
   assert.match(await evaluate(`$('tasks').textContent`),/pending/);
@@ -98,16 +105,28 @@ try {
   assert.match(await evaluate(`$('tasks').textContent`),/approved/);
   assert.doesNotMatch(await evaluate(`$('tasks').textContent`),/pending/);
   await screenshot('01-source-tracker-highlight');
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
   await input('decision','ACCEPT');await input('initials','AB');await input('notes','Synthetic source verified.');
   assert.equal(await evaluate(`$('checkpoint').disabled`),true);
   await evaluate(`$('save').click()`);await waitFor(`!busy && !dirty`);
   assert.equal(saves,1);assert.equal(posts[0].state_revision,'r1');assert.equal(posts[0].decisions[0].decision,'ACCEPT');
   // The real server rejects a decision without a timestamp (review_page.validate_return).
   assert.ok(!Number.isNaN(Date.parse(posts[0].decisions[0].updated_at)),'edited decision must carry updated_at');assert.equal(posts[0].history.length,3);
+  const noOpBefore=await evaluate(`({history:history.length,updated_at:decision().updated_at,dirty})`);
+  await input('decision','ACCEPT');
+  assert.deepEqual(await evaluate(`({history:history.length,updated_at:decision().updated_at,dirty})`),noOpBefore,
+    'reselecting ACCEPT does not change history, timestamp or dirty state');
+  check('unchanged decision produces no journal entry');
   await screenshot('02-saved-server-confirmed');
-  await call('Page.reload');await waitFor(`document.getElementById('save') && !$('save').disabled`);
+  await evaluate(`delete document.body.dataset.reviewReady`); // old document must not satisfy the reload wait
+  await call('Page.reload');await waitFor(`document.body.dataset.reviewReady==='1'`);
+  assert.equal(await evaluate(`$('target').value`),'1','reopening advances from the saved target to the next pending target');
+  assert.match(await evaluate(`$('review-progress-text').textContent`),/1 \/ 2 targets reviewed and saved/);
+  assert.equal(await evaluate(`$('review-progress').value`),1);
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
   assert.equal(await evaluate(`$('decision').value`),'ACCEPT');
   assert.equal(await evaluate(`history.length`),3,'recovered history must not be fabricated');
+  check('saved progress and next-pending resume after page reload');
   await evaluate(`$('export').click()`);
   await screenshot('03-reloaded-receipt');
   await evaluate(`window.confirm=()=>true;$('checkpoint').click()`);await waitFor(`!busy && packet.state_revision==='checkpoint-1'`);
@@ -142,6 +161,185 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('#model-answers tr').length`),3);
   await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
   assert.equal(await evaluate(`!!$('model-answers')`),false,'no model_outputs, no table');
+  // Per-label items: keep/drop single labels; the kept items build the CORRECT replacement.
+  assert.match(await evaluate(`document.querySelector('#item-picker summary').textContent`),/2 of 2 kept/);
+  await evaluate(`[...document.querySelectorAll('#item-picker .chips .chip')][0].click()`);
+  assert.match(await evaluate(`document.querySelector('#item-picker summary').textContent`),/1 of 2 kept/);
+  // Manual keep/drop survives navigation away and back (the saved-draft adoption must not
+  // re-stomp picker state on re-render).
+  await evaluate(`$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
+  assert.match(await evaluate(`document.querySelector('#item-picker summary').textContent`),/1 of 2 kept/,
+    'manual keep/drop survives target navigation');
+  await evaluate(`[...document.querySelectorAll('#item-picker input')][1].value='signed claim form (edited)';[...document.querySelectorAll('#item-picker input')][1].dispatchEvent(new Event('input',{bubbles:true}));`);
+  await evaluate(`[...document.querySelectorAll('#item-picker button')].at(-1).click()`);
+  assert.equal(await evaluate(`$('decision').value`),'CORRECT');
+  assert.deepEqual(JSON.parse(await evaluate(`$('correction').value`)),['signed claim form (edited)']);
+  assert.match(await evaluate(`$('message').textContent`),/kept items/);
+  check('per-label item picker and kept-array correction');
+  // Apply guards: an all-dropped selection cannot save (use REJECT), and a blank-edit
+  // item cannot ride as an empty label — both reported loudly instead of silently.
+  // State here: item 0 dropped, item 1 kept with its edit — so one click zeroes it.
+  await evaluate(`[...document.querySelectorAll('#item-picker .chips .chip')][1].click()`);  // drop item 2 of 2
+  await evaluate(`[...document.querySelectorAll('#item-picker button')].at(-1).click()`);
+  assert.match(await evaluate(`$('message').textContent`),/Every label is dropped/);
+  await evaluate(`[...document.querySelectorAll('#item-picker .chips .chip')][1].click()`);   // un-drop one
+  await evaluate(`[...document.querySelectorAll('#item-picker input')][1].value='';[...document.querySelectorAll('#item-picker input')][1].dispatchEvent(new Event('input',{bubbles:true}));`);
+  await evaluate(`[...document.querySelectorAll('#item-picker button')].at(-1).click()`);
+  assert.match(await evaluate(`$('message').textContent`),/Drop empty-edited items/);
+  await evaluate(`[...document.querySelectorAll('#item-picker input')][1].value='signed claim form (edited)';[...document.querySelectorAll('#item-picker input')][1].dispatchEvent(new Event('input',{bubbles:true}));`);
+  await evaluate(`[...document.querySelectorAll('#item-picker button')].at(-1).click()`);
+  await screenshot('06-item-picker-perlabel');
+  // Next pending jumps the only undecided target (synthetic record 1).
+  await evaluate(`$('next-pending').click()`);
+  assert.equal(await evaluate(`$('target').value`),'1');
+  check('next-pending navigation');
+  // Sticky reviewer initials: typing them once pre-fills the next target's decision.
+  assert.equal(await evaluate(`$('target').value`),'1');
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
+  assert.equal(await evaluate(`$('initials').value`),'AB','remembered initials pre-fill the next target');
+  await evaluate(`$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  check('sticky reviewer initials across targets');
+  // Bulk accept: one click marks the verified undecided targets of the batch with the
+  // reviewer's own initials — the agent accelerates, the human still owns the decision.
+  await evaluate(`$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  await evaluate(`$('bulk-accept').click()`);
+  assert.match(await evaluate(`$('message').textContent`),/1 verified targets?/);
+  assert.equal(await evaluate(`$('decision').value`),'ACCEPT');
+  assert.equal(await evaluate(`decisions.get('SYNTH-002\\nentity_name').corrected_labels_json`),'',
+    'the ACCEPT clears any stale picker draft (it rides the candidate, never a correction)');
+  assert.equal(await evaluate(`decisions.get('SYNTH-002\\nentity_name').decision`),'ACCEPT',
+    'bulk accept marked the verified undecided target of the batch the review cursor sits in');
+  check('bulk accept verified batch with sticky initials');
+  // Production records can carry no batch ids: bulk refuses and says so, no blanket accept.
+  await evaluate(`records[0].batch='';records[0].chunk='';`);
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
+  await evaluate(`$('bulk-accept').click()`);
+  assert.match(await evaluate(`$('message').textContent`),/no batch header/);
+  assert.equal(await evaluate(`[...decisions.values()].filter((d)=>d.decision==='ACCEPT').length`),1,
+    'without a batch ids the click refuses instead of accepting everything');
+  await evaluate(`records[0].batch='8a';`);
+  // Batched generation alignment: the review list is grouped per labeling batch and the
+  // record header shows the batch's task/set/slice line.
+  const batches=await evaluate(`(()=>{const t=$('target');return {optgroups:[...t.children].filter(c=>c.tagName==='OPTGROUP').map(g=>g.label), seen:[...t.querySelectorAll('option')].map(o=>o.value)};})()`);
+  assert.equal(batches.optgroups[0],'8a · Claim checklist / pilot — 1/1 decided');
+  assert.equal(batches.optgroups[1],'9a · Corporate / pilot — 1/1 decided');
+  assert.deepEqual(batches.seen,['0','1']);
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
+  assert.match(await evaluate(`$('values').textContent`),/batch 8a .* pilot · Claim checklist/);
+  check('batch-grouped target list and batch chip');
+  // Tabs: the launcher, the review interface and the campaign tracker are separate
+  // views — one visible at a time — so the page stays navigable.
+  await evaluate(`showTab('tracker')`);
+  assert.equal(await evaluate(`$('tracker-view').hidden`),false);
+  assert.equal(await evaluate(`$('review-view').hidden`),true);
+  assert.equal(await evaluate(`$('launch-view').hidden`),true);
+  await evaluate(`showTab('review')`);
+  assert.equal(await evaluate(`$('review-view').hidden`),false);
+  await evaluate(`showTab('launch')`);
+  check('launcher / review / tracker tab switching');
+  // Keyboard: ARIA tabs pattern — arrows cycle selection (focus follows it),
+  // Home/End jump, and only the active tab stays in the tab order.
+  assert.equal(await evaluate(`$('tab-review').tabIndex`),-1);
+  assert.equal(await evaluate(`$('tab-launch').tabIndex`),0);
+  await evaluate(`$('tab-launch').focus()`);
+  await evaluate(`$('tab-launch').dispatchEvent(Object.assign(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true})))`);
+  assert.equal(await evaluate(`$('tab-review').getAttribute('aria-selected')`),'true','ArrowRight moves to the next tab');
+  assert.equal(await evaluate(`document.activeElement.id`),'tab-review','focus follows the selection');
+  await evaluate(`document.activeElement.dispatchEvent(Object.assign(new KeyboardEvent('keydown',{key:'Home',bubbles:true,cancelable:true})))`);
+  assert.equal(await evaluate(`$('tab-launch').getAttribute('aria-selected')`),'true','Home jumps to the first tab');
+  await evaluate(`document.activeElement.dispatchEvent(Object.assign(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true})))`);
+  assert.equal(await evaluate(`$('tab-tracker').getAttribute('aria-selected')`),'true','selection wraps backwards');
+  check('tab keyboard: arrow/home/end with roving tabindex');
+  // A11y invariants that hold in every run (the axe-core pass when AXE_PATH is set
+  // scans the whole document; these are the landmarks/roles it validates).
+  const a11y=await evaluate(`(()=>{const tabs=[...document.querySelectorAll('#tabs [role="tab"]')];
+    return {mains:document.querySelectorAll('main').length,
+            header:!!document.querySelector('header h1'),
+            panels:document.querySelectorAll('[role="tabpanel"]').length,
+            labelled:tabs.every((t)=>t.getAttribute('aria-controls') && document.getElementById(t.getAttribute('aria-controls'))),
+            selected:tabs.filter((t)=>t.getAttribute('aria-selected')==='true').length};})()`);
+  assert.equal(a11y.mains,1);assert.ok(a11y.header);
+  assert.equal(a11y.panels,3);assert.ok(a11y.labelled);assert.equal(a11y.selected,1);
+  check('single main landmark, headered page, labelled tab panels');
+  // Batch-scoped next pending: with both targets undecided, Shift+N stays inside the
+  // cursor's batch (record 0 is batch 8a's only member) while N searches globally.
+  const saved0=await evaluate(`decisions.get('SYNTH-001\\nclaim_checklist')`), saved1=await evaluate(`decisions.get('SYNTH-002\\nentity_name')`);
+  await evaluate(`decisions.set('SYNTH-001\\nclaim_checklist',{decision:'NOT_REVIEWED'});decisions.set('SYNTH-002\\nentity_name',{decision:'NOT_REVIEWED'});`);
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));`);
+  await evaluate(`document.activeElement.dispatchEvent(Object.assign(new KeyboardEvent('keydown',{key:'N',shiftKey:true,bubbles:true,cancelable:true})))`);
+  assert.equal(await evaluate(`$('target').value`),'0','Shift+N stays within the cursor batch');
+  await evaluate(`document.activeElement.dispatchEvent(Object.assign(new KeyboardEvent('keydown',{key:'N',bubbles:true,cancelable:true})))`);
+  assert.equal(await evaluate(`$('target').value`),'1','plain N searches the whole list');
+  await evaluate(`decisions.set('SYNTH-001\\nclaim_checklist',${JSON.stringify(saved0)});decisions.set('SYNTH-002\\nentity_name',${JSON.stringify(saved1)});`);
+  assert.match(await evaluate(`$('kbd-legend').textContent`),/Shift\+N next pending in batch/);
+  check('batch-scoped next pending and keyboard legend');
+  // Batch jump select mirrors batches with pending counts and lands on the pending target.
+  await evaluate(`decisions.set('SYNTH-001\\nclaim_checklist',{decision:'NOT_REVIEWED'});decisions.set('SYNTH-002\\nentity_name',{decision:'NOT_REVIEWED'});`);
+  const jumpData=await evaluate(`(()=>{const s=$('batch-jump');return [...s.options].map((o)=>o.text+':'+o.value);})()`);
+  assert.notEqual(jumpData.length,0,'batch jump lists the packet batches');
+  const nineA=jumpData.find((t)=>t.startsWith('9a'));
+  assert.ok(/pending of 1/.test(nineA), 'batch label shows pending counts: '+nineA);
+  await evaluate(`$('batch-jump').value='9a';$('batch-jump').dispatchEvent(new Event('change'));`);
+  assert.equal(await evaluate(`$('target').value`),'1','the jump lands on record 1 (the only pending target of batch 9a)');
+  await evaluate(`decisions.set('SYNTH-001\\nclaim_checklist',${JSON.stringify(saved0)});decisions.set('SYNTH-002\\nentity_name',${JSON.stringify(saved1)});`);
+  check('batch jump select navigates to a batch first pending');
+  // Manual source verification + model attribution: a candidate that failed the
+  // automated source checks can now be ACCEPTed after the reviewer verifies it against
+  // the full source, and the decision records which model(s) produced the verified value.
+  await evaluate(`$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  const ticked=await evaluate(`(()=>{[...document.querySelectorAll('#model-answers input')][0].click();return decisions.get('SYNTH-002\\nentity_name').verified_outputs;})()`);
+  assert.deepEqual(ticked,[{model:'synthetic/model-a',pass:null}],'ticking a model row records the exact run');
+  // "Use value" turns the verified model answer into the CORRECT replacement in one click.
+  await evaluate(`[...document.querySelectorAll('#model-answers button')][0].click()`);
+  assert.equal(await evaluate(`$('decision').value`),'CORRECT','use-value selects CORRECT');
+  assert.equal(JSON.parse(await evaluate(`$('correction').value`)),'Example Corporation',
+    'the correction carries the model value byte-for-byte');
+  await evaluate(`$('decision').value='ACCEPT';$('decision').dispatchEvent(new Event('input'));`);
+  await evaluate(`records[1].candidate_status='needs_source_review';renderTarget();`);
+  assert.equal(await evaluate(`$('manual-wrap').hidden`),false,'blocked candidates expose the manual-verification checkbox');
+  await evaluate(`$('decision').value='ACCEPT';$('decision').dispatchEvent(new Event('input'));`);
+  assert.equal(await evaluate(`validate()`),false,'blocked ACCEPT without manual verification is refused');
+  assert.match(await evaluate(`$('message').textContent`),/I verified this value against the full source myself/);
+  await evaluate(`$('manual-verify').click()`);
+  assert.equal(await evaluate(`validate()`),true,'manual verification unblocks the ACCEPT');
+  assert.equal(await evaluate(`decisions.get('SYNTH-002\\nentity_name').manual_source_verification`),true,
+    'the verification flag travels with the decision');
+  await evaluate(`records[1].candidate_status='source_checks_passed';decisions.set('SYNTH-002\\nentity_name',${JSON.stringify(saved1)});persist();$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  check('manual source verification and per-model attribution');
+  // Autosave: complete decisions reach the server without the Save click, so a crash or
+  // restart cannot strand reviewed work inside this tab.
+  failSave=false; // the 409 rehearsal above left the mock rejecting writes
+  await evaluate(`autosaveEnabled=true`);
+  const postsBefore=posts.length;
+  await input('notes','Autosave probe note.');
+  await waitFor(`$('message').textContent.includes('Auto-saved at')`);
+  assert.ok(posts.length>postsBefore,'a decision was posted without clicking Save');
+  assert.equal(posts.at(-1).slim,true,'autosave uses the slim response');
+  assert.equal(await evaluate(`dirty`),false,'the applied autosave clears the dirty flag');
+  assert.match(await evaluate(`$('target-status').textContent`),/auto-saved/);
+  await evaluate(`autosaveEnabled=false`);
+  check('autosave persists complete decisions without Save');
+  // A reviewer can type while a manual Save is in flight; the response must not erase it.
+  await evaluate(`showTab('review');window.originalRequest=request;window.releaseReviewSave=null;
+    request=async(url,body)=>{const snapshot=body?clone(body):body;
+      if(url==='/api/reviews') await new Promise(resolve=>window.releaseReviewSave=resolve);
+      return window.originalRequest(url,snapshot);};`);
+  await input('notes','Submitted before response.');
+  await evaluate(`$('save').click()`);
+  await waitFor(`!!window.releaseReviewSave`);
+  await input('notes','Newer edit while saving.');
+  await evaluate(`window.releaseReviewSave()`);
+  await waitFor(`!busy`);
+  assert.equal(await evaluate(`$('notes').value`),'Newer edit while saving.');
+  assert.equal(await evaluate(`decision().reviewer_notes`),'Newer edit while saving.');
+  assert.equal(await evaluate(`dirty`),true,'newer work remains unsaved, never falsely durable');
+  assert.match(await evaluate(`$('review-progress-text').textContent`),/1 local drafts/,
+    'progress distinguishes an unsaved edit from the saved review count');
+  assert.match(await evaluate(`$('journal').textContent`),/Updated Reviewer notes/,
+    'the journal describes the actual edit rather than an unexplained ACCEPT to ACCEPT');
+  await evaluate(`request=window.originalRequest`);
+  check('manual save response preserves newer edits');
   // Launch panel: shown because the server says launch is enabled.
   await waitFor(`!$('launch-panel').hidden && $('launch-target').options.length===3`);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#launch-target optgroup')].map(g=>g.label)`),['Campaign','Public trial']);
@@ -189,8 +387,161 @@ try {
   assert.ok(launch.reloads>readsBefore,'a finished run reloads the batches');
   assert.equal(await evaluate(`JSON.stringify([localStorage,sessionStorage]).includes('BROWSER-SECRET')`),false);
   await screenshot('08-launch-finished');
+  const resumeCases=await evaluate(`(()=>{
+    const oldRecords=records,oldDecisions=decisions,oldPacket=packet,oldCurrent=current;
+    const a={...records[0],document_id:'RESUME-A'},b={...records[1],document_id:'RESUME-B'};
+    const done={...blank(a),decision:'ACCEPT',reviewer_initials:'AB',updated_at:now()};
+    records=[b,a];decisions=new Map([[KEY(a),done],[KEY(b),blank(b)]]);
+    packet={...packet,saved_decisions:[done]};
+    resumeReview({document_id:b.document_id,field:b.field});
+    const reordered=current===0;
+    resumeReview({document_id:a.document_id,field:a.field});
+    const skipsSaved=current===0;
+    decisions.set(KEY(a),{...done,decision:'CORRECT',corrected_labels_json:'"unfinished"'});
+    resumeReview({document_id:a.document_id,field:a.field});
+    const keepsDraft=current===1;
+    decisions.set(KEY(a),done);
+    packet.saved_decisions.push({...blank(b),decision:'REJECT',reviewer_initials:'AB',updated_at:now()});
+    decisions.set(KEY(b),packet.saved_decisions[1]);
+    resumeReview({document_id:a.document_id,field:a.field});
+    const allReviewed=current===1;
+    records=oldRecords;decisions=oldDecisions;packet=oldPacket;current=oldCurrent;render();persist();
+    return {reordered,skipsSaved,keepsDraft,allReviewed};
+  })()`);
+  assert.deepEqual(resumeCases,{reordered:true,skipsSaved:true,keepsDraft:true,allReviewed:true});
+  check('resume identities survive reorder, unfinished drafts and completed queues');
+  const granular=await evaluate(`(()=>{
+    const oldRecords=records,oldDecisions=decisions,oldPacket=packet,oldCurrent=current,oldHistory=history,oldDirty=dirty;
+    const a={...records[1],document_id:'FIELD-REVIEW',field:'entity_name'};
+    const b={...a,field:'jurisdiction',candidate_labels:'Delaware'};
+    records=[a,b];packet={...packet,saved_decisions:[],review_states:[]};
+    decisions=new Map(records.map(r=>[KEY(r),blank(r)]));history=[];current=0;render();
+    document.querySelector('[data-outcome="ACCEPT"]').click();
+    const isolated=decisions.get(KEY(a)).decision==='ACCEPT'&&decisions.get(KEY(b)).decision==='NOT_REVIEWED';
+    const draft=$('field-outcome').textContent.includes('Draft — Approved (not saved)');
+    $('document-fields').querySelectorAll('button')[1].click();
+    document.querySelector('[data-outcome="NEEDS_SOURCE"]').click();
+    const deferred=current===1&&$('field-outcome').textContent.includes('Deferred');
+    packet.saved_decisions=[clone(decisions.get(KEY(a)))];
+    const saved=fieldOutcome(a)==='Approved — saved locally';
+    packet.review_states=[{document_id:a.document_id,field:a.field,status:'reviewed_needs_schema'}];
+    const blocked=fieldOutcome(a).includes('schema approval still required');
+    records=oldRecords;decisions=oldDecisions;packet=oldPacket;current=oldCurrent;history=oldHistory;dirty=oldDirty;
+    render();persist();return {isolated,draft,deferred,saved,blocked};
+  })()`);
+  assert.deepEqual(granular,{isolated:true,draft:true,deferred:true,saved:true,blocked:true});
+  check('granular field outcomes distinguish drafts, saved approval and schema blockers');
+  const pickerSafe=await evaluate(`(()=>{
+    const oldCurrent=current,oldState=itemState,oldDecisions=decisions;
+    decisions=new Map(decisions);current=0;itemState=new Map();
+    const d={...blank(records[0]),decision:'CORRECT',corrected_labels_json:'["previously edited entity"]'};
+    decisions.set(KEY(records[0]),d);renderTarget();
+    const safe=$('item-picker').textContent.includes('Saved correction preserved')
+      &&$('item-picker').querySelectorAll('button,input').length===0
+      &&$('correction').value===d.corrected_labels_json;
+    decisions=oldDecisions;itemState=oldState;current=oldCurrent;render();persist();return safe;
+  })()`);
+  assert.ok(pickerSafe,'reopening an edited array never offers a picker that can revert saved text');
+  check('unreconciled saved array correction cannot be overwritten by picker');
+  // Approving a correction no longer demands hand-written JSON: the displayed value is
+  // prefilled, and plain approval keeps the editor out of the way entirely.
+  await evaluate(`showTab('review');$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  await evaluate(`document.querySelector('[data-outcome="CORRECT"]').click()`);
+  assert.equal(JSON.parse(await evaluate(`$('correction').value`)),'Example Corporation','CORRECT prefills the displayed value');
+  assert.equal(await evaluate(`$('correction-editor').hidden`),false);
+  await evaluate(`document.querySelector('[data-outcome="ACCEPT"]').click()`);
+  assert.equal(await evaluate(`$('correction-editor').hidden`),true,'ACCEPT needs no replacement JSON');
+  assert.match(await evaluate(`$('decision-help').textContent`),/No replacement JSON is needed/);
+  check('CORRECT prefills the displayed value; ACCEPT needs no JSON');
+  // Campaign tracker counters follow the current session instead of only the server snapshot.
+  await input('initials','AB');
+  assert.match(await evaluate(`$('summary').textContent`),/live: .*saved reviews.*drafts awaiting save/,
+    'tracker reflects live review state');
+  check('campaign tracker updates live with review progress');
+  // Exercise a real partial autosave through the form and HTTP route, not applySave directly.
+  failSave=false;
+  await evaluate(`showTab('review');autosaveEnabled=false;$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  await input('decision','CORRECT');await input('correction','not JSON yet');await input('initials','');
+  await evaluate(`$('target').value='0';$('target').dispatchEvent(new Event('change'));autosaveEnabled=true;`);
+  await input('decision','ACCEPT');await input('initials','AB');
+  const partialPostsBefore=posts.length;
+  await evaluate(`message('Waiting for partial autosave')`);
+  await input('notes','Partial autosave form exercise.');
+  await waitFor(`$('message').textContent.includes('Auto-saved at')&& !busy`);
+  assert.ok(posts.length>partialPostsBefore);
+  assert.ok(!posts.at(-1).decisions.some(d=>d.document_id==='SYNTH-002'&&d.decision==='CORRECT'),
+    'invalid correction is excluded from the posted decisions');
+  await evaluate(`autosaveEnabled=false;$('target').value='1';$('target').dispatchEvent(new Event('change'));`);
+  const partialSaveOutcome=await evaluate(`dirty&&$('decision').value==='CORRECT'&&$('correction').value==='not JSON yet'
+    &&$('target-status').textContent.includes('autosaving')&&$('review-progress-text').textContent.includes('1 local drafts')
+    &&$('checkpoint').disabled&&!$('review-progress-text').hidden`);
+  assert.equal(partialSaveOutcome,true,'the real save path preserves the draft and visibly warns that it is unsaved');
+  // Fixed leg-2 task score; unlike checks.length this denominator never grows with features.
+  const uxTasks=await evaluate(`(()=>{
+    const oldRecords=records, oldDecisions=decisions, oldHistory=history, oldCurrent=current;
+    const oldPacket=packet, oldDirty=dirty;
+    const a={...records[0],document_id:'UX-A',field:'sender',batch:'alpha',chunk:''};
+    const b={...records[0],document_id:'UX-B',field:'intent',batch:'beta',chunk:''};
+    const c={...records[0],document_id:'UX-C',field:'recipient',batch:'alpha',chunk:''};
+    records=[a,b,c]; decisions=new Map(records.map(r=>[KEY(r),blank(r)])); history=[];current=0;
+    $('target').textContent='';render();
+    const groups=[...$('target').querySelectorAll('optgroup')].map(g=>({id:g.dataset.gid,values:[...g.querySelectorAll('option')].map(o=>o.value)}));
+    const consolidated=JSON.stringify(groups)===JSON.stringify([{id:'alpha',values:['0','2']},{id:'beta',values:['1']}]);
+    let search=false, empty=false;
+    if ($('target-search')){
+      $('target-search').value='ux-b intent';$('target-search').dispatchEvent(new Event('input'));
+      search=[...$('target').options].length===1&&$('target').options[0].value==='1';
+      const before=current;
+      $('target-search').value='no-such-review-target';$('target-search').dispatchEvent(new Event('input'));
+      empty=$('target').options.length===0&&current===before&&!$('target-search-status').hidden
+        &&$('target-search-status').textContent.includes('No matching targets.')
+        &&$('target-search-status').textContent.includes('Clear the search');
+      $('target-search').value='';$('target-search').dispatchEvent(new Event('input'));
+    }
+    records=oldRecords;decisions=oldDecisions;history=oldHistory;current=oldCurrent;packet=oldPacket;dirty=oldDirty;
+    $('target').textContent='';render();persist();
+    return {find_target:search,empty_search_preserves_position:empty,consolidated_batches:consolidated};
+  })()`);
+  uxTasks.partial_save_preserves_unsaved_work=partialSaveOutcome;
+  const uxScore=Object.values(uxTasks).filter(Boolean).length;
+  fs.writeFileSync(path.join(out,'ux-tasks.json'),JSON.stringify({score:uxScore,total:4,tasks:uxTasks},null,2));
+  console.log('UX_TASK_SCORE '+uxScore+'/4');
+  if (uxScore===4){
+    const preserved=await evaluate(`(()=>{
+      const oldPacket=packet,oldDecisions=decisions,oldHistory=history,oldDirty=dirty;
+      const a=records[0], b=records[1];
+      const done={...blank(a),decision:'ACCEPT',reviewer_initials:'AB',updated_at:now()};
+      const prior={...blank(b),decision:'ACCEPT',reviewer_initials:'AB',updated_at:now()};
+      const unfinished={...prior,decision:'CORRECT',corrected_labels_json:'not JSON yet'};
+      decisions=new Map(records.map(r=>[KEY(r),blank(r)]));
+      decisions.set(KEY(a),done);decisions.set(KEY(b),unfinished);
+      history=[{document_id:b.document_id,field:b.field,after:unfinished}];dirty=true;
+      applySave({data:{saved_decisions:[done,prior],saved_history:[]}},true,[done]);
+      const ok=dirty&&decisions.get(KEY(b)).corrected_labels_json==='not JSON yet'&&history.length===1;
+      packet=oldPacket;decisions=oldDecisions;history=oldHistory;dirty=oldDirty;persist();render();
+      return ok;
+    })()`);
+    assert.ok(preserved,'a partial autosave cannot overwrite an excluded draft with its older server decision or discard its history');
+  }
+  await evaluate(`showTab('review')`);
+  await screenshot('09-review-ux-final');
+  // A11y pass: when AXE_PATH is set, the served /axe.js (vendored axe-core) scans the live
+  // document; the committed run stays offline and only the a11y invariants below execute.
+  if (process.env.AXE_PATH){
+    const ax=await evaluate(`new Promise((resolve)=>{
+      const s=document.createElement('script'); s.src='/axe.js';
+      s.onload=()=>axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','best-practice']}})
+        .then((r)=>resolve(JSON.stringify({violations:r.violations.map((v)=>v.id+' x'+v.nodes.length+(v.nodes[0]&&v.nodes[0].target?' @'+v.nodes[0].target.join(' '):'')),passes:r.passes.length,incomplete:r.incomplete.length})))
+        .catch((e)=>resolve(JSON.stringify({violations:['axe-error: '+e.message]})));
+      s.onerror=()=>resolve(JSON.stringify({violations:['axe-load-error']}));
+      document.head.append(s);
+    })`);
+    fs.writeFileSync(path.join(out,'axe.json'),ax);
+    console.log('AXE '+ax);
+    assert.deepEqual(JSON.parse(ax).violations,[]);
+  }
   assert.deepEqual(errors,[]);
   fs.writeFileSync(path.join(out,'submitted-review.json'),JSON.stringify(posts[0],null,2));
-  fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({passed:true,saves,checkpoints,journal_events:posts[0].history.length,checks:['Unicode offsets','full source','no HTML injection','safe source URLs','native values','task filters','save contract','receipt/history hydration','localStorage resume','same-revision reload','409 retains draft','changed-revision explicit discard','checkpoint','model answers table','launch panel targets and kind labels','loud preflight checklist','api key cleared and never stored','typed-cap confirmation','status polling and reload'],console_exceptions:errors},null,2));
+  fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({passed:true,saves,checkpoints,journal_events:posts[0].history.length,checks,console_exceptions:errors},null,2));
   console.log('PASS: integrated synthetic review browser smoke; evidence '+out);
 } finally {ws?.close();chrome.kill();server.close();}

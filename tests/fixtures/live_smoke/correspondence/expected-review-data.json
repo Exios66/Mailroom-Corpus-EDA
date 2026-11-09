@@ -6,7 +6,7 @@
   "NOT_REVIEWED": "No decision; does not approve anything. Blank has the same meaning.",
   "REJECT": "Leave this field unlabeled; do not promote the candidate."
  },
- "packet_id": "3833b2759b2990fa53836d754944f06514bb935f65b27560bd297b30af423f10",
+ "packet_id": "9481dc8b71d85447e1a6827717b6c4f47820f38a6bca2cb6ba19a440f5fe8727",
  "producer": "labeling_batch_review/v1",
  "records": [
   {
@@ -23,6 +23,11 @@
    "dojo_type": "entity_list",
    "eligible_for_gold": true,
    "evidence": [
+    {
+     "end": 1152,
+     "quote": "If there is a problem with cost centers please contact me , but\nplease try and have both guys set up for Monday morning.",
+     "start": 1032
+    },
     {
      "end": 1152,
      "quote": "please try and have both guys set up for Monday morning.",
@@ -59,8 +64,7 @@
    "full_document_text": "Thanks Karin....\n---------------------- Forwarded by Kevin G Moore/HOU/ECT on 04/20/2001 08:07 \nAM ---------------------------\n \n Enron Capital & Trade Resources \n Canada Corp. \n \n From: Karin Ahamer @ ENRON 04/20/2001 06:57 AM\n \n\nTo: Kevin G Moore/HOU/ECT@ECT\ncc: \nSubject: Re: Desk Move/Computer Stuff \n\nKevin\n\nDon't worry I haven't forgotten about Stephen. He will be moved and sit next \nto Tony. Don't know what they are talking about loan computers but I am on \nthe case.\n\nRegards\n\nKarin\n\nAvistar has been all set up as far as I know but someone has to come in \nagain on Monday to re-install it on Tonys new computer.\n\nKevin G Moore@ECT\n20/04/2001 12:27\nTo: Karin Ahamer/EU/Enron@ENRON, Stephen Bennett/NA/Enron@ENRON, Mike A \nRoberts/HOU/ECT@ECT, Tony Hamilton/EU/Enron@Enron\ncc: \n\nSubject: Re: Desk Move/Computer Stuff \n\nHello Karin ,\nI noticed that Tony is taken care of , but what about Stephen.\nTony and Stephen are a team , they work very closely together.\nStephen also needs to be aware of what is taking place as well.\nIf there is a problem with cost centers please contact me , but\nplease try and have both guys set up for Monday morning.\n\n Thanks so much .\n Kevin Moore\n\nBy the way have the Avistar set -up been completed.......\nPlease inform...\n\n \n Enron Capital & Trade Resources \n Canada Corp. \n \n From: Karin Ahamer @ ENRON 04/20/2001 03:00 AM\n \n\nTo: Stephen Bennett/NA/Enron@ENRON, Graham Aley/LON/ECT\ncc: Tony Hamilton/EU/Enron@Enron, Kevin G Moore/HOU/ECT@ECT \nSubject: Re: Desk Move/Computer Stuff \n\nSteve\n\nI have ordered a computer for Tony which IT should know about. I believe the \ncontact person is Steve Deakin. I am in a course all day today but will look \ninto it at lunchtime.\n\nRegards\n\nKarin\n\n \n Enron Capital & Trade Resources Corp.\n \n From: Stephen Bennett 19/04/2001 16:53\n \n\nTo: Karin Ahamer/EU/Enron@Enron\ncc: Tony Hamilton/EU/Enron@Enron, Kevin G Moore/HOU/ECT@ECT \n\nSubject: Desk Move/Computer Stuff\n\nHi Karin,\n\nI just wanted to check the status of our change in equipment for start of \nbusiness Monday. I've been told that Tony and I will be using loaner PC's. \nThe folks in IT are asking me where that loaner PC is so they can install all \nof the software that I need. Slava has told me that you are the point of \ncontact. I just wanted to check with you to see if you need any additional \ninformation from me - or if I can be of help in any way. Thanks!!\n\nSteve\n\nStephen Bennett\nSenior Meteorologist\nEnron Research\nLondon Temp Ext: 34761\nHouston: 001 713 345 3661",
    "human_approval": "pending",
    "issues": [
-    "The evidence quote from minimax/minimax-m3.1-flash could not be located in the document text, so it is not highlighted.",
-    "Needs a reviewer decision: failed evidence checks."
+    "The models disagree: deepseek/deepseek-v4.1-flash answered [\"please try and have both guys set up for Monday morning.\", \"By the way have the Avistar set -up been completed.......…, minimax/minimax-m3.1-flash answered [\"please try and have both guys set up for Monday morning.\", \"Please inform...\", \"If there is a problem with cost cente…."
    ],
    "kind": "labeling_batch",
    "model_outputs": [
@@ -76,20 +80,26 @@
      "model": "deepseek/deepseek-v4.1-flash",
      "status": "present",
      "value": [
-      "have both guys set up for Monday morning",
-      "contact me if there is a problem with cost centers",
-      "inform whether the Avistar set-up has been completed"
+      "please try and have both guys set up for Monday morning.",
+      "By the way have the Avistar set -up been completed.......",
+      "Please inform..."
      ]
     },
     {
-     "evidence": "please try and have both guys set up for Monday morning. ... Please inform... If there is a problem with cost centers please contact me",
-     "evidence_spans": [],
+     "evidence": "If there is a problem with cost centers please contact me , but please try and have both guys set up for Monday morning.",
+     "evidence_spans": [
+      {
+       "end": 1152,
+       "quote": "If there is a problem with cost centers please contact me , but\nplease try and have both guys set up for Monday morning.",
+       "start": 1032
+      }
+     ],
      "model": "minimax/minimax-m3.1-flash",
      "status": "present",
      "value": [
-      "Have both Stephen and Tony set up for Monday morning",
-      "Inform Kevin whether the Avistar set-up has been completed",
-      "Contact Kevin if there is a problem with cost centers"
+      "please try and have both guys set up for Monday morning.",
+      "Please inform...",
+      "If there is a problem with cost centers please contact me"
      ]
     }
    ],
@@ -98,7 +108,7 @@
     "minimax/minimax-m3.1-flash"
    ],
    "nullable": true,
-   "prompt_sha256": "db005e75f9d81fe342a6122d9b7b2243d584641221a0a5ec9679dc67541fb569",
+   "prompt_sha256": "72bbde635badac87a1fa9d509aeb45983866ec87045c2d472d3cd74577430058",
    "published_document_id": "DOC-0051fe517559538b",
    "reasoning": {
     "deepseek/deepseek-v4.1-flash": "off",
@@ -117,13 +127,9 @@
   {
    "absence_policy": "absent_ok",
    "batch": "smoke-correspondence",
-   "candidate_labels": [
-    "Stephen Bennett",
-    "Mike A Roberts",
-    "Tony Hamilton"
-   ],
-   "candidate_presence": "populated",
-   "candidate_status": "source_checks_passed",
+   "candidate_labels": null,
+   "candidate_presence": "pending_annotation",
+   "candidate_status": "needs_source_review",
    "chunk": "trial-correspondence",
    "correction_type": "array",
    "doc_class": "correspondence",
@@ -167,7 +173,9 @@
    "filename": "kaminski-v/all_documents/448.",
    "full_document_text": "Thanks Karin....\n---------------------- Forwarded by Kevin G Moore/HOU/ECT on 04/20/2001 08:07 \nAM ---------------------------\n \n Enron Capital & Trade Resources \n Canada Corp. \n \n From: Karin Ahamer @ ENRON 04/20/2001 06:57 AM\n \n\nTo: Kevin G Moore/HOU/ECT@ECT\ncc: \nSubject: Re: Desk Move/Computer Stuff \n\nKevin\n\nDon't worry I haven't forgotten about Stephen. He will be moved and sit next \nto Tony. Don't know what they are talking about loan computers but I am on \nthe case.\n\nRegards\n\nKarin\n\nAvistar has been all set up as far as I know but someone has to come in \nagain on Monday to re-install it on Tonys new computer.\n\nKevin G Moore@ECT\n20/04/2001 12:27\nTo: Karin Ahamer/EU/Enron@ENRON, Stephen Bennett/NA/Enron@ENRON, Mike A \nRoberts/HOU/ECT@ECT, Tony Hamilton/EU/Enron@Enron\ncc: \n\nSubject: Re: Desk Move/Computer Stuff \n\nHello Karin ,\nI noticed that Tony is taken care of , but what about Stephen.\nTony and Stephen are a team , they work very closely together.\nStephen also needs to be aware of what is taking place as well.\nIf there is a problem with cost centers please contact me , but\nplease try and have both guys set up for Monday morning.\n\n Thanks so much .\n Kevin Moore\n\nBy the way have the Avistar set -up been completed.......\nPlease inform...\n\n \n Enron Capital & Trade Resources \n Canada Corp. \n \n From: Karin Ahamer @ ENRON 04/20/2001 03:00 AM\n \n\nTo: Stephen Bennett/NA/Enron@ENRON, Graham Aley/LON/ECT\ncc: Tony Hamilton/EU/Enron@Enron, Kevin G Moore/HOU/ECT@ECT \nSubject: Re: Desk Move/Computer Stuff \n\nSteve\n\nI have ordered a computer for Tony which IT should know about. I believe the \ncontact person is Steve Deakin. I am in a course all day today but will look \ninto it at lunchtime.\n\nRegards\n\nKarin\n\n \n Enron Capital & Trade Resources Corp.\n \n From: Stephen Bennett 19/04/2001 16:53\n \n\nTo: Karin Ahamer/EU/Enron@Enron\ncc: Tony Hamilton/EU/Enron@Enron, Kevin G Moore/HOU/ECT@ECT \n\nSubject: Desk Move/Computer Stuff\n\nHi Karin,\n\nI just wanted to check the status of our change in equipment for start of \nbusiness Monday. I've been told that Tony and I will be using loaner PC's. \nThe folks in IT are asking me where that loaner PC is so they can install all \nof the software that I need. Slava has told me that you are the point of \ncontact. I just wanted to check with you to see if you need any additional \ninformation from me - or if I can be of help in any way. Thanks!!\n\nSteve\n\nStephen Bennett\nSenior Meteorologist\nEnron Research\nLondon Temp Ext: 34761\nHouston: 001 713 345 3661",
    "human_approval": "pending",
-   "issues": [],
+   "issues": [
+    "The models disagree: deepseek/deepseek-v4.1-flash answered [\"Stephen Bennett\", \"Mike A Roberts\", \"Tony Hamilton\"], minimax/minimax-m3.1-flash answered [\"Kevin G Moore/HOU/ECT@ECT\", \"Stephen Bennett/NA/Enron@ENRON\", \"Graham Aley/LON/ECT\", \"Tony Hamilton/EU/Enron@Enron\", …."
+   ],
    "kind": "labeling_batch",
    "model_outputs": [
     {
@@ -199,9 +207,11 @@
      "model": "minimax/minimax-m3.1-flash",
      "status": "present",
      "value": [
-      "Stephen Bennett",
-      "Mike A Roberts",
-      "Tony Hamilton"
+      "Kevin G Moore/HOU/ECT@ECT",
+      "Stephen Bennett/NA/Enron@ENRON",
+      "Graham Aley/LON/ECT",
+      "Tony Hamilton/EU/Enron@Enron",
+      "Mike A Roberts/HOU/ECT@ECT"
      ]
     }
    ],
@@ -210,13 +220,13 @@
     "minimax/minimax-m3.1-flash"
    ],
    "nullable": true,
-   "prompt_sha256": "db005e75f9d81fe342a6122d9b7b2243d584641221a0a5ec9679dc67541fb569",
+   "prompt_sha256": "72bbde635badac87a1fa9d509aeb45983866ec87045c2d472d3cd74577430058",
    "published_document_id": "DOC-0051fe517559538b",
    "reasoning": {
     "deepseek/deepseek-v4.1-flash": "off",
     "minimax/minimax-m3.1-flash": "low"
    },
-   "review_provenance": "Batch trial-correspondence (correspondence, remainder set), labeled by deepseek/deepseek-v4.1-flash and minimax/minimax-m3.1-flash at reasoning deepseek-v4.1-flash off, minimax-m3.1-flash low. The candidate is the value the models agreed on after the evidence and grounding checks. It is a proposal for human review, not a gold label.",
+   "review_provenance": "Batch trial-correspondence (correspondence, remainder set), labeled by deepseek/deepseek-v4.1-flash and minimax/minimax-m3.1-flash at reasoning deepseek-v4.1-flash off, minimax-m3.1-flash low. The candidate is left open because no value was agreed. It is a proposal for human review, not a gold label.",
    "schema_alignment": "aligned",
    "schema_status": "pinned_registry",
    "set": "remainder",
@@ -241,14 +251,14 @@
    "eligible_for_gold": true,
    "evidence": [
     {
+     "end": 94,
+     "quote": "---------------------- Forwarded by Kevin G Moore/HOU/ECT on 04/20/2001 08:07",
+     "start": 17
+    },
+    {
      "end": 98,
      "quote": "Forwarded by Kevin G Moore/HOU/ECT on 04/20/2001 08:07 \nAM",
      "start": 40
-    },
-    {
-     "end": 227,
-     "quote": "From: Karin Ahamer @ ENRON 04/20/2001 06:57 AM",
-     "start": 181
     }
    ],
    "existing_gt_fields": {
@@ -284,12 +294,12 @@
    "kind": "labeling_batch",
    "model_outputs": [
     {
-     "evidence": "From: Karin Ahamer @ ENRON 04/20/2001 06:57 AM",
+     "evidence": "---------------------- Forwarded by Kevin G Moore/HOU/ECT on 04/20/2001 08:07",
      "evidence_spans": [
       {
-       "end": 227,
-       "quote": "From: Karin Ahamer @ ENRON 04/20/2001 06:57 AM",
-       "start": 181
+       "end": 94,
+       "quote": "---------------------- Forwarded by Kevin G Moore/HOU/ECT on 04/20/2001 08:07",
+       "start": 17
       }
      ],
      "model": "deepseek/deepseek-v4.1-flash",
@@ -315,7 +325,7 @@
     "minimax/minimax-m3.1-flash"
    ],
    "nullable": true,
-   "prompt_sha256": "db005e75f9d81fe342a6122d9b7b2243d584641221a0a5ec9679dc67541fb569",
+   "prompt_sha256": "72bbde635badac87a1fa9d509aeb45983866ec87045c2d472d3cd74577430058",
    "published_document_id": "DOC-0051fe517559538b",
    "reasoning": {
     "deepseek/deepseek-v4.1-flash": "off",
@@ -397,7 +407,7 @@
     "minimax/minimax-m3.1-flash"
    ],
    "nullable": true,
-   "prompt_sha256": "db005e75f9d81fe342a6122d9b7b2243d584641221a0a5ec9679dc67541fb569",
+   "prompt_sha256": "72bbde635badac87a1fa9d509aeb45983866ec87045c2d472d3cd74577430058",
    "published_document_id": "DOC-0051fe517559538b",
    "reasoning": {
     "deepseek/deepseek-v4.1-flash": "off",
@@ -502,7 +512,7 @@
     "minimax/minimax-m3.1-flash"
    ],
    "nullable": true,
-   "prompt_sha256": "db005e75f9d81fe342a6122d9b7b2243d584641221a0a5ec9679dc67541fb569",
+   "prompt_sha256": "72bbde635badac87a1fa9d509aeb45983866ec87045c2d472d3cd74577430058",
    "published_document_id": "DOC-0051fe517559538b",
    "reasoning": {
     "deepseek/deepseek-v4.1-flash": "off",
@@ -607,7 +617,7 @@
     "minimax/minimax-m3.1-flash"
    ],
    "nullable": true,
-   "prompt_sha256": "db005e75f9d81fe342a6122d9b7b2243d584641221a0a5ec9679dc67541fb569",
+   "prompt_sha256": "72bbde635badac87a1fa9d509aeb45983866ec87045c2d472d3cd74577430058",
    "published_document_id": "DOC-0051fe517559538b",
    "reasoning": {
     "deepseek/deepseek-v4.1-flash": "off",
@@ -707,7 +717,7 @@
     "minimax/minimax-m3.1-flash"
    ],
    "nullable": false,
-   "prompt_sha256": "db005e75f9d81fe342a6122d9b7b2243d584641221a0a5ec9679dc67541fb569",
+   "prompt_sha256": "72bbde635badac87a1fa9d509aeb45983866ec87045c2d472d3cd74577430058",
    "published_document_id": "DOC-0051fe517559538b",
    "reasoning": {
     "deepseek/deepseek-v4.1-flash": "off",
@@ -800,7 +810,7 @@
     "minimax/minimax-m3.1-flash"
    ],
    "nullable": true,
-   "prompt_sha256": "db005e75f9d81fe342a6122d9b7b2243d584641221a0a5ec9679dc67541fb569",
+   "prompt_sha256": "72bbde635badac87a1fa9d509aeb45983866ec87045c2d472d3cd74577430058",
    "published_document_id": "DOC-015fde78fa84a771",
    "reasoning": {
     "deepseek/deepseek-v4.1-flash": "off",
@@ -893,7 +903,7 @@
     "minimax/minimax-m3.1-flash"
    ],
    "nullable": true,
-   "prompt_sha256": "db005e75f9d81fe342a6122d9b7b2243d584641221a0a5ec9679dc67541fb569",
+   "prompt_sha256": "72bbde635badac87a1fa9d509aeb45983866ec87045c2d472d3cd74577430058",
    "published_document_id": "DOC-015fde78fa84a771",
    "reasoning": {
     "deepseek/deepseek-v4.1-flash": "off",
@@ -986,7 +996,7 @@
     "minimax/minimax-m3.1-flash"
    ],
    "nullable": true,
-   "prompt_sha256": "db005e75f9d81fe342a6122d9b7b2243d584641221a0a5ec9679dc67541fb569",
+   "prompt_sha256": "72bbde635badac87a1fa9d509aeb45983866ec87045c2d472d3cd74577430058",
    "published_document_id": "DOC-015fde78fa84a771",
    "reasoning": {
     "deepseek/deepseek-v4.1-flash": "off",
@@ -1079,7 +1089,7 @@
     "minimax/minimax-m3.1-flash"
    ],
    "nullable": true,
-   "prompt_sha256": "db005e75f9d81fe342a6122d9b7b2243d584641221a0a5ec9679dc67541fb569",
+   "prompt_sha256": "72bbde635badac87a1fa9d509aeb45983866ec87045c2d472d3cd74577430058",
    "published_document_id": "DOC-015fde78fa84a771",
    "reasoning": {
     "deepseek/deepseek-v4.1-flash": "off",
@@ -1172,7 +1182,7 @@
     "minimax/minimax-m3.1-flash"
    ],
    "nullable": true,
-   "prompt_sha256": "db005e75f9d81fe342a6122d9b7b2243d584641221a0a5ec9679dc67541fb569",
+   "prompt_sha256": "72bbde635badac87a1fa9d509aeb45983866ec87045c2d472d3cd74577430058",
    "published_document_id": "DOC-015fde78fa84a771",
    "reasoning": {
     "deepseek/deepseek-v4.1-flash": "off",
@@ -1283,7 +1293,7 @@
     "minimax/minimax-m3.1-flash"
    ],
    "nullable": true,
-   "prompt_sha256": "db005e75f9d81fe342a6122d9b7b2243d584641221a0a5ec9679dc67541fb569",
+   "prompt_sha256": "72bbde635badac87a1fa9d509aeb45983866ec87045c2d472d3cd74577430058",
    "published_document_id": "DOC-015fde78fa84a771",
    "reasoning": {
     "deepseek/deepseek-v4.1-flash": "off",
@@ -1394,7 +1404,7 @@
     "minimax/minimax-m3.1-flash"
    ],
    "nullable": false,
-   "prompt_sha256": "db005e75f9d81fe342a6122d9b7b2243d584641221a0a5ec9679dc67541fb569",
+   "prompt_sha256": "72bbde635badac87a1fa9d509aeb45983866ec87045c2d472d3cd74577430058",
    "published_document_id": "DOC-015fde78fa84a771",
    "reasoning": {
     "deepseek/deepseek-v4.1-flash": "off",

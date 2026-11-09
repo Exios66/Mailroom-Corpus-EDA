@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Mapping
 
-from . import checkpoint, registry, review_page, scoring, verify
+from . import checkpoint, local_backup, registry, review_page, scoring, verify
 from .review_packet import DECISION_KEY
 
 MAX_BODY = 10 * 1024 * 1024
@@ -190,19 +190,23 @@ class ReviewPortal:
 
     def __init__(self, labels_root: Path, out: Path, *, campaign: str = "v10",
                  stage: Path | None = None, hf_checkpoint: bool = False, launch_enabled: bool = False,
-                 launch_options: Mapping[str, Any] | None = None):
+                 launch_options: Mapping[str, Any] | None = None,
+                 local_backup: Path | None = None):
         """Create local portal and receipt directories and initialize review state caches.
 
         ``out`` must be a strict subfolder of labels_root, and campaign must be a safe
         name; invalid values raise ValueError. ``hf_checkpoint`` enables explicit
-        backup requests. ``launch_enabled`` turns on the paid-run launcher (``launch.py``;
-        ``launch_options`` are its test seams). Filesystem errors propagate."""
+        backup requests. ``local_backup`` mirrors every checkpoint into that
+        labels-staging folder so agents can read it without the Hub. ``launch_enabled``
+        turns on the paid-run launcher (``launch.py``; ``launch_options`` are its test
+        seams). Filesystem errors propagate."""
         self.labels_root, self.out = Path(labels_root).resolve(), Path(out).resolve()
         if not self.out.is_relative_to(self.labels_root) or self.out == self.labels_root:
             raise ValueError("portal output must be a subfolder of labels-root for private checkpoints")
         if not re.fullmatch(r"[A-Za-z0-9_-]+", campaign):
             raise ValueError("invalid campaign name")
         self.campaign, self.stage, self.hf_checkpoint = campaign, stage, hf_checkpoint
+        self.local_backup = Path(local_backup).resolve() if local_backup else None
         self.out.mkdir(parents=True, exist_ok=True)
         self.returns = self.out / "returns"
         self.returns.mkdir(exist_ok=True)
@@ -397,18 +401,7 @@ class ReviewPortal:
         docs = {}
         for state in states:
             docs.setdefault(state["document_id"], []).append(state)
-        saved, history = [], []
-        for state in states:
-            if not state["receipt_id"]:
-                continue
-            path = self.returns / f"review-{state['receipt_id']}.json"
-            raw = path.read_bytes()
-            if hashlib.sha256(raw).hexdigest() != state["receipt_id"]:
-                raise ValueError("stored review receipt hash mismatch")
-            receipt = json.loads(raw)
-            key = state["document_id"], state["field"]
-            saved.extend(d for d in receipt["decisions"] if (d["document_id"], d["field"]) == key)
-            history.extend(h for h in receipt["history"] if (h["document_id"], h["field"]) == key)
+        saved, history = self._saved_receipts(states)
         records = {(r["document_id"], r["field"]): r for r in packet["records"]}
         decisions = {(d["document_id"], d["field"]): d for d in saved}
         revision_queue = []
@@ -437,10 +430,88 @@ class ReviewPortal:
                 "tracker": self._campaign_tracker(packet, states), "checkpoint_enabled": self.hf_checkpoint,
                 "launch_enabled": self.launcher.enabled}
 
+    def _saved_receipts(self, states: list[dict]) -> tuple[list, list]:
+        """Return the restored decisions and history for targets with stored receipts."""
+        saved, history = [], []
+        for state in states:
+            if not state["receipt_id"]:
+                continue
+            path = self.returns / f"review-{state['receipt_id']}.json"
+            raw = path.read_bytes()
+            if hashlib.sha256(raw).hexdigest() != state["receipt_id"]:
+                raise ValueError("stored review receipt hash mismatch")
+            receipt = json.loads(raw)
+            key = state["document_id"], state["field"]
+            saved.extend(d for d in receipt["decisions"] if (d["document_id"], d["field"]) == key)
+            history.extend(h for h in receipt["history"] if (h["document_id"], h["field"]) == key)
+        return saved, history
+
+    def _save_state(self) -> dict:
+        """Return the light post-save state: the page keeps its records and applies this.
+
+        Avoids re-sending every source text after each saved decision (the full
+        payload runs to tens of megabytes on the corporate corpus)."""
+        packet = self._collect()
+        states = self._states(packet)
+        saved, history = self._saved_receipts(states)
+        return {"packet_id": packet["packet_id"], "state_revision": self._state_revision(),
+                "review_states": states, "saved_decisions": saved, "saved_history": history,
+                "tracker": self._campaign_tracker(packet, states)}
+
     def data(self) -> dict:
         """Return the current packet and review state while holding the portal locks."""
         with self._locked():
             return self._data()
+
+    def state(self) -> dict:
+        """Return review state only (no records/texts) for an already-loaded page."""
+        with self._locked():
+            return self._save_state()
+
+    def agent_contract(self) -> dict:
+        """The machine-readable review contract: schemas, decision key, routes, per-label rules.
+
+        What an automated agent needs to read the packet and save decisions without
+        scraping the page (the page itself changes freely)."""
+        return {"schema": "mailroom-review-agent-contract/v1",
+                "packet_schema": review_page.PACKET_SCHEMA,
+                "return_schema": review_page.RETURN_SCHEMA,
+                "decision_key": dict(DECISION_KEY),
+                "read": {"packet": "/review-data.json", "revision_queue": "/revision-queue.json"},
+                "write": {"save_decisions": "/api/reviews",
+                          "checkpoint_confirmed": "/api/checkpoint"},
+                "launch_routes": ["(GET /api/launch/options)", "(GET /api/launch/status)",
+                                  "(POST /api/launch/preflight)", "(POST /api/launch/start)"],
+                "rules": [
+                    "Read /review-data.json first: records are keyed on (document_id, field); check each record's candidate_status before ACCEPT.",
+                    "Saved decisions carry initials (2-6 capital letters) and updated_at as a timestamp with a timezone.",
+                    "ACCEPT on a candidate that did not pass automated source checks (candidate_status "
+                    "'needs_source_review') is allowed only with manual_source_verification: true — the "
+                    "reviewer verified the value against the full source themselves. Without that flag the "
+                    "server refuses it (save 400). CORRECT with complete replacement JSON, REJECT and "
+                    "NEEDS_SOURCE never need the flag.",
+                    "Record which model(s) produced the verified output in verified_models (array of the "
+                    "record's model_outputs model names); the journal and every local backup keep that "
+                    "attribution alongside the decision.",
+                    "Per-label items: when a record's correction_type is 'array' and candidate_labels is a list of "
+                    "strings, preserve or drop individual labels by posting CORRECT whose corrected_labels_json "
+                    "is exactly the JSON array of kept labels (apply edits inline). The review page builds the "
+                    "same replacement list from its per-item checkboxes.",
+                    "POST /api/reviews the whole payload including the state_revision you read; a changed "
+                    "packet answers 409 and the client must re-read before saving again.",
+                    "The page never publishes: checkpointing is an explicit POST /api/checkpoint (needs "
+                    "--hf-checkpoint on the server) or the page's Checkpoint button; nothing else advances staging.",
+                    "Agents accelerate, humans countersign: any decision the agent composes for a "
+                    "human reviewer must carry that reviewer's own initials; the page's 'Accept "
+                    "verified in batch' is the intended path — candidates that already passed "
+                    "source checks get ACCEPT with the reviewer's remembered initials in one "
+                    "click, then one Save. Initials are unverified claims: this is a loopback "
+                    "service and the save route never authenticates humans, so receipts and "
+                    "journals record attribution, they are not proof of it (the same caveat "
+                    "the page's Change journal prints). Provenance discipline is enforced by "
+                    "the review process, not by the transport.",
+                ]}
+
 
     def render(self) -> bytes:
         """Write the current standalone review page and return its HTML bytes under the portal locks."""
@@ -456,6 +527,8 @@ class ReviewPortal:
         Raise Conflict for stale packets or new receipts based on stale state.
         Return-contract, schema, grounding, and filesystem errors propagate."""
         with self._locked():
+            returned = dict(returned)
+            slim = bool(returned.pop("slim", False))  # transport hint, never part of the receipt
             packet = self._collect()
             if returned.get("packet_id") != packet["packet_id"]:
                 raise Conflict("packet changed; reload the latest source before saving")
@@ -478,8 +551,22 @@ class ReviewPortal:
                 target_hash = _target_hash(source)
                 prior = latest.get(key)
                 signature = hashlib.sha256(_json(decision)).hexdigest()
+                # updated_at is provenance, not content: re-saving an unchanged decision
+                # (ACCEPT -> ACCEPT) must not append a journal entry.
+                content = hashlib.sha256(_json({k: v for k, v in decision.items()
+                                                if k != "updated_at"})).hexdigest()
                 event_id = hashlib.sha256(_json([receipt_id, *key])).hexdigest()
-                if event_id in previous_ids or (prior and prior["decision_sha256"] == signature
+                prior_content = prior.get("content_sha256") if prior else None
+                if prior and not prior_content:
+                    old_raw = (self.returns / f"review-{prior['receipt_id']}.json").read_bytes()
+                    if hashlib.sha256(old_raw).hexdigest() != prior["receipt_id"]:
+                        raise ValueError("stored review receipt hash mismatch")
+                    old_decision = next(d for d in json.loads(old_raw)["decisions"]
+                                        if (d["document_id"], d["field"]) == key)
+                    prior_content = hashlib.sha256(_json({k: v for k, v in old_decision.items()
+                                                          if k != "updated_at"})).hexdigest()
+                if event_id in previous_ids or (prior and (prior_content == content
+                                                         or prior["decision_sha256"] == signature)
                                                 and prior["target_sha256"] == target_hash):
                     continue
                 reviewed = decision["decision"] in ("ACCEPT", "CORRECT")
@@ -488,17 +575,26 @@ class ReviewPortal:
                 value = (_confirmed_value(source, decision) if confirmed else
                          (json.loads(decision["corrected_labels_json"]) if decision["decision"] == "CORRECT"
                           else source.get("candidate_value", source.get("candidate_labels")) if reviewed else None))
+                outputs = list(decision.get("verified_outputs") or [])
                 changes.append({"event_id": event_id, "receipt_id": receipt_id,
                                 "receipt_sha256": receipt_id, "packet_id": packet["packet_id"],
+                                "content_sha256": content,
                                 "document_id": key[0], "field": key[1], "document_sha256": source["document_sha256"],
                                 "target_sha256": target_hash, "split": source["split"],
                                 "decision": decision["decision"], "value": value, "human_confirmed": confirmed,
                                 "schema_blocker": schema_blocker,
+                                "verified_models": (sorted({str(o["model"]) for o in outputs})
+                                                    or list(decision.get("verified_models") or [])),
+                                "verified_outputs": outputs,
+                                "manual_source_verification": bool(decision.get("manual_source_verification")),
                                 "reviewer": decision["reviewer_initials"], "reviewer_notes": decision["reviewer_notes"],
                                 "server_received_at": received_at, "decision_sha256": signature,
                                 "provenance": source["portal_provenance"]})
             if receipt.is_symlink():
                 raise ValueError("receipt must not be a symlink")
+            if not changes:  # nothing changed: no receipt, no journal entry, no growth
+                return {"receipt_id": "", "changed_fields": 0,
+                        "data": self._save_state() if slim else self._data()}
             try:
                 with receipt.open("xb") as fh:
                     fh.write(raw)
@@ -508,7 +604,8 @@ class ReviewPortal:
                 if receipt.read_bytes() != raw:
                     raise ValueError("immutable receipt content mismatch") from None
             _append(self.journal, changes)
-            return {"receipt_id": receipt_id, "changed_fields": len(changes), "data": self._data()}
+            return {"receipt_id": receipt_id, "changed_fields": len(changes),
+                    "data": self._save_state() if slim else self._data()}
 
     def checkpoint(self, packet_id: str, *, api: Any = None) -> dict:
         """Back up pending confirmations and return a checkpoint receipt or failure status.
@@ -531,6 +628,14 @@ class ReviewPortal:
             latest = {(e["document_id"], e["field"]): e for e in _lines(self.journal)}
             event_ids = [latest[k]["event_id"] for k in sorted(pending)]
             state_revision = self._state_revision()
+            mirror, mirror_error = None, ""
+            if self.local_backup is not None:
+                # Mirror the reviewed work locally first, so it survives an HF outage.
+                # Best effort: a mirror problem must not block the private staging upload.
+                try:
+                    mirror = local_backup.backup(self.labels_root, self.local_backup, out=self.out)["path"]
+                except (ValueError, KeyError, OSError) as exc:
+                    mirror_error = f"{type(exc).__name__}: {str(exc)[:200]}"
             try:
                 api = api or checkpoint.hf_interface.get_hf_api()
                 result = checkpoint.checkpoint(self.labels_root, registry.CAMPAIGNS_DIR / self.campaign / "approved.yaml",
@@ -545,10 +650,12 @@ class ReviewPortal:
             except (Exception, SystemExit) as exc:
                 _append(self.checkpoints, [{"verified": False, "server_received_at": _now(),
                                            "error_type": type(exc).__name__, "event_ids": event_ids}])
-                return {"verified": False, "pending_fields": len(event_ids),
+                return {"verified": False, "pending_fields": len(event_ids), "local_backup": mirror,
+                        "local_backup_error": mirror_error,
                         "message": "private checkpoint failed; local confirmations remain pending"}
             receipt = {"verified": True, "revision": revision, "repo": result["repo"],
-                       "files": result["files"], "event_ids": event_ids, "server_received_at": _now()}
+                       "files": result["files"], "event_ids": event_ids, "server_received_at": _now(),
+                       "local_backup": mirror, "local_backup_error": mirror_error}
             _append(self.checkpoints, [receipt])
             return receipt
 
@@ -611,6 +718,8 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
                     self._reply(200, portal.render(), "text/html; charset=utf-8")
                 elif self.path == "/review-data.json":
                     self._reply(200, portal.data())
+                elif self.path == "/review-state.json":
+                    self._reply(200, portal.state())
                 elif self.path == "/api/launch/options":
                     self._reply(200, portal.launcher.options())
                 elif self.path == "/api/launch/status":
@@ -620,6 +729,8 @@ def make_server(portal: ReviewPortal, port: int = 8765) -> ThreadingHTTPServer:
                     self._reply(200, {"schema": "mailroom-v10-manual-revisions/v1",
                                       "packet_id": data["packet_id"], "state_revision": data["state_revision"],
                                       "revisions": data["revision_queue"]})
+                elif self.path == "/api/contract":
+                    self._reply(200, portal.agent_contract())
                 else:
                     self._reply(404, {"error": "unknown route"})
             except (ValueError, KeyError, OSError, PermissionError) as exc:
@@ -683,6 +794,8 @@ def main(argv=None) -> int:
     parser.add_argument("--stage", type=Path, default=DEFAULT_STAGE)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--hf-checkpoint", action="store_true", help="enable explicit private-checkpoint POSTs only")
+    parser.add_argument("--local-backup", type=Path, default=None,
+                        help="labels-staging folder mirrored on every checkpoint (survives an HF outage)")
     parser.add_argument("--enable-launch", action="store_true",
                         help="let the page launch PAID labeling batches (campaign arms and small public trials) "
                              "after a preflight checklist passes; off by default, see docs/labeler-review-viewer.md")
@@ -721,7 +834,7 @@ def main(argv=None) -> int:
                     print(f"No labeling packets yet; reviewing public insurance claims from {fallback}")
     portal = ReviewPortal(args.labels_root, out,
                           campaign=args.campaign, stage=args.stage, hf_checkpoint=args.hf_checkpoint,
-                          launch_enabled=args.enable_launch)
+                          launch_enabled=args.enable_launch, local_backup=args.local_backup)
     server = make_server(portal, args.port)
     print(f"Private review portal: http://127.0.0.1:{server.server_port}/ (no automatic uploads)"
           + ("; LAUNCHING PAID LABELING BATCHES IS ENABLED" if args.enable_launch else ""))

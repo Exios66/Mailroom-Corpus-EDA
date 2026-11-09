@@ -41,7 +41,16 @@ def test_safe_data_island_preserves_complete_text_and_creates_only_private_retur
     text = out.read_text()
     assert '</script><script>alert' not in text
     embedded = re.search(r'<script[^>]*id=[\"\x27]packet[\"\x27][^>]*>(.*?)</script>', text, re.S)
-    assert embedded and json.loads(embedded[1]) == p
+    assert embedded
+    compact = json.loads(embedded[1])
+    record = p["records"][0]
+    assert "full_document_text" not in compact["records"][0]  # text is embedded once per sha
+    assert compact["document_texts"][record["document_sha256"]] == record["full_document_text"]
+    rehydrated = [{**r, "full_document_text": compact["document_texts"][r["document_sha256"]]}
+                  for r in compact["records"]]
+    assert rehydrated == p["records"]
+    assert {k: v for k, v in compact.items() if k not in ("records", "document_texts")} == \
+        {k: v for k, v in p.items() if k not in ("records", "document_texts")}
     assert list((tmp_path / "returns").iterdir()) == [tmp_path / "returns/README.md"]
 
 
@@ -88,6 +97,75 @@ def test_blocked_accept_and_correction_shapes():
     r = returned(p, "CORRECT"); r["decisions"][0]["corrected_labels_json"] = '[]'
     r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
     page.validate_return(p, r)
+
+
+def test_blocked_accept_allowed_after_manual_verification_with_model_attribution():
+    p = packet(); p["records"][0]["candidate_status"] = "needs_source_review"
+    p["records"][0]["model_outputs"] = [
+        {"model": "synthetic/model-a", "value": ["x"], "status": "present", "evidence": ""},
+        {"model": "synthetic/model-b", "value": ["x"], "status": "present", "evidence": ""},
+    ]
+    p["packet_id"] = page.packet_id(p["records"])
+    r = returned(p)
+    r["decisions"][0].update(manual_source_verification=True,
+                             verified_models=["synthetic/model-a", "synthetic/model-b"])
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    page.validate_return(p, r)  # the reviewer verified the value against the full source
+
+    r["decisions"][0]["verified_models"] = ["synthetic/model-c"]
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    with pytest.raises(ValueError, match="did not run"):
+        page.validate_return(p, r)
+    r["decisions"][0]["verified_models"] = "synthetic/model-a"
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    with pytest.raises(ValueError, match="verified_models must be a list"):
+        page.validate_return(p, r)
+    r["decisions"][0]["verified_models"] = ["synthetic/model-a"]
+    r["decisions"][0]["manual_source_verification"] = "yes"
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    with pytest.raises(ValueError, match="manual_source_verification must be boolean"):
+        page.validate_return(p, r)
+
+
+def test_verified_outputs_store_pass_level_votes():
+    p = packet(); p["records"][0]["candidate_status"] = "needs_source_review"
+    p["records"][0]["model_outputs"] = [
+        {"model": "m", "pass": 1, "value": ["x"], "status": "present", "evidence": ""},
+        {"model": "m", "pass": 2, "value": ["y"], "status": "present", "evidence": ""},
+        {"model": "n", "value": ["x"], "status": "present", "evidence": ""}]
+    p["packet_id"] = page.packet_id(p["records"])
+    r = returned(p)
+    r["decisions"][0].update(manual_source_verification=True,
+                             verified_outputs=[{"model": "m", "pass": 1}, {"model": "n", "pass": None}])
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    page.validate_return(p, r)  # a pass that ran and agreed is recordable
+
+    r["decisions"][0]["verified_outputs"] = [{"model": "m", "pass": 3}]
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    with pytest.raises(ValueError, match="did not make"):
+        page.validate_return(p, r)
+    r["decisions"][0]["verified_outputs"] = [{"model": "m", "pass": 1}, {"model": "m", "pass": 1}]
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    with pytest.raises(ValueError, match="repeated verified output"):
+        page.validate_return(p, r)
+    r["decisions"][0]["verified_outputs"] = "m"
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    with pytest.raises(ValueError, match="verified_outputs must be a list"):
+        page.validate_return(p, r)
+
+
+def test_model_attribution_requires_a_real_run():
+    p = packet()  # this target carries no model_outputs at all
+    r = returned(p)
+    r["decisions"][0]["verified_outputs"] = [{"model": "m", "pass": 1}]
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    with pytest.raises(ValueError, match="did not make"):
+        page.validate_return(p, r)
+    r["decisions"][0]["verified_outputs"] = []
+    r["decisions"][0]["verified_models"] = ["m"]
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    with pytest.raises(ValueError, match="did not run"):
+        page.validate_return(p, r)
 
 
 def test_changed_correction_cannot_reuse_old_history():

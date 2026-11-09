@@ -317,6 +317,8 @@ Output one JSON object, nothing else: {"clauses": [{"category": "<exact name>", 
 1. category is exactly one of the 41 names in the user message.
 2. text is copied character for character (same words, order, punctuation, capitalisation). Never
    paraphrase, summarise, fix typos or join text from two places. Markdown marks (* _ #) may be dropped.
+   Copy the bytes as printed: placeholder or deletion artifacts (digit-only lines, runs of `----`,
+   runs of blank lines) stay in the quote exactly where they appear; never smooth them away.
 3. Copy the operative sentence or clause, not a whole article and not a heading. A heading alone
    ("Governing Law.", "ARTICLE 3 CONFIDENTIALITY AND NON-COMPETITION") is never a span.
 4. Presence test. Each category in the user message is a question. Add the category only when the span
@@ -380,8 +382,6 @@ exact text from the document or drop it. Add no new categories.
 ```
 
 ### `intent_system.md`
-
-Correspondence intent, two passes: A shows the subject line, B does not.
 
 ```text
 You classify the PRIMARY intent of one business email (Enron corpus) with a closed vocabulary. Judge
@@ -525,22 +525,26 @@ ${doc_text_window}
 
 ### `correspondence.md`
 
-Correspondence entities. Most messages in the corpus have no headers (671 of 1,000), so sender, recipients and date are labeled only from what the text prints; `metadata.sender_addr` and `metadata.date` are cross-checks, not labels. `communication_type` is the subclass, so it is not asked.
-
 ```text
 Document: one business message (${subclass}). Many messages in this corpus carry no headers;
 label only what the text itself shows. Fields:
-- sender (name): the author as printed in a From: header, or the sign-off name; not_found if neither.
+- sender (name): the author as printed in a From: header, or the sign-off name; when the sign-off
+  lists several people ("X, title; Y"), take the first signatory's full printed name only; not_found if neither.
 - recipient (name): the main addressee as printed in a To: header, or the salutation name ("Dad,"
-  -> "Dad"); not_found if neither.
+  -> "Dad"); a real To: header wins over any name the body addresses; not_found if neither.
 - additional_recipients (entity_list): other To: and Cc: addressees as printed; [] with not_found if none.
 - communication_date (date): a send date printed in the message (Date: or Sent: line), ISO
   YYYY-MM-DD; not_found if none is printed.
 - demand_amount (money): an amount the author demands be paid; not_found if none.
 - action_items (entity_list): at most 3 concrete actions the recipient is asked to take, each a short
-  imperative grounded in the text; [] with not_found if none.
-- urgency (label, never not_found): ${urgencies}. time-sensitive = a stated deadline or date; urgent =
-  explicit urgency words or a same-day ask; critical = an emergency, legal deadline or outage;
+  imperative grounded in the text, copied with its own sentence punctuation ("Call Gas Control 24
+  hours in advance at (304) 357-2606 to request approval."); when more than 3 exist, take the ones
+  addressed to the reader most directly, earliest in the text; [] with not_found if none.
+- urgency (label, never not_found): ${urgencies}. time-sensitive = a stated deadline or date that
+  is not the send date itself; urgent = explicit urgency words ("asap", "immediate", "urgent",
+  "first thing tomorrow") or an ask for the same day the newest message was sent — judge the day
+  from that message's own printed send date when it carries one; a forward with no printed date
+  is urgent only via the urgency words; critical = an emergency, legal deadline or outage;
   otherwise routine.
 <email>
 ${doc_text_window}
@@ -549,21 +553,25 @@ ${doc_text_window}
 
 ### `claim_checklist.md`
 
-Insurance claim checklist; every other insurance field is already gold.
-
 ```text
 Document: one insurance claim record (${subclass}). Field:
 - claim_checklist (entity_list:free_text): present-only items "<Category>: <short verbatim evidence>"
   for these exact categories only: ${checklist_categories}. Omit absent categories; if none apply use
   not_found. Rules:
-  Claims differ in form: a Medicare notice prints determinations and amounts in table lines; a first
-  notice of loss or a decision letter states them in prose and "Notes:" paragraphs. Judge each
-  category by what the document says, never by its layout.
+  Claims differ in form: a Medicare notice prints determinations and amounts in table lines; an FNOL
+  or decision letter states them in prose. Judge each category by what the document says, never by
+  its layout.
   Items: each item is one plain string "Category: <quoted line>" and NOTHING ELSE — never a JSON
   object, never nested quotes, never abbreviations. The quoted line is a complete printed line of
-  the document, from its own start to end, with any run of spaces or tabs collapsed to one space.
-  Never shorten, paraphrase, or reorder the words inside a quote. Never stitch together distant
-  lines. One item per category per printed line: one line may serve two categories (a service
+  the document, from its own start to end, with any run of spaces or tabs collapsed to one space;
+  its printed label prefix ("COVERAGE DETERMINATION:", "Deductible:", the row's "1. HCPCS 93307"),
+  trailing parenthetical, and typographic quote marks stay in the quote. Quote marks are copied,
+  never added: a value whose printed line carries none (a plain line like a determination sentence
+  "COVERAGE DETERMINATION: APPROVED - this fill was covered under the plan.") stays unquoted in the
+  output. Never shorten,
+  paraphrase, or reorder the words inside a quote. Never stitch together distant lines; the same
+  printed line is one item even where similar lines repeat.
+  One item per category per printed line: one line may serve two categories (a service
   line can carry both a deductible and comparable amounts). A category repeats only when the
   document prints several distinct lines for it (several deductible lines, several exclusion
   lines). Never quote corpus bookkeeping lines as facts: an echo line like "Stated outcome (verbatim): approved" is not a
@@ -573,14 +581,14 @@ Document: one insurance claim record (${subclass}). Field:
   - this claim has been adjudicated and paid." → quote that whole line; a decision letter's
   "COVERAGE DETERMINATION: PENDING" likewise).
   Deductible: every printed deductible line, label prefix included ("Beneficiary deductible:
-  $1,068.00", "Blood deductible: $0.00", "Part B deductible: $0.00"); coinsurance lines never count
+  $1,068.00", "Blood deductible: $0.00"); coinsurance lines never count
   as deductibles. Where a claim record states a deductible only inside a service-line tail like
   "(coins $10.00, ded $0.00)", quote that whole service line. A deductible printed as N/A, not
   available or not applicable states no deductible; omit that line.
   Amount Consistency: only when two or more comparable amounts of the same service or loss are
-  printed ("1. HCPCS 93307  allowed $90.00  paid $100.00  (coins $0.00, ded $0.00)", "Claimed
-  amount: $30,479.20" together with "Repair estimate: $36,301.22", "Total drug cost: $10.00"
-  together with "Patient pay amount: $0.00"); a lone total never qualifies.
+  printed ("1. HCPCS 93307  allowed $90.00  paid $100.00  (coins $0.00, ded $0.00)",
+  "Total drug cost: $10.00" together with "Patient pay amount: $0.00"); a lone total never
+  qualifies.
   Exclusions Cited: any line stating an item, peril, circumstance, or property use is excluded or
   not covered.
   Policy Limits: a stated money or duration maximum, quoted from its own sentence.

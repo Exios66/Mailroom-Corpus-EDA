@@ -1506,10 +1506,11 @@ def test_ping_problems_need_a_recent_passing_ping_per_route():
 
 
 def test_chunk_refuses_a_paid_run_on_an_unpinged_route(tmp_path, monkeypatch):
-    """A paid chunk run stops before any call when a route has no recent passing ping."""
+    """A paid chunk run stops before any call when a route has no recent passing ping.
+    Chunk 3 is fully settled (skip markers), so this uses the runnable 7a pilot arm."""
     import argparse
     monkeypatch.setattr(operate, "load_approvals", lambda name: [])
-    args = argparse.Namespace(campaign="v10", id="3", arm=1, dry_run=False, ack_requires=False,
+    args = argparse.Namespace(campaign="v10", id="7a", arm=1, dry_run=False, ack_requires=False,
                               provider="openrouter", model_map=[], stage=tmp_path, initials="JB",
                               cap_usd=None, out=tmp_path, workers=1)
     with pytest.raises(SystemExit, match="labeling ping"):
@@ -2150,8 +2151,15 @@ def test_skipped_arm_neither_runs_nor_costs_nor_ranks(tmp_path):
     refuses to run, projects $0 and ranks as ineligible."""
     import argparse
     camp = campaign("v10")
-    skipped = [(c, i) for i, c in enumerate((c for c in camp["chunks"] if str(c["id"]) == "3"), 1) if c.get("skip")]
-    assert [c["models"][0] for c, _ in skipped] == ["deepseek/deepseek-v4.1-flash", "openai/gpt-6-luna-pro"]
+    arms = [c for c in camp["chunks"] if str(c["id"]) == "3"]
+    skipped = [(c, i) for i, c in enumerate(arms, 1) if c.get("skip")]
+    # Invariants, not a pinned order: every arm carries a settled or discarded note naming
+    # its run dir and kappa result (the bake-off is done; a settled arm prices $0).
+    assert len(arms) == 6 and len(skipped) == 6
+    for _, arm in skipped:
+        note = arms[arm - 1]["skip"].lower()
+        assert "kappa" in note or "κ" in note, f"arm {arm} skip note lacks kappa: {arms[arm-1]['skip']}"
+        assert arms[arm - 1]["cap_usd"] == 0.00
     entry, arm = skipped[0]
     args = argparse.Namespace(campaign="v10", id="3", arm=arm, dry_run=True, ack_requires=False,
                               provider="openrouter", model_map=[], stage=tmp_path, initials="JB",
@@ -2160,6 +2168,20 @@ def test_skipped_arm_neither_runs_nor_costs_nor_ranks(tmp_path):
         operate.cmd_chunk(args)
     arms, _ = operate.bakeoff_arms("v10", "3", tmp_path)
     assert operate._ineligible(arms[arm - 1]).startswith("skipped")
+
+
+def test_completed_skipped_arm_ranks_from_its_recorded_gate():
+    """A skip marker forbids NEW calls, not the recorded result: arms with a settled run
+    rank from their gate.json so the bake-off keeps its primary after the operations."""
+    root = Path("docs/reports/audits/v10_labels")
+    if not (root / "3.1_intent-calibration" / "gate.json").exists():
+        pytest.skip("recorded chunk-3 runs absent from this checkout")
+    arms, metric = operate.bakeoff_arms("v10", "3", root)
+    assert metric == "cohen_kappa"
+    eligible = [a for a in arms if not operate._ineligible(a)]
+    assert len(eligible) >= 2, [operate._ineligible(a) for a in arms]
+    rank = operate.bakeoff_ranking(arms, metric)
+    assert rank["primary"] is not None, "all-skipped stubs shadow the recorded gates"
 
 
 def test_full_text_lasts_one_invocation(monkeypatch):
@@ -2799,12 +2821,22 @@ def test_cuad_inspect_reads_string_gold_spans():
 
 
 def test_no_step_or_chunk_needs_a_skipped_chunk():
-    """A skipped chunk is never approved, so anything that needs it could never start."""
+    """A runnable chunk must never need a chunk that could never start. A skipped entry is
+    dead only when no arm of it completed a run: a `complete` note records a settled run
+    whose outputs exist (the terminal adjudication depends on settled outcomes by design)."""
     camp = campaign("v10")
-    skipped = {str(c["id"]) for c in camp["chunks"] if c.get("skip")
-               and all(o.get("skip") for o in camp["chunks"] if str(o["id"]) == str(c["id"]))}
-    for c in [*camp["chunks"], *(camp.get("steps") or [])]:
-        assert not skipped & {str(n) for n in c.get("needs") or []}, (c["id"], skipped)
+    all_entries = camp["chunks"]
+    def id_entries(cid):
+        return [c for c in all_entries if str(c["id"]) == str(cid)]
+    # Dead = every entry skips and none of them records a completed run.
+    dead = {str(c["id"]) for c in all_entries if c.get("skip")
+            and id_entries(c["id"])
+            and all(o.get("skip") for o in id_entries(c["id"]))
+            and not any("complete" in (o.get("skip") or "").lower() for o in id_entries(c["id"]))}
+    for c in [*all_entries, *(camp.get("steps") or [])]:
+        if c.get("skip"):
+            continue  # a skipped chunk can never start, so its own needs are moot
+        assert not dead & {str(n) for n in c.get("needs") or []}, (c["id"], dead)
 
 
 # ---------------------------------------------------------------- mixed providers (Modal + OpenRouter)
