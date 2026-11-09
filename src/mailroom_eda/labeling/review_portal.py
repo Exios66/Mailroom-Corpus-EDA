@@ -23,6 +23,7 @@ from typing import Any, Mapping
 
 from . import checkpoint, local_backup, registry, review_page, scoring, verify
 from .review_packet import DECISION_KEY
+from .spend import identity_kind
 
 MAX_BODY = 10 * 1024 * 1024
 
@@ -484,7 +485,7 @@ class ReviewPortal:
                                   "(POST /api/launch/preflight)", "(POST /api/launch/start)"],
                 "rules": [
                     "Read /review-data.json first: records are keyed on (document_id, field); check each record's candidate_status before ACCEPT.",
-                    "Saved decisions carry initials (2-6 capital letters) and updated_at as a timestamp with a timezone.",
+                    "Saved decisions carry a reviewer identity and updated_at as a timestamp with a timezone. The identity is either 2-6 capital letters for a person (JB) or a model's short display name (Haiku-5.5, DeepSeek-V4.1-Flash), optionally prefixed model:; provider routes with slashes are rejected. Journals and receipts record reviewer_kind as human or model.",
                     "ACCEPT on a candidate that did not pass automated source checks (candidate_status "
                     "'needs_source_review') is allowed only with manual_source_verification: true — the "
                     "reviewer verified the value against the full source themselves. Without that flag the "
@@ -588,6 +589,7 @@ class ReviewPortal:
                                 "verified_outputs": outputs,
                                 "manual_source_verification": bool(decision.get("manual_source_verification")),
                                 "reviewer": decision["reviewer_initials"], "reviewer_notes": decision["reviewer_notes"],
+                                "reviewer_kind": identity_kind(decision["reviewer_initials"]),
                                 "server_received_at": received_at, "decision_sha256": signature,
                                 "provenance": source["portal_provenance"]})
             if receipt.is_symlink():
