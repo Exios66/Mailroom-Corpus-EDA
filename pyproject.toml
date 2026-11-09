@@ -21,6 +21,8 @@ dependencies = [
 review = ["openpyxl==3.1.5"]
 dev = [
     "pytest>=8.0",
+    "ruff==0.17.4",
+    "pre-commit>=4.0",
     "openpyxl==3.1.5",  # tests/test_labeling_review_packet.py imports it (same pin as review)
     "jupyter>=1.1",
     "ipykernel>=7.3",
@@ -33,7 +35,7 @@ addopts = "-q"
 
 [tool.ruff]
 line-length = 110
-target-version = "py311"
+target-version = "py312"
 
 # Monorepo: EDA + scripts + reports, no distribution — resolve deps in the
 # shared workspace venv without building/installing a package. Mirror of the

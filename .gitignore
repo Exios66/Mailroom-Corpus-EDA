@@ -13,6 +13,8 @@ htmlcov/
 .DS_Store
 Thumbs.db
 *.log
+.cache/
+.browser-portal/
 /dist/
 /build/
 .env

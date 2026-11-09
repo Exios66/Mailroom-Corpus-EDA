@@ -61,9 +61,11 @@ route ping, auto-checkpoint), plus explicit reviewer checkpoints from the review
 
 ## Reviewer ethics & requirements
 
-- Provenance is human: provenance columns, initial and Save remain human acts, agents
-  accelerate (per-label picker, bulk "Accept verified in batch", next-pending) but never
-  forge initials; every staged decision carries its reviewer's initials.
+- Provenance is explicit: a human reviewer countersigns with initials; an automated
+  integration identifies with its model's short display name (Haiku-5.5, never a
+  provider route). Agents accelerate (per-label picker, bulk "Accept verified in batch",
+  next-pending) but never forge a human identity. Journal events record `reviewer_kind`
+  (`human`/`model`), so a model attribution is never read as a human countersign.
 - Agent-access: `GET /api/contract` on the review portal; nothing publishes automatically.
 - Restore is the mirrored flow: `labeling review-portal --restore-revision <sha>` or
   `labeling doctor` for readiness. Every file is uploaded and sha-verified, commits are

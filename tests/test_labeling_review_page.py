@@ -54,6 +54,40 @@ def test_safe_data_island_preserves_complete_text_and_creates_only_private_retur
     assert list((tmp_path / "returns").iterdir()) == [tmp_path / "returns/README.md"]
 
 
+def test_model_display_identity_is_a_valid_reviewer():
+    """A model integration identifies with its short display slug, not a provider route."""
+    p = packet()
+    r = returned(p)
+    r["decisions"][0]["reviewer_initials"] = "Haiku-5.5"
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    page.validate_return(p, r)
+    r["decisions"][0]["reviewer_initials"] = "model:DeepSeek-V4.1-Flash"
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    page.validate_return(p, r)
+
+
+@pytest.mark.parametrize("identity", ["Anthropic/Haiku-5.5", "haiku", "x", ""])
+def test_provider_routes_and_non_identities_are_refused_as_reviewers(identity):
+    p = packet()
+    r = returned(p)
+    r["decisions"][0]["reviewer_initials"] = identity
+    r["history"][-1]["after"] = copy.deepcopy(r["decisions"][0])
+    with pytest.raises(ValueError, match="reviewer initials"):
+        page.validate_return(p, r)
+
+
+def test_identity_kind_separates_people_from_models():
+    from mailroom_eda.labeling.spend import identity_kind
+
+    assert identity_kind("JB") == "human"
+    assert identity_kind("Haiku-5.5") == "model"
+    assert identity_kind("DeepSeek-V4.1-Flash") == "model"
+    assert identity_kind("model:Haiku-5.5") == "model"
+    assert identity_kind("Anthropic/Haiku-5.5") == ""
+    assert identity_kind("haiku") == ""
+    assert identity_kind("") == ""
+
+
 def test_changed_source_packet_and_wrong_highlight_are_refused():
     p = packet()
     p["records"][0]["full_document_text"] += "changed"

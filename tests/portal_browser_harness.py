@@ -81,6 +81,18 @@ def production_record() -> dict:
     return row
 
 
+def blocked_value_record() -> dict:
+    """A candidate that failed an automated source check but carries a real value:
+    manual verification is exactly the path the page must support for it."""
+    source = next(r for r in fixture("corporate_record")["records"]
+                  if r["field"] == "jurisdiction" and r["document_id"].endswith("01ccf3f1ee5f4163"))
+    row = json.loads(json.dumps(source))
+    row.update(document_id="public-v9.3:BLOCKED-0001", published_document_id="BLOCKED-0001",
+               batch="8a", chunk="", task="corporate", set="pilot",
+               candidate_status="needs_source_review", candidate_presence="populated")
+    return row
+
+
 def schema_pending_record() -> dict:
     """A target outside the pinned registry: ACCEPT must save as needs-schema, never gold."""
     source = next(r for r in fixture("corporate_record")["records"]
@@ -143,7 +155,7 @@ def packet_sets() -> dict[str, list[dict]]:
                        set_name="remainder", slice_="batch 1/1")
     return {
         "batch-0001/browser-corporate-review-data.json": corporate + [
-            production_record(), schema_pending_record(), picker_record()],
+            production_record(), schema_pending_record(), picker_record(), blocked_value_record()],
         "batch-0002/browser-correspondence-review-data.json": correspondence + [unsafe_link_record()],
         "batch-0003/browser-insurance-review-data.json": insurance,
     }
@@ -195,17 +207,17 @@ def public_rows() -> list[dict]:
                      "expected": "merger_agreement", "expected_subclass": "other",
                      "doc_text": "Agreement and plan of merger\n" * 30, "split": "train",
                      "gt_fields": json.dumps({}), "metadata": {}})
-    for n in range(1, 5):
+    for n in range(1, 9):
         rows.append({"document_id": f"mail-{n:02d}", "filename": f"mail_{n}.txt",
                      "expected": "correspondence", "expected_subclass": "attorney_demand",
                      "doc_text": EMAIL + f"Ref {n}\n", "split": "train",
                      "gt_fields": json.dumps({"intent": "request"}), "metadata": {}})
-    for n in range(1, 5):
+    for n in range(1, 9):
         rows.append({"document_id": f"claim-{n:02d}", "filename": f"claim_{n}.txt",
                      "expected": "insurance_claim", "expected_subclass": "outpatient",
                      "doc_text": "Claim determination\n", "split": "train",
                      "gt_fields": json.dumps({}), "metadata": {}})
-    for n in range(1, 4):
+    for n in range(1, 7):
         rows.append({"document_id": f"corp-{n:02d}", "filename": f"corp_{n}.txt",
                      "expected": "corporate_record", "expected_subclass": "bylaws",
                      "doc_text": "Acme Corp bylaws\n", "split": "train",
@@ -293,7 +305,7 @@ def campaign_def(stage_sha: str) -> dict:
              "reasoning": "off", "cap_usd": 0.40},
             {"id": "6c1", "task": "merger_consideration", "set": "pending", "models": [GLM, DEEPSEEK],
              "reasoning": "off", "cap_usd": 0.25},
-            {"id": "7b", "task": "correspondence", "set": "remainder", "models": [DEEPSEEK],
+            {"id": "7b", "task": "correspondence", "set": "remainder", "models": [DEEPSEEK, "minimax/minimax-m3.1-flash"],
              "reasoning": "off", "cap_usd": 0.30},
             {"id": "7s", "task": "correspondence", "set": "pilot", "models": [DEEPSEEK],
              "reasoning": "off", "cap_usd": 0.0, "skip": "superseded"},
@@ -440,12 +452,24 @@ def main() -> int:
     parser.add_argument("--root", type=Path, help="labels root to create (default: a temp dir)")
     parser.add_argument("--keep", action="store_true", help="reuse --root instead of deleting it")
     parser.add_argument("--port", type=int, default=0)
+    parser.add_argument("--check", action="store_true",
+                        help="build the portal, print its data summary and exit (no server)")
     args = parser.parse_args()
     root = (args.root or Path(ROOT / ".browser-portal")).resolve()
     if root.exists() and not args.keep:
         shutil.rmtree(root)
     root.mkdir(parents=True, exist_ok=True)
     portal, labels, seams = build(root)
+    if args.check:
+        data = portal.data()
+        print(json.dumps({"schema": "mailroom-review-browser-harness/v1",
+                          "records": len(data["records"]), "documents": len(data["documents"]),
+                          "packet_id": data["packet_id"],
+                          "launch_enabled": data["launch_enabled"],
+                          "checkpoint_enabled": data["checkpoint_enabled"],
+                          "fields": sorted({r["field"] for r in data["records"]}),
+                          "batches": sorted({str(r.get("batch") or "") for r in data["records"]})}))
+        return 0
     control = Control(portal, labels, seams)
     server = review_portal.make_server(portal, args.port)
 

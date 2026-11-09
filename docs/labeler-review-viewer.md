@@ -80,6 +80,41 @@ Nothing is uploaded and the public dataset is never edited.
   batch to the private staging repo. `GET /api/contract` documents the schemas,
   decision key and the agent-accelerate / human-countersign rule.
 
+### Reviewer identity: people and models
+
+A person enters 2–6 capital initials (`JB`). An automated model integration
+enters its **short display identity** — `Haiku-5.5`, `DeepSeek-V4.1-Flash`,
+`Qwen3-32B` — and never the provider-qualified route (`Anthropic/Haiku-5.5`);
+the slash is rejected. The optional `model:` prefix is accepted, and the
+identity is remembered across targets exactly like initials. Every journal
+event records `reviewer_kind` as `human` or `model` (receipts keep the identity
+string), so downstream promotion gates can tell an automated attribution from a
+human countersign.
+The identity is a claim, not authentication: this is a loopback service and the
+save route never proves who is typing.
+
+### Verify the interface itself
+
+The shipped page and server are exercised in real headless Chrome:
+
+```bash
+make check-all        # lint + harness + full pytest + both browser suites
+make browser-real     # only the real portal end-to-end suite
+```
+
+`tests/portal_browser_harness.py` serves the real `ReviewPortal` over loopback
+with the committed live-smoke packets plus production, schema-pending,
+blocked-value and unsafe-link cases. Only the paid HF checkpoint and OpenRouter
+calls are seamed. The 33 browser steps cover the agent contract and security
+guards, source/evidence rendering, search and batch navigation, per-field and
+per-label decisions, model attribution, save/receipt/journal/revision queue,
+blocked and empty candidates, resume, autosave and 409 conflicts, checkpoint
+success/failure and the local mirror, the campaign tracker, the launcher
+preflight and a real public-trial run, storage failure, responsive layout and
+axe-core WCAG A/AA. Evidence is written to `.cache/browser-evidence/` (never
+committed); CI uploads it when the browser job fails. See
+[`docs/TESTING.md`](TESTING.md) for the full gate.
+
 ## Launch a labeling batch from the page (off by default)
 
 Launching spends real money, so it is **off** unless you start the portal with `--enable-launch`.
@@ -246,7 +281,9 @@ entity lists) may keep or drop any individual label by posting `CORRECT` with
 in place. The review page's per-item checkboxes build the same array and send the
 same one-decision-per-(document, field) contract; nothing else changes server-side.
 Annotated item text travels inside the kept array; notes carry the reviewer's
-justification in `reviewer_notes`.
+justification in `reviewer_notes`. Automated reviewers set `reviewer_initials` to
+their short model identity (`Haiku-5.5`); the journal adds `reviewer_kind`
+(`human`/`model`) to every event, and provider routes with slashes are refused.
 
 The page's toolbar adds **Next pending** (keyboard `N`): jump straight to the next
 target without a decision, which is the loop reviewers and agents repeat.

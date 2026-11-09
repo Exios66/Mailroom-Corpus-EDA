@@ -10,16 +10,18 @@
 // Requires Chrome and the repo .venv (PYTHON=... to override).
 import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
 
 const repo = path.resolve(new URL('..', import.meta.url).pathname);
-const out = process.argv[2] || path.join(process.env.TMPDIR || '/private/tmp/opencode', 'review-portal-e2e');
+const out = process.argv[2] || path.join(os.tmpdir(), 'opencode', 'review-portal-e2e');
 fs.mkdirSync(out, {recursive: true});
 const root = path.join(out, 'portal-root');
 fs.rmSync(root, {recursive: true, force: true});
 const PYTHON = process.env.PYTHON || path.join(repo, '.venv', 'bin', 'python');
+const IDENTITY = 'Haiku-5.5'; // a model integration identifies with its short display slug, not a provider route
 const results = [];
 const checks = [];
 const step = async (name, fn) => {
@@ -67,8 +69,8 @@ await step('server: routes, agent contract and revision queue', async () => {
     'per-label', 'initials']) assert.ok(rules.toLowerCase().includes(phrase), `contract rule missing: ${phrase}`);
   const data = await (await fetch(`${portalURL}/review-data.json`)).json();
   assert.equal(data.schema, 'mailroom-review-packet/v1');
-  assert.equal(data.decision_key.ACCEPT, 'Accept source-checked proposal');
-  assert.equal(data.records.length, 34);
+  assert.equal(data.decision_key.ACCEPT, "Accept the displayed reviewed candidate, NOT a raw-model precision 'correct'.");
+  assert.equal(data.records.length, 35);
   const state = await (await fetch(`${portalURL}/review-state.json`)).json();
   assert.equal(state.packet_id, data.packet_id);
   assert.ok(!('records' in state), 'state route stays slim');
@@ -111,7 +113,7 @@ await step('server: loopback, origin, content-type, size and route guards', asyn
 
 // ---------------------------------------------------------------- chrome
 const chromePath = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const chrome = spawn(chromePath, ['--headless=new', '--remote-debugging-port=0',
+const chrome = spawn(chromePath, ['--headless=new', ...(process.env.CHROME_NO_SANDBOX ? ['--no-sandbox'] : []), '--remote-debugging-port=0',
   '--user-data-dir=' + path.join(out, 'chrome-profile'), '--no-first-run', '--no-default-browser-check',
   '--disable-background-networking', '--disable-component-update', '--window-size=1440,1100', 'about:blank'],
 {stdio: ['ignore', 'ignore', 'pipe']});
@@ -160,6 +162,12 @@ async function decide(code) {
   await evaluate(`$('decision').value=${JSON.stringify(code)};$('decision').dispatchEvent(new Event('input'));`);
 }
 const text = (id) => evaluate(`$(${JSON.stringify(id)}).textContent`);
+async function saveWait() {
+  await waitFor(`!busy`);
+  await evaluate(`$('save').click()`);
+  try { await waitFor(`!busy && /Saved\. Receipt|Nothing unsaved|No change to store/.test($('message').textContent)`); }
+  catch (exc) { console.log('      save message:', await text('message')); throw exc; }
+}
 
 let chromeReady = false;
 try {
@@ -207,7 +215,7 @@ try {
     assert.equal(probe.imgs, 0);
     assert.equal(probe.html, false, 'no injected HTML markup');
     assert.match(probe.binding, new RegExp(data.packet_id.slice(0, 12)));
-    assert.match(probe.binding, /34 targets/);
+    assert.match(probe.binding, /35 targets/);
     assert.equal(await evaluate(`Array.from($('source').textContent).length`),
       await evaluate(`Array.from(records[current].full_document_text).length`),
       'code-point offsets (not UTF-16 units) drive the source map');
@@ -255,29 +263,29 @@ try {
     await input('target-search', '01ccf3f1 jurisdiction');
     await waitFor(`$('target').options.length>0`);
     assert.equal(await evaluate(`$('target').options.length`), 1);
-    assert.match(await text('target-search-status'), /1 of 34 targets/);
+    assert.match(await text('target-search-status'), /1 of 35 targets/);
     await input('target-search', 'corporate');
     assert.ok(await evaluate(`$('target').options.length`) > 5, 'class token matches the corporate batch');
     await input('target-search', '8a');
-    assert.ok(await evaluate(`$('target').options.length`) >= 16, 'batch token matches');
+    assert.ok(await evaluate(`$('target').options.length`) >= 17, 'batch token matches');
     await input('target-search', 'no-such-target');
     await waitFor(`$('target').options.length===0`);
     assert.equal(await evaluate(`current`), index, 'empty search leaves the open review unchanged');
     assert.match(await text('target-search-status'), /No matching targets/);
     await evaluate(`$('clear-target-search').click()`);
-    await waitFor(`$('target').options.length===34`);
+    await waitFor(`$('target').options.length===35`);
     assert.equal(await evaluate(`document.activeElement.id`), 'target-search');
   });
 
   await step('navigation: batch optgroups, counts, jump and fully-decided notice', async () => {
     const groups = await evaluate(`Object.fromEntries([...$('target').querySelectorAll('optgroup')].map((g)=>[g.dataset.gid,g.label]))`);
-    assert.equal(groups['8a'], '8a · Corporate / pilot — 0/16 decided');
+    assert.equal(groups['8a'], '8a · Corporate / pilot — 0/17 decided');
     assert.equal(groups['7a'], '7a · Correspondence / pilot — 0/15 decided');
     assert.equal(groups['8b'], '8b · Claim checklist / remainder — 0/2 decided');
-    assert.equal(await evaluate(`$('target').querySelectorAll('optgroup option[value]').length`), 33,
+    assert.equal(await evaluate(`$('target').querySelectorAll('optgroup option[value]').length`), 34,
       'every batched record is grouped (the production record has no batch)');
     const jumps = await evaluate(`[...$('batch-jump').options].map((o)=>o.text+':'+o.value)`);
-    assert.ok(jumps.some((x) => x.startsWith('8a — 16 pending of 16:8a')), jumps.join(' | '));
+    assert.ok(jumps.some((x) => x.startsWith('8a — 17 pending of 17:8a')), jumps.join(' | '));
     await evaluate(`$('batch-jump').value='8b';$('batch-jump').dispatchEvent(new Event('change'));`);
     assert.equal(await evaluate(`records[current].batch`), '8b');
     // Fully decided batch: decide both targets then jump back. The page says it stays put.
@@ -296,7 +304,7 @@ try {
     assert.equal(fields.length, 7, 'the corporate document shows its seven fields');
     assert.match(await text('field-outcome'), /Jurisdiction: Not reviewed/);
     await evaluate(`document.querySelector('[data-outcome="ACCEPT"]').click()`);
-    await input('initials', 'AB');
+    await input('initials', IDENTITY);
     assert.match(await text('field-outcome'), /Jurisdiction: Draft — Approved \(not saved\)/);
     const other = await evaluate(`[...$('document-fields').querySelectorAll('button')].find((b)=>b.textContent.startsWith('Registered agent')).textContent`);
     assert.match(other, /Not reviewed/, 'a decision cannot approve a sibling field');
@@ -326,10 +334,8 @@ try {
     await evaluate(`records[current].model_outputs=[{model:'deepseek/deepseek-v4.1-flash',pass:1,value:'Kevin G Moore',status:'present',evidence:''},{model:'deepseek/deepseek-v4.1-flash',pass:2,value:'Kevin G. Moore',status:'present',evidence:''}];renderTarget();`);
     assert.match(await text('model-answers'), /pass 1/);
     assert.match(await text('model-answers'), /pass 2/);
-    const first = await evaluate(`document.querySelectorAll('#model-answers input')[0].click();JSON.stringify(decision().verified_outputs)`);
-    const second = await evaluate(`document.querySelectorAll('#model-answers input')[1].click();JSON.stringify(decision().verified_outputs)`);
-    console.log('      pass-level votes', first, '->', second,
-      'inputs', await evaluate(`document.querySelectorAll('#model-answers input').length`));
+    await evaluate(`document.querySelectorAll('#model-answers input')[0].click()`);
+    await evaluate(`document.querySelectorAll('#model-answers input')[1].click()`);
     assert.deepEqual(JSON.parse(await evaluate(`JSON.stringify(decision().verified_outputs)`)),
       [{model: 'deepseek/deepseek-v4.1-flash', pass: 1}, {model: 'deepseek/deepseek-v4.1-flash', pass: 2}]);
     await evaluate(`records[current].model_outputs=${saved};decisions.set(KEY(records[current]),blank(records[current]));renderTarget();`);
@@ -366,7 +372,6 @@ try {
   });
 
   // ------------------------------------------------------------ decisions / save
-  let savedTarget = null;
   await step('save: initials validation, blocked ACCEPT and real receipt/journal', async () => {
     await evaluate(`autosaveEnabled=false`);
     await evaluate(`localStorage.removeItem(storageKey+'/initials')`);
@@ -375,23 +380,27 @@ try {
     await decide('ACCEPT');
     await input('initials', 'ab');
     assert.equal(await evaluate(`validate()`), false);
-    assert.match(await text('message'), /uppercase letters/);
-    await input('initials', 'AB');
+    assert.match(await text('message'), /model's short display name/);
+    await input('initials', 'Anthropic/Haiku-5.5');
+    assert.equal(await evaluate(`validate()`), false, 'provider-qualified routes are not reviewer identities');
+    assert.match(await text('message'), /not Anthropic\/Haiku-5\.5/);
+    await input('initials', IDENTITY);
     await evaluate(`$('save').click()`);
     await waitFor(`!busy && /Saved\. Receipt/.test($('message').textContent)`);
     const snap = await snapshot();
-    assert.equal(snap.journal.length, 1);
-    assert.equal(snap.journal[0].decision, 'ACCEPT');
-    assert.equal(snap.journal[0].reviewer, 'AB');
-    assert.equal(snap.journal[0].human_confirmed, true);
-    assert.equal(snap.journal[0].value, 'Wisconsin');
-    assert.equal(snap.receipts.length, 1);
+    assert.equal(snap.journal.length, 1, 'one journal event');
+    assert.equal(snap.journal[0].decision, 'ACCEPT', 'journal event decision');
+    assert.equal(snap.journal[0].reviewer, IDENTITY, 'journal reviewer');
+    assert.equal(snap.journal[0].reviewer_kind, 'model', 'journal reviewer kind');
+    assert.equal(snap.journal[0].human_confirmed, true, 'human confirmed');
+    assert.equal(snap.journal[0].value, 'Wisconsin', 'journal value');
+    assert.equal(snap.receipts.length, 1, 'one receipt');
     const receipt = JSON.parse(fs.readFileSync(path.join(server.out, 'returns', snap.receipts[0]), 'utf8'));
     assert.equal(receipt.schema, 'mailroom-human-review/v1');
     assert.ok(!('slim' in receipt));
-    assert.equal(receipt.decisions.find((d) => d.field === 'jurisdiction').decision, 'ACCEPT');
-    assert.equal(await evaluate(`$('review-progress').value`), 1);
-    savedTarget = {document_id: 'public-v9.3:DOC-01ccf3f1ee5f4163', field: 'jurisdiction'};
+    assert.equal(receipt.decisions.find((d) => d.field === 'jurisdiction' && d.document_id.includes('01ccf3f1')).decision, 'ACCEPT', 'receipt decision');
+    assert.equal(await evaluate(`dirty`), false, 'a complete save clears the dirty flag');
+    assert.equal(await evaluate(`$('review-progress').value`), 1, 'progress count');
     check('real receipt and journal');
   });
 
@@ -406,11 +415,24 @@ try {
     check('idempotent save');
   });
 
-  await step('verify: blocked candidate needs the manual source-verification tick', async () => {
+  await step('verify: empty proposals cannot be ACCEPTed, blocked values need manual verification', async () => {
+    // The insurance claim_checklist target has no candidate at all: ACCEPT is meaningless
+    // and the page must say so instead of letting the server reject it.
     await goto('claim_checklist', '000b010d');
     await evaluate(`showTab('review')`);
     await evaluate(`decisions.set(KEY(records[current]),blank(records[current]));renderTarget();`);
-    await input('initials', 'AB');
+    await input('initials', IDENTITY);
+    await decide('ACCEPT');
+    await evaluate(`$('manual-verify').click()`);
+    assert.equal(await evaluate(`validate()`), false);
+    assert.match(await text('message'), /no candidate value to approve/);
+    // The invalid decision must be cleared, not left to poison a later save elsewhere.
+    await evaluate(`decisions.set(KEY(records[current]),blank(records[current]));renderTarget();`);
+    // A needs_source_review target that does carry a value can be accepted after the tick.
+    await goto('jurisdiction', 'BLOCKED');
+    assert.equal(await evaluate(`records[current].candidate_status`), 'needs_source_review');
+    await evaluate(`decisions.set(KEY(records[current]),blank(records[current]));renderTarget();`);
+    await input('initials', IDENTITY);
     await decide('ACCEPT');
     assert.equal(await evaluate(`$('manual-wrap').hidden`), false);
     assert.equal(await evaluate(`validate()`), false);
@@ -418,18 +440,40 @@ try {
     await evaluate(`$('manual-verify').click()`);
     assert.equal(await evaluate(`validate()`), true);
     await evaluate(`$('save').click()`);
-    await waitFor(`!busy && /Saved\. Receipt/.test($('message').textContent)`);
+    try { await waitFor(`!busy && /Saved\. Receipt/.test($('message').textContent)`); }
+    catch (exc) { console.log('      manual save message:', await text('message')); throw exc; }
     const snap = await snapshot();
     const event = snap.journal.at(-1);
+    assert.equal(event.field, 'jurisdiction');
     assert.equal(event.manual_source_verification, true);
     assert.equal(event.human_confirmed, true);
     check('manual source verification');
   });
 
+  await step('save: an invalid decision elsewhere is named, never an opaque server 400', async () => {
+    const before = await snapshot();
+    let message = '';
+    try {
+      await evaluate(`(()=>{const i=records.findIndex((r)=>r.field==='claim_checklist'&&r.document_id.includes('000b'));
+        decisions.set(KEY(records[i]),{...blank(records[i]),decision:'ACCEPT',reviewer_initials:${JSON.stringify(IDENTITY)},updated_at:now()});dirty=true;})()`);
+      await goto('registered_agent', '01ccf3f1');
+      await evaluate(`$('save').click()`);
+      await waitFor(`/Cannot save: there is no candidate value to approve/.test($('message').textContent)`, 8000);
+      message = await text('message');
+      assert.match(message, /Cannot save: there is no candidate value to approve.*Claim checklist/s);
+      assert.equal(await evaluate(`records[current].field`), 'claim_checklist', 'the page jumps to the offending target');
+      assert.equal((await snapshot()).journal.length, before.journal.length, 'nothing reached the server');
+    } finally {
+      await evaluate(`(()=>{const i=records.findIndex((r)=>r.field==='claim_checklist'&&r.document_id.includes('000b'));
+        decisions.set(KEY(records[i]),blank(records[i]));dirty=false;})()`);
+      await evaluate(`$('target').value=String(records.findIndex((r)=>r.field==='registered_agent'&&r.document_id.includes('01ccf3f1')));$('target').dispatchEvent(new Event('change'));`);
+    }
+  });
+
   await step('save: CORRECT validation, REJECT and NEEDS_SOURCE', async () => {
     await goto('registered_agent', '01ccf3f1');
     await evaluate(`decisions.set(KEY(records[current]),blank(records[current]));renderTarget();`);
-    await input('initials', 'AB');
+    await input('initials', IDENTITY);
     await decide('CORRECT');
     await input('correction', 'not json');
     assert.equal(await evaluate(`validate()`), false);
@@ -441,13 +485,13 @@ try {
     assert.equal((await snapshot()).journal.at(-1).decision, 'CORRECT');
     await goto('effective_date', '00193d0c');
     await evaluate(`decisions.set(KEY(records[current]),blank(records[current]));renderTarget();`);
-    await input('initials', 'AB');
+    await input('initials', IDENTITY);
     await decide('REJECT');
     await evaluate(`$('save').click()`);
     await waitFor(`!busy && /Saved\. Receipt/.test($('message').textContent)`);
     await goto('filing_number', '01ccf3f1');
     await evaluate(`decisions.set(KEY(records[current]),blank(records[current]));renderTarget();`);
-    await input('initials', 'AB');
+    await input('initials', IDENTITY);
     await decide('NEEDS_SOURCE');
     await evaluate(`$('save').click()`);
     await waitFor(`!busy && /Saved\. Receipt/.test($('message').textContent)`);
@@ -459,7 +503,7 @@ try {
   await step('save: schema-pending ACCEPT stores a blocker, never gold', async () => {
     await goto('proposed_new_field', 'PROPOSAL');
     await evaluate(`decisions.set(KEY(records[current]),blank(records[current]));renderTarget();`);
-    await input('initials', 'AB');
+    await input('initials', IDENTITY);
     await decide('ACCEPT');
     await evaluate(`$('save').click()`);
     await waitFor(`!busy && /Saved\. Receipt/.test($('message').textContent)`);
@@ -468,7 +512,7 @@ try {
     await goto('proposed_new_field', 'PROPOSAL');
     assert.match(await text('field-outcome'), /schema approval still required/);
     const event = (await snapshot()).journal.at(-1);
-    assert.match(event.schema_blocker, /not pinned|not applicable/);
+    assert.match(event.schema_blocker, /not[_ ]pinned|not applicable/);
     assert.equal(event.human_confirmed, false);
     check('schema blocker is not a confirmation');
   });
@@ -478,7 +522,7 @@ try {
     await call('Page.reload');
     await waitFor(`document.body.dataset.reviewReady==='1'`);
     const progress = await text('review-progress-text');
-    assert.match(progress, /[1-9]\d* \/ 34 targets reviewed and saved/);
+    assert.match(progress, /[1-9]\d* \/ 35 targets reviewed and saved/);
     assert.ok(Number(await evaluate(`$('review-progress').value`)) >= 3);
     const statuses = await evaluate(`packet.review_states.filter((s)=>s.status==='human_confirmed').length`);
     assert.ok(statuses >= 3, 'server state restored');
@@ -489,7 +533,7 @@ try {
 
   await step('verify: sticky initials and export produces a server-valid return', async () => {
     await goto('approval_date', '00193d0c');
-    assert.equal(await evaluate(`$('initials').value`), 'AB', 'initials are remembered');
+    assert.equal(await evaluate(`$('initials').value`), IDENTITY, 'the model identity is remembered');
     fs.rmSync(path.join(out, 'human-review-decisions.json'), {force: true});
     await evaluate(`$('export').click()`);
     for (let i = 0; i < 40 && !fs.existsSync(path.join(out, 'human-review-decisions.json')); i++) {
@@ -498,11 +542,11 @@ try {
     assert.ok(fs.existsSync(path.join(out, 'human-review-decisions.json')), 'export downloaded');
     const exported = JSON.parse(fs.readFileSync(path.join(out, 'human-review-decisions.json'), 'utf8'));
     assert.equal(exported.schema, 'mailroom-human-review/v1');
-    assert.equal(exported.decisions.length, 34);
-    assert.ok(exported.decisions.some((d) => d.decision === 'ACCEPT' && d.reviewer_initials === 'AB'));
+    assert.equal(exported.decisions.length, 35);
+    assert.ok(exported.decisions.some((d) => d.decision === 'ACCEPT' && d.reviewer_initials === IDENTITY));
     const received = await control('receive', {payload: exported});
     assert.equal(received.valid, true);
-    assert.equal(received.decisions, 34);
+    assert.equal(received.decisions, 35);
     check('machine-readable export accepted by review_page.receive');
   });
 
@@ -510,11 +554,14 @@ try {
   await step('autosave: a complete decision reaches the server without Save', async () => {
     await evaluate(`autosaveEnabled=true`);
     await goto('prior_entity_name', '00193d0c');
-    await evaluate(`decisions.set(KEY(records[current]),blank(records[current]));renderTarget();`);
-    await input('initials', 'AB');
+    await evaluate(`decisions.set(KEY(records[current]),blank(records[current]));renderTarget();message('Waiting for the autosave probe');`);
+    await input('initials', IDENTITY);
     await decide('ACCEPT');
     await waitFor(`$('message').textContent.includes('Auto-saved at')`, 15000);
-    const snap = await snapshot();
+    let snap = await snapshot();
+    for (let i = 0; i < 40 && snap.journal.at(-1)?.field !== 'prior_entity_name'; i++) {
+      await new Promise((r) => setTimeout(r, 100)); snap = await snapshot();
+    }
     assert.equal(snap.journal.at(-1).field, 'prior_entity_name');
     assert.match(await text('target-status'), /auto-saved/);
     assert.equal(await evaluate(`dirty`), false);
@@ -526,7 +573,7 @@ try {
     await evaluate(`autosaveEnabled=false`);
     await goto('authorized_capital', '01ccf3f1');
     await evaluate(`decisions.set(KEY(records[current]),blank(records[current]));renderTarget();`);
-    await input('initials', 'AB');
+    await input('initials', IDENTITY);
     await decide('CORRECT');
     await input('correction', 'not JSON yet');
     await evaluate(`autosaveEnabled=true;scheduleAutoSave();`);
@@ -546,8 +593,9 @@ try {
     await evaluate(`decisions.set(KEY(records[current]),blank(records[current]));renderTarget();`);
     await input('notes', 'Local draft that must survive.');
     await decide('ACCEPT');
-    await input('initials', 'AB');
+    await input('initials', IDENTITY);
     await control('touch-state');
+    await waitFor(`!busy`);
     await evaluate(`$('save').click()`);
     await waitFor(`!busy && /409/.test($('message').textContent)`);
     assert.match(await text('message'), /Draft retained/);
@@ -584,10 +632,9 @@ try {
   await step('checkpoint: failure leaves new confirmations pending and says why', async () => {
     await goto('approval_date', '00193d0c');
     await evaluate(`decisions.set(KEY(records[current]),blank(records[current]));renderTarget();`);
-    await input('initials', 'AB');
+    await input('initials', IDENTITY);
     await decide('ACCEPT');
-    await evaluate(`$('save').click()`);
-    await waitFor(`!busy && /Saved\. Receipt/.test($('message').textContent)`);
+    await saveWait();
     await control('checkpoint-fail', {fail: true});
     await evaluate(`window.confirm=()=>true;$('checkpoint').click()`);
     await waitFor(`!busy && /Checkpoint failed|Checkpoint not verified/.test($('message').textContent)`, 20000);
@@ -604,10 +651,9 @@ try {
   await step('revision queue: confirmed production fields are exported, REJECT removes them', async () => {
     await goto('jurisdiction', 'PROD');
     await evaluate(`decisions.set(KEY(records[current]),blank(records[current]));renderTarget();`);
-    await input('initials', 'AB');
+    await input('initials', IDENTITY);
     await decide('ACCEPT');
-    await evaluate(`$('save').click()`);
-    await waitFor(`!busy && /Saved\. Receipt/.test($('message').textContent)`);
+    await saveWait();
     const queue = await (await fetch(`${portalURL}/revision-queue.json`)).json();
     const row = queue.revisions.find((r) => r.document_id === 'public-v9.3:PROD-0001');
     assert.ok(row, 'confirmed production field is queued');
@@ -618,8 +664,7 @@ try {
     assert.match(await text('revision-queue'), /PROD-0001/);
     await evaluate(`showTab('review');$('target').value=''+records.findIndex((r)=>r.document_id.includes('PROD'));$('target').dispatchEvent(new Event('change'));`);
     await decide('REJECT');
-    await evaluate(`$('save').click()`);
-    await waitFor(`!busy && /Saved\. Receipt/.test($('message').textContent)`);
+    await saveWait();
     const after = await (await fetch(`${portalURL}/revision-queue.json`)).json();
     assert.ok(!after.revisions.some((r) => r.document_id === 'public-v9.3:PROD-0001'));
     assert.ok((await snapshot()).journal.some((e) => e.document_id === 'public-v9.3:PROD-0001' && e.decision === 'REJECT'),
@@ -637,7 +682,7 @@ try {
     assert.match(table, /inventory unavailable/i);
     assert.match(await text('tracker-scope'), /loaded finished packets only/);
     assert.match(await text('tracker-source'), /browser\/campaign\.yaml/);
-    assert.match(await text('summary'), /live: \d+\/34 saved reviews/);
+    assert.match(await text('summary'), /live: \d+\/35 saved reviews/);
     await evaluate(`$('task-filter').value='completed';$('task-filter').dispatchEvent(new Event('change'));`);
     assert.match(await text('tasks'), /skipped/);
     assert.doesNotMatch(await text('tasks'), /blocked/);
@@ -681,13 +726,23 @@ try {
     await input('launch-initials', 'AB');
     await input('launch-key', secret);
     await evaluate(`$('launch-preflight').click()`);
-    await waitFor(`!$('launch-start').disabled`, 30000);
+    try { await waitFor(`!$('launch-start').disabled`, 30000); }
+    catch (exc) {
+      console.log('      launch checklist:', await text('launch-checklist'));
+      console.log('      launch message:', await text('launch-message'));
+      const probe = await fetch(`${portalURL}/api/launch/preflight`, {method: 'POST',
+        headers: {'Content-Type': 'application/json', Origin: portalURL},
+        body: JSON.stringify({target: 'trial:correspondence', initials: 'AB', cap_usd: '0.25', documents: 2, api_key: secret})});
+      console.log('      server preflight:', JSON.stringify(await probe.json()).slice(0, 4000));
+      throw exc;
+    }
     assert.match(await text('launch-projection'), /Projection: \d+ documents, \d+ calls, about \$/);
     // Wrong typed cap is refused by the server and its failing item is rendered.
     await input('launch-key', secret); // a pasted key is wiped after preflight; Launch needs it again
     await evaluate(`window.prompt=()=>'0.20';$('launch-start').click()`);
     await waitFor(`/Not started \\(409\\)/.test($('launch-message').textContent)`, 30000);
     assert.match(await text('launch-checklist'), /Typed confirmation matches the cap/);
+    await input('launch-key', secret); // a 409 clears the key field; the next preflight needs it again
     await evaluate(`$('launch-preflight').click()`);
     await waitFor(`!$('launch-start').disabled`, 30000);
     await input('launch-key', secret);
@@ -730,27 +785,27 @@ try {
     await goto('effective_date', '00193d0c');
     await evaluate(`window.__setItem=Storage.prototype.setItem;Storage.prototype.setItem=function(){throw new DOMException('quota','QuotaExceededError');};`);
     await evaluate(`decisions.set(KEY(records[current]),blank(records[current]));renderTarget();`);
-    await input('initials', 'AB');
+    await input('initials', IDENTITY);
     await decide('ACCEPT');
     assert.match(await text('message'), /Local draft storage failed|Local draft/);
-    await evaluate(`$('save').click()`);
-    await waitFor(`!busy && /Saved\. Receipt/.test($('message').textContent)`);
+    await saveWait();
     assert.equal((await snapshot()).journal.at(-1).field, 'effective_date');
     await evaluate(`Storage.prototype.setItem=window.__setItem;delete window.__setItem;`);
     check('storage failure degrades to server save');
   });
 
-  if (process.env.AXE_PATH) {
+  if (process.env.AXE_PATH && fs.existsSync(process.env.AXE_PATH)) {
     await step('a11y: axe-core WCAG A/AA pass on the live review page', async () => {
       const source = fs.readFileSync(process.env.AXE_PATH, 'utf8');
       const raw = await evaluate(`${source}\n;typeof axe!=='undefined'`);
       assert.equal(raw, true, 'axe-core loaded');
-      const report = await evaluate(`axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','best-practice']}}).then((r)=>({violations:r.violations.map((v)=>({id:v.id,impact:v.impact,nodes:v.nodes.length,target:v.nodes[0]&&v.nodes[0].target})),incomplete:r.incomplete.length,passes:r.passes.length}))`);
+      const report = await evaluate(`axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','best-practice']}}).then((r)=>({violations:r.violations.map((v)=>({id:v.id,impact:v.impact,nodes:v.nodes.length,target:v.nodes[0]&&v.nodes[0].target})),incomplete:r.incomplete.map((v)=>({id:v.id,nodes:v.nodes.length,target:v.nodes[0]&&v.nodes[0].target})),passes:r.passes.length}))`);
       fs.writeFileSync(path.join(out, 'axe.json'), JSON.stringify(report, null, 2));
       assert.deepEqual(report.violations, []);
     });
   }
 
+  else console.log('AXE skipped: no axe-core at ' + (process.env.AXE_PATH || '(unset)'));
   assert.deepEqual(consoleErrors, [], 'no console exceptions');
 } catch (exc) {
   results.push({name: 'driver', ok: false, error: String(exc && (exc.stack || exc))});
@@ -758,6 +813,14 @@ try {
 } finally {
   if (chromeReady) {
     try { await screenshot('99-final'); } catch (exc) { /* keep the report */ }
+  }
+  // Fixed denominator: deleting a browser step is a test change and must be
+  // visible in review, not a silently smaller green run.
+  const axeRan = !!(process.env.AXE_PATH && fs.existsSync(process.env.AXE_PATH));
+  const expectedSteps = axeRan ? 33 : 32;
+  if (results.filter((r) => r.name !== 'driver').length !== expectedSteps) {
+    results.push({name: 'coverage: expected browser steps', ok: false,
+      error: `expected ${expectedSteps} steps, ran ${results.filter((r) => r.name !== 'driver').length}`});
   }
   const passed = results.filter((r) => r.ok).length;
   const report = {schema: 'mailroom-review-browser-e2e/v1', portal: portalURL, root: server.root,

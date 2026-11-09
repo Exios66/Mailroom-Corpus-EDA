@@ -68,6 +68,7 @@ def reviewed_documents(packets: Sequence[Path], decisions: Sequence[dict]) -> li
             doc["fields"].append({
                 "field": record["field"], "decision": event["decision"],
                 "reviewer": event.get("reviewer", ""),
+                "reviewer_kind": event.get("reviewer_kind", ""),
                 "server_received_at": event.get("server_received_at", ""),
                 "receipt_id": event.get("receipt_id", ""),
                 "verified_models": event.get("verified_models", []),

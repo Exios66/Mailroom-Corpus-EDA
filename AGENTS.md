@@ -147,6 +147,28 @@ uv member (no build).
 PYTHONPATH=src .venv/bin/python -m mailroom_eda.labeling doctor   # labeling readiness, no paid call
 ```
 
+**Pre-PR gate** (see `docs/TESTING.md` for the full pyramid and troubleshooting):
+
+```bash
+make install                    # .venv + pytest/ruff/axe-core prerequisites, once
+make check                      # lint + harness build + full offline pytest
+make check-all                  # above + both real-browser suites (needs Chrome)
+.venv/bin/pre-commit install     # staged-file lint + focused review tests on commit
+```
+
+The browser suites are `tests/browser_review_page.mjs` (synthetic page contract)
+and `tests/browser_review_portal.mjs` (real portal server, receipts, journal,
+tracker, launcher preflight and axe). They write evidence under
+`.cache/browser-evidence/` (git-ignored). CI runs both, in two Python versions,
+plus the undefined-name/syntax gate; `tests/test_ci_tooling.py` prevents the
+workflow from regressing to a stub.
+
+A model integration that reviews labels identifies with its short display name
+(`Haiku-5.5`, `DeepSeek-V4.1-Flash`), never the provider route
+(`Anthropic/Haiku-5.5`). Human reviewers use 2–6 capital initials. Journal events record
+`reviewer_kind` (`human`/`model`); receipts keep the identity string, so an
+automated attribution is never mistaken for a human countersign.
+
 **Release verification** (after every Hub publish or tag move, before re-pinning
 `config.py`):
 
