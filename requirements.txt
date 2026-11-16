@@ -1,6 +1,6 @@
 # Mailroom-Corpus-EDA — pinned direct dependencies (Python 3.13, repo-local .venv)
-pandas==3.1.0
-pyarrow==26.0.0
+pandas==3.1.1
+pyarrow==26.0.1
 numpy==2.5.4
 scipy==1.18.1
 statsmodels==0.15.0
@@ -12,7 +12,7 @@ wordcloud==1.9.6
 datasketch==2.0.0
 tiktoken==0.14.0
 squarify==0.4.5
-datasets==5.1.0
+datasets==5.2.0
 polars==2.1.0
 huggingface_hub==2.4.0
 tqdm==4.70.1
