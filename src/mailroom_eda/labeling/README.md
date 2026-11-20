@@ -25,6 +25,12 @@ the field registry, the prompts, the model list with prices, the campaign plan a
 6. **Ingest.** The v10 build reads the journals, re-verifies every value against the
    document, and refuses anything from an uncalibrated configuration.
 
+The sandbox's staged production overlay (mailroom-issues `mailroom_cache`, `production-overlay`
+cuts) is never an ingest source. `python -m mailroom_eda.labeling.staged --cut <dir>
+--manifest-sha256 <pin>` lists its values as fill candidates (pending cells) and unsigned
+gold-correction candidates (cells that differ from gold). Each enters v10 only through the steps
+above or a person's initials in `gold-corrections.csv`.
+
 ## Rules every label follows
 
 - **Grounded in the text.** Scored models see only `doc_text`, so a value the text does

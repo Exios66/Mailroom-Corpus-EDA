@@ -8,6 +8,21 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
 
 ## Unreleased
 
+- Staged-overlay candidates (`labeling/staged.py`, `python -m mailroom_eda.labeling.staged`).
+  - The sandbox now stages its merged label master in the mailroom-issues `mailroom_cache` as a
+    `production-overlay` pre-release, and production scoring applies it. This module turns a
+    pinned cut into two candidate files in the gitignored labels root:
+    - `staged-fill-candidates.csv`: staged values for cells that are still `pending_annotation`;
+    - `staged-gold-correction-candidates.csv`: staged values that differ from gold, in
+      `gold-corrections.csv` columns with `decided_by` blank.
+  - Nothing is ingested. A fill goes through a calibrated chunk or a reviewer verdict. A
+    correction reaches v10 only when a person initials it and moves it into
+    `gold-corrections.csv`, which still refuses rows without initials.
+  - The cut's `MANIFEST.json` must match the given sha256 and each overlay file its hash. Records
+    bind to a stage row by full content hash and class. `subclass`, `cuad_clauses` and
+    `maud_clauses` are dropped (v10 derives or spans them).
+  - Offline, no spend, no publish. Tests: `tests/test_labeling_staged.py`.
+
 - Gold smoke fixtures: `tests/fixtures/live_smoke/<doc_type>/` holds one real labeling run per document type
   (contract, merger_agreement, corporate_record, insurance_claim, correspondence) as committed test data: the
   public documents as downloaded (full text), every model call (`calls.jsonl`), the review packet
