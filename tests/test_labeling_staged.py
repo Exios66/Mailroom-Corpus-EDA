@@ -81,4 +81,55 @@ def test_write_keeps_corrections_unsigned(tmp_path):
     with (tmp_path / staged.CORRECTION_FILE).open(newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
     assert [r["decided_by"] for r in rows] == [""]
-    assert (tmp_path / staged.FILL_FILE).read_text().startswith("document_id,")
+    assert (tmp_path / staged.FILL_FILE).read_text().startswith('"document_id",')
+
+
+def test_overlay_lines_split_only_on_newline(tmp_path):
+    rec = _record(contract_row(), "contract", governing_law=_lab("Dela\u2028ware"))
+    d = tmp_path / "cut"
+    (d / "overlay").mkdir(parents=True)
+    body = (json.dumps(rec, ensure_ascii=False) + "\n").encode()
+    assert "\u2028".encode() in body  # the raw separator, not its escape
+    (d / "overlay" / "contract.jsonl").write_bytes(body)
+    raw = json.dumps({"kind": staged.KIND, "version": "v",
+                      "files": {"overlay/contract.jsonl": {"sha256": hashlib.sha256(body).hexdigest()}}}).encode()
+    (d / "MANIFEST.json").write_bytes(raw)
+    _, records = staged.load(d, manifest_sha256=hashlib.sha256(raw).hexdigest())
+    assert records[0]["labels"]["governing_law"]["value"] == "Dela\u2028ware"
+
+
+def test_a_record_without_a_full_content_hash_is_refused():
+    contract = dict(contract_row(), source_content_sha256=None)
+    rec = _record(contract, "contract", governing_law=_lab("Delaware"))
+    both_missing = dict(rec, content_sha256=None)
+    _f, _c, counts = staged.candidates([both_missing], [dict(contract, content_sha256=None)], "v")
+    assert counts["hash_mismatch"] == 1
+    _f, _c, counts = staged.candidates([dict(rec, content_sha256="abc")], [contract], "v")
+    assert counts["hash_mismatch"] == 1
+
+
+def test_an_absence_correction_is_accepted_once_initialled(tmp_path):
+    from mailroom_eda.labeling import export, operate
+
+    claim = insurance_row()
+    rec = _record(claim, "insurance_claim", claimed_amount=_lab(None, "documented_absence"))
+    _fills, corrections, _ = staged.candidates([rec], [claim], "v")
+    assert [c["gold_now"] for c in corrections] == [staged.ABSENT]
+    staged.write(tmp_path, [], corrections)
+    rows = export.read_csv(tmp_path / staged.CORRECTION_FILE)
+    export.write_csv(tmp_path / operate.GOLD_CORRECTIONS, GOLD_CORRECTION_COLUMNS,
+                     [dict(r, decided_by="QA", decided_utc="2026-11-20T00:00:00Z") for r in rows])
+    found = operate.gold_corrections(tmp_path)
+    assert [c["gold_now"] for c in found.values()] == ["N/A"]
+
+
+def test_formula_leading_values_are_escaped_and_read_back(tmp_path):
+    from mailroom_eda.labeling import export
+
+    contract = contract_row()
+    rec = _record(contract, "contract", governing_law=_lab("=1+1"))
+    fills, corrections, _ = staged.candidates([rec], [contract], "v")
+    staged.write(tmp_path, fills, corrections)
+    text = (tmp_path / staged.FILL_FILE).read_text()
+    assert "\"'=1+1\"" in text
+    assert [r["value"] for r in export.read_csv(tmp_path / staged.FILL_FILE)] == ["=1+1"]

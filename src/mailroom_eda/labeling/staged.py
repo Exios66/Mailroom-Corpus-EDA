@@ -21,25 +21,31 @@ v10 keeps spans and answers) are counted and dropped.
 
 Integrity: the cut's ``MANIFEST.json`` must have the sha256 given on the command line (the pin
 the sandbox records in ``config/staged_overlays.yaml``), and every overlay file must match its
-manifest hash. A record is used only for the stage row whose ``content_sha256`` or
-``source_content_sha256`` equals the record's and whose class matches.
+manifest hash. A record is used only when it carries a full sha256 ``content_sha256`` that
+equals the stage row's nonempty ``content_sha256`` or ``source_content_sha256``, and its class
+matches. A staged documented absence is written to ``gold_now`` as ``N/A``, the marker v10 reads
+as ``schema_documented_absence``. The CSVs are written by ``export.write_csv``, so formula-leading
+text is escaped for spreadsheets and ``export.read_csv`` restores it.
 
-    python -m mailroom_eda.labeling.staged --cut <mailroom-issues>/mailroom_cache/v9.3.0/pre-release/v9.3.1-rc.3 \\
+    python -m mailroom_eda.labeling.staged --cut <mailroom-issues>/mailroom_cache/v9.3.0/pre-release/v9.3.1-rc.5 \\
         --manifest-sha256 <pin> [--stage data/v9_4/stage] [--out docs/reports/audits/v10_labels/staged]
 
 Offline; no spend. The output stays in the gitignored labels root by default.
 """
 from __future__ import annotations
 
-import csv
 import hashlib
 import json
+import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 KIND = "production-overlay"
+#: gold_now for a staged documented absence: the N/A marker v10_build types to schema_documented_absence.
+ABSENT = "N/A"
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 FILL_FILE = "staged-fill-candidates.csv"
 CORRECTION_FILE = "staged-gold-correction-candidates.csv"
 FILL_COLUMNS = ("document_id", "filename", "field", "value", "presence", "evidence", "source", "agreement",
@@ -73,7 +79,8 @@ def load(cut: Path | str, *, manifest_sha256: str) -> tuple[dict[str, Any], list
         data = (d / rel).read_bytes() if (d / rel).exists() else b""
         if _sha256(data) != entry.get("sha256"):
             raise SystemExit(f"{d / rel}: missing or not the sha256 MANIFEST.json pins")
-        records += [json.loads(line) for line in data.decode("utf-8").splitlines() if line.strip()]
+        # JSON Lines records end at "\n" only: str.splitlines would also split on U+2028 in a value.
+        records += [json.loads(line) for line in data.decode("utf-8").split("\n") if line.strip()]
     return manifest, records
 
 
@@ -97,7 +104,9 @@ def candidates(records: Sequence[Mapping[str, Any]], rows: Sequence[Mapping[str,
         if row is None:
             counts["no_document"] += 1
             continue
-        if rec.get("content_sha256") not in (row.get("content_sha256"), row.get("source_content_sha256")):
+        sha = rec.get("content_sha256")
+        if not (isinstance(sha, str) and _SHA256.fullmatch(sha)
+                and sha in {h for h in (row.get("content_sha256"), row.get("source_content_sha256")) if h}):
             counts["hash_mismatch"] += 1
             continue
         cls = str(rec.get("doc_class"))
@@ -139,7 +148,10 @@ def candidates(records: Sequence[Mapping[str, Any]], rows: Sequence[Mapping[str,
                 key = v10_build.LEGACY_KEY.get(name, name)
                 corrections.append({
                     "document_id": row["document_id"], "filename": row["filename"], "field": name,
-                    "gold_was": _cell_text(gt.get(key)), "gold_now": _cell_text(staged),
+                    "gold_was": _cell_text(gt.get(key)),
+                    # A documented absence is written as the N/A marker v10_build reads as
+                    # schema_documented_absence, so an initialled correction is accepted.
+                    "gold_now": ABSENT if absent else _cell_text(staged),
                     "reason": (f"staged overlay v{version} ({lab.get('source')}, {lab.get('agreement')}; "
                                f"sandbox override={bool(lab.get('override'))}); evidence "
                                + json.dumps([e.get("text") for e in lab.get("evidence") or []], ensure_ascii=False)),
@@ -150,15 +162,15 @@ def candidates(records: Sequence[Mapping[str, Any]], rows: Sequence[Mapping[str,
 
 
 def write(out: Path, fills: Sequence[Mapping[str, str]], corrections: Sequence[Mapping[str, str]]) -> None:
+    from . import export
     from .operate import GOLD_CORRECTION_COLUMNS
 
     out.mkdir(parents=True, exist_ok=True)
+    # export.write_csv quotes every cell and prefixes formula-leading text ("=1+1") with "'",
+    # so a spreadsheet shows it as text; export.read_csv (used by operate.gold_corrections) undoes it.
     for name, columns, rows in ((FILL_FILE, FILL_COLUMNS, fills),
                                 (CORRECTION_FILE, GOLD_CORRECTION_COLUMNS, corrections)):
-        with (out / name).open("w", newline="", encoding="utf-8") as fh:
-            w = csv.DictWriter(fh, fieldnames=list(columns), lineterminator="\n")
-            w.writeheader()
-            w.writerows(rows)
+        export.write_csv(out / name, columns, rows)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

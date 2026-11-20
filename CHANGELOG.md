@@ -21,6 +21,13 @@ Timestamps are UTC. Earlier revisions (v9.1, v9) are documented in
   - The cut's `MANIFEST.json` must match the given sha256 and each overlay file its hash. Records
     bind to a stage row by full content hash and class. `subclass`, `cuad_clauses` and
     `maud_clauses` are dropped (v10 derives or spans them).
+  - Review fixes:
+    - overlay files split only on `\n`, so a U+2028 inside a value stays in its record;
+    - a record without a full sha256 content hash is refused, even when the stage row has none;
+    - a staged documented absence is written as `gold_now` `N/A`, so an initialled absence
+      correction passes `operate.gold_corrections`;
+    - both CSVs go through `export.write_csv`: every cell quoted, formula-leading text escaped,
+      `export.read_csv` reverses it.
   - Offline, no spend, no publish. Tests: `tests/test_labeling_staged.py`.
 
 - Gold smoke fixtures: `tests/fixtures/live_smoke/<doc_type>/` holds one real labeling run per document type
